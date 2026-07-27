@@ -1,0 +1,16 @@
+{
+  "rules": [
+    {
+      "trigger": "\\\\.astro",
+      "guardrail": "## 🟢 ASTRO GUARDRAILS\n- DO NOT run `biome check --write --unsafe` on `.astro` files (destroys frontmatter).\n- DO NOT import 'sharp' into runtime bundles."
+    },
+    {
+      "trigger": "db|drizzle|sql",
+      "guardrail": "## 🗄️ DATABASE GUARDRAILS\n- Always batch multiple database statements.\n- DO NOT write destructive migrations (`DROP TABLE`) without explicit user consent."
+    },
+    {
+      "trigger": "css|theme|tailwind",
+      "guardrail": "## 🎨 CSS & DESIGN GUARDRAILS\n- Use semantic design tokens from the theme rather than hardcoding hex values."
+    }
+  ]
+}

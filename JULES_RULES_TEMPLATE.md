@@ -14,24 +14,32 @@ Dispatch tasks to Jules when ALL of the following apply:
 
 ---
 
-## 2. MCP-First Pre-Execution Directive
+## 2. MCP Machine Directive & Read-Before-Write Invariants
 
-Never rely on pre-trained memory for rapidly evolving framework APIs or library signatures.
-
-Before writing or editing code:
-1. Perform targeted lookups using available Model Context Protocol (MCP) servers or official documentation tools.
-2. Verify parameter signatures, exported modules, and syntax changes.
-
-Every prompt dispatched to Jules MUST start with an `MCP DIRECTIVE:` mandating documentation verification before code generation.
+```xml
+<MCP_DIRECTIVE>
+  <system_state>HEADLESS_CI_MODE</system_state>
+  <strict_invariants>
+    <rule>1. NO CONVERSATION: Output ONLY machine-actionable tool calls or valid patches. No conversational filler or superlatives.</rule>
+    <rule>2. READ-BEFORE-WRITE (ZERO HALLUCINATION): You are FORBIDDEN from guessing internal API signatures. Before editing, you MUST use code search or MCP doc tools to inspect exact function signatures.</rule>
+    <rule>3. VERIFICATION LOOP: After patching code, you MUST execute the project's verification commands (tests/build) and ensure 0 errors.</rule>
+    <rule>4. ABORT CONDITION: On repeated unresolvable test failures (4+ attempts), output <status>ABORT_UNRESOLVABLE</status> and terminate immediately.</rule>
+  </strict_invariants>
+</MCP_DIRECTIVE>
+```
 
 ---
 
-## 3. Strict Pre-PR Verification Mandate
+## 3. Dynamic Command Resolution
 
-Before submitting any Pull Request or marking a task complete:
-1. Run the project's verification suite (e.g., `npm run check:all && npm run test && npm run build`).
-2. Fix all type-check errors, lint failures, and broken unit tests.
-3. Ensure no trailing debug logs, unused imports, or temporary files are committed.
+Jules automatically infers test and build verification commands based on project manifest files:
+- `package.json` -> `npm run check:all && npm test && npm run build`
+- `Cargo.toml` -> `cargo test --workspace && cargo build`
+- `go.mod` -> `go test ./... && go build ./...`
+- `pyproject.toml` -> `pytest`
+- `pom.xml` -> `mvn test`
+- `build.gradle` -> `./gradlew test`
+- `.agent/jules.yml` -> Custom user commands
 
 ---
 
@@ -40,4 +48,4 @@ Before submitting any Pull Request or marking a task complete:
 - **Read Before Write**: Always inspect target files and surrounding context before applying changes.
 - **Minimal Interference**: Preserve existing function signatures, comments, and style conventions.
 - **Falsifiable Claims**: Base all code changes on explicit error logs, file paths, line numbers, or test results.
-- **No Filler Copy**: Keep documentation, commit messages, and PR descriptions direct, technical, and telegraphic.
+- **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
