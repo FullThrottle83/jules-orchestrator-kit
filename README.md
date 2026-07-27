@@ -128,7 +128,7 @@ The command resolver automatically sniffs your codebase and invokes the right ve
 | **Nx Workspace** | `nx.json` | `npx nx run-many -t test -p <pkg> --with-deps` |
 | **Bun** | `bunfig.toml` / `bun.lockb` | `bun test && bun run build` |
 | **Deno** | `deno.json` / `deno.jsonc` | `deno test && deno task build` |
-| **JavaScript / TypeScript** | `package.json` | `npm run check:all` or `npm test` |
+| **JavaScript / TypeScript** | `package.json` | `npm run lint && npm test` (or `npm run check:all`) |
 | **Rust** | `Cargo.toml` | `cargo test -p <pkg>` / `cargo test --workspace` |
 | **Go** | `go.mod` | `go test ./... && go build ./...` |
 | **Python** | `pyproject.toml` / `requirements.txt` | `pytest` |
