@@ -35,6 +35,13 @@ describe("Glob Matcher (matchGlob)", () => {
 });
 
 describe("Forbidden & Allowed Patterns Parser", () => {
+  test("always includes default immutable security paths when config is empty or missing", () => {
+    const patterns = loadForbiddenPatterns("");
+    assert.ok(patterns.includes("scripts/jules-*"));
+    assert.ok(patterns.includes(".agent/jules.yml"));
+    assert.ok(patterns.includes(".github/**"));
+  });
+
   test("parses flow-style YAML arrays", () => {
     const yaml = 'forbidden_paths: [".github/**", "secrets/**"]';
     const patterns = loadForbiddenPatterns(yaml);
@@ -42,7 +49,7 @@ describe("Forbidden & Allowed Patterns Parser", () => {
     assert.ok(patterns.includes("secrets/**"));
   });
 
-  test("parses block-style YAML arrays", () => {
+  test("parses block-style YAML arrays and preserves immutable defaults", () => {
     const yaml = `
 version: 2
 forbidden_paths:
@@ -52,6 +59,7 @@ forbidden_paths:
     const patterns = loadForbiddenPatterns(yaml);
     assert.ok(patterns.includes(".github/**"));
     assert.ok(patterns.includes("custom/secrets/*"));
+    assert.ok(patterns.includes("scripts/jules-*"));
   });
 
   test("parses allow_paths from trusted base config", () => {
@@ -86,5 +94,8 @@ describe("Dynamic Guardrails Triggers Regex", () => {
     assert.equal(regex.test("fix the db migration script"), true);
     assert.equal(regex.test("query database for user"), true);
     assert.equal(regex.test("update drizzle schema"), true);
+    assert.equal(regex.test("setup PostgreSQL connection pool"), true);
+    assert.equal(regex.test("configure SQLite database"), true);
+    assert.equal(regex.test("connect to MySQL cluster"), true);
   });
 });

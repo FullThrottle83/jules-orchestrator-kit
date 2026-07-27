@@ -5,9 +5,10 @@
       "guardrail": "## 🟢 ASTRO GUARDRAILS\n- DO NOT run `biome check --write --unsafe` on `.astro` files (destroys frontmatter).\n- DO NOT import 'sharp' into runtime bundles."
     },
     {
-      "trigger": "\\b(db|database|drizzle|sql)\\b",
+      "trigger": "\\b(db|database|drizzle|sql\\w*|postgres\\w*|sqlite\\w*|mysql\\w*)\\b",
       "guardrail": "## 🗄️ DATABASE GUARDRAILS\n- Always batch multiple database statements.\n- DO NOT write destructive migrations (`DROP TABLE`) without explicit user consent."
     },
+
     {
       "trigger": "\\b(css|theme|tailwind)\\b",
       "guardrail": "## 🎨 CSS & DESIGN GUARDRAILS\n- Use semantic design tokens from the theme rather than hardcoding hex values."

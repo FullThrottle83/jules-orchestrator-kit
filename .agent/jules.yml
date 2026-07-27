@@ -9,6 +9,5 @@ forbidden_paths:
   - "**/lock-manager/**"
   - "scripts/jules-*"
   - ".agent/jules.yml"
-allow_paths:
-  - ".github/**"
-  - "scripts/jules-*"
+allow_paths: []
+

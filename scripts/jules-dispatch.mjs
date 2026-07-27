@@ -229,16 +229,15 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
       args.push("--repo", targetRepo);
     }
 
-    args.push(promptToSend);
-
-    console.log(`💻 Executing: jules ${args.join(" ")}...`);
-    execFileSync("jules", args, { stdio: "inherit" });
+    console.log(`💻 Executing: jules ${args.join(" ")} (prompt passed via stdin)...`);
+    execFileSync("jules", args, { input: promptToSend, stdio: ["pipe", "inherit", "inherit"] });
     console.log(`✅ Successfully dispatched task "${title}" to Jules CLI.`);
   } catch (error) {
     console.error(`❌ Failed to dispatch task to Jules CLI:`, error.message);
     process.exit(1);
   }
 }
+
 
 executeDispatch();
 

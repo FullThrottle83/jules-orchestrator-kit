@@ -26,9 +26,10 @@ This single command will:
 ## 💡 What This Toolkit Provides
 
 1. **Init Scaffolding CLI (`bin/init.js`)**: Auto-scaffolds any repo in 1 second.
-2. **Monorepo & Command Resolver (`scripts/command-resolver.mjs`)**: Auto-detects project manifests and monorepo workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`, `Cargo.toml` workspaces) to run $O(1)$ affected package verifications instead of $O(N)$ full-repo test suites.
+2. **Monorepo & Command Resolver (`scripts/command-resolver.mjs`)**: Auto-detects project manifests and monorepo workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`, `Cargo.toml` workspaces) to run targeted affected package verifications instead of full-repo test suites.
 3. **Dynamic Guardrail Composition (`.agent/rules/dynamic-guardrails.json`)**: RegEx-based rule matching that injects targeted stack guardrails into prompts on-the-fly.
-4. **Pre-Flight Secret Redaction & REST Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-redacts API keys (`ghp_`, `AKIA`, `sk-`, `Bearer`, RSA keys), bypasses OS `ARG_MAX` payload limits via ephemeral files, and handles HTTP 429 rate limits.
+4. **Pre-Flight Secret Redaction & REST/stdin Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-redacts API keys (`ghp_`, `AKIA`, `sk-`, `Bearer`, RSA keys), streams prompts over REST / stdin to bypass OS `ARG_MAX` shell limits, and handles HTTP 429 rate limits.
+
 5. **PR Self-Auditor & Glob Boundary Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), filters token bloat, enforces dynamic glob-based security boundaries (`forbidden_paths`), and runs scoped workspace test suites.
 6. **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, and moves finished tasks to `.agent/jules-queue/completed/`.
 7. **Rate-Limited Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Manages multi-task batches with controlled concurrency (`JULES_SWARM_CONCURRENCY`, default 3), staggered dispatches (1.5s interval), and batch cooldowns to eliminate API rate-limit thrashing.
@@ -111,6 +112,9 @@ forbidden_paths:
   - ".agent/jules.yml"
 allow_paths: []
 ```
+
+> 🛡️ **Security Trust Model**: `allow_paths` is read **strictly from the target base branch** (`origin/main`), never from untrusted PR branches. Any path specified in `allow_paths` on `main` overrides the immutable default forbidden paths for automated background workers.
+
 
 
 ---

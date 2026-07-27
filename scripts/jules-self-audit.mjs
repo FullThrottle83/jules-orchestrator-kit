@@ -144,9 +144,12 @@ export function runSelfAudit() {
   console.log(`\n📄 Modified Code Files (${changedCodeFiles.length} of ${rawDiffFiles.length} total changes):`);
   changedCodeFiles.forEach((file) => console.log(`   - ${file}`));
 
-  const trustedConfig = runCommand(`git show ${mainRef}:.agent/jules.yml`, true) || (fs.existsSync(path.resolve(process.cwd(), ".agent/jules.yml")) ? fs.readFileSync(path.resolve(process.cwd(), ".agent/jules.yml"), "utf-8") : "");
+  // Fail closed: Load security config exclusively from base branch (mainRef).
+  // Never fall back to working-tree config which an untrusted PR could craft.
+  const trustedConfig = runCommand(`git show ${mainRef}:.agent/jules.yml`, true);
   const forbiddenPatterns = loadForbiddenPatterns(trustedConfig);
   const allowedPatterns = loadAllowedPatterns(trustedConfig);
+
 
   const violations = rawDiffFiles.filter((file) => {
     const isForbidden = forbiddenPatterns.some((pattern) => matchGlob(file, pattern));

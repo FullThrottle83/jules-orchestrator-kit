@@ -6,6 +6,14 @@
   "bin": {
     "jules-init": "./bin/init.js"
   },
+  "files": [
+    "bin/",
+    "scripts/",
+    "JULES_RULES_TEMPLATE.md",
+    "README.md",
+    "LICENSE"
+  ],
+
   "scripts": {
     "init": "node bin/init.js",
     "test": "node --test test/kit.test.mjs",
