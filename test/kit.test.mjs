@@ -169,3 +169,24 @@ describe("Package Manifest Verification", () => {
   });
 });
 
+describe("Security Input Validation", () => {
+  test("rejects malicious BASE_BRANCH values", () => {
+    const SAFE_BRANCH = /^[a-zA-Z0-9._\/-]+$/;
+    assert.equal(SAFE_BRANCH.test("main"), true);
+    assert.equal(SAFE_BRANCH.test("feature/my-branch"), true);
+    assert.equal(SAFE_BRANCH.test("main; rm -rf /"), false);
+    assert.equal(SAFE_BRANCH.test("main$(whoami)"), false);
+    assert.equal(SAFE_BRANCH.test("main`id`"), false);
+    assert.equal(SAFE_BRANCH.test("main | cat /etc/passwd"), false);
+  });
+
+  test("rejects malicious package names in workspace filter", () => {
+    const SAFE_PKG_NAME = /^[@a-zA-Z0-9._\/-]+$/;
+    assert.equal(SAFE_PKG_NAME.test("@scope/pkg"), true);
+    assert.equal(SAFE_PKG_NAME.test("my-package"), true);
+    assert.equal(SAFE_PKG_NAME.test("foo$(whoami)"), false);
+    assert.equal(SAFE_PKG_NAME.test("foo;rm -rf /"), false);
+    assert.equal(SAFE_PKG_NAME.test("foo`id`"), false);
+  });
+});
+

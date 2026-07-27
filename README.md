@@ -151,28 +151,29 @@ allow_paths: []
 
 > 🛡️ **Zero-Trust Security Model**: `allow_paths` and `forbidden_paths` rules are read **strictly from the target base branch** (`origin/main`), never from untrusted PR branches. Even if an AI agent hallucinates and tries to modify its own security rules in a PR branch, the Orchestrator enforces the immutable rules defined on `main`.
 > ℹ️ Setting `build_cmd: ""` explicitly skips the build verification step (useful for pure test suites or scripts). Note that `.agent/jules.yml` uses a zero-dependency parser that supports flow (`[...]`) and block (`- item`) list subsets.
+> 📦 `.github/` is intentionally included in `package.json`'s `files` array so that `npx jules-init` can automatically scaffold `.github/workflows/jules-audit.yml` into target repositories.
 
 ---
 
 <details>
 <summary><b>🛠️ Supported Language Manifests & Workspace Graphs (15+ Tech Stacks)</b></summary>
 
-| Stack / Ecosystem | Manifest / Workspace File | Default Verification Command |
-|---|---|---|
-| **Turborepo** | `turbo.json` | `npx turbo run test --filter=<pkg>...` |
-| **pnpm Workspace** | `pnpm-workspace.yaml` | `pnpm --filter=...<pkg> test` |
-| **Nx Workspace** | `nx.json` | `npx nx run-many -t test -p <pkg> --with-deps` |
-| **Bun** | `bunfig.toml` / `bun.lockb` | `bun test && bun run build` |
-| **Deno** | `deno.json` / `deno.jsonc` | `deno test && deno task build` |
-| **JavaScript / TypeScript** | `package.json` | `npm run lint && npm test` (or `npm run check:all`) |
-| **Rust** | `Cargo.toml` | `cargo test -p <pkg>` / `cargo test --workspace` |
-| **Go** | `go.mod` | `go test ./... && go build ./...` |
-| **Python** | `pyproject.toml` / `requirements.txt` | `pytest` |
-| **Elixir** | `mix.exs` | `mix test && mix compile` |
-| **Ruby** | `Gemfile` | `bundle exec rake test` |
-| **Swift** | `Package.swift` | `swift test && swift build` |
-| **Java (Maven/Gradle)** | `pom.xml` / `build.gradle` | `mvn test` / `./gradlew test` |
-| **C / C++** | `Makefile` | `make test && make build` |
+| Stack / Ecosystem | Manifest / Workspace File | Test Command (`testCmd`) | Build Command (`buildCmd`) |
+|---|---|---|---|
+| **Turborepo** | `turbo.json` | `npx turbo run test --filter=<pkg>...` | `npx turbo run build --filter=<pkg>...` |
+| **pnpm Workspace** | `pnpm-workspace.yaml` | `pnpm --filter=...<pkg> test` | `pnpm --filter=...<pkg> build` |
+| **Nx Workspace** | `nx.json` | `npx nx run-many -t test -p <pkg> --with-deps` | `npx nx run-many -t build -p <pkg> --with-deps` |
+| **Bun** | `bunfig.toml` / `bun.lockb` | `bun test` | `bun run build` |
+| **Deno** | `deno.json` / `deno.jsonc` | `deno test` | `deno task build` |
+| **JavaScript / TypeScript** | `package.json` | `npm run lint && npm test` | `npm run build` |
+| **Rust** | `Cargo.toml` | `cargo test --workspace` | `cargo build` |
+| **Go** | `go.mod` | `go test ./...` | `go build ./...` |
+| **Python** | `pyproject.toml` / `requirements.txt` | `pytest` | *(none)* |
+| **Elixir** | `mix.exs` | `mix test` | `mix compile` |
+| **Ruby** | `Gemfile` | `bundle exec rake test` | *(none)* |
+| **Swift** | `Package.swift` | `swift test` | `swift build` |
+| **Java (Maven/Gradle)** | `pom.xml` / `build.gradle` | `mvn test` / `./gradlew test` | `mvn compile` / `./gradlew assemble` |
+| **C / C++** | `Makefile` | `make test` | `make build` |
 
 </details>
 

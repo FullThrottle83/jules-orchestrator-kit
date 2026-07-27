@@ -210,7 +210,9 @@ function cleanupTmp() {
     if (fs.existsSync(tmpDir)) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn(`⚠️ Failed to remove temporary payload directory at ${tmpDir}:`, err.message);
+  }
 }
 
 async function executeDispatch() {
