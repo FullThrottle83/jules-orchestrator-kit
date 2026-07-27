@@ -88,14 +88,14 @@ graph TD
 
 ```mermaid
 graph TD
-    A["1. Client Trigger<br/><i>(CLI / CI / SDK / REST API / Queue)</i>"] --> B["2. Orchestrator Core<br/><i>(Secret Redaction & Guardrails)</i>"]
-    B --> C["3. Google Jules Agent<br/><i>(Code Gen in Isolated Sandbox)</i>"]
-    C --> D{"4. Self-Audit Gatekeeper<br/><i>(Scope Audit & Test Suite)</i>"}
+    A["1. Client Trigger<br/><i>(CLI / CI / SDK / REST API)</i>"] --> B["2. Orchestrator Core<br/><i>(Redaction & Guardrails)</i>"]
+    B --> C["3. Google Jules Agent<br/><i>(Code Gen in Sandbox)</i>"]
+    C --> D{"4. Self-Audit Gatekeeper<br/><i>(Scope & Test Suite)</i>"}
     D -- "Scope Breach" --> E["❌ Exit 3: Security Violation"]
     D -- "100% Passed" --> F["✅ Exit 0: Success & Telemetry"]
-    D -- "Test Failure" --> G{"5. OODA Auto-Repair<br/><i>(Retries < 3 & Circuit OK?)</i>"}
-    G -- "Yes (Retry)" --> C
-    G -- "No (Circuit Tripped)" --> H["❌ Exit 4: Diagnostic Abort"]
+    D -- "Test Failure" --> G{"5. OODA Auto-Repair<br/><i>(Retries < 3)</i>"}
+    G -- "Retry" --> C
+    G -- "Circuit Tripped" --> H["❌ Exit 4: Diagnostic Abort"]
 ```
 
 > 💡 **Core Architectural Invariants**:
