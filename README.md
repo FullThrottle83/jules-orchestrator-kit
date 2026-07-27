@@ -13,7 +13,9 @@ This toolkit provides:
 2. **CLI & REST Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-injects dynamic guardrails and dispatches prompts to Jules via CLI or REST API.
 3. **PR Self-Auditor (`scripts/jules-self-audit.mjs`)**: Automatically audits Jules PRs against the merge-base, checks for restricted file mutations, and verifies build/test passes.
 4. **Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Runs multi-task batches in parallel.
-5. **Review Workflow (`.agent/workflows/jules-review.md`)**: A step-by-step workflow for reviewing, rebasing, and merging Jules PRs.
+5. **Nightly Maintenance Suite (`scripts/jules-nightly.py`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning, unused env var cleanup).
+6. **Task Queueing (`.agent/jules-queue/`)**: Drop markdown task specifications into `.agent/jules-queue/` to queue tasks for background execution.
+7. **Review Workflow (`.agent/workflows/jules-review.md`)**: A step-by-step workflow for reviewing, rebasing, and merging Jules PRs.
 
 ---
 
@@ -36,16 +38,22 @@ cp -r scripts/ /path/to/your-repo/scripts/
 ### Step 3: Dispatch a task to Jules
 
 ```bash
-node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting using Redis in src/middleware.ts. Must pass tests."
+node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting using Redis. Must pass tests."
 ```
 
-Or pass a path to a markdown specification file:
+Or pass a path to a queued markdown specification file:
 
 ```bash
-node scripts/jules-dispatch.mjs "Implement User Authentication" ./prompts/auth-spec.md
+node scripts/jules-dispatch.mjs "Implement User Authentication" .agent/jules-queue/TASK-001-auth-spec.md
 ```
 
-### Step 4: Audit Jules PRs before merging
+### Step 4: Run Nightly Maintenance
+
+```bash
+python3 scripts/jules-nightly.py --dry-run
+```
+
+### Step 5: Audit Jules PRs before merging
 
 ```bash
 node scripts/jules-self-audit.mjs
