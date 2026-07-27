@@ -25,6 +25,7 @@ Dispatch tasks to Jules when ALL of the following apply:
     <rule>3. VERIFICATION LOOP: After patching code, you MUST execute the project's verification commands (tests/build) and ensure 0 errors.</rule>
     <rule>4. ABORT CONDITION: On repeated unresolvable test failures (4+ attempts), output <status>ABORT_UNRESOLVABLE</status> and terminate immediately.</rule>
     <rule>5. NO OUT-OF-BAND RUNNER SCRIPTS / CHEATING: You are FORBIDDEN from creating temporary shell scripts (e.g. patch.sh, test-fix.sh), disabling assertions, or bypassing verification tooling to force tests to pass.</rule>
+    <rule>6. ASSERTION QUALITY: Unit tests created or modified MUST contain explicit, non-trivial assertions (e.g. assert/expect) testing realistic input/output contracts. Empty test functions or tests asserting tautologies (e.g. true === true) are strictly forbidden.</rule>
   </strict_invariants>
 </MCP_DIRECTIVE>
 ```

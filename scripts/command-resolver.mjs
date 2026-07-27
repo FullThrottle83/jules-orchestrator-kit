@@ -72,14 +72,17 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
       const scripts = pkg.scripts || {};
-      const verifyScript = scripts["check:all"]
-        ? "npm run check:all"
-        : scripts.test
-        ? "npm test"
-        : "";
+      let verifyScript = scripts["check:all"] ? "npm run check:all" : "";
+      if (!verifyScript) {
+        const parts = [];
+        if (scripts.lint) parts.push("npm run lint");
+        else if (scripts.check) parts.push("npm run check");
+        if (scripts.test) parts.push("npm test");
+        verifyScript = parts.join(" && ");
+      }
       const buildScript = scripts.build ? "npm run build" : "";
       return {
-        testCmd: verifyScript,
+        testCmd: verifyScript || "npm test",
         buildCmd: buildScript,
         source: "package.json",
       };
