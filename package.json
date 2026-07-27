@@ -21,7 +21,7 @@
     "jules:queue": "node scripts/jules-queue-runner.mjs",
     "jules:audit": "node scripts/jules-self-audit.mjs",
     "jules:swarm": "node scripts/jules-swarm.mjs",
-    "jules:nightly": "python3 scripts/jules-nightly.py"
+    "jules:nightly": "node scripts/jules-nightly.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -117,7 +117,7 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
       "jules:queue": "node scripts/jules-queue-runner.mjs",
       "jules:audit": "node scripts/jules-self-audit.mjs",
       "jules:swarm": "node scripts/jules-swarm.mjs",
-      "jules:nightly": "python3 scripts/jules-nightly.py"
+      "jules:nightly": "node scripts/jules-nightly.mjs"
     };
 
     for (const [key, val] of Object.entries(julesScripts)) {

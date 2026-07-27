@@ -16,7 +16,7 @@ function runCommand(cmd, ignoreError = false) {
 }
 
 export function matchGlob(filepath, globPattern) {
-  const cleanPath = filepath.replace(/^\.\//, "");
+  const cleanPath = filepath.replace(/\\/g, "/").replace(/^\.\//, "");
   const segments = globPattern.split("/");
   const regexParts = [];
   for (let i = 0; i < segments.length; i++) {

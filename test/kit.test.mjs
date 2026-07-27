@@ -27,6 +27,13 @@ describe("Glob Matcher (matchGlob)", () => {
     assert.equal(matchGlob(".github/workflows/ci.yml", ".github/**"), true);
   });
 
+  test("normalizes Windows backslashes in filepaths", () => {
+    assert.equal(matchGlob("secrets\\prod.env", "**/secrets/**"), true);
+    assert.equal(matchGlob("app\\secrets\\keys.txt", "**/secrets/**"), true);
+    assert.equal(matchGlob("config\\key.pem", "**/*.pem"), true);
+    assert.equal(matchGlob(".github\\workflows\\ci.yml", ".github/**"), true);
+  });
+
   test("does not match non-matching files", () => {
     assert.equal(matchGlob("src/index.ts", "**/secrets/**"), false);
     assert.equal(matchGlob("src/main.js", "**/*.pem"), false);

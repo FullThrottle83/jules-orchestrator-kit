@@ -43,14 +43,16 @@ loadEnv();
 function redactSecrets(text) {
   if (!text) return "";
   const patterns = [
-    /gh[p|u|s|r]_[a-zA-Z0-9]{36}/g,
+    /gh[pusr]_[a-zA-Z0-9]{36}/g,
     /github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}/g,
     /AKIA[0-9A-Z]{16}/g,
     /AIzaSy[a-zA-Z0-9_\-]{33}/g,
+    /ya29\.[a-zA-Z0-9_\-]{20,}/g,
     /Bearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
-    /sk-(?:ant-api03-|proj-)?[a-zA-Z0-9\-\_]{32,}/g,
+    /sk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}/g,
     /xox[baprs]-[a-zA-Z0-9\-]{10,}/g,
-    /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/g,
+    /eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}/g,
+    /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/,
   ];
   let sanitized = text;
   for (const pat of patterns) {
@@ -140,76 +142,75 @@ const apiKey = process.env.JULES_API_KEY;
 const repo = process.env.JULES_REPO;
 
 const payloadHash = crypto.createHash("sha256").update(taskTitle + Date.now()).digest("hex").slice(0, 12);
-const tmpPayloadFile = path.join(os.tmpdir(), `jules_payload_${payloadHash}.json`);
-fs.writeFileSync(tmpPayloadFile, JSON.stringify({ repo, title: taskTitle, prompt: fullPrompt }));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-payload-"));
+const tmpPayloadFile = path.join(tmpDir, `payload_${payloadHash}.json`);
+fs.writeFileSync(tmpPayloadFile, JSON.stringify({ repo, title: taskTitle, prompt: fullPrompt }), { mode: 0o600 });
+
+function cleanupTmp() {
+  try {
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  } catch (_) {}
+}
 
 async function executeDispatch() {
-  if (apiKey && repo) {
-    console.log(`🌐 Using Jules REST API for repository ${repo}...`);
-    const formattedSource = repo.startsWith("sources/") ? repo : (repo.includes("/") ? `sources/github/${repo}` : repo);
-    const payload = {
-      title: taskTitle,
-      prompt: fullPrompt,
-      sourceContext: {
-        source: formattedSource,
-        githubRepoContext: {
-          startingBranch: process.env.BASE_BRANCH || "main"
+  try {
+    if (apiKey && repo) {
+      console.log(`🌐 Using Jules REST API for repository ${repo}...`);
+      const formattedSource = repo.startsWith("sources/") ? repo : (repo.includes("/") ? `sources/github/${repo}` : repo);
+      const payload = {
+        title: taskTitle,
+        prompt: fullPrompt,
+        sourceContext: {
+          source: formattedSource,
+          githubRepoContext: {
+            startingBranch: process.env.BASE_BRANCH || "main"
+          }
         }
-      }
-    };
+      };
 
-    let res;
-    try {
-      res = await fetch("https://jules.googleapis.com/v1alpha/sessions", {
-        method: "POST",
-        headers: {
-          "X-Goog-Api-Key": apiKey,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-    } catch (fetchErr) {
-      console.warn(`⚠️ REST API request failed (network error), falling back to CLI...`, fetchErr.message);
+      let res;
       try {
+        res = await fetch("https://jules.googleapis.com/v1alpha/sessions", {
+          method: "POST",
+          headers: {
+            "X-Goog-Api-Key": apiKey,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+      } catch (fetchErr) {
+        console.warn(`⚠️ REST API request failed (network error), falling back to CLI...`, fetchErr.message);
         dispatchViaCli(repo, tmpPayloadFile, taskTitle);
-      } finally {
-        fs.rmSync(tmpPayloadFile, { force: true });
+        return;
       }
-      return;
-    }
 
-    if (res.status === 429) {
-      console.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI.`);
-      fs.rmSync(tmpPayloadFile, { force: true });
-      process.exit(1);
-    }
+      if (res.status === 429) {
+        console.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI.`);
+        process.exit(1);
+      }
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.warn(`⚠️ REST API returned HTTP ${res.status}: ${errText}, falling back to CLI...`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        console.warn(`⚠️ REST API returned HTTP ${res.status}: ${errText}, falling back to CLI...`);
+        dispatchViaCli(repo, tmpPayloadFile, taskTitle);
+        return;
+      }
+
+      let sessionId = "Created";
       try {
-        dispatchViaCli(repo, tmpPayloadFile, taskTitle);
-      } finally {
-        fs.rmSync(tmpPayloadFile, { force: true });
-      }
-      return;
-    }
+        const data = await res.json();
+        sessionId = data.name || data.id || sessionId;
+      } catch (_) {}
 
-    let sessionId = "Created";
-    try {
-      const data = await res.json();
-      sessionId = data.name || data.id || sessionId;
-    } catch (_) {}
-
-    console.log(`✅ REST API Dispatch response: Session ${sessionId} created successfully.`);
-    fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
-    fs.rmSync(tmpPayloadFile, { force: true });
-  } else {
-    try {
+      console.log(`✅ REST API Dispatch response: Session ${sessionId} created successfully.`);
+      fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
+    } else {
       dispatchViaCli(repo, tmpPayloadFile, taskTitle);
-    } finally {
-      fs.rmSync(tmpPayloadFile, { force: true });
     }
+  } finally {
+    cleanupTmp();
   }
 }
 
@@ -239,5 +240,9 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
 }
 
 
-executeDispatch();
+executeDispatch().catch((err) => {
+  console.error("❌ Fatal unhandled rejection in dispatch:", err);
+  process.exit(1);
+});
+
 
