@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dispatchScript = path.resolve(__dirname, "jules-dispatch.mjs");
 
 const queueDir = path.resolve(process.cwd(), ".agent/jules-queue");
 const completedDir = path.resolve(process.cwd(), ".agent/jules-queue/completed");
@@ -46,7 +51,7 @@ files.forEach((file, index) => {
   logQueueState(file, "RUNNING");
   
   try {
-    execFileSync("node", ["scripts/jules-dispatch.mjs", title, filePath], {
+    execFileSync("node", [dispatchScript, title, filePath], {
       stdio: "inherit",
     });
     

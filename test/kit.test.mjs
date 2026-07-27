@@ -98,6 +98,15 @@ describe("Shannon Entropy & Security Redaction", () => {
     assert.ok(redacted.includes("[REDACTED_ENTROPY_KEY]"), "Secret key must be redacted");
   });
 
+  test("redacts active environment secrets matching denylist keys", () => {
+    process.env.TEST_SECRET_KEY = "super-secret-token-12345";
+    const text = "Connecting with key super-secret-token-12345 to server";
+    const redacted = redactSecrets(text);
+    assert.equal(redacted.includes("super-secret-token-12345"), false);
+    assert.ok(redacted.includes("[REDACTED_ENV_SECRET]"));
+    delete process.env.TEST_SECRET_KEY;
+  });
+
   test("asserts path within workspace root and blocks traversal", () => {
     const safe = assertPathWithinWorkspace("package.json");
     assert.ok(safe.includes("package.json"));

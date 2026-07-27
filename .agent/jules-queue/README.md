@@ -16,7 +16,14 @@ Implement sliding window rate limiting for public API routes.
 - Must pass `npm test` before submitting PR.
 ```
 
-Dispatch queued tasks using `scripts/jules-dispatch.mjs`:
+Process all queued tasks in batch:
+
+```bash
+npm run jules:queue
+# or node scripts/jules-queue-runner.mjs
+```
+
+Or dispatch a single queued task using `scripts/jules-dispatch.mjs`:
 
 ```bash
 node scripts/jules-dispatch.mjs "TASK-001 Rate Limiting" .agent/jules-queue/TASK-001-rate-limiting.md

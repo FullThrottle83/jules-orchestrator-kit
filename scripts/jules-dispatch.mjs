@@ -59,9 +59,24 @@ export function calculateEntropy(str) {
   return entropy;
 }
 
-// 0.2 Pre-Flight Secret Redaction Gate (RegEx + Shannon Entropy)
+// 0.2 Pre-Flight Secret Redaction Gate (RegEx + Shannon Entropy + Env Denylist)
 export function redactSecrets(text) {
   if (!text) return "";
+  let sanitized = text;
+
+  // Redact active env secrets from denylist keys (*_KEY, *_SECRET, *_TOKEN, etc.)
+  for (const [envKey, envVal] of Object.entries(process.env)) {
+    if (
+      envVal &&
+      envVal.length >= 6 &&
+      /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH/i.test(envKey)
+    ) {
+      if (sanitized.includes(envVal)) {
+        sanitized = sanitized.split(envVal).join("[REDACTED_ENV_SECRET]");
+      }
+    }
+  }
+
   const patterns = [
     /gh[pusr]_[a-zA-Z0-9]{36}/g,
     /github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}/g,
@@ -74,7 +89,6 @@ export function redactSecrets(text) {
     /eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}/g,
     /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/g,
   ];
-  let sanitized = text;
   for (const pat of patterns) {
     sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
   }
@@ -224,7 +238,8 @@ async function executeDispatch() {
 
       let res;
       try {
-        res = await fetch("https://jules.googleapis.com/v1alpha/sessions", {
+        const apiUrl = process.env.JULES_API_URL || "https://jules.googleapis.com/v1alpha/sessions";
+        res = await fetch(apiUrl, {
           method: "POST",
           headers: {
             "X-Goog-Api-Key": apiKey,
@@ -254,7 +269,9 @@ async function executeDispatch() {
       try {
         const data = await res.json();
         sessionId = data.name || data.id || sessionId;
-      } catch (_) {}
+      } catch (jsonErr) {
+        console.warn("⚠️ Failed to parse REST API JSON response:", jsonErr.message);
+      }
 
       console.log(`✅ REST API Dispatch response: Session ${sessionId} created successfully.`);
       fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
@@ -273,7 +290,9 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
       try {
         const payloadData = JSON.parse(fs.readFileSync(payloadFile, "utf-8"));
         if (payloadData.prompt) promptToSend = payloadData.prompt;
-      } catch (_) {}
+      } catch (jsonErr) {
+        console.warn("⚠️ Failed to parse payload JSON file:", jsonErr.message);
+      }
     }
 
     const args = ["new"];

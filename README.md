@@ -150,6 +150,7 @@ allow_paths: []
 ```
 
 > 🛡️ **Zero-Trust Security Model**: `allow_paths` and `forbidden_paths` rules are read **strictly from the target base branch** (`origin/main`), never from untrusted PR branches. Even if an AI agent hallucinates and tries to modify its own security rules in a PR branch, the Orchestrator enforces the immutable rules defined on `main`.
+> ℹ️ Setting `build_cmd: ""` explicitly skips the build verification step (useful for pure test suites or scripts). Note that `.agent/jules.yml` uses a zero-dependency parser that supports flow (`[...]`) and block (`- item`) list subsets.
 
 ---
 

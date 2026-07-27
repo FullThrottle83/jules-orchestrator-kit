@@ -28,7 +28,7 @@ try {
   isHelp = values.help;
   isForce = values.force;
   isInteractive = values.interactive;
-} catch (_) {
+} catch (err) {
   isHelp = process.argv.includes("--help") || process.argv.includes("-h");
   isForce = process.argv.includes("--force") || process.argv.includes("-f");
   isInteractive = process.argv.includes("--interactive") || process.argv.includes("-i");
@@ -72,7 +72,9 @@ if (process.stdin.isTTY && (isInteractive || (!fs.existsSync(path.join(targetDir
       process.env.BASE_BRANCH = answerBranchVal;
     }
     rl.close();
-  } catch (_) {}
+  } catch (err) {
+    console.warn("⚠️ Interactive setup prompt failed:", err.message);
+  }
 }
 
 // 0. Persist wizard values to .env if provided
@@ -202,7 +204,9 @@ if (fs.existsSync(sourceScriptsDir)) {
       fs.copyFileSync(srcFile, destFile);
       try {
         fs.chmodSync(destFile, 0o755);
-      } catch (_) {}
+      } catch (err) {
+        console.warn(`⚠️ Could not set executable permissions on ${file}:`, err.message);
+      }
       copiedCount++;
     } else {
       skippedCount++;
@@ -237,7 +241,9 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
       fs.writeFileSync(targetPkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
       console.log("✅ Injected jules:* helper scripts into package.json");
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn("⚠️ Failed to inject helper scripts into target package.json:", err.message);
+  }
 }
 
 console.log("\n🎉 Google Jules Orchestration Kit successfully initialized!");

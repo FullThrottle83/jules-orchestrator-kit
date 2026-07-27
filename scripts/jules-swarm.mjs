@@ -25,8 +25,12 @@ if (!Array.isArray(tasks)) {
   process.exit(1);
 }
 
-const MAX_CONCURRENT = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10);
-const STAGGER_MS = parseInt(process.env.JULES_SWARM_STAGGER_MS || "1500", 10);
+const parsedConcurrent = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10);
+const MAX_CONCURRENT = Number.isFinite(parsedConcurrent) && parsedConcurrent > 0 ? parsedConcurrent : 3;
+
+const parsedStagger = parseInt(process.env.JULES_SWARM_STAGGER_MS || "1500", 10);
+const STAGGER_MS = Number.isFinite(parsedStagger) && parsedStagger >= 0 ? parsedStagger : 1500;
+
 const USE_WORKTREES = process.env.JULES_USE_WORKTREES === "true";
 
 // Ensure root project path is preserved for history logs even when running in worktrees
@@ -50,7 +54,8 @@ async function createWorktree(taskId) {
     try {
       await execFileAsync("git", ["worktree", "add", "--force", wtDir, "HEAD"]);
       return { wtDir, branchName: null };
-    } catch (_) {
+    } catch (fallbackErr) {
+      console.warn(`⚠️ Failed to create worktree for ${taskId}:`, fallbackErr.message);
       return null;
     }
   }
@@ -60,11 +65,15 @@ async function removeWorktree(wtDir, branchName) {
   if (!wtDir) return;
   try {
     await execFileAsync("git", ["worktree", "remove", "--force", wtDir]);
-  } catch (_) {}
+  } catch (err) {
+    console.warn(`⚠️ Failed to remove worktree at ${wtDir}:`, err.message);
+  }
   if (branchName) {
     try {
       await execFileAsync("git", ["branch", "-D", branchName]);
-    } catch (_) {}
+    } catch (err) {
+      console.warn(`⚠️ Failed to delete swarm branch ${branchName}:`, err.message);
+    }
   }
 }
 

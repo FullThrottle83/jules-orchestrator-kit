@@ -43,6 +43,14 @@ export function matchGlob(filepath, globPattern) {
 }
 
 
+/**
+ * Lightweight Zero-Dependency YAML Pattern Extractor
+ * Extracts forbidden_paths and allow_paths arrays from jules.yml.
+ * Supported subset:
+ *  - Flow style arrays: forbidden_paths: ["path1", "path2"]
+ *  - Block style arrays: forbidden_paths:\n  - path1\n  - path2
+ * Limitations: Does not support multiline strings (|/>), nested dicts, or inline comments.
+ */
 export function loadForbiddenPatterns(configContent = "") {
   const defaultForbidden = [
     ".github/**",
@@ -136,6 +144,11 @@ export function runSelfAudit() {
   console.log("🔍 Running Jules PR Self-Audit Gatekeeper...\n");
 
   const targetBranch = process.env.BASE_BRANCH || "main";
+  const SAFE_BRANCH = /^[a-zA-Z0-9._\/-]+$/;
+  if (!SAFE_BRANCH.test(targetBranch)) {
+    console.error(`❌ FATAL: Invalid BASE_BRANCH "${targetBranch}". Must match ^[a-zA-Z0-9._\\/-]+$`);
+    process.exit(1);
+  }
   console.log(`🎯 Target Branch: ${targetBranch}`);
 
   if (process.env.CI) {

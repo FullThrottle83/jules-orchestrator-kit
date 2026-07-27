@@ -33,9 +33,13 @@ Dispatch tasks to Jules when ALL of the following apply:
 
 ## 3. Dynamic Command Resolution
 
-Jules executes test verification commands:
-- `package.json` -> `npm test`
-- `.agent/jules.yml` -> Custom user commands
+Jules automatically infers test and build verification commands via `scripts/command-resolver.mjs`:
+- `.agent/jules.yml` -> Custom user commands (`test_cmd`, `build_cmd`)
+- `package.json` -> `npm test` (or `npm run lint && npm test` if lint script exists)
+- `Cargo.toml` -> `cargo test --workspace`
+- `go.mod` -> `go test ./...`
+- `pyproject.toml` -> `pytest`
+- Workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`) -> targeted affected package filters
 
 ---
 
