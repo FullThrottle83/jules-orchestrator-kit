@@ -3,12 +3,12 @@
   "version": "0.3.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/FullThrottle83/jules-orchestrator-kit.git"
+    "url": "git+https://github.com/google/jules-orchestrator-kit.git"
   },
   "bugs": {
-    "url": "https://github.com/FullThrottle83/jules-orchestrator-kit/issues"
+    "url": "https://github.com/google/jules-orchestrator-kit/issues"
   },
-  "homepage": "https://github.com/FullThrottle83/jules-orchestrator-kit#readme",
+  "homepage": "https://github.com/google/jules-orchestrator-kit#readme",
   "type": "module",
   "bin": {
     "jules-init": "bin/init.js",
@@ -33,6 +33,8 @@
     "test": "node --test test/kit.test.mjs",
     "jules:dispatch": "node scripts/jules-dispatch.mjs",
     "jules:queue": "node scripts/jules-queue-runner.mjs",
+    "jules:create": "node scripts/jules-create.mjs",
+    "jules:status": "node scripts/jules-status.mjs",
     "jules:audit": "node scripts/jules-self-audit.mjs",
     "jules:swarm": "node scripts/jules-swarm.mjs",
     "jules:nightly": "node scripts/jules-nightly.mjs"
@@ -48,7 +50,7 @@
     "mcp",
     "automation"
   ],
-  "author": "Jonas (FullThrottle83)",
+  "author": "Google Open Source",
   "license": "MIT"
 }
 

@@ -4,14 +4,27 @@ import { execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 
 // ANSI colors for standardizing CLI DX
+const isCI = !!process.env.CI;
+const noColor = (!process.stdout.isTTY && !isCI) || process.env.NO_COLOR;
+const c = (color, text) => noColor ? text : `\x1b[${color}m${text}\x1b[0m`;
+
 export const log = {
-  info: (msg) => console.log(`\x1b[36mℹ️  ${msg}\x1b[0m`),
-  success: (msg) => console.log(`\x1b[32m✅ ${msg}\x1b[0m`),
-  warn: (msg) => console.warn(`\x1b[33m⚠️  ${msg}\x1b[0m`),
-  error: (msg) => console.error(`\x1b[31m❌ ${msg}\x1b[0m`),
-  step: (stepStr, msg) => console.log(`\x1b[90m${stepStr}\x1b[0m ${msg}`),
-  dim: (msg) => console.log(`\x1b[90m${msg}\x1b[0m`),
-  header: (msg) => console.log(`\n\x1b[1m\x1b[35m=== ${msg} ===\x1b[0m\n`)
+  info: (msg) => console.log(c(36, `ℹ️  ${msg}`)),
+  success: (msg) => console.log(c(32, `✅ ${msg}`)),
+  warn: (msg) => console.warn(c(33, `⚠️  ${msg}`)),
+  error: (msg) => {
+    if (isCI) console.log(`::error::${msg}`);
+    console.error(c(31, `❌ ${msg}`));
+  },
+  step: (stepStr, msg) => console.log(`${c(90, stepStr)} ${msg}`),
+  dim: (msg) => console.log(c(90, msg)),
+  header: (msg) => {
+    if (isCI) console.log(`::group::${msg}`);
+    console.log(`\n${c("1;35", `=== ${msg} ===`)}\n`);
+  },
+  groupEnd: () => {
+    if (isCI) console.log("::endgroup::");
+  }
 };
 
 export const sleep = promisify(setTimeout);

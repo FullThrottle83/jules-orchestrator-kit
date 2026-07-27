@@ -190,7 +190,7 @@ if (fs.existsSync(auditWfSource)) {
   }
   if (!fs.existsSync(auditWfTarget) || isForce) {
     fs.copyFileSync(auditWfSource, auditWfTarget);
-    console.log("✅ Scaffolded CI Audit Workflow: .github/workflows/jules-audit.yml");
+    console.log("✅ Added GitHub Actions workflow: .github/workflows/jules-audit.yml");
   }
 }
 
@@ -234,6 +234,8 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
     const julesScripts = {
       "jules:dispatch": "node scripts/jules-dispatch.mjs",
       "jules:queue": "node scripts/jules-queue-runner.mjs",
+      "jules:create": "node scripts/jules-create.mjs",
+      "jules:status": "node scripts/jules-status.mjs",
       "jules:audit": "node scripts/jules-self-audit.mjs",
       "jules:swarm": "node scripts/jules-swarm.mjs",
       "jules:nightly": "node scripts/jules-nightly.mjs"
@@ -248,7 +250,7 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
 
     if (updated) {
       fs.writeFileSync(targetPkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
-      console.log("✅ Injected jules:* helper scripts into package.json");
+      console.log("✅ Added Jules commands to package.json");
     }
   } catch (err) {
     console.warn("⚠️ Failed to inject helper scripts into target package.json:", err.message);
@@ -278,19 +280,19 @@ const hash = crypto.createHash("sha256").update(canonicalJson, "utf8").digest("h
 const compressed = zlib.brotliCompressSync(Buffer.from(canonicalJson, "utf8"));
 const payloadToken = `JULES1.${hash}.${compressed.toString("base64url")}`;
 
-const setupMdContent = `# JULES Web Setup Handshake
+const setupMdContent = `# JULES Web Setup
 
 > **Generated**: ${agentState.generatedAt}
-> **Handshake Token**: \`${payloadToken}\`
+> **Setup Code**: \`${payloadToken}\`
 
-## 🔗 JULES Web Setup
-1. Öppna Jules Web UI (https://app.jules.ai/setup)
-2. Klistra in din Handshake Token:
+## 🔗 Web Dashboard Setup
+1. Open Jules Web UI (https://app.jules.ai/setup)
+2. Paste your Setup Code:
 \`\`\`
 ${payloadToken}
 \`\`\`
 
-## 🔧 Upptäckt Konfiguration
+## 🔧 Detected Configuration
 * Test Command: \`${agentState.workspace.testCmd}\`
 * Build Command: \`${agentState.workspace.buildCmd}\`
 * Source: \`${agentState.workspace.source}\`
@@ -298,12 +300,13 @@ ${payloadToken}
 
 fs.writeFileSync(path.join(targetDir, ".agent", "JULES_WEB_SETUP.md"), setupMdContent, "utf-8");
 
-console.log("\n🔗 CLI-TO-WEB HANDSHAKE PAYLOAD");
-console.log("  Your local agent configurations are locked and cryptographically hashed.");
-console.log(`  👉 JULES_HANDSHAKE_TOKEN: \x1b[36m${payloadToken}\x1b[0m`);
-console.log("\n  (A backup of this payload was written to .agent/JULES_WEB_SETUP.md)");
+console.log("\n🔗 Web Dashboard Setup");
+console.log("  Your local agent configurations are ready.");
+console.log(`  👉 Setup Code: \x1b[36m${payloadToken}\x1b[0m`);
+console.log("\n  (A backup of this setup code was written to .agent/JULES_WEB_SETUP.md)");
 console.log("\nNext Steps:");
-console.log("  1. Paste the Handshake Token into Jules Web UI.");
+console.log("  1. Paste the Setup Code into Jules Web UI.");
 console.log("  2. Set environment variables: JULES_REPO=\"owner/repo\"");
-console.log("  3. Dispatch your first task:  node scripts/jules-dispatch.mjs \"Task Title\" \"Task prompt\"");
-console.log("  4. Run pre-merge PR audit:    node scripts/jules-self-audit.mjs\n");
+console.log("  3. Scaffold a new task: npm run jules:create \"My Feature\"");
+console.log("  4. Dispatch the queue:  npm run jules:queue");
+console.log("  5. Run pre-merge audit: npm run jules:audit\n");

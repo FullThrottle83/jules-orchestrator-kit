@@ -44,7 +44,7 @@ if (files.length === 0) {
   process.exit(0);
 }
 
-log.info(`🐝 Found ${files.length} tasks in the queue. Processing...`);
+log.info(`🚀 Found ${files.length} tasks in the queue. Sending to Jules...`);
 
 const MAX_CONCURRENT = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10) || 3;
 
@@ -93,7 +93,16 @@ async function runQueue() {
 
         const title = file.replace(/\.md$/, "").replace(/-/g, " ");
         
-        log.step(`[${index + 1}/${files.length}]`, `Dispatching queued task: ${title}`);
+        const content = fs.readFileSync(processingPath, "utf-8").trim();
+        if (!content || content.length < 10) {
+          log.warn(`Task file ${file} is empty or invalid. Skipping dispatch.`);
+          const destPath = path.join(completedDir, file);
+          await safeMoveAsync(processingPath, destPath);
+          logQueueState(file, "SKIPPED_INVALID");
+          return;
+        }
+
+        log.step(`[${index + 1}/${files.length}]`, `🚀 Sending task to Jules: ${title}`);
         logQueueState(file, "RUNNING");
         
         try {
@@ -101,8 +110,8 @@ async function runQueue() {
           
           const destPath = path.join(completedDir, file);
           await safeMoveAsync(processingPath, destPath);
-          logQueueState(file, "COMPLETED");
-          log.success(`Moved ${file} to completed/`);
+          logQueueState(file, "DISPATCHED");
+          log.success(`Task dispatched successfully (Moved ${file} to completed/)`);
         } catch (error) {
           logQueueState(file, "FAILED", error);
           log.error(`Failed to dispatch task [${title}]: ${error.message}`);

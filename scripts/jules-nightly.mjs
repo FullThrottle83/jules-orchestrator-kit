@@ -64,6 +64,15 @@ function logNightlyHistory(taskResults, dryRun = false) {
 
   const historyFile = logToHistory(`nightly-audit.md`, content, "nightly");
   log.success(`Logged nightly audit summary to: ${path.relative(process.cwd(), historyFile)}`);
+
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    try {
+      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${content}\n`, "utf-8");
+      log.success("Appended nightly audit summary to GitHub Step Summary.");
+    } catch (err) {
+      log.warn(`Failed to write to GITHUB_STEP_SUMMARY: ${err.message}`);
+    }
+  }
 }
 
 async function dispatchTask(task, dryRun = false) {

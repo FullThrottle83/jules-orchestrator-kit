@@ -154,7 +154,7 @@ export function runSelfAudit() {
   const SAFE_BRANCH = /^[a-zA-Z0-9._\/-]+$/;
   if (!SAFE_BRANCH.test(targetBranch)) {
     log.error(`FATAL: Invalid BASE_BRANCH "${targetBranch}". Must match ^[a-zA-Z0-9._\\/-]+$`);
-    process.exit(1);
+    process.exit(2);
   }
   log.info(`Target Branch: ${targetBranch}`);
 
@@ -162,7 +162,7 @@ export function runSelfAudit() {
     execFileSync("git", ["--version"], { stdio: "ignore" });
   } catch {
     log.error("FATAL: git is not installed or not in PATH.");
-    process.exit(1);
+    process.exit(2);
   }
 
   if (process.env.CI) {
@@ -181,7 +181,7 @@ export function runSelfAudit() {
 
   if (!mergeBase) {
     log.error(`FATAL: Could not compute merge-base with ${mainRef}. Make sure git history is unshallowed.`);
-    process.exit(1);
+    process.exit(2);
   }
 
   log.info(`Merge-Base Hash: ${mergeBase}`);
@@ -214,7 +214,7 @@ export function runSelfAudit() {
     log.error("RESTRICTED FILE VIOLATION DETECTED!");
     log.error("Jules PR attempted to modify forbidden system files:");
     violations.forEach((v) => log.error(`   - ${v}`));
-    process.exit(1);
+    process.exit(3);
   }
   log.success("Restricted File Boundary Check: PASSED");
 
@@ -287,12 +287,12 @@ export function runSelfAudit() {
     }
 
     if (prevCircuit.hash === errorHash && prevCircuit.count >= 1) {
-      log.error("\n❌ OODA CIRCUIT BREAKER TRIPPED: Consecutive identical failure detected.");
+      log.error("❌ OODA CIRCUIT BREAKER TRIPPED: Consecutive identical failure detected.");
       log.error("Agent generated code with identical error trace twice in a row. Aborting auto-repair.");
       try {
         fs.writeFileSync(circuitFile, JSON.stringify({ hash: "", count: 0 }));
       } catch (_) {}
-      process.exit(1);
+      process.exit(4);
     }
 
     try {
@@ -306,6 +306,11 @@ export function runSelfAudit() {
       );
     } catch (_) {}
 
+    if (process.env.CI && !process.env.ALLOW_AUTO_REPAIR) {
+      log.error("CI environment detected and ALLOW_AUTO_REPAIR is not set. Failing fast to save CI minutes.");
+      process.exit(4);
+    }
+
     let oodaRetries = 0;
     try {
       const history = execSync("git log -n 5 --format=%B", { encoding: "utf-8" });
@@ -318,7 +323,7 @@ export function runSelfAudit() {
     }
 
     if (oodaRetries < 3) {
-      log.info(`\n🛠️ Initiating OODA Auto-Repair (Attempt ${oodaRetries + 1}/3)...`);
+      log.info(`🛠️ Initiating OODA Auto-Repair (Attempt ${oodaRetries + 1}/3)...`);
       const prompt = `OODA Auto-Repair Attempt ${oodaRetries + 1}\n\nThe verification suite failed with the following errors after the previous patch:\n\n\`\`\`\n${failureLog.slice(-1500)}\n\`\`\`\n\nPlease fix the errors so the verification passes.`;
       
       const dispatchScript = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
@@ -335,13 +340,13 @@ export function runSelfAudit() {
         log.error(`Failed to trigger OODA repair dispatch: ${dispatchErr.message}`);
       }
     } else {
-      log.error("\n❌ OODA Auto-Repair exhausted maximum retries (3). Giving up.");
+      log.error("❌ OODA Auto-Repair exhausted maximum retries (3). Giving up.");
     }
     
-    process.exit(1);
+    process.exit(4);
   }
 
-  log.success("\n🎉 JULES PR SELF-AUDIT PASSED SUCCESSFULLY!");
+  log.success("🎉 JULES PR SELF-AUDIT PASSED SUCCESSFULLY!");
 }
 
 function runPreflightSandbox() {
