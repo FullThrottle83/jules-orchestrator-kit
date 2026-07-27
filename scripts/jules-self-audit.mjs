@@ -349,7 +349,7 @@ export function runSelfAudit() {
   log.success("🎉 JULES PR SELF-AUDIT PASSED SUCCESSFULLY!");
 }
 
-function runPreflightSandbox() {
+export function runPreflightSandbox() {
   log.header("Initializing Pre-Flight Sandbox (Steril Simulering)...");
   
   const runId = crypto.randomBytes(4).toString("hex");

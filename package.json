@@ -14,7 +14,12 @@
     "jules-init": "bin/init.js",
     "jules-orchestrator-kit": "bin/init.js"
   },
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  },
   "files": [
+    "index.mjs",
     "bin/",
     "scripts/",
     ".agent/jules.yml",

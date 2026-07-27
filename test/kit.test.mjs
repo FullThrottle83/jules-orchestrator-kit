@@ -351,6 +351,21 @@ describe("Suggested Tasks Scanner", () => {
   });
 });
 
+describe("Node.js SDK Entrypoint (index.mjs)", () => {
+  test("exports core orchestrator APIs cleanly", async () => {
+    const sdk = await import("../index.mjs");
+    assert.equal(typeof sdk.resolveProjectCommands, "function");
+    assert.equal(typeof sdk.resolveWorkspaceExecutionBoundary, "function");
+    assert.equal(typeof sdk.runSelfAudit, "function");
+    assert.equal(typeof sdk.runPreflightSandbox, "function");
+    assert.equal(typeof sdk.scanCodebaseForTodos, "function");
+    assert.equal(typeof sdk.runScanner, "function");
+    assert.equal(typeof sdk.redactSecrets, "function");
+    assert.equal(typeof sdk.getDynamicGuardrails, "function");
+  });
+});
+
+
 
 
 

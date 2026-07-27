@@ -84,48 +84,64 @@ graph TD
 4. **Self-correction** - If anything fails, Jules automatically retries with fixes
 5. **Safe delivery** - Only working, tested code reaches your main branch
 
+## 🏗️ Architecture & Pipeline Flow
+
+```mermaid
+graph TD
+    A["1. Client Trigger<br/><i>(CLI / CI / SDK / Queue)</i>"] --> B["2. Orchestrator Core<br/><i>(Entropy Redaction & Guardrails)</i>"]
+    B --> C["3. Google Jules Agent<br/><i>(Code Gen in Isolated Sandbox)</i>"]
+    C --> D{"4. Self-Audit Gatekeeper<br/><i>(Scope Audit & Test Suite)</i>"}
+    D -- "Scope Breach" --> E["❌ Exit 3: Security Violation"]
+    D -- "100% Passed" --> F["✅ Exit 0: Success & Telemetry"]
+    D -- "Test Failure" --> G{"5. OODA Auto-Repair<br/><i>(Retries < 3 & Circuit OK?)</i>"}
+    G -- "Yes (Retry)" --> C
+    G -- "No (Circuit Tripped)" --> H["❌ Exit 4: Diagnostic Abort"]
+```
+
 <details>
-<summary><b>🔍 View Full System Architecture & Tiered Verification Gate (For Power Users)</b></summary>
-
-The Orchestrator enforces a **strict 5-phase verification pipeline**:
-
-1. **Queue & Redaction**: Dispatch via CLI/API/markdown files. Shannon Entropy detector (entropy > 3.6, length ≥ 20) strips secrets. Path traversal (`../`) is blocked.
-2. **Isolation**: Provisions Git worktree sandbox for each task
-3. **Scope Audit**: Validates changes against `forbidden_paths` from base branch (never PR branch)
-4. **Tiered Verification**: Fast-fail linters → type checks → full test suite → build verification
-5. **OODA Feedback Loop**: Parses stderr traces, logs telemetry to `.agent/history/metrics.jsonl`, blocks merge on exit code ≠ 0
+<summary><b>🔍 View Detailed Sequence Diagram (Step-by-Step Execution Protocol)</b></summary>
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant CLI as CI Trigger / CLI
-    participant Orc as jules-orchestrator
-    participant Jules as Google Jules Agent
-    participant Git as Git Worktree Sandbox
+    actor Trigger as Client (CLI / CI / SDK)
+    participant Orc as Orchestrator Core
+    participant API as Google Jules API
+    participant Git as Git / Worktree Sandbox
+    participant Gate as Self-Audit Gatekeeper
 
-    CLI->>Orc: Dispatch Task ("Refactor Auth")
+    Trigger->>Orc: Dispatch Task Payload
     
-    note over Orc,Git: Phase 1: Isolation & Setup
-    Orc->>Orc: Redact Secrets & Check Path Traversal
-    Orc->>Git: Provision Worktree (`git worktree add`)
-    Orc->>Jules: Dispatch Context, Invariants & Target Scope
+    note over Orc,Git: Phase 1: Security Redaction & Context Enrichment
+    Orc->>Orc: Redact Secrets (Entropy > 3.6) & Enforce Dynamic Guardrails
+    Orc->>Git: Provision Isolation Sandbox (Worktree / Repoless)
+    Orc->>API: Dispatch Task + <MCP_DIRECTIVE> & Target Scope
 
-    Jules->>Git: Propose Code Mutations
+    API->>Git: Apply Proposed Code Changes
     
-    note over Orc,Git: Phase 2: Tiered Verification Gatekeeper
-    Orc->>Git: Scope Audit (`git diff -z --name-only` vs forbidden_paths)
-    alt Scope Breach
-        Git-->>Orc: Scope Violation Error (Exit 1)
-    else Scope OK
-        Orc->>Git: Run Verification Suite (`test_cmd` & `build_cmd`)
+    note over Orc,Gate: Phase 2: Tiered Verification & OODA Gatekeeper
+    Orc->>Gate: Trigger Self-Audit (fetch trusted origin/main rules)
+    Gate->>Git: Scope Audit (`git diff -z --name-only` vs forbidden_paths)
+    
+    alt Scope Breach (Forbidden Path Modified)
+        Gate-->>Orc: Security Violation Detected
+        Orc-->>Trigger: Abort Execution (Exit 3)
+    else Scope Verification Passed
+        Gate->>Git: Resolve & Run Dynamic Verification Suite (`test_cmd` & `build_cmd`)
     end
 
-    alt Verification Gates Pass
-        Orc->>Git: Commit, Push & Log Telemetry (.agent/history/metrics.jsonl)
-        Orc->>CLI: Return Success (Exit 0)
-    else Verification Gates Fail
-        Git-->>Orc: Execution Trace (stdout/stderr / Diff)
-        Orc->>CLI: Log OODA Diagnostic Telemetry & Block PR (Exit 1)
+    alt 100% Verification Suite Passed
+        Gate->>Orc: Verification Success
+        Orc->>Git: Record Telemetry (`metrics.jsonl`)
+        Orc-->>Trigger: Dispatch Succeeded (Exit 0)
+    else Verification Failed (OODA Feedback Triggered)
+        Gate->>Gate: Fingerprint Trace (SHA-256 Error Hash & Check Circuit Breaker)
+        alt Auto-Repair Eligible (Retries < 3 & Circuit OK)
+            Gate->>API: Auto-Dispatch Repair Prompt with Stderr Trace
+        else Circuit Tripped / Max Retries Exceeded
+            Gate-->>Orc: Verification Exhausted
+            Orc-->>Trigger: Abort & Log Diagnostic Feedback (Exit 4)
+        end
     end
 ```
 </details>
@@ -207,6 +223,18 @@ When `JULES_API_KEY` and `JULES_REPO` are present in your environment, payloads 
 
 **2. Native Jules CLI Fallback**
 If no API key is configured, the kit seamlessly falls back to invoking your local `jules` CLI binary via standard streams.
+
+**3. Programmatic Node.js SDK (`index.mjs`)**
+Downstream Node.js tools, MCP servers, and LLM orchestrators can import kit functions directly:
+```js
+import { runSelfAudit, scanCodebaseForTodos, resolveProjectCommands } from "jules-orchestrator-kit";
+
+// Run pre-flight sandbox check
+await runPreflightSandbox();
+
+// Scan codebase for TODO/FIXME tasks
+const tasks = scanCodebaseForTodos(process.cwd());
+```
 
 ---
 
