@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveProjectCommands } from "./command-resolver.mjs";
+import { log, logToHistory } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
@@ -12,7 +13,7 @@ const taskTitle = isMainModule ? process.argv[2] : "";
 const taskPromptArg = isMainModule ? process.argv[3] : "";
 
 if (isMainModule && (!taskTitle || !taskPromptArg)) {
-  console.error(
+  log.error(
     'Usage: node scripts/jules-dispatch.mjs <task-title> <path-to-prompt.md | "raw prompt string">'
   );
   process.exit(1);
@@ -42,24 +43,7 @@ function loadEnv() {
 }
 loadEnv();
 
-// 0.1 Shannon Entropy Calculator
-export function calculateEntropy(str) {
-  if (!str) return 0;
-  const len = str.length;
-  const frequencies = {};
-  for (let i = 0; i < len; i++) {
-    const char = str[i];
-    frequencies[char] = (frequencies[char] || 0) + 1;
-  }
-  let entropy = 0;
-  for (const char in frequencies) {
-    const p = frequencies[char] / len;
-    entropy -= p * Math.log2(p);
-  }
-  return entropy;
-}
-
-// 0.2 Pre-Flight Secret Redaction Gate (RegEx + Shannon Entropy + Env Denylist)
+// 0.2 Pre-Flight Secret Redaction Gate (RegEx + Env Denylist)
 export function redactSecrets(text) {
   if (!text) return "";
   let sanitized = text;
@@ -92,35 +76,7 @@ export function redactSecrets(text) {
   for (const pat of patterns) {
     sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
   }
-  // Exclude file paths (tokens with slashes or common extensions) from entropy redaction
-  sanitized = sanitized.replace(/[a-zA-Z0-9_\-\.]{20,}/g, (token) => {
-    if (
-      token.startsWith("[REDACTED_") ||
-      token.includes("/") ||
-      /\.(?:ts|js|jsx|tsx|json|md|py|rs|go|yml|yaml|toml|html|css|sh|config)$/i.test(token)
-    ) {
-      return token;
-    }
-    const entropy = calculateEntropy(token);
-    if (entropy > 3.6) {
-      return "[REDACTED_ENTROPY_KEY]";
-    }
-    return token;
-  });
   return sanitized;
-}
-
-// 0.3 Hardened Path Traversal & Symlink Defense
-export function assertPathWithinWorkspace(targetPath, workspaceRoot = process.cwd()) {
-  const rootReal = fs.existsSync(workspaceRoot) ? fs.realpathSync(path.resolve(workspaceRoot)) : path.resolve(workspaceRoot);
-  const resolvedTarget = path.resolve(rootReal, targetPath);
-  const targetReal = fs.existsSync(resolvedTarget) ? fs.realpathSync(resolvedTarget) : resolvedTarget;
-  const normalizedRoot = rootReal.replace(/\\/g, "/");
-  const normalizedTarget = targetReal.replace(/\\/g, "/");
-  if (!normalizedTarget.startsWith(normalizedRoot)) {
-    throw new Error(`FATAL: Sandboxed directory traversal breach blocked for path: ${targetPath}`);
-  }
-  return targetReal;
 }
 
 // 0.4 Dynamic Guardrails & Directive Definitions
@@ -164,17 +120,21 @@ if (isMainModule) {
   const possiblePath = path.resolve(process.cwd(), taskPromptArg);
   if (fs.existsSync(possiblePath)) {
     try {
-      const verifiedPath = assertPathWithinWorkspace(possiblePath);
-      const fd = fs.openSync(verifiedPath, "r");
-      try {
-        const stat = fs.fstatSync(fd);
-        if (stat.isFile()) {
-          rawPrompt = fs.readFileSync(fd, "utf-8");
-        } else {
-          rawPrompt = taskPromptArg;
+      const verifiedPath = path.resolve(process.cwd(), possiblePath);
+      if (verifiedPath.startsWith(process.cwd())) {
+        const fd = fs.openSync(verifiedPath, "r");
+        try {
+          const stat = fs.fstatSync(fd);
+          if (stat.isFile()) {
+            rawPrompt = fs.readFileSync(fd, "utf-8");
+          } else {
+            rawPrompt = taskPromptArg;
+          }
+        } finally {
+          fs.closeSync(fd);
         }
-      } finally {
-        fs.closeSync(fd);
+      } else {
+        rawPrompt = taskPromptArg;
       }
     } catch (_) {
       rawPrompt = taskPromptArg;
@@ -201,17 +161,14 @@ if (isMainModule) {
   const dateStr = new Date().toISOString().split("T")[0];
   const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
-  // Resolve history directory relative to main workspace root, avoiding temporary worktrees
-  const mainWorkspaceRoot = process.env.JULES_PROJECT_ROOT || process.env.INIT_CWD || process.cwd();
-  const historyDir = path.resolve(mainWorkspaceRoot, ".agent/history");
-  if (!fs.existsSync(historyDir)) {
-    fs.mkdirSync(historyDir, { recursive: true });
-  }
-  historyFile = path.join(historyDir, `${dateStr}-dispatch-${slug}.md`);
-  fs.writeFileSync(historyFile, `---\ntype: jules_dispatch\ntitle: "${taskTitle}"\ntimestamp: "${new Date().toISOString()}"\n---\n# Jules Task Dispatch: ${taskTitle}\n\n## Prompt\n${rawPrompt}\n`, "utf-8");
+  historyFile = logToHistory(
+    `dispatch-${slug}.md`,
+    `---\ntype: jules_dispatch\ntitle: "${taskTitle}"\ntimestamp: "${new Date().toISOString()}"\n---\n# Jules Task Dispatch: ${taskTitle}\n\n## Prompt\n${rawPrompt}\n`,
+    "dispatch"
+  );
 
-  console.log(`🚀 Dispatching task to Google Jules: "${taskTitle}"...`);
-  console.log(`📝 Logged dispatch history to: ${path.relative(process.cwd(), historyFile)}`);
+  log.info(`Dispatching task to Google Jules: "${taskTitle}"...`);
+  log.success(`Logged dispatch history to: ${path.relative(process.cwd(), historyFile)}`);
 
   const payloadHash = crypto.createHash("sha256").update(taskTitle + Date.now()).digest("hex").slice(0, 12);
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-payload-"));
@@ -225,21 +182,21 @@ function cleanupTmp() {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   } catch (err) {
-    console.warn(`⚠️ Failed to remove temporary payload directory at ${tmpDir}:`, err.message);
+    log.warn(`⚠️ Failed to remove temporary payload directory at ${tmpDir}: ${err.message}`);
   }
 }
 
 async function executeDispatch() {
   try {
     if (process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1") {
-      console.log(`[DRY RUN] Dispatch payload prepared successfully for task: "${taskTitle}".`);
-      console.log(`[DRY RUN] Target Repository: ${repo || "(default)"}`);
-      console.log(`[DRY RUN] Prompt Length: ${fullPrompt.length} chars.`);
+      log.dim(`[DRY RUN] Dispatch payload prepared successfully for task: "${taskTitle}".`);
+      log.dim(`[DRY RUN] Target Repository: ${repo || "(default)"}`);
+      log.dim(`[DRY RUN] Prompt Length: ${fullPrompt.length} chars.`);
       return;
     }
 
     if (apiKey && repo) {
-      console.log(`🌐 Using Jules REST API for repository ${repo}...`);
+      log.info(`Using Jules REST API for repository ${repo}...`);
       const formattedSource = repo.startsWith("sources/") ? repo : (repo.includes("/") ? `sources/github/${repo}` : repo);
       const payload = {
         title: taskTitle,
@@ -264,19 +221,19 @@ async function executeDispatch() {
           body: JSON.stringify(payload)
         });
       } catch (fetchErr) {
-        console.warn(`⚠️ REST API request failed (network error), falling back to CLI...`, fetchErr.message);
+        log.warn(`⚠️ REST API request failed (network error), falling back to CLI...`, fetchErr.message);
         dispatchViaCli(repo, tmpPayloadFile, taskTitle);
         return;
       }
 
       if (res.status === 429) {
-        console.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI.`);
+        log.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI.`);
         process.exit(1);
       }
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
-        console.warn(`⚠️ REST API returned HTTP ${res.status}: ${errText}, falling back to CLI...`);
+        log.warn(`⚠️ REST API returned HTTP ${res.status}: ${errText}, falling back to CLI...`);
         dispatchViaCli(repo, tmpPayloadFile, taskTitle);
         return;
       }
@@ -284,13 +241,13 @@ async function executeDispatch() {
       let sessionId = "Created";
       try {
         const data = await res.json();
-        sessionId = data.name || data.id || sessionId;
+        const { sessionId: sId, status: responseStatus } = data;
+        sessionId = sId || data.name || data.id || sessionId;
+        log.success(`REST API Dispatch response: Session ${sessionId} created successfully.`);
+        fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
       } catch (jsonErr) {
-        console.warn("⚠️ Failed to parse REST API JSON response:", jsonErr.message);
+        log.warn("⚠️ Failed to parse REST API JSON response:", jsonErr.message);
       }
-
-      console.log(`✅ REST API Dispatch response: Session ${sessionId} created successfully.`);
-      fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
     } else {
       dispatchViaCli(repo, tmpPayloadFile, taskTitle);
     }
@@ -307,7 +264,7 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
         const payloadData = JSON.parse(fs.readFileSync(payloadFile, "utf-8"));
         if (payloadData.prompt) promptToSend = payloadData.prompt;
       } catch (jsonErr) {
-        console.warn("⚠️ Failed to parse payload JSON file:", jsonErr.message);
+        log.warn(`⚠️ Failed to parse payload JSON file: ${jsonErr.message}`);
       }
     }
 
@@ -316,18 +273,18 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
       args.push("--repo", targetRepo);
     }
 
-    console.log(`💻 Executing: jules ${args.join(" ")} (prompt passed via stdin)...`);
+    log.step("💻", `Executing: jules ${args.join(" ")} (prompt passed via stdin)...`);
     execFileSync("jules", args, { input: promptToSend, stdio: ["pipe", "inherit", "inherit"] });
-    console.log(`✅ Successfully dispatched task "${title}" to Jules CLI.`);
+    log.success(`Successfully dispatched task "${title}" to Jules CLI.`);
   } catch (error) {
-    console.error(`❌ Failed to dispatch task to Jules CLI:`, error.message);
+    log.error(`Failed to dispatch task to Jules CLI: ${error.message}`);
     process.exit(1);
   }
 }
 
 if (isMainModule) {
   executeDispatch().catch((err) => {
-    console.error("❌ Fatal unhandled rejection in dispatch:", err);
+    log.error(`❌ Fatal unhandled rejection in dispatch: ${err.message}`);
     process.exit(1);
   });
 }

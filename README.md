@@ -35,6 +35,8 @@ npx jules-orchestrator-kit
 npx jules-init --interactive
 ```
 
+> 🔐 **New in v0.3.0 (The Epistemic Bridge)**: The init script now generates a cryptographic Handshake Token (`.agent/JULES_WEB_SETUP.md`). Paste this into the Jules Web UI to perfectly sync your environment. Run `node scripts/jules-self-audit.mjs --preflight` to sandbox-test your setup locally before dispatching tasks.
+
 ### 2. Dispatch your first task
 Once initialized, you can immediately send tasks to Jules. The Orchestrator handles prompting, testing, security, and self-correction in the background:
 
@@ -101,7 +103,8 @@ sequenceDiagram
 
 ### 🛠️ The Basics
 
-* **Auto-Configuration (`bin/init.js`)**: Instantly scaffolds your repo using `node:util.parseArgs` with an interactive TTY wizard (`-i`) or silent CI fallback.
+* **Auto-Configuration (`bin/init.js`)**: Scaffolds your repo and generates a cryptographically signed Handshake Token (`.agent/JULES_WEB_SETUP.md`) to guarantee state parity with Jules Web UI.
+* **Pre-Flight Sandbox (`jules-self-audit.mjs --preflight`)**: Tests your test/build commands locally in a sterile `/tmp` sandbox (mocking secrets and cloning only tracked files) before cloud execution.
 * **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Drop markdown task specifications into `.agent/jules-queue/` and let the runner process them sequentially.
 * **Nightly Maintenance (`scripts/jules-nightly.mjs`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning).
 

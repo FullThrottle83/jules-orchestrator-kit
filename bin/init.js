@@ -5,6 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import readline from "node:readline/promises";
+import zlib from "node:zlib";
+import crypto from "node:crypto";
 import { resolveProjectCommands } from "../scripts/command-resolver.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -57,10 +59,13 @@ if (isForce) console.log("⚠️ Force mode enabled (existing files will be over
 let answerRepoVal = "";
 let answerBranchVal = "";
 
-// Dual TTY Interactive Wizard
 if (process.stdin.isTTY && (isInteractive || (!fs.existsSync(path.join(targetDir, ".agent/jules.yml")) && !process.env.CI))) {
   try {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.on('SIGINT', () => {
+      console.log("\n🛑 Initialization aborted by user.");
+      process.exit(130);
+    });
     const answerRepo = await rl.question("📦 Enter target GitHub repository (e.g. owner/repo) [optional]: ");
     if (answerRepo.trim()) {
       answerRepoVal = answerRepo.trim();
@@ -73,6 +78,10 @@ if (process.stdin.isTTY && (isInteractive || (!fs.existsSync(path.join(targetDir
     }
     rl.close();
   } catch (err) {
+    if (err.name === 'AbortError') {
+      console.log("\n🛑 Initialization aborted by user.");
+      process.exit(130);
+    }
     console.warn("⚠️ Interactive setup prompt failed:", err.message);
   }
 }
@@ -247,7 +256,54 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
 }
 
 console.log("\n🎉 Google Jules Orchestration Kit successfully initialized!");
+
+// 6. Generate Cryptographic Handshake (JULES_WEB_SETUP.md)
+const agentState = {
+  v: 1,
+  schema: "jules.init/v1",
+  generatedAt: new Date().toISOString(),
+  repo: {
+    name: answerRepoVal || process.env.JULES_REPO || "unknown/repo",
+    branch: answerBranchVal || process.env.BASE_BRANCH || "main"
+  },
+  workspace: {
+    testCmd: detected.testCmd || "",
+    buildCmd: detected.buildCmd || "",
+    source: detected.source || "unknown"
+  }
+};
+
+const canonicalJson = JSON.stringify(agentState);
+const hash = crypto.createHash("sha256").update(canonicalJson, "utf8").digest("hex");
+const compressed = zlib.brotliCompressSync(Buffer.from(canonicalJson, "utf8"));
+const payloadToken = `JULES1.${hash}.${compressed.toString("base64url")}`;
+
+const setupMdContent = `# JULES Web Setup Handshake
+
+> **Generated**: ${agentState.generatedAt}
+> **Handshake Token**: \`${payloadToken}\`
+
+## 🔗 JULES Web Setup
+1. Öppna Jules Web UI (https://app.jules.ai/setup)
+2. Klistra in din Handshake Token:
+\`\`\`
+${payloadToken}
+\`\`\`
+
+## 🔧 Upptäckt Konfiguration
+* Test Command: \`${agentState.workspace.testCmd}\`
+* Build Command: \`${agentState.workspace.buildCmd}\`
+* Source: \`${agentState.workspace.source}\`
+`;
+
+fs.writeFileSync(path.join(targetDir, ".agent", "JULES_WEB_SETUP.md"), setupMdContent, "utf-8");
+
+console.log("\n🔗 CLI-TO-WEB HANDSHAKE PAYLOAD");
+console.log("  Your local agent configurations are locked and cryptographically hashed.");
+console.log(`  👉 JULES_HANDSHAKE_TOKEN: \x1b[36m${payloadToken}\x1b[0m`);
+console.log("\n  (A backup of this payload was written to .agent/JULES_WEB_SETUP.md)");
 console.log("\nNext Steps:");
-console.log("  1. Set environment variables: JULES_REPO=\"owner/repo\"");
-console.log("  2. Dispatch your first task:  node scripts/jules-dispatch.mjs \"Task Title\" \"Task prompt\"");
-console.log("  3. Run pre-merge PR audit:    node scripts/jules-self-audit.mjs\n");
+console.log("  1. Paste the Handshake Token into Jules Web UI.");
+console.log("  2. Set environment variables: JULES_REPO=\"owner/repo\"");
+console.log("  3. Dispatch your first task:  node scripts/jules-dispatch.mjs \"Task Title\" \"Task prompt\"");
+console.log("  4. Run pre-merge PR audit:    node scripts/jules-self-audit.mjs\n");

@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { log, ensureDir, sleep } from "./utils.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,13 +22,8 @@ if (!fs.existsSync(queueDir)) {
   process.exit(1);
 }
 
-if (!fs.existsSync(completedDir)) {
-  fs.mkdirSync(completedDir, { recursive: true });
-}
-
-if (!fs.existsSync(processingDir)) {
-  fs.mkdirSync(processingDir, { recursive: true });
-}
+ensureDir(completedDir);
+ensureDir(processingDir);
 
 function logQueueState(file, status, error = null) {
   const entry = JSON.stringify({
@@ -41,45 +40,80 @@ const files = fs.readdirSync(queueDir).filter(
 );
 
 if (files.length === 0) {
-  console.log("ℹ️ No tasks found in the queue.");
+  log.info("No tasks found in the queue.");
   process.exit(0);
 }
 
-console.log(`🐝 Found ${files.length} tasks in the queue. Processing...`);
+log.info(`🐝 Found ${files.length} tasks in the queue. Processing...`);
 
-files.forEach((file, index) => {
-  const filePath = path.join(queueDir, file);
-  const processingPath = path.join(processingDir, file);
-  
-  // Atomic claim: move from queueDir to processingDir before dispatching
-  try {
-    fs.renameSync(filePath, processingPath);
-  } catch (claimErr) {
-    // Another runner already claimed this task file
-    return;
-  }
+const MAX_CONCURRENT = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10) || 3;
 
-  // Generate title from filename (e.g. "TASK-001-auth-spec.md" -> "TASK 001 auth spec")
-  const title = file.replace(/\.md$/, "").replace(/-/g, " ");
-  
-  console.log(`\n----------------------------------------`);
-  console.log(`[${index + 1}/${files.length}] Dispatching queued task: ${title}`);
-  logQueueState(file, "RUNNING");
-  
+function safeMoveSync(src, dest) {
   try {
-    execFileSync("node", [dispatchScript, title, processingPath], {
-      stdio: "inherit",
-    });
-    
-    // Move to completed
-    const destPath = path.join(completedDir, file);
-    fs.renameSync(processingPath, destPath);
-    logQueueState(file, "COMPLETED");
-    console.log(`✅ Moved ${file} to completed/`);
-  } catch (error) {
-    logQueueState(file, "FAILED", error);
-    console.error(`⚠️ Failed to dispatch task [${title}]:`, error.message);
+    fs.renameSync(src, dest);
+  } catch (err) {
+    if (err.code === "EXDEV") {
+      fs.copyFileSync(src, dest);
+      fs.unlinkSync(src);
+    } else {
+      throw err;
+    }
   }
+}
+
+async function safeMoveAsync(src, dest) {
+  try {
+    await fs.promises.rename(src, dest);
+  } catch (err) {
+    if (err.code === "EXDEV") {
+      await fs.promises.copyFile(src, dest);
+      await fs.promises.unlink(src);
+    } else {
+      throw err;
+    }
+  }
+}
+
+async function runQueue() {
+  for (let i = 0; i < files.length; i += MAX_CONCURRENT) {
+    const batch = files.slice(i, i + MAX_CONCURRENT);
+    await Promise.allSettled(
+      batch.map(async (file, bIdx) => {
+        const index = i + bIdx;
+        const filePath = path.join(queueDir, file);
+        const processingPath = path.join(processingDir, file);
+        
+        // Atomic claim: move from queueDir to processingDir before dispatching
+        try {
+          safeMoveSync(filePath, processingPath);
+        } catch (claimErr) {
+          // Another runner already claimed this task file or file missing
+          return;
+        }
+
+        const title = file.replace(/\.md$/, "").replace(/-/g, " ");
+        
+        log.step(`[${index + 1}/${files.length}]`, `Dispatching queued task: ${title}`);
+        logQueueState(file, "RUNNING");
+        
+        try {
+          await execFileAsync("node", [dispatchScript, title, processingPath]);
+          
+          const destPath = path.join(completedDir, file);
+          await safeMoveAsync(processingPath, destPath);
+          logQueueState(file, "COMPLETED");
+          log.success(`Moved ${file} to completed/`);
+        } catch (error) {
+          logQueueState(file, "FAILED", error);
+          log.error(`Failed to dispatch task [${title}]: ${error.message}`);
+        }
+      })
+    );
+  }
+  log.header("Queue processing complete!");
+}
+
+runQueue().catch(err => {
+  log.error(`Fatal queue error: ${err.message}`);
+  process.exit(1);
 });
-
-console.log(`\n🎉 Queue processing complete!`);

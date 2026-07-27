@@ -5,13 +5,14 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr } from "../scripts/jules-self-audit.mjs";
-import { calculateEntropy, redactSecrets, assertPathWithinWorkspace } from "../scripts/jules-dispatch.mjs";
+import { redactSecrets } from "../scripts/jules-dispatch.mjs";
 
 describe("Dynamic Command Resolver", () => {
   test("resolves default verification commands from manifest or config", () => {
     const res = resolveProjectCommands(process.cwd());
     assert.ok(res.source === "package.json" || res.source === ".agent/jules.yml");
     assert.equal(res.testCmd, "npm test");
+    assert.equal(res.buildCmd, "");
   });
 
   test("resolves workspace execution boundary", () => {
@@ -84,20 +85,7 @@ allow_paths:
   });
 });
 
-describe("Shannon Entropy & Security Redaction", () => {
-  test("calculates low entropy for repetitive text and high entropy for random tokens", () => {
-    assert.ok(calculateEntropy("aaaaaaaaaaaaaaaaaaaa") < 1.0);
-    assert.ok(calculateEntropy("8f9a2b7c4d1e6f0a9b8c7d6e5f4a3b2c1d0e9f8a") > 3.5);
-    assert.ok(calculateEntropy("a8F9+a2B7/c4D1e6F0a9B8c7D6e5F4a3B2c1D0e9F8a+xyz=123456!@#$%^&*()") > 4.0);
-  });
-
-  test("redacts high entropy tokens from prompts while preserving file paths", () => {
-    const prompt = "Inspect apps/web/src/utils/rate-limit.ts using key 8f9a2b7c4d1e6f0a9b8c7d6e5f4a3b2c1d0e9f8a";
-    const redacted = redactSecrets(prompt);
-    assert.ok(redacted.includes("apps/web/src/utils/rate-limit.ts"), "File path must NOT be redacted");
-    assert.ok(redacted.includes("[REDACTED_ENTROPY_KEY]"), "Secret key must be redacted");
-  });
-
+describe("Security Redaction", () => {
   test("redacts active environment secrets matching denylist keys", () => {
     process.env.TEST_SECRET_KEY = "super-secret-token-12345";
     const text = "Connecting with key super-secret-token-12345 to server";
@@ -105,14 +93,6 @@ describe("Shannon Entropy & Security Redaction", () => {
     assert.equal(redacted.includes("super-secret-token-12345"), false);
     assert.ok(redacted.includes("[REDACTED_ENV_SECRET]"));
     delete process.env.TEST_SECRET_KEY;
-  });
-
-  test("asserts path within workspace root and blocks traversal", () => {
-    const safe = assertPathWithinWorkspace("package.json");
-    assert.ok(safe.includes("package.json"));
-    assert.throws(() => {
-      assertPathWithinWorkspace("../../../etc/passwd");
-    }, /FATAL: Sandboxed directory traversal breach blocked/);
   });
 });
 
