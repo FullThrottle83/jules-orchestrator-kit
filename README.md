@@ -99,9 +99,9 @@ graph TD
 ```
 
 > 💡 **Core Architectural Invariants**:
-> - **Zero-Trust Base-Branch Security**: Security rules (`forbidden_paths`) are fetched exclusively from `origin/main` (never untrusted PR branches) to prevent prompt injections from loosening path restrictions.
-> - **Dynamic Command Resolution (`command-resolver.mjs`)**: Automatically detects affected workspace boundaries (Turborepo, pnpm, Nx, Cargo, pytest, npm) to run targeted verification suites.
-> - **SHA-256 OODA Circuit Breaker**: Fingerprints failure traces (`ooda-circuit.json`). If identical error signatures occur twice, auto-repair halts immediately to prevent token burn.
+> - **Zero-Trust Base-Branch Security**: Security rules (`forbidden_paths`) are fetched exclusively from `origin/main` (never untrusted PR branches).
+> - **Dynamic Command Resolution (`command-resolver.mjs`)**: Auto-detects workspace boundaries (Turborepo, pnpm, Nx, Cargo, pytest, npm).
+> - **SHA-256 OODA Circuit Breaker**: Fingerprints failure traces (`ooda-circuit.json`). Halts auto-repair if identical errors repeat.
 
 <details>
 <summary><b>🔍 View Detailed Sequence Diagram (Step-by-Step Execution Protocol)</b></summary>
@@ -174,7 +174,7 @@ forbidden_paths:
 allow_paths: []
 ```
 
-> 🛡️ **Zero-Trust Security Model**: Configuration is always read from your target base branch (`origin/main`), never from untrusted PR branches. This means even if an AI agent tries to modify its own security rules, the orchestrator enforces the immutable rules from main.
+> 🛡️ **Zero-Trust Security Model**: Configuration is always read from your target base branch (`origin/main`), never from untrusted PR branches.
 
 ---
 
@@ -184,21 +184,21 @@ allow_paths: []
 
 | Feature               | What It Does                                 | Example                               |
 | --------------------- | -------------------------------------------- | ------------------------------------- |
-| **Automatic Testing** | Runs your test suite against every AI change | `test_cmd: "npm test"`                |
+| **Automatic Testing** | Runs test suite against every AI change      | `test_cmd: "npm test"`                |
 | **Self-Fixing**       | Jules automatically corrects failed tests    | Retries up to 4 times before blocking |
-| **Secret Protection** | Hides API keys, passwords, tokens            | Entropy > 3.6, length ≥ 20         |
+| **Secret Protection** | Hides API keys, passwords, tokens            | Entropy > 3.6, length ≥ 20            |
 | **Path Restrictions** | Blocks changes to sensitive files            | `.env`, `*.pem`, `.github/**`         |
 | **Scope Boundaries**  | Prevents changes outside task scope          | `scope: ["src/auth/**"]`              |
 
 
-| Feature                 | Use Case                                  | Command                                                            |
-| ----------------------- | ----------------------------------------- | ------------------------------------------------------------------ |
-| **Git Worktree Swarms** | Run parallel tasks with slot isolation    | `JULES_USE_WORKTREES=true node scripts/jules-swarm.mjs tasks.json` |
-| **Suggested Scanner**   | Scan TODO/FIXME comments into task queues | `npm run jules:scan`                                               |
-| **Session Cleanup**     | Audit & close merged/stale REST sessions  | `npm run jules:cleanup -- --close-merged`                          |
-| **Repoless Sessions**   | Serverless ad-hoc analysis without repos  | `npm run jules:dispatch -- --repoless "Title" "Prompt"`            |
-| **Monorepo Support**    | Auto-detects Turbo, Nx, pnpm, Cargo       | Runs affected package tests only                                   |
-| **Queue Pacing**        | Rate-limit queue launches (`--pace-ms`)   | `npm run jules:queue -- --pace-ms 500`                             |
+| Feature                 | Use Case                                  | Command                                    |
+| ----------------------- | ----------------------------------------- | ------------------------------------------ |
+| **Git Worktree Swarms** | Parallel tasks with slot isolation        | `node scripts/jules-swarm.mjs tasks.json`  |
+| **Suggested Scanner**   | Scan TODO/FIXME comments into task queues | `npm run jules:scan`                       |
+| **Session Cleanup**     | Audit & close merged/stale REST sessions  | `npm run jules:cleanup -- --close-merged`  |
+| **Repoless Sessions**   | Serverless ad-hoc analysis without repos  | `npm run jules:dispatch -- --repoless ...` |
+| **Monorepo Support**    | Auto-detects Turbo, Nx, pnpm, Cargo       | Runs affected package tests only           |
+| **Queue Pacing**        | Rate-limit queue launches (`--pace-ms`)   | `npm run jules:queue -- --pace-ms 500`     |
 | **Pre-Flight Sandbox**  | Test setup locally before cloud execution | `node scripts/jules-self-audit.mjs --preflight`                    |
 | **Security Fencing**    | Prompt injection defense & secret masking | Automatic `<UNTRUSTED_TASK_CONTEXT>` encapsulation                 |
 | **OODA Feedback**       | Self-healing from test failures           | Logs to `.agent/history/metrics.jsonl`                             |
@@ -259,22 +259,22 @@ Currently, there is no way to automatically extract "Suggestions" (the inline co
 <details>
 <summary><b>🛠️ View Supported Language Manifests & Workspace Graphs</b></summary>
 
-| Stack / Ecosystem           | Manifest / Workspace File             | Test Command                                   | Build Command                                   |
-| --------------------------- | ------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
-| **Turborepo**               | `turbo.json`                          | `npx turbo run test --filter=<pkg>...`         | `npx turbo run build --filter=<pkg>...`         |
-| **pnpm Workspace**          | `pnpm-workspace.yaml`                 | `pnpm --filter=...<pkg> test`                  | `pnpm --filter=...<pkg> build`                  |
-| **Nx Workspace**            | `nx.json`                             | `npx nx run-many -t test -p <pkg> --with-deps` | `npx nx run-many -t build -p <pkg> --with-deps` |
-| **Bun**                     | `bunfig.toml` / `bun.lockb`           | `bun test`                                     | `bun run build`                                 |
-| **Deno**                    | `deno.json` / `deno.jsonc`            | `deno test`                                    | `deno task build`                               |
-| **JavaScript / TypeScript** | `package.json`                        | `npm run lint && npm test`                     | `npm run build`                                 |
-| **Rust**                    | `Cargo.toml`                          | `cargo test --workspace`                       | `cargo build`                                   |
-| **Go**                      | `go.mod`                              | `go test ./...`                                | `go build ./...`                                |
-| **Python**                  | `pyproject.toml` / `requirements.txt` | `pytest`                                       | *(none)*                                        |
-| **Elixir**                  | `mix.exs`                             | `mix test`                                     | `mix compile`                                   |
-| **Ruby**                    | `Gemfile`                             | `bundle exec rake test`                        | *(none)*                                        |
-| **Swift**                   | `Package.swift`                       | `swift test`                                   | `swift build`                                   |
-| **Java (Maven/Gradle)**     | `pom.xml` / `build.gradle`            | `mvn test` / `./gradlew test`                  | `mvn compile` / `./gradlew assemble`            |
-| **C / C++**                 | `Makefile`                            | `make test`                                    | `make build`                                    |
+| Stack / Ecosystem           | Manifest / Workspace File             | Test Command                             | Build Command                            |
+| --------------------------- | ------------------------------------- | ---------------------------------------- | ---------------------------------------- |
+| **Turborepo**               | `turbo.json`                          | `npx turbo run test --filter=...`        | `npx turbo run build --filter=...`       |
+| **pnpm Workspace**          | `pnpm-workspace.yaml`                 | `pnpm --filter=... test`                 | `pnpm --filter=... build`                |
+| **Nx Workspace**            | `nx.json`                             | `npx nx run-many -t test -p ...`         | `npx nx run-many -t build -p ...`        |
+| **Bun**                     | `bunfig.toml` / `bun.lockb`           | `bun test`                               | `bun run build`                          |
+| **Deno**                    | `deno.json` / `deno.jsonc`            | `deno test`                              | `deno task build`                        |
+| **JavaScript / TypeScript** | `package.json`                        | `npm test`                               | `npm run build`                          |
+| **Rust**                    | `Cargo.toml`                          | `cargo test --workspace`                 | `cargo build`                            |
+| **Go**                      | `go.mod`                              | `go test ./...`                          | `go build ./...`                         |
+| **Python**                  | `pyproject.toml` / `requirements.txt` | `pytest`                                 | *(none)*                                 |
+| **Elixir**                  | `mix.exs`                             | `mix test`                               | `mix compile`                            |
+| **Ruby**                    | `Gemfile`                             | `bundle exec rake test`                  | *(none)*                                 |
+| **Swift**                   | `Package.swift`                       | `swift test`                             | `swift build`                            |
+| **Java (Maven/Gradle)**     | `pom.xml` / `build.gradle`            | `mvn test` / `./gradlew test`            | `mvn compile` / `./gradlew assemble`     |
+| **C / C++**                 | `Makefile`                            | `make test`                              | `make build`                             |
 
 </details>
 
