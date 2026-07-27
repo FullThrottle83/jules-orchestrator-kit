@@ -21,13 +21,6 @@ npx jules-orchestrator-kit
 npx jules-init --interactive
 ```
 
-This single command will:
-1. **Detect your tech stack & workspace structure** (Node, Bun, Deno, Rust, Go, Python, Elixir, Ruby, Swift, Java, C/C++, Turborepo, Nx, pnpm) via `command-resolver.mjs`.
-2. **Generate `AGENTS.md`** pre-populated with pre-execution `<MCP_DIRECTIVE>` rules and verification invariants.
-3. **Create `.agent/jules.yml` (v2 Schema)** pre-configured with detected test/build commands and glob-based `forbidden_paths`.
-4. **Install `.agent/rules/dynamic-guardrails.json`** for RegEx-based dynamic prompt guardrail injection.
-5. **Install orchestration scripts** into `./scripts/` (`jules-dispatch.mjs`, `jules-self-audit.mjs`, `jules-swarm.mjs`, `jules-queue-runner.mjs`, `jules-nightly.mjs`).
-
 ---
 
 ## 🧠 Architecture: The Autonomous Loop
@@ -55,23 +48,50 @@ sequenceDiagram
 
 ---
 
-## 💡 What This Toolkit Provides
+<details open>
+<summary><b>💡 What This Toolkit Provides (8 Core Components)</b></summary>
 
 1. **Init Scaffolding CLI (`bin/init.js`)**: Auto-scaffolds any repo using `node:util.parseArgs` with interactive TTY wizard (`-i, --interactive`) and silent CI fallback.
 2. **Monorepo & Command Resolver (`scripts/command-resolver.mjs`)**: Auto-detects project manifests and monorepo workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`, `Cargo.toml` workspaces) to run targeted affected package verifications (`git diff`) instead of full-repo test suites.
 3. **Dynamic Guardrail Composition (`.agent/rules/dynamic-guardrails.json`)**: RegEx-based rule matching that injects targeted stack guardrails into prompts on-the-fly.
-4. **Shannon Entropy Redaction & REST/stdin Dispatcher (`scripts/jules-dispatch.mjs`)**:
-   - **Shannon Entropy Redaction**: Auto-redacts API keys and high-entropy secret tokens ($\text{entropy} > 3.6$, length $\ge 20$) alongside pattern matching (`ghp_`, `AKIA`, `sk-`, `Bearer`, RSA keys).
-   - **Path Traversal Defense**: Enforces canonical `realpathSync` boundaries to block directory traversal (`../`) and symlink attacks.
-   - **Payload Streaming**: Streams prompts over REST / stdin to bypass OS `ARG_MAX` shell limits and handle HTTP 429 rate limits.
-5. **PR Self-Auditor & Self-Healing Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), enforces `forbidden_paths`, extracts OODA feedback error traces on test failures, and logs telemetry to `.agent/history/metrics.jsonl`.
-6. **Transactional Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, moves completed tasks, and logs status transitions (`RUNNING`, `COMPLETED`, `FAILED`) to `.agent/jules-queue/queue.jsonl`.
-7. **Git Worktree Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Manages multi-task batches in isolated Git worktrees (`JULES_USE_WORKTREES=true`) with controlled concurrency (`JULES_SWARM_CONCURRENCY`), staggered dispatches, and batch cooldowns.
+4. **Shannon Entropy Redaction & REST/stdin Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-redacts high-entropy secrets while preserving valid file paths, and supports dry-run testing (`JULES_DRY_RUN=1`).
+5. **PR Self-Auditor & Self-Healing Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), enforces `forbidden_paths`, extracts OODA feedback error traces, and logs telemetry to `.agent/history/metrics.jsonl`.
+6. **Transactional Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, moves completed tasks, and logs status transitions.
+7. **Git Worktree Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Manages multi-task batches in isolated Git worktrees (`JULES_USE_WORKTREES=true`) with scope boundary isolation.
 8. **Nightly Maintenance Suite (`scripts/jules-nightly.mjs`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning, unused env var cleanup).
+
+</details>
 
 ---
 
-## 🛠️ Usage Examples
+<details>
+<summary><b>🛠️ Supported Language Manifests & Workspace Graphs (15+ Tech Stacks)</b></summary>
+
+| Stack / Ecosystem | Manifest / Workspace File | Default Verification Command |
+|---|---|---|
+| **Turborepo** | `turbo.json` | `npx turbo run test --filter=<pkg>...` |
+| **pnpm Workspace** | `pnpm-workspace.yaml` | `pnpm --filter=...<pkg> test` |
+| **Nx Workspace** | `nx.json` | `npx nx run-many -t test -p <pkg> --with-deps` |
+| **Bun** | `bunfig.toml` / `bun.lockb` | `bun test && bun run build` |
+| **Deno** | `deno.json` / `deno.jsonc` | `deno test && deno task build` |
+| **JavaScript / TypeScript** | `package.json` | `npm run lint && npm test` (or `npm run check:all`) |
+| **Rust** | `Cargo.toml` | `cargo test -p <pkg>` / `cargo test --workspace` |
+| **Go** | `go.mod` | `go test ./... && go build ./...` |
+| **Python** | `pyproject.toml` / `requirements.txt` | `pytest` |
+| **Elixir** | `mix.exs` | `mix test && mix compile` |
+| **Ruby** | `Gemfile` | `bundle exec rake test` |
+| **Swift** | `Package.swift` | `swift test && swift build` |
+| **Java (Maven)** | `pom.xml` | `mvn test && mvn compile` |
+| **Java (Gradle)** | `build.gradle` | `./gradlew test && ./gradlew assemble` |
+| **C / C++** | `Makefile` | `make test && make build` |
+| **Custom Config (v2)** | `.agent/jules.yml` | Configurable `test_cmd`, `build_cmd`, `forbidden_paths` & `allow_paths` |
+
+</details>
+
+---
+
+<details>
+<summary><b>📖 Usage Examples & Workflows (Single Tasks, Swarms, Queue, Nightly)</b></summary>
 
 ### Dispatch a single task to Jules
 
@@ -115,34 +135,12 @@ node scripts/jules-nightly.mjs --dry-run
 node scripts/jules-self-audit.mjs
 ```
 
----
-
-## 🛠️ Supported Language Manifests & Workspace Graphs
-
-The command resolver automatically sniffs your codebase and invokes the right verification chain:
-
-| Stack / Ecosystem | Manifest / Workspace File | Default Verification Command |
-|---|---|---|
-| **Turborepo** | `turbo.json` | `npx turbo run test --filter=<pkg>...` |
-| **pnpm Workspace** | `pnpm-workspace.yaml` | `pnpm --filter=...<pkg> test` |
-| **Nx Workspace** | `nx.json` | `npx nx run-many -t test -p <pkg> --with-deps` |
-| **Bun** | `bunfig.toml` / `bun.lockb` | `bun test && bun run build` |
-| **Deno** | `deno.json` / `deno.jsonc` | `deno test && deno task build` |
-| **JavaScript / TypeScript** | `package.json` | `npm run lint && npm test` (or `npm run check:all`) |
-| **Rust** | `Cargo.toml` | `cargo test -p <pkg>` / `cargo test --workspace` |
-| **Go** | `go.mod` | `go test ./... && go build ./...` |
-| **Python** | `pyproject.toml` / `requirements.txt` | `pytest` |
-| **Elixir** | `mix.exs` | `mix test && mix compile` |
-| **Ruby** | `Gemfile` | `bundle exec rake test` |
-| **Swift** | `Package.swift` | `swift test && swift build` |
-| **Java (Maven)** | `pom.xml` | `mvn test && mvn compile` |
-| **Java (Gradle)** | `build.gradle` | `./gradlew test && ./gradlew assemble` |
-| **C / C++** | `Makefile` | `make test && make build` |
-| **Custom Config (v2)** | `.agent/jules.yml` | Configurable `test_cmd`, `build_cmd`, `forbidden_paths` & `allow_paths` |
+</details>
 
 ---
 
-## 🌐 Integration Interfaces: CLI, REST API & MCP Directives
+<details>
+<summary><b>🌐 Integration Interfaces: CLI, REST API & MCP Directives</b></summary>
 
 `jules-orchestrator-kit` supports three primary integration channels:
 
@@ -172,14 +170,18 @@ All task dispatches dynamically inject `<MCP_DIRECTIVE>` envelopes into task pro
     <rule>1. READ-BEFORE-WRITE: Inspect symbol definitions before editing.</rule>
     <rule>2. VERIFICATION LOOP: Execute test_cmd and build_cmd and pass with 0 errors.</rule>
     <rule>3. ABORT CONDITION: Terminate on 4+ repeated test failures.</rule>
+    <rule>4. ASSERTION QUALITY: Unit tests created or modified MUST contain explicit assertions.</rule>
   </strict_invariants>
 </MCP_DIRECTIVE>
 ```
 This forces Jules to adhere to strict read-before-write invariants and deterministic execution when operating alongside MCP server tools.
 
+</details>
+
 ---
 
-## ⚙️ Configuration (`.agent/jules.yml`)
+<details>
+<summary><b>⚙️ Configuration & Security (`.agent/jules.yml`)</b></summary>
 
 ```yaml
 # Google Jules Repository Configuration (Version 2)
@@ -198,6 +200,8 @@ allow_paths: []
 
 > 🛡️ **Security Trust Model**: `allow_paths` is read **strictly from the target base branch** (`origin/main`), never from untrusted PR branches. Any path specified in `allow_paths` on `main` overrides the immutable default forbidden paths for automated background workers.
 
+</details>
+
 ---
 
 ## 📜 License & Disclaimer
@@ -205,6 +209,3 @@ allow_paths: []
 MIT License - feel free to use, modify, and share!
 
 *Disclaimer: This is an independent open-source orchestration tool and is not officially affiliated with or endorsed by Google.*
-
-
-
