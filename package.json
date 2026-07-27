@@ -4,8 +4,8 @@
   "description": "Framework-agnostic toolkit for orchestrating Google Jules background AI coding workers.",
   "type": "module",
   "bin": {
-    "jules-init": "./bin/init.js",
-    "jules-orchestrator-kit": "./bin/init.js"
+    "jules-init": "bin/init.js",
+    "jules-orchestrator-kit": "bin/init.js"
   },
   "files": [
     "bin/",
