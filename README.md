@@ -7,6 +7,8 @@
 
 A lightweight, zero-dependency toolkit that upgrades **Google Jules** into a **fully autonomous, self-correcting background code builder** for any repository (Next.js, Vite, Node, Bun, Deno, Python, Go, Rust, Elixir, Ruby, Swift, Java, C/C++, Monorepos, etc.).
 
+Whether you are a beginner looking to automate bug fixes without breaking your app, or a power user orchestrating parallel AI task swarms, this kit handles the heavy lifting of prompting, testing, security, and verification.
+
 > **TL;DR**: Don't just chat with Google Jules—put it to work. Run `npx jules-orchestrator-kit` inside your project. Assign tasks, and the kit will automatically test the AI's code, tell it to fix any mistakes, and only present you with working, tested Pull Requests.
 
 ---
@@ -21,9 +23,10 @@ Unlock deterministic, production-grade orchestration. Includes Git Worktree mult
 
 ---
 
-## ⚡ 1-Step Quick Setup for Any Project
+## 🚀 Quick Start: Zero to Autonomous AI
 
-Run this command inside the root of **any target repository**:
+### 1. Initialize your project
+Run this command inside the root of **any target repository**. It automatically detects your tech stack and sets up safety guardrails:
 
 ```bash
 npx jules-orchestrator-kit
@@ -32,6 +35,15 @@ npx jules-orchestrator-kit
 npx jules-init --interactive
 ```
 
+### 2. Dispatch your first task
+Once initialized, you can immediately send tasks to Jules. The Orchestrator handles prompting, testing, security, and self-correction in the background:
+
+```bash
+node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting in src/utils/rate-limit.ts"
+```
+
+*(**Pro-tip:** Add `JULES_DRY_RUN=1` before the command to test prompt generation locally without executing the remote API).*
+
 ---
 
 ## 🧠 How It Works: The Autonomous Loop
@@ -39,13 +51,14 @@ npx jules-init --interactive
 Instead of blindly trusting AI code mutations, the Orchestrator acts as a strict manager enforcing a **Tiered Verification Gate**:
 
 1. **Queue a Task:** Dispatch via CLI, REST API, or drop markdown files into `.agent/jules-queue/`.
-2. **Secret & Path Defense:** Hides passwords, API keys (Shannon Entropy > 3.6), and blocks path traversal (`../`).
+2. **Secret & Path Defense:** Hides passwords, API keys (`entropy > 3.6`), and blocks path traversal (`../`).
 3. **Jules Proposes Code:** Google Jules mutates code in an isolated environment.
 4. **Tiered Verification:** Enforces scope bounds (`git diff`), runs fast-fail linters/type-checks, then executes full test/build suites.
 5. **Self-Correction (OODA Loop):** If tests fail, stderr traces are fed back to Jules to self-correct (up to 4 attempts).
 6. **Clean Pull Request:** Once verified green, commits & pushes clean code to GitHub.
 
-*(System Architecture Sequence Diagram):*
+<details>
+<summary><b>🔍 View System Architecture Diagram (For Power Users)</b></summary>
 
 ```mermaid
 sequenceDiagram
@@ -92,29 +105,51 @@ sequenceDiagram
     end
 ```
 
+</details>
+
 ---
 
-<details open>
-<summary><b>💡 Core Capabilities (8 Component Suite)</b></summary>
+## 💡 Core Capabilities (8 Component Suite)
 
 ### 🛠️ The Basics
 
-1. **Auto-Configuration (`bin/init.js`)**: Instantly scaffolds your repo using `node:util.parseArgs` with interactive TTY wizard (`-i, --interactive`) and silent CI fallback.
-2. **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Drop markdown task specifications into `.agent/jules-queue/` and let the runner process them sequentially.
-3. **Nightly Maintenance (`scripts/jules-nightly.mjs`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning, unused env var cleanup).
+* **Auto-Configuration (`bin/init.js`)**: Instantly scaffolds your repo using `node:util.parseArgs` with an interactive TTY wizard (`-i`) or silent CI fallback.
+* **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Drop markdown task specifications into `.agent/jules-queue/` and let the runner process them sequentially.
+* **Nightly Maintenance (`scripts/jules-nightly.mjs`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning).
 
 ### 🔒 Security & Guardrails
 
-4. **Secret & Traversal Redaction (`scripts/jules-dispatch.mjs`)**: Shannon Entropy detector strips API keys and secrets ($\text{entropy} > 3.6$, length $\ge 20$) while preserving valid file paths. Supports dry-run testing (`JULES_DRY_RUN=1`).
-5. **Dynamic Guardrails (`.agent/rules/dynamic-guardrails.json`)**: RegEx-based rule matching that injects targeted stack guardrails into prompts on-the-fly.
+* **Secret & Traversal Redaction (`scripts/jules-dispatch.mjs`)**: Shannon Entropy detector strips API keys and secrets (`entropy > 3.6`, `length >= 20`) while preserving valid file paths. Supports dry-run testing (`JULES_DRY_RUN=1`).
+* **Dynamic Guardrails (`.agent/rules/dynamic-guardrails.json`)**: RegEx-based rule matching that injects targeted stack guardrails into prompts on-the-fly.
 
 ### 🐝 Advanced Orchestration
 
-6. **Monorepo Boundary Resolver (`scripts/command-resolver.mjs`)**: Auto-detects `turbo`, `nx`, `pnpm`, or `Cargo` workspaces to run targeted affected package verifications (`git diff`) instead of full-repo test suites.
-7. **Self-Healing Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), enforces `forbidden_paths`, extracts OODA feedback error traces, and logs telemetry to `.agent/history/metrics.jsonl`.
-8. **Git Worktree Swarms (`scripts/jules-swarm.mjs`)**: Manages multi-task batches in isolated Git worktrees (`JULES_USE_WORKTREES=true`) with scope boundary isolation.
+* **Monorepo Boundary Resolver (`scripts/command-resolver.mjs`)**: Auto-detects `turbo`, `nx`, `pnpm`, or `Cargo` workspaces to run targeted affected package verifications (`git diff`) instead of full-repo test suites.
+* **Self-Healing Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), enforces `forbidden_paths`, extracts OODA feedback error traces, and logs telemetry to `.agent/history/metrics.jsonl`.
+* **Git Worktree Swarms (`scripts/jules-swarm.mjs`)**: Manages multi-task batches in isolated Git worktrees (`JULES_USE_WORKTREES=true`) with scope boundary isolation.
 
-</details>
+---
+
+## ⚙️ Configuration & Zero-Trust Security
+
+The orchestrator creates an `.agent/jules.yml` file to manage repo-level verification and security:
+
+```yaml
+# Google Jules Repository Configuration (Version 2)
+version: 2
+test_cmd: "npm test"
+build_cmd: "npm run build"
+forbidden_paths:
+  - ".github/**"
+  - "**/secrets/**"
+  - "**/*.pem"
+  - "**/lock-manager/**"
+  - "scripts/jules-*"
+  - ".agent/jules.yml"
+allow_paths: []
+```
+
+> 🛡️ **Zero-Trust Security Model**: `allow_paths` and `forbidden_paths` rules are read **strictly from the target base branch** (`origin/main`), never from untrusted PR branches. Even if an AI agent hallucinates and tries to modify its own security rules in a PR branch, the Orchestrator enforces the immutable rules defined on `main`.
 
 ---
 
@@ -135,55 +170,39 @@ sequenceDiagram
 | **Elixir** | `mix.exs` | `mix test && mix compile` |
 | **Ruby** | `Gemfile` | `bundle exec rake test` |
 | **Swift** | `Package.swift` | `swift test && swift build` |
-| **Java (Maven)** | `pom.xml` | `mvn test && mvn compile` |
-| **Java (Gradle)** | `build.gradle` | `./gradlew test && ./gradlew assemble` |
+| **Java (Maven/Gradle)** | `pom.xml` / `build.gradle` | `mvn test` / `./gradlew test` |
 | **C / C++** | `Makefile` | `make test && make build` |
-| **Custom Config (v2)** | `.agent/jules.yml` | Configurable `test_cmd`, `build_cmd`, `forbidden_paths` & `allow_paths` |
 
 </details>
 
 ---
 
 <details>
-<summary><b>📖 Usage Recipes & Workflows (Single Tasks, Swarms, Queue, Nightly)</b></summary>
+<summary><b>📖 Advanced Workflows (Queues, Swarms, Nightly Maintenance)</b></summary>
 
-### 1. Dispatch a single task to Jules
-
-```bash
-# Dry-run test prompt payload locally without executing remote API/CLI
-JULES_DRY_RUN=1 node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting in src/utils/rate-limit.ts"
-
-# Real dispatch
-node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting in src/utils/rate-limit.ts"
-```
-
-### 2. Dispatch an entire queue of markdown task specifications
+### 1. Process an entire queue of background tasks
 
 ```bash
 npm run jules:queue
 ```
 
-### 3. Run Rate-Limited Swarm with Scope Isolation
+### 2. Run Rate-Limited Swarms with Scope Isolation
+
+Run massive parallel refactors safely. The orchestrator uses `tasks.json` file boundary `scope` segregation to prevent parallel task collisions:
 
 ```bash
 JULES_SWARM_CONCURRENCY=5 JULES_USE_WORKTREES=true node scripts/jules-swarm.mjs tasks.json
 ```
 
-Where `tasks.json` supports file boundary `scope` segregation to prevent parallel task collisions:
-```json
-[
-  { "id": "t1", "title": "Refactor Auth", "prompt": "Refactor auth middleware to ESM", "scope": ["src/auth/**"] },
-  { "id": "t2", "title": "Fix Memory Leak", "prompt": "Fix listener memory leak in websocket event loop", "scope": ["src/ws/**"] }
-]
-```
+*(Example `tasks.json` constraint: `[ { "id": "t1", "prompt": "Refactor auth", "scope": ["src/auth/**"] } ]`)*
 
-### 4. Run Nightly Maintenance Suite
+### 3. Run Nightly Maintenance Suite
 
 ```bash
 node scripts/jules-nightly.mjs --dry-run
 ```
 
-### 5. Audit Jules PRs before merging
+### 4. Audit Jules PRs before merging in CI
 
 ```bash
 node scripts/jules-self-audit.mjs
@@ -199,21 +218,12 @@ node scripts/jules-self-audit.mjs
 `jules-orchestrator-kit` supports three primary integration channels:
 
 ### 1. Direct REST API Mode (`jules.googleapis.com`)
-When `JULES_API_KEY` and `JULES_REPO` are present in your environment (`.env` or CI secrets), `scripts/jules-dispatch.mjs` dispatches payloads directly to the official Google Jules REST API endpoint:
-```http
-POST https://jules.googleapis.com/v1alpha/sessions
-X-Goog-Api-Key: $JULES_API_KEY
-Content-Type: application/json
-```
-- Handles HTTP 429 rate limits gracefully without falling back to CLI.
-- Automatically maps `startingBranch` (`BASE_BRANCH` or `main`) and `sourceContext`.
+When `JULES_API_KEY` and `JULES_REPO` are present in your environment (`.env` or CI secrets), payloads are dispatched directly to the official Google Jules REST API endpoint.
+- Handles HTTP 429 rate limits gracefully.
+- Automatically maps `startingBranch` and `sourceContext`.
 
 ### 2. Native Jules CLI Fallback (`jules new`)
-If `JULES_API_KEY` is omitted or unconfigured, `jules-dispatch.mjs` seamlessly falls back to invoking the local `jules` CLI binary:
-```bash
-jules new --repo owner/repo
-```
-Prompts are piped directly via `stdin` to bypass OS `ARG_MAX` shell argument length limits.
+If no API key is configured, the kit seamlessly falls back to invoking your local `jules` CLI binary. Prompts are piped directly via `stdin` to bypass OS `ARG_MAX` shell argument length limits.
 
 ### 3. MCP (Model Context Protocol) Directives
 All task dispatches dynamically inject `<MCP_DIRECTIVE>` envelopes into task prompts:
@@ -222,37 +232,13 @@ All task dispatches dynamically inject `<MCP_DIRECTIVE>` envelopes into task pro
   <system_state>HEADLESS_CI_MODE</system_state>
   <strict_invariants>
     <rule>1. READ-BEFORE-WRITE: Inspect symbol definitions before editing.</rule>
-    <rule>2. VERIFICATION LOOP: Execute test_cmd and build_cmd and pass with 0 errors.</rule>
+    <rule>2. VERIFICATION LOOP: Execute test_cmd and pass with 0 errors.</rule>
     <rule>3. ABORT CONDITION: Terminate on 4+ repeated test failures.</rule>
     <rule>4. ASSERTION QUALITY: Unit tests created or modified MUST contain explicit assertions.</rule>
   </strict_invariants>
 </MCP_DIRECTIVE>
 ```
 This forces Jules to adhere to strict read-before-write invariants and deterministic execution when operating alongside MCP server tools.
-
-</details>
-
----
-
-<details>
-<summary><b>⚙️ Configuration & Zero-Trust Security (`.agent/jules.yml`)</b></summary>
-
-```yaml
-# Google Jules Repository Configuration (Version 2)
-version: 2
-test_cmd: "npm test"
-build_cmd: "npm run build"
-forbidden_paths:
-  - ".github/**"
-  - "**/secrets/**"
-  - "**/*.pem"
-  - "**/lock-manager/**"
-  - "scripts/jules-*"
-  - ".agent/jules.yml"
-allow_paths: []
-```
-
-> 🛡️ **Zero-Trust Security Model**: `allow_paths` and `forbidden_paths` rules are read **strictly from the target base branch** (`origin/main`), never from untrusted PR branches. Even if an AI agent tries to modify its own security rules in a PR branch, the Orchestrator enforces the rules defined on `main`.
 
 </details>
 
