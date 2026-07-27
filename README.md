@@ -1,11 +1,17 @@
 # Google Jules Orchestration Kit 🤖⚡
 
+[![Status](https://img.shields.io/badge/Status-Alpha-orange.svg)](#)
 [![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-0-blue.svg)](#)
 
 **Turn Google Jules into an autonomous code builder that writes, tests, and fixes itself.**
+
+> [!WARNING]
+> **Alpha Release:** This kit is in active development. Please exercise caution before integrating it into critical production pipelines.
+> 
+> **API Budget Warning:** Autonomous loops (like OODA self-healing or large swarms) can consume significant Google Jules API quotas. We strongly recommend setting hard billing limits or starting with `JULES_DRY_RUN=1` to understand the workflow before scaling up!
 
 > **💡 TL;DR**: Run `npx jules-orchestrator-kit` in your repo, assign tasks, and get working, tested Pull Requests—no manual review needed.
 
