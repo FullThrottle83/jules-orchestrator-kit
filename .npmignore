@@ -1,0 +1,7 @@
+.agent/history/
+.agent/worktrees/
+.agent/jules-queue/completed/
+.agent/jules-queue/.processing/
+.agent/jules-queue/*.md
+!.agent/jules-queue/README.md
+*.log

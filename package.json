@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/FullThrottle83/jules-orchestrator-kit.git"
@@ -17,7 +17,10 @@
   "files": [
     "bin/",
     "scripts/",
-    ".agent/",
+    ".agent/jules.yml",
+    ".agent/rules/",
+    ".agent/workflows/",
+    ".agent/jules-queue/README.md",
     ".github/",
     ".env.example",
     "JULES_RULES_TEMPLATE.md",

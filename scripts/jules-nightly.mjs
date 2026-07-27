@@ -110,7 +110,13 @@ function main() {
   }
 
   logNightlyHistory(results, isDryRun);
-  console.log("\n✅ Nightly Jules audit suite execution completed cleanly.");
+  const hasFailures = results.some((r) => r.status && (r.status.includes("Failed") || r.status.includes("error")));
+  if (hasFailures) {
+    console.error("\n❌ Nightly Jules audit suite completed with task errors.");
+    process.exitCode = 1;
+  } else {
+    console.log("\n✅ Nightly Jules audit suite execution completed cleanly.");
+  }
 }
 
 main();

@@ -11,6 +11,8 @@ const queueDir = path.resolve(process.cwd(), ".agent/jules-queue");
 const completedDir = path.resolve(process.cwd(), ".agent/jules-queue/completed");
 const queueLogFile = path.join(queueDir, "queue.jsonl");
 
+const processingDir = path.resolve(process.cwd(), ".agent/jules-queue/.processing");
+
 if (!fs.existsSync(queueDir)) {
   console.error(`❌ Queue directory not found: ${queueDir}`);
   process.exit(1);
@@ -18,6 +20,10 @@ if (!fs.existsSync(queueDir)) {
 
 if (!fs.existsSync(completedDir)) {
   fs.mkdirSync(completedDir, { recursive: true });
+}
+
+if (!fs.existsSync(processingDir)) {
+  fs.mkdirSync(processingDir, { recursive: true });
 }
 
 function logQueueState(file, status, error = null) {
@@ -43,6 +49,16 @@ console.log(`🐝 Found ${files.length} tasks in the queue. Processing...`);
 
 files.forEach((file, index) => {
   const filePath = path.join(queueDir, file);
+  const processingPath = path.join(processingDir, file);
+  
+  // Atomic claim: move from queueDir to processingDir before dispatching
+  try {
+    fs.renameSync(filePath, processingPath);
+  } catch (claimErr) {
+    // Another runner already claimed this task file
+    return;
+  }
+
   // Generate title from filename (e.g. "TASK-001-auth-spec.md" -> "TASK 001 auth spec")
   const title = file.replace(/\.md$/, "").replace(/-/g, " ");
   
@@ -51,13 +67,13 @@ files.forEach((file, index) => {
   logQueueState(file, "RUNNING");
   
   try {
-    execFileSync("node", [dispatchScript, title, filePath], {
+    execFileSync("node", [dispatchScript, title, processingPath], {
       stdio: "inherit",
     });
     
     // Move to completed
     const destPath = path.join(completedDir, file);
-    fs.renameSync(filePath, destPath);
+    fs.renameSync(processingPath, destPath);
     logQueueState(file, "COMPLETED");
     console.log(`✅ Moved ${file} to completed/`);
   } catch (error) {

@@ -17,7 +17,9 @@ function runCommand(cmd, ignoreError = false) {
 
 export function matchGlob(filepath, globPattern) {
   const cleanPath = filepath.replace(/\\/g, "/").replace(/^\.\//, "");
-  const segments = globPattern.split("/");
+  // Normalize consecutive glob wildcards (e.g., "**/**" -> "**")
+  const normalizedGlob = globPattern.replace(/\\/g, "/").replace(/(?:\*\*\/)+/g, "**/");
+  const segments = normalizedGlob.split("/");
   const regexParts = [];
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
@@ -33,12 +35,14 @@ export function matchGlob(filepath, globPattern) {
     }
   }
   let patternStr = regexParts.join("/");
-  patternStr = patternStr.replace(/(^|\/)\*\*(\/|$)/g, (m, p1, p2) => {
-    if (p1 === "/" && p2 === "/") return "(?:/|/.*/)";
-    if (p1 === "/") return "(?:/.*)?";
-    if (p2 === "/") return "(?:.*/)?";
+  patternStr = patternStr.replace(/(?:^|\/)\*\*(?:\/|$)/g, (m) => {
+    if (m === "**") return ".*";
+    if (m === "/**/") return "(?:/|/.*/)";
+    if (m === "/**") return "(?:/.*)?";
+    if (m === "**/") return "(?:.*/)?";
     return ".*";
   });
+  patternStr = patternStr.replace(/\*\*/g, ".*");
   return new RegExp(`^${patternStr}$`, "i").test(cleanPath);
 }
 
@@ -166,9 +170,9 @@ export function runSelfAudit() {
 
   console.log(`🔗 Merge-Base Hash: ${mergeBase}`);
 
-  const rawDiffFiles = runCommand(`git diff --name-only ${mergeBase}...HEAD`)
-    .split("\n")
-    .map((f) => f.trim())
+  const rawDiffFiles = runCommand(`git diff -z --name-only ${mergeBase}...HEAD`)
+    .split("\0")
+    .map((f) => f.trim().replace(/^["']|["']$/g, ""))
     .filter(Boolean);
 
   const isBloatFile = (file) => /(\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|\.png|\.jpg|\.jpeg|\.pdf|\.min\.js|\.map)$/i.test(file);

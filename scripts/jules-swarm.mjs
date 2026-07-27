@@ -38,31 +38,70 @@ process.env.JULES_PROJECT_ROOT = process.cwd();
 
 console.log(`🐝 Launching Jules Swarm Orchestrator (${tasks.length} tasks, Concurrency: ${MAX_CONCURRENT}, Worktrees: ${USE_WORKTREES ? "ENABLED" : "DISABLED"})...`);
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const activeWorktrees = new Set();
+
+function cleanupAllWorktreesSync() {
+  for (const item of Array.from(activeWorktrees)) {
+    if (item.wtDir && fs.existsSync(item.wtDir)) {
+      try {
+        fs.chmodSync(item.wtDir, 0o755);
+      } catch (_) {}
+    }
+    try {
+      execFileSync("git", ["worktree", "remove", "--force", item.wtDir], { stdio: "ignore" });
+    } catch (_) {}
+    if (item.branchName) {
+      try {
+        execFileSync("git", ["branch", "-D", item.branchName], { stdio: "ignore" });
+      } catch (_) {}
+    }
+  }
+  activeWorktrees.clear();
+}
+
+process.on("SIGINT", () => {
+  console.warn("\n⚠️ SIGINT received. Cleaning up active Git worktrees...");
+  cleanupAllWorktreesSync();
+  process.exit(130);
+});
+
+process.on("SIGTERM", () => {
+  console.warn("\n⚠️ SIGTERM received. Cleaning up active Git worktrees...");
+  cleanupAllWorktreesSync();
+  process.exit(143);
+});
 
 async function createWorktree(taskId) {
   const slug = taskId.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const wtDir = path.resolve(process.cwd(), `.agent/worktrees/${slug}`);
   const branchName = `jules/${slug}`;
+  let item = null;
   try {
     if (!fs.existsSync(path.dirname(wtDir))) {
       fs.mkdirSync(path.dirname(wtDir), { recursive: true });
     }
     await execFileAsync("git", ["worktree", "add", "-b", branchName, wtDir, "HEAD"]);
-    return { wtDir, branchName };
+    item = { wtDir, branchName };
   } catch (err) {
     try {
       await execFileAsync("git", ["worktree", "add", "--force", wtDir, "HEAD"]);
-      return { wtDir, branchName: null };
+      item = { wtDir, branchName: null };
     } catch (fallbackErr) {
       console.warn(`⚠️ Failed to create worktree for ${taskId}:`, fallbackErr.message);
       return null;
     }
   }
+  if (item) activeWorktrees.add(item);
+  return item;
 }
 
 async function removeWorktree(wtDir, branchName) {
   if (!wtDir) return;
+  for (const item of Array.from(activeWorktrees)) {
+    if (item.wtDir === wtDir) {
+      activeWorktrees.delete(item);
+    }
+  }
   try {
     await execFileAsync("git", ["worktree", "remove", "--force", wtDir]);
   } catch (err) {

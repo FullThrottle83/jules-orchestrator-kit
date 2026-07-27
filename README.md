@@ -54,8 +54,7 @@ Instead of blindly trusting AI code mutations, the Orchestrator acts as a strict
 2. **Secret & Path Defense:** Hides passwords, API keys (`entropy > 3.6`), and blocks path traversal (`../`).
 3. **Jules Proposes Code:** Google Jules mutates code in an isolated environment.
 4. **Tiered Verification:** Enforces scope bounds (`git diff`), runs fast-fail linters/type-checks, then executes full test/build suites.
-5. **Self-Correction (OODA Loop):** If tests fail, stderr traces are fed back to Jules to self-correct (up to 4 attempts).
-6. **Clean Pull Request:** Once verified green, commits & pushes clean code to GitHub.
+5. **Self-Healing PR Gatekeeper (OODA Feedback):** Parses execution stderr traces, logs diagnostic telemetry to `.agent/history/metrics.jsonl`, and enforces strict exit code 1 to block bad code from merging.
 
 <details>
 <summary><b>🔍 View System Architecture Diagram (For Power Users)</b></summary>
@@ -75,33 +74,22 @@ sequenceDiagram
     Orc->>Git: Provision Worktree (`git worktree add`)
     Orc->>Jules: Dispatch Context, Invariants & Target Scope
 
-    loop Max Retries (Attempts < 4)
-        Jules->>Git: Propose Code Mutations
-        
-        note over Orc,Git: Phase 2: Tiered Verification
-        Orc->>Git: Scope Audit (`git diff --name-only` vs forbidden_paths)
-        alt Scope Breach
-            Git-->>Orc: Scope Violation Error
-        else Scope OK
-            Orc->>Git: Run Fast-Fail Checks (Lint / Typecheck)
-            opt Pass Static Checks
-                Orc->>Git: Run Heavy Suite (`build_cmd` & `test_cmd`)
-            end
-        end
-
-        alt Verification Gates Pass
-            Orc->>Git: Commit, Push & Cleanup Worktree
-            Orc->>CLI: Return Success + Metrics (.agent/history/metrics.jsonl)
-            note over Jules,Git: Exit Loop
-        else Verification Gates Fail (Attempts < 4)
-            Git-->>Orc: Execution Trace (stdout/stderr / Diff)
-            Orc->>Jules: Inject OODA Feedback & Error Context
-        end
+    Jules->>Git: Propose Code Mutations
+    
+    note over Orc,Git: Phase 2: Tiered Verification Gatekeeper
+    Orc->>Git: Scope Audit (`git diff -z --name-only` vs forbidden_paths)
+    alt Scope Breach
+        Git-->>Orc: Scope Violation Error (Exit 1)
+    else Scope OK
+        Orc->>Git: Run Verification Suite (`test_cmd` & `build_cmd`)
     end
 
-    opt Verification Gates Fail (Attempts >= 4)
-        Orc->>Git: Abort & Rollback Worktree (`git worktree remove --force`)
-        Orc->>CLI: Return Terminal Failure (.agent/history/errors.jsonl)
+    alt Verification Gates Pass
+        Orc->>Git: Commit, Push & Log Telemetry (.agent/history/metrics.jsonl)
+        Orc->>CLI: Return Success (Exit 0)
+    else Verification Gates Fail
+        Git-->>Orc: Execution Trace (stdout/stderr / Diff)
+        Orc->>CLI: Log OODA Diagnostic Telemetry & Block PR (Exit 1)
     end
 ```
 

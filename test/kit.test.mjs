@@ -162,10 +162,13 @@ describe("Dynamic Guardrails Triggers Regex", () => {
 });
 
 describe("Package Manifest Verification", () => {
-  test("package.json includes .agent/ in files array for npm publication", () => {
+  test("package.json excludes wildcard .agent/ and includes scoped agent files", () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), "package.json"), "utf-8"));
     assert.ok(Array.isArray(pkg.files));
-    assert.ok(pkg.files.includes(".agent/"), ".agent/ directory must be included in package.json files array");
+    assert.equal(pkg.files.includes(".agent/"), false, ".agent/ wildcard MUST NOT be present to prevent publishing prompt logs");
+    assert.ok(pkg.files.includes(".agent/jules.yml"));
+    assert.ok(pkg.files.includes(".agent/rules/"));
+    assert.ok(pkg.files.includes(".agent/workflows/"));
   });
 });
 
@@ -187,6 +190,11 @@ describe("Security Input Validation", () => {
     assert.equal(SAFE_PKG_NAME.test("foo$(whoami)"), false);
     assert.equal(SAFE_PKG_NAME.test("foo;rm -rf /"), false);
     assert.equal(SAFE_PKG_NAME.test("foo`id`"), false);
+  });
+
+  test("handles consecutive double-star wildcards without regex syntax errors", () => {
+    assert.equal(matchGlob("a/secrets/b/c/foo", "**/secrets/**/**/foo"), true);
+    assert.equal(matchGlob("a/public/b/c/foo", "**/secrets/**/**/foo"), false);
   });
 });
 

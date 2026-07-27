@@ -28,7 +28,7 @@ function loadEnv() {
       if (!trimmed || trimmed.startsWith("#")) continue;
       const eqIdx = trimmed.indexOf("=");
       if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim();
+        const key = trimmed.slice(0, eqIdx).trim().replace(/^export\s+/, "");
         let val = trimmed.slice(eqIdx + 1).trim();
         if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
           val = val.slice(1, -1);
@@ -162,9 +162,23 @@ const repo = process.env.JULES_REPO || "";
 
 if (isMainModule) {
   const possiblePath = path.resolve(process.cwd(), taskPromptArg);
-  if (fs.existsSync(possiblePath) && fs.statSync(possiblePath).isFile()) {
-    assertPathWithinWorkspace(possiblePath);
-    rawPrompt = fs.readFileSync(possiblePath, "utf-8");
+  if (fs.existsSync(possiblePath)) {
+    try {
+      const verifiedPath = assertPathWithinWorkspace(possiblePath);
+      const fd = fs.openSync(verifiedPath, "r");
+      try {
+        const stat = fs.fstatSync(fd);
+        if (stat.isFile()) {
+          rawPrompt = fs.readFileSync(fd, "utf-8");
+        } else {
+          rawPrompt = taskPromptArg;
+        }
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch (_) {
+      rawPrompt = taskPromptArg;
+    }
   } else {
     rawPrompt = taskPromptArg;
   }
