@@ -98,6 +98,11 @@ graph TD
     G -- "No (Circuit Tripped)" --> H["❌ Exit 4: Diagnostic Abort"]
 ```
 
+> 💡 **Core Architectural Invariants**:
+> - **Zero-Trust Base-Branch Security**: Security rules (`forbidden_paths`) are fetched exclusively from `origin/main` (never untrusted PR branches) to prevent prompt injections from loosening path restrictions.
+> - **Dynamic Command Resolution (`command-resolver.mjs`)**: Automatically detects affected workspace boundaries (Turborepo, pnpm, Nx, Cargo, pytest, npm) to run targeted verification suites.
+> - **SHA-256 OODA Circuit Breaker**: Fingerprints failure traces (`ooda-circuit.json`). If identical error signatures occur twice, auto-repair halts immediately to prevent token burn.
+
 <details>
 <summary><b>🔍 View Detailed Sequence Diagram (Step-by-Step Execution Protocol)</b></summary>
 
