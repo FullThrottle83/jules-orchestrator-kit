@@ -50,7 +50,16 @@ if (!fs.existsSync(agentsFile) || isForce) {
     console.log("✅ Created: AGENTS.md");
   }
 } else {
-  console.log("ℹ️ AGENTS.md already exists (skipped overwrite).");
+  const existingContent = fs.readFileSync(agentsFile, "utf-8");
+  if (!existingContent.includes("<MCP_DIRECTIVE>")) {
+    if (fs.existsSync(julesRulesSource)) {
+      const templateContent = fs.readFileSync(julesRulesSource, "utf-8");
+      fs.appendFileSync(agentsFile, `\n\n---\n\n${templateContent}`, "utf-8");
+      console.log("✅ Appended Google Jules directives to existing AGENTS.md");
+    }
+  } else {
+    console.log("ℹ️ AGENTS.md already contains Jules directives (skipped overwrite).");
+  }
 }
 
 // 3. Scaffold .agent/ structure
