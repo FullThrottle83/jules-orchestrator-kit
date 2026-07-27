@@ -2,6 +2,8 @@
 
 A lightweight, framework-agnostic toolkit for turning **Google Jules** into a deterministic, autonomous background code builder for any repository (Next.js, Vite, Node, Python, Go, Rust, etc.).
 
+> **TL;DR**: Don't use Google Jules like a chat assistant. Use it as an autonomous background worker. This toolkit grounds Jules with pre-execution documentation lookups (`MCP DIRECTIVE`), automated test/build verification gates, PR self-auditing against merge-base, and scheduled nightly maintenance audits.
+
 ---
 
 ## 💡 Why This Toolkit Exists
