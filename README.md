@@ -88,14 +88,22 @@ graph TD
 
 ```mermaid
 graph TD
-    A["1. Client Trigger<br/><i>(CLI / CI / SDK / REST API)</i>"] --> B["2. Orchestrator Core<br/><i>(Redaction & Guardrails)</i>"]
-    B --> C["3. Google Jules Agent<br/><i>(Code Gen in Sandbox)</i>"]
-    C --> D{"4. Self-Audit Gatekeeper<br/><i>(Scope & Test Suite)</i>"}
-    D -- "Scope Breach" --> E["❌ Exit 3: Security Violation"]
-    D -- "100% Passed" --> F["✅ Exit 0: Success & Telemetry"]
-    D -- "Test Failure" --> G{"5. OODA Auto-Repair<br/><i>(Retries < 3)</i>"}
-    G -- "Retry" --> C
-    G -- "Circuit Tripped" --> H["❌ Exit 4: Diagnostic Abort"]
+    classDef start fill:#1f2937,stroke:#4b5563,color:#f9fafb;
+    classDef core fill:#111827,stroke:#374151,color:#f9fafb;
+    classDef gate fill:#1e1b4b,stroke:#4338ca,color:#e0e7ff;
+    classDef success fill:#064e3b,stroke:#059669,color:#ecfdf5;
+    classDef error fill:#4c0519,stroke:#e11d48,color:#fff1f2;
+
+    A["1. Client Trigger<br/><i>(CLI / CI / SDK / REST API)</i>"]:::start --> B["2. Orchestrator Core<br/><i>(Redaction & Guardrails)</i>"]:::core
+    B --> C["3. Google Jules Agent<br/><i>(Code Gen in Sandbox)</i>"]:::core
+    C --> D{"4. Gatekeeper<br/><i>(Scope & Tests)</i>"}:::gate
+    
+    D -->|Scope Breach| E["❌ Exit 3<br/>Security Violation"]:::error
+    D -->|100% Passed| F["✅ Exit 0<br/>Success & Log"]:::success
+    D -->|Test Failure| G{"5. OODA Repair<br/><i>(Retries < 3?)</i>"}:::gate
+    
+    G -->|Retry| C
+    G -->|Circuit Tripped| H["❌ Exit 4<br/>Diagnostic Abort"]:::error
 ```
 
 > 💡 **Core Architectural Invariants**:
