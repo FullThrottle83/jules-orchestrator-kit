@@ -35,27 +35,22 @@ sequenceDiagram
 
     CLI->>Orc: Dispatch Task ("Refactor Auth")
     
-    rect rgb(240, 240, 240)
-        note over Orc,Git: Isolation & Setup Phase
-        Orc->>Orc: Redact Secrets & Check Traversal
-        Orc->>Git: Provision Worktree (`git worktree add`)
-    end
-
+    note over Orc,Git: Phase 1: Isolation & Setup
+    Orc->>Orc: Redact Secrets & Check Path Traversal
+    Orc->>Git: Provision Worktree (`git worktree add`)
     Orc->>Jules: Dispatch Context, Invariants & Target Scope
 
     loop Max Retries (Attempts < 4)
         Jules->>Git: Propose Code Mutations
         
-        rect rgb(240, 240, 240)
-            note over Orc,Git: Tiered Verification Phase
-            Orc->>Git: Scope Audit (`git diff --name-only` vs forbidden_paths)
-            alt Scope Breach
-                Git-->>Orc: Scope Violation Error
-            else Scope OK
-                Orc->>Git: Run Fast-Fail Checks (Lint / Typecheck)
-                opt Pass Static Checks
-                    Orc->>Git: Run Heavy Suite (`build_cmd` & `test_cmd`)
-                end
+        note over Orc,Git: Phase 2: Tiered Verification
+        Orc->>Git: Scope Audit (`git diff --name-only` vs forbidden_paths)
+        alt Scope Breach
+            Git-->>Orc: Scope Violation Error
+        else Scope OK
+            Orc->>Git: Run Fast-Fail Checks (Lint / Typecheck)
+            opt Pass Static Checks
+                Orc->>Git: Run Heavy Suite (`build_cmd` & `test_cmd`)
             end
         end
 
