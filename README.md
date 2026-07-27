@@ -88,7 +88,7 @@ graph TD
 
 ```mermaid
 graph TD
-    A["1. Client Trigger<br/><i>(CLI / CI / SDK / Queue)</i>"] --> B["2. Orchestrator Core<br/><i>(Entropy Redaction & Guardrails)</i>"]
+    A["1. Client Trigger<br/><i>(CLI / CI / SDK / REST API / Queue)</i>"] --> B["2. Orchestrator Core<br/><i>(Entropy Redaction & Guardrails)</i>"]
     B --> C["3. Google Jules Agent<br/><i>(Code Gen in Isolated Sandbox)</i>"]
     C --> D{"4. Self-Audit Gatekeeper<br/><i>(Scope Audit & Test Suite)</i>"}
     D -- "Scope Breach" --> E["❌ Exit 3: Security Violation"]
