@@ -1,6 +1,6 @@
 # Google Jules Orchestration Kit
 
-A lightweight, framework-agnostic toolkit for turning **Google Jules** into a deterministic, autonomous background code builder for any repository (Next.js, Vite, Node, Python, Go, Rust, Java, etc.).
+A lightweight, framework-agnostic toolkit for turning **Google Jules** into a deterministic, autonomous background code builder for any repository (Next.js, Vite, Node, Bun, Deno, Python, Go, Rust, Elixir, Ruby, Swift, Java, C/C++, Monorepos, etc.).
 
 > **TL;DR**: Don't use Google Jules like a chat assistant. Use it as an autonomous background worker. Run `npx github:FullThrottle83/jules-orchestrator-kit` inside any repository to automatically detect your tech stack, generate prompt guardrails, set up test/build verification gates, and install Jules orchestration scripts.
 
@@ -15,9 +15,9 @@ npx github:FullThrottle83/jules-orchestrator-kit
 ```
 
 This single command will:
-1. **Detect your tech stack** (Node, Rust, Go, Python, Java, C/C++) via `command-resolver.mjs`.
+1. **Detect your tech stack & workspace structure** (Node, Bun, Deno, Rust, Go, Python, Elixir, Ruby, Swift, Java, C/C++, Turborepo, Nx, pnpm) via `command-resolver.mjs`.
 2. **Generate `AGENTS.md`** pre-populated with pre-execution `<MCP_DIRECTIVE>` rules and verification invariants.
-3. **Create `.agent/jules.yml`** pre-configured with detected `test_cmd` and `build_cmd`.
+3. **Create `.agent/jules.yml` (v2 Schema)** pre-configured with detected test/build commands and glob-based `forbidden_paths`.
 4. **Install `.agent/rules/dynamic-guardrails.json`** for RegEx-based dynamic prompt guardrail injection.
 5. **Install orchestration scripts** into `./scripts/` (`jules-dispatch.mjs`, `jules-self-audit.mjs`, `jules-swarm.mjs`, `jules-queue-runner.mjs`, `jules-nightly.py`).
 
@@ -26,12 +26,12 @@ This single command will:
 ## 💡 What This Toolkit Provides
 
 1. **Init Scaffolding CLI (`bin/init.js`)**: Auto-scaffolds any repo in 1 second.
-2. **Dynamic Command Resolution (`scripts/command-resolver.mjs`)**: Auto-detects project manifests (`package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `pom.xml`, `build.gradle`, `Makefile`, `.agent/jules.yml`) to inject exact build and test commands per language.
+2. **Monorepo & Command Resolver (`scripts/command-resolver.mjs`)**: Auto-detects project manifests and monorepo workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`, `Cargo.toml` workspaces) to run $O(1)$ affected package verifications instead of $O(N)$ full-repo test suites.
 3. **Dynamic Guardrail Composition (`.agent/rules/dynamic-guardrails.json`)**: RegEx-based rule matching that injects targeted stack guardrails into prompts on-the-fly.
-4. **CLI & REST Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-injects dynamic guardrails, bypasses OS `ARG_MAX` payload limits via ephemeral files, and handles HTTP 429 backoff.
-5. **PR Self-Auditor (`scripts/jules-self-audit.mjs`)**: Automatically unshallows git history in CI runners (`git fetch --unshallow`), filters out lockfiles/binary bloat, checks restricted boundaries, and runs test suites.
+4. **Pre-Flight Secret Redaction & REST Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-redacts API keys (`ghp_`, `AKIA`, `sk-`, `Bearer`, RSA keys), bypasses OS `ARG_MAX` payload limits via ephemeral files, and handles HTTP 429 rate limits.
+5. **PR Self-Auditor & Glob Boundary Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), filters token bloat, enforces dynamic glob-based security boundaries (`forbidden_paths`), and runs scoped workspace test suites.
 6. **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, and moves finished tasks to `.agent/jules-queue/completed/`.
-7. **Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Runs multi-task batches in parallel with `Promise.allSettled()` and 15-minute TTL timeouts.
+7. **Rate-Limited Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Manages multi-task batches with controlled concurrency (`MAX_CONCURRENT = 2`), staggered dispatches (2.5s interval), and batch cooldowns to eliminate API rate-limit thrashing.
 8. **Nightly Maintenance Suite (`scripts/jules-nightly.py`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning, unused env var cleanup).
 
 ---
@@ -50,6 +50,12 @@ node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding windo
 npm run jules:queue
 ```
 
+### Run Rate-Limited Swarm Dispatch
+
+```bash
+node scripts/jules-swarm.mjs tasks.json
+```
+
 ### Run Nightly Maintenance Suite
 
 ```bash
@@ -64,23 +70,48 @@ node scripts/jules-self-audit.mjs
 
 ---
 
-## 🛠️ Supported Language Manifests
+## 🛠️ Supported Language Manifests & Workspace Graphs
 
 The command resolver automatically sniffs your codebase and invokes the right verification chain:
 
-| Language | Manifest File | Default Test & Build Commands |
+| Stack / Ecosystem | Manifest / Workspace File | Default Verification Command |
 |---|---|---|
+| **Turborepo** | `turbo.json` | `npx turbo run test --filter=<pkg>...` |
+| **pnpm Workspace** | `pnpm-workspace.yaml` | `pnpm --filter=...<pkg> test` |
+| **Nx Workspace** | `nx.json` | `npx nx run-many -t test -p <pkg> --with-deps` |
+| **Bun** | `bunfig.toml` / `bun.lockb` | `bun test && bun run build` |
+| **Deno** | `deno.json` / `deno.jsonc` | `deno test && deno task build` |
 | **JavaScript / TypeScript** | `package.json` | `npm run check:all && npm test && npm run build` |
-| **Rust** | `Cargo.toml` | `cargo test --workspace && cargo build` |
+| **Rust** | `Cargo.toml` | `cargo test -p <pkg>` / `cargo test --workspace` |
 | **Go** | `go.mod` | `go test ./... && go build ./...` |
 | **Python** | `pyproject.toml` / `requirements.txt` | `pytest` |
+| **Elixir** | `mix.exs` | `mix test && mix compile` |
+| **Ruby** | `Gemfile` | `bundle exec rake test` |
+| **Swift** | `Package.swift` | `swift test && swift build` |
 | **Java (Maven)** | `pom.xml` | `mvn test && mvn compile` |
 | **Java (Gradle)** | `build.gradle` | `./gradlew test && ./gradlew assemble` |
 | **C / C++** | `Makefile` | `make test && make build` |
-| **Custom** | `.agent/jules.yml` | User-defined `test_cmd` & `build_cmd` |
+| **Custom Config (v2)** | `.agent/jules.yml` | Configurable `test_cmd`, `build_cmd` & `forbidden_paths` |
+
+---
+
+## ⚙️ Configuration (`.agent/jules.yml`)
+
+```yaml
+# Google Jules Repository Configuration (Version 2)
+version: 2
+test_cmd: "npm test"
+build_cmd: "npm run build"
+forbidden_paths:
+  - ".github/**"
+  - "**/secrets/**"
+  - "**/*.pem"
+  - "**/lock-manager/**"
+```
 
 ---
 
 ## 📜 License
 
 MIT License - feel free to use, modify, and share!
+
