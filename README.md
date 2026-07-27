@@ -138,6 +138,43 @@ The command resolver automatically sniffs your codebase and invokes the right ve
 
 ---
 
+## 🌐 Integration Interfaces: CLI, REST API & MCP Directives
+
+`jules-orchestrator-kit` supports three primary integration channels:
+
+### 1. Direct REST API Mode (`jules.googleapis.com`)
+When `JULES_API_KEY` and `JULES_REPO` are present in your environment (`.env` or CI secrets), `scripts/jules-dispatch.mjs` dispatches payloads directly to the official Google Jules REST API endpoint:
+```http
+POST https://jules.googleapis.com/v1alpha/sessions
+X-Goog-Api-Key: $JULES_API_KEY
+Content-Type: application/json
+```
+- Handles HTTP 429 rate limits gracefully without falling back to CLI.
+- Automatically maps `startingBranch` (`BASE_BRANCH` or `main`) and `sourceContext`.
+
+### 2. Native Jules CLI Fallback (`jules new`)
+If `JULES_API_KEY` is omitted or unconfigured, `jules-dispatch.mjs` seamlessly falls back to invoking the local `jules` CLI binary:
+```bash
+jules new --repo owner/repo
+```
+Prompts are piped directly via `stdin` to bypass OS `ARG_MAX` shell argument length limits.
+
+### 3. MCP (Model Context Protocol) Directives
+All task dispatches dynamically inject `<MCP_DIRECTIVE>` envelopes into task prompts:
+```xml
+<MCP_DIRECTIVE>
+  <system_state>HEADLESS_CI_MODE</system_state>
+  <strict_invariants>
+    <rule>1. READ-BEFORE-WRITE: Inspect symbol definitions before editing.</rule>
+    <rule>2. VERIFICATION LOOP: Execute test_cmd and build_cmd and pass with 0 errors.</rule>
+    <rule>3. ABORT CONDITION: Terminate on 4+ repeated test failures.</rule>
+  </strict_invariants>
+</MCP_DIRECTIVE>
+```
+This forces Jules to adhere to strict read-before-write invariants and deterministic execution when operating alongside MCP server tools.
+
+---
+
 ## ⚙️ Configuration (`.agent/jules.yml`)
 
 ```yaml
