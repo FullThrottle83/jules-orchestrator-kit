@@ -70,11 +70,11 @@ npm run jules:status
 
 ```mermaid
 graph TD
-    A[You Assign Task] --> B[Jules Writes Code in Sandbox]
-    B --> C[Run Tests & Linters]
-    C --> D{Tests Pass?}
-    D -->|Yes| E[Create PR for Review]
-    D -->|No| F[Jules Fixes Code]
+    A["You Assign Task"] --> B["Jules Writes Code<br/>in Sandbox"]
+    B --> C["Run Tests & Linters"]
+    C --> D{"Tests Pass?"}
+    D -->|Yes| E["Create PR for Review"]
+    D -->|No| F["Jules Fixes Code"]
     F --> C
 ```
 
