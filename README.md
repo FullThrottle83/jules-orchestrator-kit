@@ -2,61 +2,61 @@
 
 A lightweight, framework-agnostic toolkit for turning **Google Jules** into a deterministic, autonomous background code builder for any repository (Next.js, Vite, Node, Python, Go, Rust, Java, etc.).
 
-> **TL;DR**: Don't use Google Jules like a chat assistant. Use it as an autonomous background worker. This toolkit grounds Jules with pre-execution documentation lookups (`MCP DIRECTIVE`), dynamic language test/build command auto-discovery, PR self-auditing against merge-base, CI shallow-clone defense, and scheduled nightly maintenance audits.
+> **TL;DR**: Don't use Google Jules like a chat assistant. Use it as an autonomous background worker. Run `npx github:FullThrottle83/jules-orchestrator-kit` inside any repository to automatically detect your tech stack, generate prompt guardrails, set up test/build verification gates, and install Jules orchestration scripts.
 
 ---
 
-## 💡 Why This Toolkit Exists
+## ⚡ 1-Step Quick Setup for Any Project
 
-Most developers find AI coding agents like Jules slow or inaccurate because they treat them like interactive chat assistants. Jules is an **autonomous background developer**. 
+Run this command inside the root of **any target repository**:
 
-This toolkit provides:
-1. **Dynamic Command Resolution (`scripts/command-resolver.mjs`)**: Auto-detects project manifests (`package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `pom.xml`, `build.gradle`, `Makefile`, `.agent/jules.yml`) to inject the exact build and test verification commands per language.
-2. **Dynamic Guardrail Composition (`.agent/rules/dynamic-guardrails.json`)**: RegEx-based rule matching that injects targeted stack guardrails into prompts on-the-fly.
-3. **CLI & REST Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-injects dynamic guardrails, bypasses OS `ARG_MAX` payload limits via ephemeral files, and handles HTTP 429 backoff.
-4. **PR Self-Auditor (`scripts/jules-self-audit.mjs`)**: Automatically unshallows git history in CI runners (`git fetch --unshallow`), filters out lockfiles/binary bloat, checks restricted boundaries, and runs test suites.
-5. **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, and moves finished tasks to `.agent/jules-queue/completed/`.
-6. **Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Runs multi-task batches in parallel with `Promise.allSettled()` and 15-minute TTL timeouts.
-7. **Nightly Maintenance Suite (`scripts/jules-nightly.py`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning, unused env var cleanup).
-8. **Directives Template (`JULES_RULES_TEMPLATE.md`)**: A framework-agnostic rule set with machine-readable XML `<MCP_DIRECTIVE>` envelopes.
+```bash
+npx github:FullThrottle83/jules-orchestrator-kit
+```
+
+This single command will:
+1. **Detect your tech stack** (Node, Rust, Go, Python, Java, C/C++) via `command-resolver.mjs`.
+2. **Generate `AGENTS.md`** pre-populated with pre-execution `<MCP_DIRECTIVE>` rules and verification invariants.
+3. **Create `.agent/jules.yml`** pre-configured with detected `test_cmd` and `build_cmd`.
+4. **Install `.agent/rules/dynamic-guardrails.json`** for RegEx-based dynamic prompt guardrail injection.
+5. **Install orchestration scripts** into `./scripts/` (`jules-dispatch.mjs`, `jules-self-audit.mjs`, `jules-swarm.mjs`, `jules-queue-runner.mjs`, `jules-nightly.py`).
 
 ---
 
-## 🚀 Quick Setup for Any Project
+## 💡 What This Toolkit Provides
 
-### Step 1: Copy rules into your project
-Copy `JULES_RULES_TEMPLATE.md` to `AGENTS.md` or `JULES.md` at the root of your target repository:
+1. **Init Scaffolding CLI (`bin/init.js`)**: Auto-scaffolds any repo in 1 second.
+2. **Dynamic Command Resolution (`scripts/command-resolver.mjs`)**: Auto-detects project manifests (`package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `pom.xml`, `build.gradle`, `Makefile`, `.agent/jules.yml`) to inject exact build and test commands per language.
+3. **Dynamic Guardrail Composition (`.agent/rules/dynamic-guardrails.json`)**: RegEx-based rule matching that injects targeted stack guardrails into prompts on-the-fly.
+4. **CLI & REST Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-injects dynamic guardrails, bypasses OS `ARG_MAX` payload limits via ephemeral files, and handles HTTP 429 backoff.
+5. **PR Self-Auditor (`scripts/jules-self-audit.mjs`)**: Automatically unshallows git history in CI runners (`git fetch --unshallow`), filters out lockfiles/binary bloat, checks restricted boundaries, and runs test suites.
+6. **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, and moves finished tasks to `.agent/jules-queue/completed/`.
+7. **Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Runs multi-task batches in parallel with `Promise.allSettled()` and 15-minute TTL timeouts.
+8. **Nightly Maintenance Suite (`scripts/jules-nightly.py`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning, unused env var cleanup).
 
-```bash
-cp JULES_RULES_TEMPLATE.md /path/to/your-repo/AGENTS.md
-```
+---
 
-### Step 2: Add scripts to your repo
-Copy the `scripts/` directory into your project:
+## 🛠️ Usage Examples
 
-```bash
-cp -r scripts/ /path/to/your-repo/scripts/
-```
-
-### Step 3: Dispatch a task to Jules
+### Dispatch a single task to Jules
 
 ```bash
 node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting using Redis. Must pass tests."
 ```
 
-Or process an entire queue of markdown task specifications:
+### Dispatch an entire queue of markdown task specifications
 
 ```bash
 npm run jules:queue
 ```
 
-### Step 4: Run Nightly Maintenance
+### Run Nightly Maintenance Suite
 
 ```bash
 python3 scripts/jules-nightly.py --dry-run
 ```
 
-### Step 5: Audit Jules PRs before merging
+### Audit Jules PRs before merging
 
 ```bash
 node scripts/jules-self-audit.mjs
@@ -78,15 +78,6 @@ The command resolver automatically sniffs your codebase and invokes the right ve
 | **Java (Gradle)** | `build.gradle` | `./gradlew test && ./gradlew assemble` |
 | **C / C++** | `Makefile` | `make test && make build` |
 | **Custom** | `.agent/jules.yml` | User-defined `test_cmd` & `build_cmd` |
-
----
-
-## 🎯 Core Operating Principles
-
-1. **MCP-First Directive**: Force Jules to fetch current framework & library documentation *before* writing code (`MCP DIRECTIVE: ...`).
-2. **Dynamic Verification Mandate**: Every prompt mandates execution of language-specific build & test suites before PR creation.
-3. **Zero Token Bloat**: Excludes lockfiles (`package-lock.json`, `Cargo.lock`), minified bundles, and binary assets from diff representations.
-4. **Restricted Boundaries**: Prevents Jules from modifying CI/CD workflows (`.github/`), security scripts, or dangerous database migrations without explicit approval.
 
 ---
 
