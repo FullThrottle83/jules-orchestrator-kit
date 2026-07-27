@@ -1,8 +1,11 @@
 # Google Jules Orchestration Kit
 
+[![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A lightweight, framework-agnostic toolkit for turning **Google Jules** into a deterministic, autonomous background code builder for any repository (Next.js, Vite, Node, Bun, Deno, Python, Go, Rust, Elixir, Ruby, Swift, Java, C/C++, Monorepos, etc.).
 
-> **TL;DR**: Don't use Google Jules like a chat assistant. Use it as an autonomous background worker. Run `npx github:FullThrottle83/jules-orchestrator-kit` inside any repository to automatically detect your tech stack, generate prompt guardrails, set up test/build verification gates, and install Jules orchestration scripts.
+> **TL;DR**: Don't use Google Jules like a chat assistant. Use it as an autonomous background worker. Run `npx jules-orchestrator-kit` inside any repository to automatically detect your tech stack, generate prompt guardrails, set up test/build verification gates, and install Jules orchestration scripts.
 
 ---
 
@@ -11,7 +14,9 @@ A lightweight, framework-agnostic toolkit for turning **Google Jules** into a de
 Run this command inside the root of **any target repository**:
 
 ```bash
-npx github:FullThrottle83/jules-orchestrator-kit
+npx jules-orchestrator-kit
+# or
+npx jules-init
 ```
 
 This single command will:
