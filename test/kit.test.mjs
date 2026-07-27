@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
-import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns } from "../scripts/jules-self-audit.mjs";
+import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr } from "../scripts/jules-self-audit.mjs";
+import { calculateEntropy, redactSecrets, assertPathWithinWorkspace } from "../scripts/jules-dispatch.mjs";
 
 describe("Dynamic Command Resolver", () => {
   test("resolves default verification commands from manifest or config", () => {
@@ -79,6 +80,37 @@ allow_paths:
     const allowed = loadAllowedPatterns(yaml);
     assert.ok(allowed.includes("scripts/jules-*"));
     assert.ok(allowed.includes(".github/**"));
+  });
+});
+
+describe("Shannon Entropy & Security Redaction", () => {
+  test("calculates low entropy for repetitive text and high entropy for random tokens", () => {
+    assert.ok(calculateEntropy("aaaaaaaaaaaaaaaaaaaa") < 1.0);
+    assert.ok(calculateEntropy("8f9a2b7c4d1e6f0a9b8c7d6e5f4a3b2c1d0e9f8a") > 3.5);
+    assert.ok(calculateEntropy("a8F9+a2B7/c4D1e6F0a9B8c7D6e5F4a3B2c1D0e9F8a+xyz=123456!@#$%^&*()") > 4.0);
+  });
+
+  test("redacts high entropy tokens from prompts", () => {
+    const prompt = "Use key 8f9a2b7c4d1e6f0a9b8c7d6e5f4a3b2c1d0e9f8a to connect";
+    const redacted = redactSecrets(prompt);
+    assert.ok(redacted.includes("[REDACTED_ENTROPY_KEY]"));
+  });
+
+  test("asserts path within workspace root and blocks traversal", () => {
+    const safe = assertPathWithinWorkspace("package.json");
+    assert.ok(safe.includes("package.json"));
+    assert.throws(() => {
+      assertPathWithinWorkspace("../../../etc/passwd");
+    }, /FATAL: Sandboxed directory traversal breach blocked/);
+  });
+});
+
+describe("Self-Healing OODA Feedback Parser", () => {
+  test("strips ANSI color codes and extracts tail of stderr", () => {
+    const raw = "\x1B[31mError: Test failed\x1B[0m\nLine 2\nLine 3";
+    const cleaned = parseAndCleanStderr(raw);
+    assert.equal(cleaned.includes("\x1B[31m"), false);
+    assert.ok(cleaned.includes("Error: Test failed"));
   });
 });
 

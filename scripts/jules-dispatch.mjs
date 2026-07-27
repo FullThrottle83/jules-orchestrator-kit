@@ -3,12 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 import { resolveProjectCommands } from "./command-resolver.mjs";
 
-const taskTitle = process.argv[2];
-const taskPromptArg = process.argv[3];
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
-if (!taskTitle || !taskPromptArg) {
+const taskTitle = isMainModule ? process.argv[2] : "";
+const taskPromptArg = isMainModule ? process.argv[3] : "";
+
+if (isMainModule && (!taskTitle || !taskPromptArg)) {
   console.error(
     'Usage: node scripts/jules-dispatch.mjs <task-title> <path-to-prompt.md | "raw prompt string">'
   );
@@ -39,8 +42,25 @@ function loadEnv() {
 }
 loadEnv();
 
-// 0.1 Pre-Flight Secret Redaction Gate
-function redactSecrets(text) {
+// 0.1 Shannon Entropy Calculator
+export function calculateEntropy(str) {
+  if (!str) return 0;
+  const len = str.length;
+  const frequencies = {};
+  for (let i = 0; i < len; i++) {
+    const char = str[i];
+    frequencies[char] = (frequencies[char] || 0) + 1;
+  }
+  let entropy = 0;
+  for (const char in frequencies) {
+    const p = frequencies[char] / len;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
+// 0.2 Pre-Flight Secret Redaction Gate (RegEx + Shannon Entropy)
+export function redactSecrets(text) {
   if (!text) return "";
   const patterns = [
     /gh[pusr]_[a-zA-Z0-9]{36}/g,
@@ -52,99 +72,77 @@ function redactSecrets(text) {
     /sk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}/g,
     /xox[baprs]-[a-zA-Z0-9\-]{10,}/g,
     /eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}/g,
-    /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/,
+    /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/g,
   ];
   let sanitized = text;
   for (const pat of patterns) {
     sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
   }
+  sanitized = sanitized.replace(/[a-zA-Z0-9_\-\.\:\/]{20,}/g, (token) => {
+    if (token.startsWith("[REDACTED_") || token.startsWith("http://") || token.startsWith("https://")) {
+      return token;
+    }
+    const entropy = calculateEntropy(token);
+    if (entropy > 3.6) {
+      return "[REDACTED_ENTROPY_KEY]";
+    }
+    return token;
+  });
   return sanitized;
+}
+
+// 0.3 Hardened Path Traversal & Symlink Defense
+export function assertPathWithinWorkspace(targetPath, workspaceRoot = process.cwd()) {
+  const rootReal = fs.existsSync(workspaceRoot) ? fs.realpathSync(path.resolve(workspaceRoot)) : path.resolve(workspaceRoot);
+  const resolvedTarget = path.resolve(rootReal, targetPath);
+  const targetReal = fs.existsSync(resolvedTarget) ? fs.realpathSync(resolvedTarget) : resolvedTarget;
+  const normalizedRoot = rootReal.replace(/\\/g, "/");
+  const normalizedTarget = targetReal.replace(/\\/g, "/");
+  if (!normalizedTarget.startsWith(normalizedRoot)) {
+    throw new Error(`FATAL: Sandboxed directory traversal breach blocked for path: ${targetPath}`);
+  }
+  return targetReal;
 }
 
 // 1. Resolve prompt content (file path or inline string)
 let rawPrompt = "";
-const possiblePath = path.resolve(process.cwd(), taskPromptArg);
-if (fs.existsSync(possiblePath) && fs.statSync(possiblePath).isFile()) {
-  rawPrompt = fs.readFileSync(possiblePath, "utf-8");
-} else {
-  rawPrompt = taskPromptArg;
-}
-rawPrompt = redactSecrets(rawPrompt);
+let fullPrompt = "";
+let historyFile = "";
+let tmpPayloadFile = "";
+let tmpDir = "";
 
-// 2. Dynamic Guardrail Composition (DGC) from .agent/rules/dynamic-guardrails.json
-function getDynamicGuardrails(promptText) {
-  const guardrailsPath = path.resolve(process.cwd(), ".agent/rules/dynamic-guardrails.json");
-  if (!fs.existsSync(guardrailsPath)) return "";
-
-  try {
-    const data = JSON.parse(fs.readFileSync(guardrailsPath, "utf-8"));
-    if (!data.rules || !Array.isArray(data.rules)) return "";
-
-    const active = [];
-    for (const item of data.rules) {
-      if (new RegExp(item.trigger, "i").test(promptText)) {
-        active.push(item.guardrail);
-      }
-    }
-    return active.join("\n\n");
-  } catch (e) {
-    return "";
+if (isMainModule) {
+  const possiblePath = path.resolve(process.cwd(), taskPromptArg);
+  if (fs.existsSync(possiblePath) && fs.statSync(possiblePath).isFile()) {
+    assertPathWithinWorkspace(possiblePath);
+    rawPrompt = fs.readFileSync(possiblePath, "utf-8");
+  } else {
+    rawPrompt = taskPromptArg;
   }
+  rawPrompt = redactSecrets(rawPrompt);
+
+  const dynamicRules = getDynamicGuardrails(rawPrompt);
+  fullPrompt = redactSecrets(`MCP DIRECTIVE: ${rawPrompt.trim()}${verifyDirective}\n\n---\n\n${envelope}\n\n---\n\n${dynamicRules ? `${dynamicRules}\n\n---\n\n` : ""}${baseRules.trim()}`);
+
+  const dateStr = new Date().toISOString().split("T")[0];
+  const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+  const historyDir = path.resolve(process.cwd(), ".agent/history");
+  if (!fs.existsSync(historyDir)) {
+    fs.mkdirSync(historyDir, { recursive: true });
+  }
+  historyFile = path.join(historyDir, `${dateStr}-dispatch-${slug}.md`);
+  fs.writeFileSync(historyFile, `---\ntype: jules_dispatch\ntitle: "${taskTitle}"\ntimestamp: "${new Date().toISOString()}"\n---\n# Jules Task Dispatch: ${taskTitle}\n\n## Prompt\n${rawPrompt}\n`, "utf-8");
+
+  console.log(`🚀 Dispatching task to Google Jules: "${taskTitle}"...`);
+  console.log(`📝 Logged dispatch history to: ${path.relative(process.cwd(), historyFile)}`);
+
+  const payloadHash = crypto.createHash("sha256").update(taskTitle + Date.now()).digest("hex").slice(0, 12);
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-payload-"));
+  tmpPayloadFile = path.join(tmpDir, `payload_${payloadHash}.json`);
+  const repo = process.env.JULES_REPO;
+  fs.writeFileSync(tmpPayloadFile, JSON.stringify({ repo, title: taskTitle, prompt: fullPrompt }), { mode: 0o600 });
 }
-
-// 3. Dynamic Command Resolution (Language & Framework Detection)
-const resolvedCmds = resolveProjectCommands(process.cwd());
-const verifyDirective = resolvedCmds.testCmd || resolvedCmds.buildCmd
-  ? `\n\n## 🛠️ MANDATORY VERIFICATION COMMANDS\nBefore submitting PR, you MUST execute: \`${[resolvedCmds.testCmd, resolvedCmds.buildCmd].filter(Boolean).join(" && ")}\``
-  : "";
-
-// 4. Load Base Rules / Guardrails
-const rulesPath = fs.existsSync(path.resolve(process.cwd(), "AGENTS.md"))
-  ? path.resolve(process.cwd(), "AGENTS.md")
-  : path.resolve(process.cwd(), "JULES_RULES_TEMPLATE.md");
-
-const baseRules = fs.existsSync(rulesPath)
-  ? fs.readFileSync(rulesPath, "utf-8")
-  : "";
-
-const dynamicRules = getDynamicGuardrails(rawPrompt);
-
-// Machine XML Directives
-const envelope = `
-<MCP_DIRECTIVE>
-  <system_state>HEADLESS_CI_MODE</system_state>
-  <strict_invariants>
-    <rule>1. READ-BEFORE-WRITE (ZERO HALLUCINATION): You are FORBIDDEN from guessing internal API signatures. Before editing, use search tools or MCP doc tools to verify exact signatures.</rule>
-    <rule>2. VERIFICATION LOOP: After patching code, you MUST execute the verification commands and ensure 0 errors.</rule>
-    <rule>3. ABORT CONDITION: On repeated unresolvable test failures, output <status>ABORT_UNRESOLVABLE</status> and terminate.</rule>
-  </strict_invariants>
-</MCP_DIRECTIVE>
-`.trim();
-
-const fullPrompt = redactSecrets(`MCP DIRECTIVE: ${rawPrompt.trim()}${verifyDirective}\n\n---\n\n${envelope}\n\n---\n\n${dynamicRules ? `${dynamicRules}\n\n---\n\n` : ""}${baseRules.trim()}`);
-
-// 5. Log Dispatch History
-const dateStr = new Date().toISOString().split("T")[0];
-const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-
-const historyDir = path.resolve(process.cwd(), ".agent/history");
-if (!fs.existsSync(historyDir)) {
-  fs.mkdirSync(historyDir, { recursive: true });
-}
-const historyFile = path.join(historyDir, `${dateStr}-dispatch-${slug}.md`);
-fs.writeFileSync(historyFile, `---\ntype: jules_dispatch\ntitle: "${taskTitle}"\ntimestamp: "${new Date().toISOString()}"\n---\n# Jules Task Dispatch: ${taskTitle}\n\n## Prompt\n${rawPrompt}\n`, "utf-8");
-
-console.log(`🚀 Dispatching task to Google Jules: "${taskTitle}"...`);
-console.log(`📝 Logged dispatch history to: ${path.relative(process.cwd(), historyFile)}`);
-
-// 6. Dispatch via REST API or Ephemeral Payload File (Avoid ARG_MAX shell limits)
-const apiKey = process.env.JULES_API_KEY;
-const repo = process.env.JULES_REPO;
-
-const payloadHash = crypto.createHash("sha256").update(taskTitle + Date.now()).digest("hex").slice(0, 12);
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-payload-"));
-const tmpPayloadFile = path.join(tmpDir, `payload_${payloadHash}.json`);
-fs.writeFileSync(tmpPayloadFile, JSON.stringify({ repo, title: taskTitle, prompt: fullPrompt }), { mode: 0o600 });
 
 function cleanupTmp() {
   try {
@@ -240,9 +238,11 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
 }
 
 
-executeDispatch().catch((err) => {
-  console.error("❌ Fatal unhandled rejection in dispatch:", err);
-  process.exit(1);
-});
+if (isMainModule) {
+  executeDispatch().catch((err) => {
+    console.error("❌ Fatal unhandled rejection in dispatch:", err);
+    process.exit(1);
+  });
+}
 
 

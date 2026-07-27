@@ -3,6 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
+import readline from "node:readline/promises";
 import { resolveProjectCommands } from "../scripts/command-resolver.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,8 +12,27 @@ const __dirname = path.dirname(__filename);
 const kitRoot = path.resolve(__dirname, "..");
 const targetDir = process.cwd();
 
-const isHelp = process.argv.includes("--help") || process.argv.includes("-h");
-const isForce = process.argv.includes("--force") || process.argv.includes("-f");
+let isHelp = false;
+let isForce = false;
+let isInteractive = false;
+
+try {
+  const { values } = parseArgs({
+    options: {
+      help: { type: "boolean", short: "h", default: false },
+      force: { type: "boolean", short: "f", default: false },
+      interactive: { type: "boolean", short: "i", default: false },
+    },
+    allowPositionals: true,
+  });
+  isHelp = values.help;
+  isForce = values.force;
+  isInteractive = values.interactive;
+} catch (_) {
+  isHelp = process.argv.includes("--help") || process.argv.includes("-h");
+  isForce = process.argv.includes("--force") || process.argv.includes("-f");
+  isInteractive = process.argv.includes("--interactive") || process.argv.includes("-i");
+}
 
 if (isHelp) {
   console.log(`
@@ -22,8 +43,9 @@ Usage:
   npx jules-init [options]
 
 Options:
-  -f, --force    Overwrite existing AGENTS.md, .agent/jules.yml, and orchestration scripts.
-  -h, --help     Show this help message.
+  -f, --force          Overwrite existing AGENTS.md, .agent/jules.yml, and orchestration scripts.
+  -i, --interactive    Launch interactive wizard to prompt for repository and branch configuration.
+  -h, --help           Show this help message.
 `);
   process.exit(0);
 }
@@ -31,6 +53,22 @@ Options:
 console.log("\n🚀 Initializing Google Jules Orchestration Kit...\n");
 console.log(`📁 Target Directory: ${targetDir}`);
 if (isForce) console.log("⚠️ Force mode enabled (existing files will be overwritten).");
+
+// Dual TTY Interactive Wizard
+if (process.stdin.isTTY && (isInteractive || (!fs.existsSync(path.join(targetDir, ".agent/jules.yml")) && !process.env.CI))) {
+  try {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answerRepo = await rl.question("📦 Enter target GitHub repository (e.g. owner/repo) [optional]: ");
+    if (answerRepo.trim()) {
+      process.env.JULES_REPO = answerRepo.trim();
+    }
+    const answerBranch = await rl.question("🌿 Enter base branch [default: main]: ");
+    if (answerBranch.trim()) {
+      process.env.BASE_BRANCH = answerBranch.trim();
+    }
+    rl.close();
+  } catch (_) {}
+}
 
 // 1. Detect Stack & Manifests
 const detected = resolveProjectCommands(targetDir);

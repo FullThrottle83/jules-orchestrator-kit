@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 
 const queueDir = path.resolve(process.cwd(), ".agent/jules-queue");
 const completedDir = path.resolve(process.cwd(), ".agent/jules-queue/completed");
+const queueLogFile = path.join(queueDir, "queue.jsonl");
 
 if (!fs.existsSync(queueDir)) {
   console.error(`❌ Queue directory not found: ${queueDir}`);
@@ -14,10 +15,19 @@ if (!fs.existsSync(completedDir)) {
   fs.mkdirSync(completedDir, { recursive: true });
 }
 
+function logQueueState(file, status, error = null) {
+  const entry = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    file,
+    status,
+    error: error ? error.message || String(error) : null,
+  }) + "\n";
+  fs.appendFileSync(queueLogFile, entry, "utf-8");
+}
+
 const files = fs.readdirSync(queueDir).filter(
   (f) => f.endsWith(".md") && f !== "README.md" && !f.startsWith("_") && !f.startsWith(".")
 );
-
 
 if (files.length === 0) {
   console.log("ℹ️ No tasks found in the queue.");
@@ -33,6 +43,7 @@ files.forEach((file, index) => {
   
   console.log(`\n----------------------------------------`);
   console.log(`[${index + 1}/${files.length}] Dispatching queued task: ${title}`);
+  logQueueState(file, "RUNNING");
   
   try {
     execFileSync("node", ["scripts/jules-dispatch.mjs", title, filePath], {
@@ -42,8 +53,10 @@ files.forEach((file, index) => {
     // Move to completed
     const destPath = path.join(completedDir, file);
     fs.renameSync(filePath, destPath);
+    logQueueState(file, "COMPLETED");
     console.log(`✅ Moved ${file} to completed/`);
   } catch (error) {
+    logQueueState(file, "FAILED", error);
     console.error(`⚠️ Failed to dispatch task [${title}]:`, error.message);
   }
 });

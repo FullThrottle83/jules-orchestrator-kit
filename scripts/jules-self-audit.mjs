@@ -112,6 +112,26 @@ export function loadAllowedPatterns(configContent = "") {
   return blockParsed;
 }
 
+export function parseAndCleanStderr(stderrStr) {
+  if (!stderrStr) return "";
+  const clean = stderrStr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+  const lines = clean.split("\n").filter(Boolean);
+  return lines.slice(-100).join("\n");
+}
+
+export function logAuditMetrics(metrics) {
+  const historyDir = path.resolve(process.cwd(), ".agent/history");
+  if (!fs.existsSync(historyDir)) {
+    fs.mkdirSync(historyDir, { recursive: true });
+  }
+  const metricsFile = path.join(historyDir, "metrics.jsonl");
+  const logLine = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    ...metrics,
+  }) + "\n";
+  fs.appendFileSync(metricsFile, logLine, "utf-8");
+}
+
 export function runSelfAudit() {
   console.log("🔍 Running Jules PR Self-Audit Gatekeeper...\n");
 
@@ -150,7 +170,6 @@ export function runSelfAudit() {
   const forbiddenPatterns = loadForbiddenPatterns(trustedConfig);
   const allowedPatterns = loadAllowedPatterns(trustedConfig);
 
-
   const violations = rawDiffFiles.filter((file) => {
     const isForbidden = forbiddenPatterns.some((pattern) => matchGlob(file, pattern));
     if (!isForbidden) return false;
@@ -166,23 +185,58 @@ export function runSelfAudit() {
   }
   console.log("\n✅ Restricted File Boundary Check: PASSED");
 
-
   console.log("\n🛠️ Resolving Dynamic Verification Suite...");
   const resolvedCmds = resolveWorkspaceExecutionBoundary(changedCodeFiles, process.cwd());
   console.log(`📋 Discovered Execution Scope: ${resolvedCmds.source}`);
 
+  const startTime = Date.now();
+  let testPassed = true;
+  let failureLog = "";
+
+  const runVerification = (cmd) => {
+    try {
+      execSync(cmd, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      return true;
+    } catch (err) {
+      failureLog = parseAndCleanStderr((err.stderr || "") + "\n" + (err.stdout || "") + "\n" + (err.message || ""));
+      return false;
+    }
+  };
+
   if (resolvedCmds.testCmd) {
     console.log(`▶ Running Test Verification: ${resolvedCmds.testCmd}`);
-    runCommand(resolvedCmds.testCmd);
+    if (!runVerification(resolvedCmds.testCmd)) {
+      testPassed = false;
+      console.error(`❌ Test verification failed: ${resolvedCmds.testCmd}`);
+    }
   }
-  if (resolvedCmds.buildCmd) {
+
+  if (testPassed && resolvedCmds.buildCmd) {
     console.log(`▶ Running Build Verification: ${resolvedCmds.buildCmd}`);
-    runCommand(resolvedCmds.buildCmd);
+    if (!runVerification(resolvedCmds.buildCmd)) {
+      testPassed = false;
+      console.error(`❌ Build verification failed: ${resolvedCmds.buildCmd}`);
+    }
   }
 
   if (!resolvedCmds.testCmd && !resolvedCmds.buildCmd) {
     console.log("ℹ️ No build or test scripts found. Running git status check.");
     runCommand("git status");
+  }
+
+  const durationMs = Date.now() - startTime;
+  logAuditMetrics({
+    targetBranch,
+    changedFilesCount: changedCodeFiles.length,
+    testPassed,
+    durationMs,
+    scope: resolvedCmds.source,
+  });
+
+  if (!testPassed) {
+    console.error("\n🔄 OODA SELF-HEALING FEEDBACK LOG:");
+    console.error(failureLog.slice(-1500));
+    process.exit(1);
   }
 
   console.log("\n🎉 JULES PR SELF-AUDIT PASSED SUCCESSFULLY!");

@@ -27,10 +27,43 @@ if (!Array.isArray(tasks)) {
 
 const MAX_CONCURRENT = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10);
 const STAGGER_MS = parseInt(process.env.JULES_SWARM_STAGGER_MS || "1500", 10);
+const USE_WORKTREES = process.env.JULES_USE_WORKTREES === "true";
 
-console.log(`🐝 Launching Jules Swarm Orchestrator (${tasks.length} tasks, Concurrency: ${MAX_CONCURRENT})...`);
+console.log(`🐝 Launching Jules Swarm Orchestrator (${tasks.length} tasks, Concurrency: ${MAX_CONCURRENT}, Worktrees: ${USE_WORKTREES ? "ENABLED" : "DISABLED"})...`);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function createWorktree(taskId) {
+  const slug = taskId.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const wtDir = path.resolve(process.cwd(), `.agent/worktrees/${slug}`);
+  const branchName = `jules/${slug}`;
+  try {
+    if (!fs.existsSync(path.dirname(wtDir))) {
+      fs.mkdirSync(path.dirname(wtDir), { recursive: true });
+    }
+    await execFileAsync("git", ["worktree", "add", "-b", branchName, wtDir, "HEAD"]);
+    return { wtDir, branchName };
+  } catch (err) {
+    try {
+      await execFileAsync("git", ["worktree", "add", "--force", wtDir, "HEAD"]);
+      return { wtDir, branchName: null };
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+async function removeWorktree(wtDir, branchName) {
+  if (!wtDir) return;
+  try {
+    await execFileAsync("git", ["worktree", "remove", "--force", wtDir]);
+  } catch (_) {}
+  if (branchName) {
+    try {
+      await execFileAsync("git", ["branch", "-D", branchName]);
+    } catch (_) {}
+  }
+}
 
 async function runSwarm() {
   const results = [];
@@ -49,8 +82,21 @@ async function runSwarm() {
         console.log(`\n----------------------------------------`);
         console.log(`[${taskNum}/${tasks.length}] Dispatching Swarm Task: ${task.title} (${taskId})`);
 
+        let wtInfo = null;
+        let execCwd = process.cwd();
+
+        if (USE_WORKTREES) {
+          wtInfo = await createWorktree(taskId);
+          if (wtInfo?.wtDir) {
+            execCwd = wtInfo.wtDir;
+            console.log(`🌲 Isolated Task ${taskId} in Git Worktree: ${wtInfo.wtDir}`);
+          }
+        }
+
         try {
-          const { stdout } = await execFileAsync("node", ["scripts/jules-dispatch.mjs", task.title, task.prompt], {
+          const dispatchScript = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
+          const { stdout } = await execFileAsync("node", [dispatchScript, task.title, task.prompt], {
+            cwd: execCwd,
             timeout: 15 * 60 * 1000,
           });
           if (stdout) console.log(stdout.trim());
@@ -58,6 +104,10 @@ async function runSwarm() {
         } catch (error) {
           console.error(`⚠️ Failed task [${task.title}]:`, error.message);
           return { taskId, title: task.title, status: "FAILED", error: error.message };
+        } finally {
+          if (wtInfo?.wtDir) {
+            await removeWorktree(wtInfo.wtDir, wtInfo.branchName);
+          }
         }
       })
     );
