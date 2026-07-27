@@ -10,7 +10,23 @@ const __dirname = path.dirname(__filename);
 const kitRoot = path.resolve(__dirname, "..");
 const targetDir = process.cwd();
 
+const isHelp = process.argv.includes("--help") || process.argv.includes("-h");
 const isForce = process.argv.includes("--force") || process.argv.includes("-f");
+
+if (isHelp) {
+  console.log(`
+Google Jules Orchestration Kit - Init Scaffolding CLI
+
+Usage:
+  npx jules-orchestrator-kit [options]
+  npx jules-init [options]
+
+Options:
+  -f, --force    Overwrite existing AGENTS.md, .agent/jules.yml, and orchestration scripts.
+  -h, --help     Show this help message.
+`);
+  process.exit(0);
+}
 
 console.log("\n🚀 Initializing Google Jules Orchestration Kit...\n");
 console.log(`📁 Target Directory: ${targetDir}`);

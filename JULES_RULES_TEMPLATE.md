@@ -33,7 +33,7 @@ Dispatch tasks to Jules when ALL of the following apply:
 ## 3. Dynamic Command Resolution
 
 Jules automatically infers test and build verification commands based on project manifest files:
-- `package.json` -> `npm run check:all && npm test && npm run build`
+- `package.json` -> `npm test && npm run build`
 - `Cargo.toml` -> `cargo test --workspace && cargo build`
 - `go.mod` -> `go test ./... && go build ./...`
 - `pyproject.toml` -> `pytest`

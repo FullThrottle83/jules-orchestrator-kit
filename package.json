@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Framework-agnostic toolkit for orchestrating Google Jules background AI coding workers.",
   "type": "module",
   "bin": {
@@ -10,6 +10,7 @@
   "files": [
     "bin/",
     "scripts/",
+    ".agent/",
     "JULES_RULES_TEMPLATE.md",
     "README.md",
     "LICENSE"

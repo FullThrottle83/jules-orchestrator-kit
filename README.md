@@ -56,10 +56,16 @@ node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding windo
 npm run jules:queue
 ```
 
-### Run Rate-Limited Swarm Dispatch
-
 ```bash
 JULES_SWARM_CONCURRENCY=5 node scripts/jules-swarm.mjs tasks.json
+```
+
+Where `tasks.json` is formatted as:
+```json
+[
+  { "id": "t1", "title": "Refactor Auth", "prompt": "Refactor auth middleware to ESM" },
+  { "id": "t2", "title": "Fix Memory Leak", "prompt": "Fix listener memory leak in websocket event loop" }
+]
 ```
 
 ### Run Nightly Maintenance Suite

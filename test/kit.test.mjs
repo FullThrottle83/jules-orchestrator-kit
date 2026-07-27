@@ -106,3 +106,12 @@ describe("Dynamic Guardrails Triggers Regex", () => {
     assert.equal(regex.test("connect to MySQL cluster"), true);
   });
 });
+
+describe("Package Manifest Verification", () => {
+  test("package.json includes .agent/ in files array for npm publication", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), "package.json"), "utf-8"));
+    assert.ok(Array.isArray(pkg.files));
+    assert.ok(pkg.files.includes(".agent/"), ".agent/ directory must be included in package.json files array");
+  });
+});
+
