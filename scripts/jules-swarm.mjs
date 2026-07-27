@@ -188,7 +188,12 @@ async function runSwarm() {
           const { stdout } = await execFileAsync("node", [dispatchScript, task.title, effectivePrompt], {
             cwd: execCwd,
             timeout: 15 * 60 * 1000,
-            env: { ...process.env, JULES_PROJECT_ROOT: process.env.JULES_PROJECT_ROOT },
+            env: {
+              ...process.env,
+              JULES_PROJECT_ROOT: process.env.JULES_PROJECT_ROOT,
+              JULES_SLOT_INDEX: String(bIdx + 1),
+              JULES_SLOT_TOTAL: String(batch.length)
+            },
           });
           if (stdout) log.dim(stdout.trim());
           return { taskId, title: task.title, status: "SUCCESS" };

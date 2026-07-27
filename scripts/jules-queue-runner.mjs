@@ -48,6 +48,14 @@ log.info(`🚀 Found ${files.length} tasks in the queue. Sending to Jules...`);
 
 const MAX_CONCURRENT = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10) || 3;
 
+const args = process.argv.slice(2);
+let paceMs = parseInt(process.env.JULES_PACE_MS || "500", 10);
+const paceIdx = args.indexOf("--pace-ms");
+if (paceIdx !== -1 && args[paceIdx + 1]) {
+  const parsed = parseInt(args[paceIdx + 1], 10);
+  if (Number.isFinite(parsed) && parsed >= 0) paceMs = parsed;
+}
+
 function safeMoveSync(src, dest) {
   try {
     fs.renameSync(src, dest);
@@ -79,6 +87,9 @@ async function runQueue() {
     const batch = files.slice(i, i + MAX_CONCURRENT);
     await Promise.allSettled(
       batch.map(async (file, bIdx) => {
+        if (bIdx > 0 && paceMs > 0) {
+          await sleep(bIdx * paceMs);
+        }
         const index = i + bIdx;
         const filePath = path.join(queueDir, file);
         const processingPath = path.join(processingDir, file);

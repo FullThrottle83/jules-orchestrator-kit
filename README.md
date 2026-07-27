@@ -170,15 +170,16 @@ allow_paths: []
 | **Scope Boundaries**  | Prevents changes outside task scope          | `scope: ["src/auth/**"]`              |
 
 
-### 🚀 Advanced Orchestration (For Power Users)
-
 | Feature                 | Use Case                                  | Command                                                            |
 | ----------------------- | ----------------------------------------- | ------------------------------------------------------------------ |
-| **Git Worktree Swarms** | Run parallel tasks with isolation         | `JULES_USE_WORKTREES=true node scripts/jules-swarm.mjs tasks.json` |
+| **Git Worktree Swarms** | Run parallel tasks with slot isolation    | `JULES_USE_WORKTREES=true node scripts/jules-swarm.mjs tasks.json` |
+| **Suggested Scanner**   | Scan TODO/FIXME comments into task queues | `npm run jules:scan`                                               |
+| **Session Cleanup**     | Audit & close merged/stale REST sessions  | `npm run jules:cleanup -- --close-merged`                          |
+| **Repoless Sessions**   | Serverless ad-hoc analysis without repos  | `npm run jules:dispatch -- --repoless "Title" "Prompt"`            |
 | **Monorepo Support**    | Auto-detects Turbo, Nx, pnpm, Cargo       | Runs affected package tests only                                   |
-| **Nightly Maintenance** | Scheduled audits & cleanup            | `node scripts/jules-nightly.mjs`                                   |
-| **Queue Processing**    | Batch process tasks from markdown files   | `npm run jules:queue`                              |
+| **Queue Pacing**        | Rate-limit queue launches (`--pace-ms`)   | `npm run jules:queue -- --pace-ms 500`                             |
 | **Pre-Flight Sandbox**  | Test setup locally before cloud execution | `node scripts/jules-self-audit.mjs --preflight`                    |
+| **Security Fencing**    | Prompt injection defense & secret masking | Automatic `<UNTRUSTED_TASK_CONTEXT>` encapsulation                 |
 | **OODA Feedback**       | Self-healing from test failures           | Logs to `.agent/history/metrics.jsonl`                             |
 
 ---

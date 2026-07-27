@@ -6,7 +6,10 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr } from "../scripts/jules-self-audit.mjs";
-import { redactSecrets } from "../scripts/jules-dispatch.mjs";
+import { resolveMarkdownConflict } from "../scripts/utils.mjs";
+import { redactSecrets, getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
+import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
+import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
 
 describe("Dynamic Command Resolver", () => {
   test("resolves default verification commands from manifest or config", () => {
@@ -225,4 +228,129 @@ describe("Workspace Boundary Resolution & Fallbacks", () => {
     }
   });
 });
+
+describe("Specialized Domain Guardrails", () => {
+  test("triggers Sentinel guardrail on security keywords", () => {
+    const rules = getDynamicGuardrails("implement auth RBAC permissions and secret token sanitization");
+    assert.ok(rules.includes("Security Guidance (Sentinel)"));
+  });
+
+  test("triggers Bolt guardrail on performance keywords", () => {
+    const rules = getDynamicGuardrails("optimize cache memoization and perf bottlenecks");
+    assert.ok(rules.includes("Performance Guidance (Bolt)"));
+  });
+
+  test("triggers Janitor guardrail on cleanup keywords", () => {
+    const rules = getDynamicGuardrails("refactor deadcode and fix lint warnings");
+    assert.ok(rules.includes("Clean Code Guidance (Janitor)"));
+  });
+
+  test("triggers Alchemist guardrail on database keywords", () => {
+    const rules = getDynamicGuardrails("update postgres drizzle schema migration");
+    assert.ok(rules.includes("Database Guidance (Alchemist)"));
+  });
+});
+
+describe("Jules Session Cleanup Auditor", () => {
+  test("extracts GitHub PR URLs from session outputs", () => {
+    const outputs = [
+      "Created PR: https://github.com/owner/repo/pull/42 successfully",
+      { link: "https://github.com/owner/repo/pull/99" }
+    ];
+    const prs = extractPrUrls(outputs);
+    assert.deepEqual(prs, ["https://github.com/owner/repo/pull/42", "https://github.com/owner/repo/pull/99"]);
+  });
+
+  test("categorizes stale and active sessions accurately", () => {
+    const now = Date.now();
+    const staleTime = new Date(now - 30 * 60 * 60 * 1000).toISOString(); // 30h ago
+    const activeTime = new Date(now - 2 * 60 * 60 * 1000).toISOString(); // 2h ago
+
+    const sessions = [
+      { id: "s1", title: "Active task", state: "IN_PROGRESS", updateTime: activeTime },
+      { id: "s2", title: "Stale task", state: "AWAITING_USER_FEEDBACK", updateTime: staleTime }
+    ];
+
+    const { merged, active, stale } = auditSessions(sessions, { staleHoursThreshold: 24 });
+    assert.equal(merged.length, 0);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].id, "s1");
+    assert.equal(stale.length, 1);
+    assert.equal(stale[0].id, "s2");
+  });
+});
+
+describe("Markdown Conflict Resolver", () => {
+  test("concatenates HEAD and DEV buffers when conflict markers are present", () => {
+    const conflicted = `
+# Header
+<<<<<<< HEAD
+- Feature A added
+=======
+- Feature B added
+>>>>>>> dev
+Footer
+`.trim();
+
+    const resolved = resolveMarkdownConflict(conflicted);
+    assert.equal(resolved.includes("<<<<<<<"), false);
+    assert.equal(resolved.includes("======="), false);
+    assert.equal(resolved.includes(">>>>>>>"), false);
+    assert.ok(resolved.includes("- Feature A added"));
+    assert.ok(resolved.includes("- Feature B added"));
+  });
+
+  test("returns unmodified text when no conflict markers are present", () => {
+    const normal = "# Clean Markdown\n- item 1";
+    assert.equal(resolveMarkdownConflict(normal), normal);
+  });
+});
+
+describe("Parallel Slot Partitioning", () => {
+  test("computes correct alphabetical ranges for concurrent slots", () => {
+    assert.equal(getAlphaRange(0, 2), "A–M");
+    assert.equal(getAlphaRange(1, 2), "N–Z");
+  });
+
+  test("builds parallel slot directive when slot index and total are valid", () => {
+    const directive = getSlotPartitionDirective("1", "3");
+    assert.ok(directive.includes("1 of 3"));
+    assert.ok(directive.includes("Partition Focus"));
+  });
+
+  test("returns empty string when total slots <= 1", () => {
+    assert.equal(getSlotPartitionDirective("1", "1"), "");
+  });
+});
+
+describe("Repoless Session Mode Execution", () => {
+  test("executes jules-dispatch.mjs in repoless mode via CLI flag", () => {
+    const scriptPath = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
+    const output = execFileSync("node", [scriptPath, "Repoless Task", "Analyze data", "--repoless"], {
+      env: { ...process.env, JULES_DRY_RUN: "1" },
+      encoding: "utf-8",
+    });
+    assert.ok(output.includes("(repoless / serverless)"), "Repoless dry run target must be reported");
+  });
+});
+
+describe("Suggested Tasks Scanner", () => {
+  test("scans temporary directory for TODO and FIXME comments", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-scan-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "file1.js"), "// TODO: refactor auth logic\nconst a = 1;");
+      fs.writeFileSync(path.join(tmpDir, "file2.py"), "# FIXME: fix memory leak\npass");
+
+      const tasks = scanCodebaseForTodos(tmpDir);
+      assert.equal(tasks.length, 2);
+      assert.ok(tasks.some((t) => t.tag === "TODO" && t.priority === "MEDIUM"));
+      assert.ok(tasks.some((t) => t.tag === "FIXME" && t.priority === "HIGH"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+
+
 

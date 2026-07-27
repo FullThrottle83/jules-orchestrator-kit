@@ -49,3 +49,46 @@ export function logToHistory(filename, content, type = "audit") {
   fs.writeFileSync(filePath, content, "utf-8");
   return filePath;
 }
+
+export function resolveMarkdownConflict(content) {
+  if (!content || typeof content !== "string") return "";
+  if (!content.includes("<<<<<<<")) return content;
+
+  const lines = content.split("\n");
+  const result = [];
+  let inConflict = false;
+  let headBuffer = [];
+  let devBuffer = [];
+  let section = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith("<<<<<<<")) {
+      inConflict = true;
+      section = "head";
+      continue;
+    }
+    if (line.startsWith("=======")) {
+      section = "dev";
+      continue;
+    }
+    if (line.startsWith(">>>>>>>")) {
+      result.push(...headBuffer);
+      result.push(...devBuffer);
+      headBuffer = [];
+      devBuffer = [];
+      inConflict = false;
+      section = null;
+      continue;
+    }
+
+    if (inConflict) {
+      if (section === "head") headBuffer.push(line);
+      else if (section === "dev") devBuffer.push(line);
+    } else {
+      result.push(line);
+    }
+  }
+
+  return result.join("\n");
+}

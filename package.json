@@ -36,6 +36,8 @@
     "jules:create": "node scripts/jules-create.mjs",
     "jules:status": "node scripts/jules-status.mjs",
     "jules:audit": "node scripts/jules-self-audit.mjs",
+    "jules:cleanup": "node scripts/jules-cleanup.mjs",
+    "jules:scan": "node scripts/jules-scan-todos.mjs",
     "jules:swarm": "node scripts/jules-swarm.mjs",
     "jules:nightly": "node scripts/jules-nightly.mjs"
   },

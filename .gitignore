@@ -1,4 +1,6 @@
 node_modules/
 .env
 .agent/history/
+.agent/jules-queue/*.md
+!.agent/jules-queue/README.md
 ROADMAP_V1.md
