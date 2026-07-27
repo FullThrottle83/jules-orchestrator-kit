@@ -38,6 +38,23 @@ function loadEnv() {
 }
 loadEnv();
 
+// 0.1 Pre-Flight Secret Redaction Gate
+function redactSecrets(text) {
+  if (!text) return "";
+  const patterns = [
+    /gh[p|u|s|r]_[a-zA-Z0-9]{36}/g,
+    /AKIA[0-9A-Z]{16}/g,
+    /Bearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
+    /sk-[a-zA-Z0-9]{32,}/g,
+    /-----BEGIN (RSA|OPENSSH|PRIVATE) KEY-----[\s\S]*?-----END \1 KEY-----/g,
+  ];
+  let sanitized = text;
+  for (const pat of patterns) {
+    sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
+  }
+  return sanitized;
+}
+
 // 1. Resolve prompt content (file path or inline string)
 let rawPrompt = "";
 const possiblePath = path.resolve(process.cwd(), taskPromptArg);
@@ -46,6 +63,7 @@ if (fs.existsSync(possiblePath) && fs.statSync(possiblePath).isFile()) {
 } else {
   rawPrompt = taskPromptArg;
 }
+rawPrompt = redactSecrets(rawPrompt);
 
 // 2. Dynamic Guardrail Composition (DGC) from .agent/rules/dynamic-guardrails.json
 function getDynamicGuardrails(promptText) {
@@ -98,7 +116,7 @@ const envelope = `
 </MCP_DIRECTIVE>
 `.trim();
 
-const fullPrompt = `MCP DIRECTIVE: ${rawPrompt.trim()}${verifyDirective}\n\n---\n\n${envelope}\n\n---\n\n${dynamicRules ? `${dynamicRules}\n\n---\n\n` : ""}${baseRules.trim()}`;
+const fullPrompt = redactSecrets(`MCP DIRECTIVE: ${rawPrompt.trim()}${verifyDirective}\n\n---\n\n${envelope}\n\n---\n\n${dynamicRules ? `${dynamicRules}\n\n---\n\n` : ""}${baseRules.trim()}`);
 
 // 5. Log Dispatch History
 const dateStr = new Date().toISOString().split("T")[0];
@@ -110,6 +128,7 @@ if (!fs.existsSync(historyDir)) {
 }
 const historyFile = path.join(historyDir, `${dateStr}-dispatch-${slug}.md`);
 fs.writeFileSync(historyFile, `---\ntype: jules_dispatch\ntitle: "${taskTitle}"\ntimestamp: "${new Date().toISOString()}"\n---\n# Jules Task Dispatch: ${taskTitle}\n\n## Prompt\n${rawPrompt}\n`, "utf-8");
+
 
 console.log(`🚀 Dispatching task to Google Jules: "${taskTitle}"...`);
 console.log(`📝 Logged dispatch history to: ${path.relative(process.cwd(), historyFile)}`);

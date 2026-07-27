@@ -178,3 +178,83 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     source: "generic",
   };
 }
+
+/**
+ * Resolves targeted build & test commands based on affected workspace packages.
+ * Prevents running O(N) full-repo test suites in monorepos when changes are localized.
+ */
+export function resolveWorkspaceExecutionBoundary(modifiedFiles = [], projectRoot = process.cwd()) {
+  const baseCmds = resolveProjectCommands(projectRoot);
+  if (!modifiedFiles || modifiedFiles.length === 0) return baseCmds;
+
+  // Find affected package names by walking up from modified files to nearest manifest
+  const affectedPkgs = new Set();
+  for (const file of modifiedFiles) {
+    let currentDir = path.resolve(projectRoot, path.dirname(file));
+    while (currentDir !== projectRoot && currentDir !== path.dirname(currentDir)) {
+      const pkgPath = path.join(currentDir, "package.json");
+      const cargoPath = path.join(currentDir, "Cargo.toml");
+      
+      if (fs.existsSync(pkgPath)) {
+        try {
+          const pkgData = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+          if (pkgData.name) affectedPkgs.add(pkgData.name);
+        } catch (_) {}
+        break;
+      } else if (fs.existsSync(cargoPath) && currentDir !== projectRoot) {
+        const cargoContent = fs.readFileSync(cargoPath, "utf-8");
+        const nameMatch = cargoContent.match(/name\s*=\s*["']([^"']+)["']/);
+        if (nameMatch) affectedPkgs.add(nameMatch[1]);
+        break;
+      }
+      currentDir = path.dirname(currentDir);
+    }
+  }
+
+  if (affectedPkgs.size === 0) return baseCmds;
+  const targets = Array.from(affectedPkgs);
+
+  // 1. Turborepo (turbo.json)
+  if (fs.existsSync(path.join(projectRoot, "turbo.json"))) {
+    const filters = targets.map((t) => `--filter=${t}...`).join(" ");
+    return {
+      buildCmd: `npx turbo run build ${filters}`,
+      testCmd: `npx turbo run test ${filters}`,
+      source: `Turborepo Workspace (${targets.join(", ")})`,
+    };
+  }
+
+  // 2. pnpm Workspace (pnpm-workspace.yaml)
+  if (fs.existsSync(path.join(projectRoot, "pnpm-workspace.yaml"))) {
+    const filters = targets.map((t) => `--filter=...${t}`).join(" ");
+    return {
+      buildCmd: `pnpm ${filters} build`,
+      testCmd: `pnpm ${filters} test`,
+      source: `pnpm Workspace (${targets.join(", ")})`,
+    };
+  }
+
+  // 3. Nx Workspace (nx.json)
+  if (fs.existsSync(path.join(projectRoot, "nx.json"))) {
+    const projects = targets.join(",");
+    return {
+      buildCmd: `npx nx run-many -t build -p ${projects} --with-deps`,
+      testCmd: `npx nx run-many -t test -p ${projects} --with-deps`,
+      source: `Nx Workspace (${targets.join(", ")})`,
+    };
+  }
+
+  // 4. Cargo Workspace (Cargo.toml in root with workspace)
+  const rootCargo = path.join(projectRoot, "Cargo.toml");
+  if (fs.existsSync(rootCargo) && fs.readFileSync(rootCargo, "utf-8").includes("[workspace]")) {
+    const filters = targets.map((t) => `-p ${t}`).join(" ");
+    return {
+      buildCmd: `cargo build ${filters}`,
+      testCmd: `cargo test ${filters}`,
+      source: `Cargo Workspace (${targets.join(", ")})`,
+    };
+  }
+
+  return baseCmds;
+}
+

@@ -48,10 +48,16 @@ const workflowsDir = path.join(agentDir, "workflows");
 // Scaffold .agent/jules.yml
 const yamlConfigPath = path.join(agentDir, "jules.yml");
 if (!fs.existsSync(yamlConfigPath)) {
-  const yamlContent = `# Google Jules Repository Configuration\n\ntest_cmd: "${detected.testCmd || "npm test"}"\nbuild_cmd: "${detected.buildCmd || "npm run build"}"\n`;
+  const yamlContent = `# Google Jules Repository Configuration (Version 2)
+version: 2
+test_cmd: "${detected.testCmd || "npm test"}"
+build_cmd: "${detected.buildCmd || "npm run build"}"
+forbidden_paths: [".github/**", "**/secrets/**", "**/*.pem", "**/lock-manager/**"]
+`;
   fs.writeFileSync(yamlConfigPath, yamlContent, "utf-8");
   console.log("✅ Created: .agent/jules.yml");
 }
+
 
 // Scaffold .agent/rules/dynamic-guardrails.json
 const dgcSource = path.join(kitRoot, ".agent/rules/dynamic-guardrails.json");
