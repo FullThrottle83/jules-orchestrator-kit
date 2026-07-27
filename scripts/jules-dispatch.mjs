@@ -78,8 +78,13 @@ export function redactSecrets(text) {
   for (const pat of patterns) {
     sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
   }
-  sanitized = sanitized.replace(/[a-zA-Z0-9_\-\.\:\/]{20,}/g, (token) => {
-    if (token.startsWith("[REDACTED_") || token.startsWith("http://") || token.startsWith("https://")) {
+  // Exclude file paths (tokens with slashes or common extensions) from entropy redaction
+  sanitized = sanitized.replace(/[a-zA-Z0-9_\-\.]{20,}/g, (token) => {
+    if (
+      token.startsWith("[REDACTED_") ||
+      token.includes("/") ||
+      /\.(?:ts|js|jsx|tsx|json|md|py|rs|go|yml|yaml|toml|html|css|sh|config)$/i.test(token)
+    ) {
       return token;
     }
     const entropy = calculateEntropy(token);
@@ -104,12 +109,42 @@ export function assertPathWithinWorkspace(targetPath, workspaceRoot = process.cw
   return targetReal;
 }
 
-// 1. Resolve prompt content (file path or inline string)
+// 0.4 Dynamic Guardrails & Directive Definitions
+export function getDynamicGuardrails(prompt = "") {
+  const guardrails = [];
+  if (/\b(?:astro|components|pages|src\/.*\.astro)\b/i.test(prompt)) {
+    guardrails.push("- Astro Guidance: Ensure zero client JS shipped by default. Use server islands or nano stores if state is required.");
+  }
+  if (/\b(?:db|database|d1|postgres|drizzle|migration|schema)\b/i.test(prompt)) {
+    guardrails.push("- Database Guidance: Do not modify migrations directly without inspecting current schema constraints.");
+  }
+  return guardrails.length > 0 ? `## Context-Specific Guardrails\n${guardrails.join("\n")}` : "";
+}
+
+function getBaseRules(projectRoot = process.cwd()) {
+  const templatePath = path.join(projectRoot, "JULES_RULES_TEMPLATE.md");
+  if (fs.existsSync(templatePath)) {
+    return fs.readFileSync(templatePath, "utf-8");
+  }
+  const agentsPath = path.join(projectRoot, "AGENTS.md");
+  if (fs.existsSync(agentsPath)) {
+    return fs.readFileSync(agentsPath, "utf-8");
+  }
+  return `## Operational Directives
+- **Read Before Write**: Always inspect target files and symbol definitions before modifying code.
+- **Verification**: Execute test and build verification suite and ensure 0 errors.
+- **Anti-Patch Invariant**: Do NOT create out-of-band shell scripts (patch.sh, test-fix.sh) or disable assertions to force tests to pass.`;
+}
+
+// 1. Resolve prompt content and construct directive envelope
 let rawPrompt = "";
 let fullPrompt = "";
 let historyFile = "";
 let tmpPayloadFile = "";
 let tmpDir = "";
+
+const apiKey = process.env.JULES_API_KEY || process.env.GEMINI_API_KEY || "";
+const repo = process.env.JULES_REPO || "";
 
 if (isMainModule) {
   const possiblePath = path.resolve(process.cwd(), taskPromptArg);
@@ -122,12 +157,25 @@ if (isMainModule) {
   rawPrompt = redactSecrets(rawPrompt);
 
   const dynamicRules = getDynamicGuardrails(rawPrompt);
+  const baseRules = getBaseRules(process.cwd());
+  const envelope = `## Envelope Directives
+- **Zero Hallucination:** Inspect exact symbol definitions before editing.
+- **Verification:** Execute project verification suite and ensure 0 errors.
+- **Anti-Patch / Zero Out-of-band Scripts:** Do NOT create workaround runner scripts (e.g. patch.sh, test-fix.sh) or disable assertions to pass tests.`;
+
+  const { testCmd, buildCmd } = resolveProjectCommands(process.cwd());
+  const verifyDirective = testCmd || buildCmd 
+    ? `\n\nVERIFICATION DIRECTIVE: Execute \`${[testCmd, buildCmd].filter(Boolean).join(" && ")}\` after patching.`
+    : "";
+
   fullPrompt = redactSecrets(`MCP DIRECTIVE: ${rawPrompt.trim()}${verifyDirective}\n\n---\n\n${envelope}\n\n---\n\n${dynamicRules ? `${dynamicRules}\n\n---\n\n` : ""}${baseRules.trim()}`);
 
   const dateStr = new Date().toISOString().split("T")[0];
   const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
-  const historyDir = path.resolve(process.cwd(), ".agent/history");
+  // Resolve history directory relative to main workspace root, avoiding temporary worktrees
+  const mainWorkspaceRoot = process.env.JULES_PROJECT_ROOT || process.env.INIT_CWD || process.cwd();
+  const historyDir = path.resolve(mainWorkspaceRoot, ".agent/history");
   if (!fs.existsSync(historyDir)) {
     fs.mkdirSync(historyDir, { recursive: true });
   }
@@ -140,7 +188,6 @@ if (isMainModule) {
   const payloadHash = crypto.createHash("sha256").update(taskTitle + Date.now()).digest("hex").slice(0, 12);
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-payload-"));
   tmpPayloadFile = path.join(tmpDir, `payload_${payloadHash}.json`);
-  const repo = process.env.JULES_REPO;
   fs.writeFileSync(tmpPayloadFile, JSON.stringify({ repo, title: taskTitle, prompt: fullPrompt }), { mode: 0o600 });
 }
 
@@ -154,6 +201,13 @@ function cleanupTmp() {
 
 async function executeDispatch() {
   try {
+    if (process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1") {
+      console.log(`[DRY RUN] Dispatch payload prepared successfully for task: "${taskTitle}".`);
+      console.log(`[DRY RUN] Target Repository: ${repo || "(default)"}`);
+      console.log(`[DRY RUN] Prompt Length: ${fullPrompt.length} chars.`);
+      return;
+    }
+
     if (apiKey && repo) {
       console.log(`🌐 Using Jules REST API for repository ${repo}...`);
       const formattedSource = repo.startsWith("sources/") ? repo : (repo.includes("/") ? `sources/github/${repo}` : repo);
@@ -212,7 +266,6 @@ async function executeDispatch() {
   }
 }
 
-
 function dispatchViaCli(targetRepo, payloadFile, title) {
   try {
     let promptToSend = fullPrompt;
@@ -237,12 +290,9 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
   }
 }
 
-
 if (isMainModule) {
   executeDispatch().catch((err) => {
     console.error("❌ Fatal unhandled rejection in dispatch:", err);
     process.exit(1);
   });
 }
-
-

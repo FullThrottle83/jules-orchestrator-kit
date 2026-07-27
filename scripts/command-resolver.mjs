@@ -185,6 +185,9 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
  */
 export function resolveWorkspaceExecutionBoundary(modifiedFiles = [], projectRoot = process.cwd()) {
   const baseCmds = resolveProjectCommands(projectRoot);
+  if (baseCmds.source === ".agent/jules.yml" || baseCmds.source === "jules.config.json") {
+    return baseCmds;
+  }
   if (!modifiedFiles || modifiedFiles.length === 0) return baseCmds;
 
   // Find affected package names by walking up from modified files to nearest manifest

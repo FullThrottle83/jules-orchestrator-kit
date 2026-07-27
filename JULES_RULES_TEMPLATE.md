@@ -24,6 +24,7 @@ Dispatch tasks to Jules when ALL of the following apply:
     <rule>2. READ-BEFORE-WRITE (ZERO HALLUCINATION): You are FORBIDDEN from guessing internal API signatures. Before editing, you MUST use code search or MCP doc tools to inspect exact function signatures.</rule>
     <rule>3. VERIFICATION LOOP: After patching code, you MUST execute the project's verification commands (tests/build) and ensure 0 errors.</rule>
     <rule>4. ABORT CONDITION: On repeated unresolvable test failures (4+ attempts), output <status>ABORT_UNRESOLVABLE</status> and terminate immediately.</rule>
+    <rule>5. NO OUT-OF-BAND RUNNER SCRIPTS / CHEATING: You are FORBIDDEN from creating temporary shell scripts (e.g. patch.sh, test-fix.sh), disabling assertions, or bypassing verification tooling to force tests to pass.</rule>
   </strict_invariants>
 </MCP_DIRECTIVE>
 ```
@@ -46,6 +47,7 @@ Jules automatically infers test and build verification commands based on project
 ## 4. Operational & Code Quality Directives
 
 - **Read Before Write**: Always inspect target files and surrounding symbol signatures (via grep or view tools) before applying changes.
+- **Scope Locks**: Strictly adhere to designated file bounds. Do NOT modify files outside the explicit task scope or alter shared infrastructural components unless assigned.
 - **Rebase Before PR**: Fetch latest `main`, rebase onto `origin/main`, re-execute verification suite. If the resulting diff is empty, close/abort PR without pushing.
 - **Minimal Interference**: Preserve existing function signatures, comments, and style conventions.
 - **Falsifiable Claims**: Base all code changes on explicit error logs, file paths, line numbers, or test results.

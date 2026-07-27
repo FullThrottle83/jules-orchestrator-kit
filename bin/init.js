@@ -54,20 +54,48 @@ console.log("\n🚀 Initializing Google Jules Orchestration Kit...\n");
 console.log(`📁 Target Directory: ${targetDir}`);
 if (isForce) console.log("⚠️ Force mode enabled (existing files will be overwritten).");
 
+let answerRepoVal = "";
+let answerBranchVal = "";
+
 // Dual TTY Interactive Wizard
 if (process.stdin.isTTY && (isInteractive || (!fs.existsSync(path.join(targetDir, ".agent/jules.yml")) && !process.env.CI))) {
   try {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const answerRepo = await rl.question("📦 Enter target GitHub repository (e.g. owner/repo) [optional]: ");
     if (answerRepo.trim()) {
-      process.env.JULES_REPO = answerRepo.trim();
+      answerRepoVal = answerRepo.trim();
+      process.env.JULES_REPO = answerRepoVal;
     }
     const answerBranch = await rl.question("🌿 Enter base branch [default: main]: ");
     if (answerBranch.trim()) {
-      process.env.BASE_BRANCH = answerBranch.trim();
+      answerBranchVal = answerBranch.trim();
+      process.env.BASE_BRANCH = answerBranchVal;
     }
     rl.close();
   } catch (_) {}
+}
+
+// 0. Persist wizard values to .env if provided
+const envPath = path.join(targetDir, ".env");
+let envAdditions = [];
+if (answerRepoVal) envAdditions.push(`JULES_REPO="${answerRepoVal}"`);
+if (answerBranchVal) envAdditions.push(`BASE_BRANCH="${answerBranchVal}"`);
+
+if (envAdditions.length > 0) {
+  if (fs.existsSync(envPath)) {
+    const existingEnv = fs.readFileSync(envPath, "utf-8");
+    const toAppend = envAdditions.filter((line) => {
+      const key = line.split("=")[0];
+      return !existingEnv.includes(`${key}=`);
+    });
+    if (toAppend.length > 0) {
+      fs.appendFileSync(envPath, `\n${toAppend.join("\n")}\n`, "utf-8");
+      console.log("✅ Appended interactive configuration to .env");
+    }
+  } else {
+    fs.writeFileSync(envPath, `${envAdditions.join("\n")}\n`, "utf-8");
+    console.log("✅ Created: .env with repository configuration");
+  }
 }
 
 // 1. Detect Stack & Manifests
@@ -140,6 +168,21 @@ if ((!fs.existsSync(reviewTarget) || isForce) && fs.existsSync(reviewSource)) {
   console.log("✅ Created: .agent/workflows/jules-review.md");
 }
 
+// Scaffold .github/workflows/jules-audit.yml
+const githubWorkflowsDir = path.join(targetDir, ".github/workflows");
+const auditWfSource = path.join(kitRoot, ".github/workflows/jules-audit.yml");
+const auditWfTarget = path.join(githubWorkflowsDir, "jules-audit.yml");
+
+if (fs.existsSync(auditWfSource)) {
+  if (!fs.existsSync(githubWorkflowsDir)) {
+    fs.mkdirSync(githubWorkflowsDir, { recursive: true });
+  }
+  if (!fs.existsSync(auditWfTarget) || isForce) {
+    fs.copyFileSync(auditWfSource, auditWfTarget);
+    console.log("✅ Scaffolded CI Audit Workflow: .github/workflows/jules-audit.yml");
+  }
+}
+
 // 4. Copy scripts/ directory with PER-FILE existence guard
 const targetScriptsDir = path.join(targetDir, "scripts");
 if (!fs.existsSync(targetScriptsDir)) {
@@ -202,4 +245,3 @@ console.log("\nNext Steps:");
 console.log("  1. Set environment variables: JULES_REPO=\"owner/repo\"");
 console.log("  2. Dispatch your first task:  node scripts/jules-dispatch.mjs \"Task Title\" \"Task prompt\"");
 console.log("  3. Run pre-merge PR audit:    node scripts/jules-self-audit.mjs\n");
-

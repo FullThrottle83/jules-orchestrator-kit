@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr } from "../scripts/jules-self-audit.mjs";
 import { calculateEntropy, redactSecrets, assertPathWithinWorkspace } from "../scripts/jules-dispatch.mjs";
@@ -90,10 +91,11 @@ describe("Shannon Entropy & Security Redaction", () => {
     assert.ok(calculateEntropy("a8F9+a2B7/c4D1e6F0a9B8c7D6e5F4a3B2c1D0e9F8a+xyz=123456!@#$%^&*()") > 4.0);
   });
 
-  test("redacts high entropy tokens from prompts", () => {
-    const prompt = "Use key 8f9a2b7c4d1e6f0a9b8c7d6e5f4a3b2c1d0e9f8a to connect";
+  test("redacts high entropy tokens from prompts while preserving file paths", () => {
+    const prompt = "Inspect apps/web/src/utils/rate-limit.ts using key 8f9a2b7c4d1e6f0a9b8c7d6e5f4a3b2c1d0e9f8a";
     const redacted = redactSecrets(prompt);
-    assert.ok(redacted.includes("[REDACTED_ENTROPY_KEY]"));
+    assert.ok(redacted.includes("apps/web/src/utils/rate-limit.ts"), "File path must NOT be redacted");
+    assert.ok(redacted.includes("[REDACTED_ENTROPY_KEY]"), "Secret key must be redacted");
   });
 
   test("asserts path within workspace root and blocks traversal", () => {
@@ -102,6 +104,17 @@ describe("Shannon Entropy & Security Redaction", () => {
     assert.throws(() => {
       assertPathWithinWorkspace("../../../etc/passwd");
     }, /FATAL: Sandboxed directory traversal breach blocked/);
+  });
+});
+
+describe("Main Module Dispatch Execution (CLI Dry-Run)", () => {
+  test("executes jules-dispatch.mjs directly without runtime crashes", () => {
+    const scriptPath = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
+    const output = execFileSync("node", [scriptPath, "Test Swarm Task", "Test Prompt Description"], {
+      env: { ...process.env, JULES_DRY_RUN: "1" },
+      encoding: "utf-8",
+    });
+    assert.ok(output.includes("[DRY RUN] Dispatch payload prepared successfully"), "Dispatch dry run must succeed");
   });
 });
 

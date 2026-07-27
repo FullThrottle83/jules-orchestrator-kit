@@ -9,7 +9,7 @@ const tasksFile = process.argv[2];
 
 if (!tasksFile) {
   console.error("Usage: node scripts/jules-swarm.mjs <path-to-tasks.json>");
-  console.error('Format of tasks.json: [ { "id": "t1", "title": "Task 1", "prompt": "Description 1" } ]');
+  console.error('Format of tasks.json: [ { "id": "t1", "title": "Task 1", "prompt": "Description 1", "scope": ["src/moduleA/**"] } ]');
   process.exit(1);
 }
 
@@ -28,6 +28,9 @@ if (!Array.isArray(tasks)) {
 const MAX_CONCURRENT = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10);
 const STAGGER_MS = parseInt(process.env.JULES_SWARM_STAGGER_MS || "1500", 10);
 const USE_WORKTREES = process.env.JULES_USE_WORKTREES === "true";
+
+// Ensure root project path is preserved for history logs even when running in worktrees
+process.env.JULES_PROJECT_ROOT = process.cwd();
 
 console.log(`🐝 Launching Jules Swarm Orchestrator (${tasks.length} tasks, Concurrency: ${MAX_CONCURRENT}, Worktrees: ${USE_WORKTREES ? "ENABLED" : "DISABLED"})...`);
 
@@ -67,6 +70,7 @@ async function removeWorktree(wtDir, branchName) {
 
 async function runSwarm() {
   const results = [];
+  let hasFailure = false;
 
   for (let i = 0; i < tasks.length; i += MAX_CONCURRENT) {
     const batch = tasks.slice(i, i + MAX_CONCURRENT);
@@ -93,11 +97,18 @@ async function runSwarm() {
           }
         }
 
+        let effectivePrompt = task.prompt || "";
+        if (task.scope) {
+          const scopeStr = typeof task.scope === "string" ? task.scope : JSON.stringify(task.scope);
+          effectivePrompt += `\n\n[SCOPE LOCK]\nStrictly limit changes to designated bounds: ${scopeStr}`;
+        }
+
         try {
           const dispatchScript = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
-          const { stdout } = await execFileAsync("node", [dispatchScript, task.title, task.prompt], {
+          const { stdout } = await execFileAsync("node", [dispatchScript, task.title, effectivePrompt], {
             cwd: execCwd,
             timeout: 15 * 60 * 1000,
+            env: { ...process.env, JULES_PROJECT_ROOT: process.env.JULES_PROJECT_ROOT },
           });
           if (stdout) console.log(stdout.trim());
           return { taskId, title: task.title, status: "SUCCESS" };
@@ -115,8 +126,10 @@ async function runSwarm() {
     for (const r of batchResults) {
       if (r.status === "fulfilled") {
         results.push(r.value);
+        if (r.value.status === "FAILED") hasFailure = true;
       } else {
         results.push({ title: "Unknown Task", status: "FAILED", error: r.reason });
+        hasFailure = true;
       }
     }
 
@@ -131,7 +144,13 @@ async function runSwarm() {
   results.forEach((res) => {
     console.log(`  - [${res.status}] ${res.title}`);
   });
+
+  if (hasFailure) {
+    process.exitCode = 1;
+  }
 }
 
-runSwarm();
-
+runSwarm().catch((err) => {
+  console.error("❌ Unhandled swarm rejection:", err);
+  process.exit(1);
+});

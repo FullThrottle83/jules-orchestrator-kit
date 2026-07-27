@@ -76,7 +76,11 @@ sequenceDiagram
 ### Dispatch a single task to Jules
 
 ```bash
-node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting using Redis. Must pass tests."
+# Dry-run test prompt payload locally without executing remote API/CLI
+JULES_DRY_RUN=1 node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting in src/utils/rate-limit.ts"
+
+# Real dispatch
+node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding window rate limiting in src/utils/rate-limit.ts"
 ```
 
 ### Dispatch an entire queue of markdown task specifications
@@ -85,17 +89,17 @@ node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding windo
 npm run jules:queue
 ```
 
-### Run Rate-Limited Swarm in Isolated Git Worktrees
+### Run Rate-Limited Swarm with Scope Isolation
 
 ```bash
 JULES_SWARM_CONCURRENCY=5 JULES_USE_WORKTREES=true node scripts/jules-swarm.mjs tasks.json
 ```
 
-Where `tasks.json` is formatted as:
+Where `tasks.json` supports file boundary `scope` segregation to prevent parallel task collisions:
 ```json
 [
-  { "id": "t1", "title": "Refactor Auth", "prompt": "Refactor auth middleware to ESM" },
-  { "id": "t2", "title": "Fix Memory Leak", "prompt": "Fix listener memory leak in websocket event loop" }
+  { "id": "t1", "title": "Refactor Auth", "prompt": "Refactor auth middleware to ESM", "scope": ["src/auth/**"] },
+  { "id": "t2", "title": "Fix Memory Leak", "prompt": "Fix listener memory leak in websocket event loop", "scope": ["src/ws/**"] }
 ]
 ```
 
