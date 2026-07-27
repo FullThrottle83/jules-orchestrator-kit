@@ -27,22 +27,51 @@ npx jules-init --interactive
 
 ```mermaid
 sequenceDiagram
+    autonumber
     participant CLI as CI Trigger / CLI
     participant Orc as jules-orchestrator
     participant Jules as Google Jules Agent
     participant Git as Git Worktree Sandbox
 
     CLI->>Orc: Dispatch Task ("Refactor Auth")
-    Orc->>Orc: Redact Secrets (Entropy & Patterns) + Path Traversal Defense
-    Orc->>Jules: Dispatch Context & Invariants
-    Jules->>Git: Propose Code Mutations
-    Orc->>Git: Execute Stack `build_cmd` & `test_cmd`
-    alt Verification Gates Fail
-        Git-->>Orc: stdout/stderr Trace
-        Orc->>Jules: Inject OODA Feedback Logs for Self-Correction
-    else Verification Gates Pass
-        Orc->>Git: Determinism Verified -> Commit & Push
-        Orc->>CLI: Metrics Logged (.agent/history/metrics.jsonl)
+    
+    rect rgb(240, 240, 240)
+        note over Orc,Git: Isolation & Setup Phase
+        Orc->>Orc: Redact Secrets & Check Traversal
+        Orc->>Git: Provision Worktree (`git worktree add`)
+    end
+
+    Orc->>Jules: Dispatch Context, Invariants & Target Scope
+
+    loop Max Retries (Attempts < 4)
+        Jules->>Git: Propose Code Mutations
+        
+        rect rgb(240, 240, 240)
+            note over Orc,Git: Tiered Verification Phase
+            Orc->>Git: Scope Audit (`git diff --name-only` vs forbidden_paths)
+            alt Scope Breach
+                Git-->>Orc: Scope Violation Error
+            else Scope OK
+                Orc->>Git: Run Fast-Fail Checks (Lint / Typecheck)
+                opt Pass Static Checks
+                    Orc->>Git: Run Heavy Suite (`build_cmd` & `test_cmd`)
+                end
+            end
+        end
+
+        alt Verification Gates Pass
+            Orc->>Git: Commit, Push & Cleanup Worktree
+            Orc->>CLI: Return Success + Metrics (.agent/history/metrics.jsonl)
+            note over Jules,Git: Exit Loop
+        else Verification Gates Fail (Attempts < 4)
+            Git-->>Orc: Execution Trace (stdout/stderr / Diff)
+            Orc->>Jules: Inject OODA Feedback & Error Context
+        end
+    end
+
+    opt Verification Gates Fail (Attempts >= 4)
+        Orc->>Git: Abort & Rollback Worktree (`git worktree remove --force`)
+        Orc->>CLI: Return Terminal Failure (.agent/history/errors.jsonl)
     end
 ```
 
