@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Framework-agnostic toolkit for orchestrating Google Jules background AI coding workers.",
   "type": "module",
   "bin": {
