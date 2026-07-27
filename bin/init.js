@@ -26,8 +26,10 @@ const agentsFile = path.join(targetDir, "AGENTS.md");
 const julesRulesSource = path.join(kitRoot, "JULES_RULES_TEMPLATE.md");
 
 if (!fs.existsSync(agentsFile)) {
-  fs.copyFileSync(julesRulesSource, agentsFile);
-  console.log("✅ Created: AGENTS.md (from JULES_RULES_TEMPLATE.md)");
+  if (fs.existsSync(julesRulesSource)) {
+    fs.copyFileSync(julesRulesSource, agentsFile);
+    console.log("✅ Created: AGENTS.md (from JULES_RULES_TEMPLATE.md)");
+  }
 } else {
   console.log("ℹ️ AGENTS.md already exists (skipped overwrite).");
 }
@@ -67,25 +69,25 @@ if (!fs.existsSync(reviewTarget) && fs.existsSync(reviewSource)) {
   console.log("✅ Created: .agent/workflows/jules-review.md");
 }
 
-// 4. Copy scripts/ directory
+// 4. Copy scripts/ directory with existence guard
 const targetScriptsDir = path.join(targetDir, "scripts");
 if (!fs.existsSync(targetScriptsDir)) {
   fs.mkdirSync(targetScriptsDir, { recursive: true });
 }
 
 const sourceScriptsDir = path.join(kitRoot, "scripts");
-const scriptFiles = fs.readdirSync(sourceScriptsDir);
-
-scriptFiles.forEach((file) => {
-  const srcFile = path.join(sourceScriptsDir, file);
-  const destFile = path.join(targetScriptsDir, file);
-  fs.copyFileSync(srcFile, destFile);
-  // Set executable permission for .py or .mjs scripts if unix
-  try {
-    fs.chmodSync(destFile, 0o755);
-  } catch (_) {}
-});
-console.log(`✅ Copied ${scriptFiles.length} orchestration scripts to ./scripts/`);
+if (fs.existsSync(sourceScriptsDir)) {
+  const scriptFiles = fs.readdirSync(sourceScriptsDir);
+  scriptFiles.forEach((file) => {
+    const srcFile = path.join(sourceScriptsDir, file);
+    const destFile = path.join(targetScriptsDir, file);
+    fs.copyFileSync(srcFile, destFile);
+    try {
+      fs.chmodSync(destFile, 0o755);
+    } catch (_) {}
+  });
+  console.log(`✅ Copied ${scriptFiles.length} orchestration scripts to ./scripts/`);
+}
 
 console.log("\n🎉 Google Jules Orchestration Kit successfully initialized!");
 console.log("\nNext Steps:");

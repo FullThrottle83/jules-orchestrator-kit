@@ -154,11 +154,21 @@ if (apiKey && repo) {
 
 function dispatchViaCli(targetRepo, payloadFile, title) {
   try {
+    let promptToSend = fullPrompt;
+    if (payloadFile && fs.existsSync(payloadFile)) {
+      try {
+        const payloadData = JSON.parse(fs.readFileSync(payloadFile, "utf-8"));
+        if (payloadData.prompt) promptToSend = payloadData.prompt;
+      } catch (_) {}
+    }
+
     const args = ["new"];
     if (targetRepo) {
       args.push("--repo", targetRepo);
     }
-    args.push(fullPrompt);
+
+    // Safely pass promptToSend parameter
+    args.push(promptToSend);
 
     console.log(`💻 Executing: jules ${args.join(" ")}...`);
     execFileSync("jules", args, { stdio: "inherit" });

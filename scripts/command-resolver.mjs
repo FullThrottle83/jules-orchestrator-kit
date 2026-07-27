@@ -9,13 +9,22 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
   // 1. Check for explicit custom config (.agent/jules.yml or jules.config.json)
   const yamlConfigPath = path.join(projectRoot, ".agent/jules.yml");
   if (fs.existsSync(yamlConfigPath)) {
-    const content = fs.readFileSync(yamlConfigPath, "utf-8");
-    const testMatch = content.match(/test_cmd:\s*["']?([^"'\n]+)["']?/);
-    const buildMatch = content.match(/build_cmd:\s*["']?([^"'\n]+)["']?/);
-    if (testMatch || buildMatch) {
+    const lines = fs.readFileSync(yamlConfigPath, "utf-8").split("\n");
+    let testCmd = "";
+    let buildCmd = "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      if (trimmed.startsWith("test_cmd:")) {
+        testCmd = trimmed.slice("test_cmd:".length).trim().replace(/^["']|["']$/g, "");
+      } else if (trimmed.startsWith("build_cmd:")) {
+        buildCmd = trimmed.slice("build_cmd:".length).trim().replace(/^["']|["']$/g, "");
+      }
+    }
+    if (testCmd || buildCmd) {
       return {
-        testCmd: testMatch ? testMatch[1].trim() : "",
-        buildCmd: buildMatch ? buildMatch[1].trim() : "",
+        testCmd,
+        buildCmd,
         source: ".agent/jules.yml",
       };
     }
@@ -33,7 +42,31 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     } catch (_) {}
   }
 
-  // 2. JavaScript / TypeScript (package.json)
+  // 2. Bun (bunfig.toml or bun.lockb)
+  if (
+    fs.existsSync(path.join(projectRoot, "bunfig.toml")) ||
+    fs.existsSync(path.join(projectRoot, "bun.lockb"))
+  ) {
+    return {
+      testCmd: "bun test",
+      buildCmd: "bun run build",
+      source: "Bun Manifest",
+    };
+  }
+
+  // 3. Deno (deno.json / deno.jsonc)
+  if (
+    fs.existsSync(path.join(projectRoot, "deno.json")) ||
+    fs.existsSync(path.join(projectRoot, "deno.jsonc"))
+  ) {
+    return {
+      testCmd: "deno test",
+      buildCmd: "deno task build",
+      source: "Deno Manifest",
+    };
+  }
+
+  // 4. JavaScript / TypeScript (package.json)
   const pkgPath = path.join(projectRoot, "package.json");
   if (fs.existsSync(pkgPath)) {
     try {
@@ -53,7 +86,7 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     } catch (_) {}
   }
 
-  // 3. Rust (Cargo.toml)
+  // 5. Rust (Cargo.toml)
   if (fs.existsSync(path.join(projectRoot, "Cargo.toml"))) {
     return {
       testCmd: "cargo test --workspace",
@@ -62,7 +95,7 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     };
   }
 
-  // 4. Go (go.mod)
+  // 6. Go (go.mod)
   if (fs.existsSync(path.join(projectRoot, "go.mod"))) {
     return {
       testCmd: "go test ./...",
@@ -71,7 +104,7 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     };
   }
 
-  // 5. Python (pyproject.toml / requirements.txt / setup.py)
+  // 7. Python (pyproject.toml / requirements.txt / setup.py)
   if (
     fs.existsSync(path.join(projectRoot, "pyproject.toml")) ||
     fs.existsSync(path.join(projectRoot, "requirements.txt")) ||
@@ -84,7 +117,34 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     };
   }
 
-  // 6. Java (Maven pom.xml / Gradle build.gradle)
+  // 8. Elixir (mix.exs)
+  if (fs.existsSync(path.join(projectRoot, "mix.exs"))) {
+    return {
+      testCmd: "mix test",
+      buildCmd: "mix compile",
+      source: "mix.exs",
+    };
+  }
+
+  // 9. Ruby (Gemfile)
+  if (fs.existsSync(path.join(projectRoot, "Gemfile"))) {
+    return {
+      testCmd: "bundle exec rake test",
+      buildCmd: "",
+      source: "Gemfile",
+    };
+  }
+
+  // 10. Swift (Package.swift)
+  if (fs.existsSync(path.join(projectRoot, "Package.swift"))) {
+    return {
+      testCmd: "swift test",
+      buildCmd: "swift build",
+      source: "Package.swift",
+    };
+  }
+
+  // 11. Java (Maven pom.xml / Gradle build.gradle)
   if (fs.existsSync(path.join(projectRoot, "pom.xml"))) {
     return {
       testCmd: "mvn test",
@@ -103,7 +163,7 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     };
   }
 
-  // 7. Makefile
+  // 12. Makefile
   if (fs.existsSync(path.join(projectRoot, "Makefile"))) {
     return {
       testCmd: "make test",

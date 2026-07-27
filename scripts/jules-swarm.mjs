@@ -1,4 +1,4 @@
-import { execSync, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -22,33 +22,61 @@ if (!Array.isArray(tasks)) {
   process.exit(1);
 }
 
-console.log(`🐝 Launching Jules Swarm Orchestrator (${tasks.length} tasks)...`);
+console.log(`🐝 Launching Jules Swarm Orchestrator (${tasks.length} tasks, Rate-Limit Throttled)...`);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runSwarm() {
-  const results = await Promise.allSettled(
-    tasks.map(async (task, index) => {
-      const taskId = task.id || `task-${index + 1}`;
-      console.log(`\n----------------------------------------`);
-      console.log(`[${index + 1}/${tasks.length}] Dispatching Swarm Task: ${task.title} (${taskId})`);
+  const results = [];
+  const MAX_CONCURRENT = 2;
+  const STAGGER_MS = 2500; // 2.5s delay between dispatches to prevent API 429 thrashing
 
-      try {
-        execFileSync("node", ["scripts/jules-dispatch.mjs", task.title, task.prompt], {
-          stdio: "inherit",
-          timeout: 15 * 60 * 1000, // 15 minute TTL
-        });
-        return { taskId, title: task.title, status: "SUCCESS" };
-      } catch (error) {
-        console.error(`⚠️ Failed task [${task.title}]:`, error.message);
-        return { taskId, title: task.title, status: "FAILED", error: error.message };
+  for (let i = 0; i < tasks.length; i += MAX_CONCURRENT) {
+    const batch = tasks.slice(i, i + MAX_CONCURRENT);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (task, bIdx) => {
+        const taskNum = i + bIdx + 1;
+        const taskId = task.id || `task-${taskNum}`;
+
+        // Stagger dispatches inside batch
+        if (bIdx > 0) {
+          await sleep(STAGGER_MS * bIdx);
+        }
+
+        console.log(`\n----------------------------------------`);
+        console.log(`[${taskNum}/${tasks.length}] Dispatching Swarm Task: ${task.title} (${taskId})`);
+
+        try {
+          execFileSync("node", ["scripts/jules-dispatch.mjs", task.title, task.prompt], {
+            stdio: "inherit",
+            timeout: 15 * 60 * 1000, // 15 minute TTL
+          });
+          return { taskId, title: task.title, status: "SUCCESS" };
+        } catch (error) {
+          console.error(`⚠️ Failed task [${task.title}]:`, error.message);
+          return { taskId, title: task.title, status: "FAILED", error: error.message };
+        }
+      })
+    );
+
+    for (const r of batchResults) {
+      if (r.status === "fulfilled") {
+        results.push(r.value);
+      } else {
+        results.push({ title: "Unknown Task", status: "FAILED", error: r.reason });
       }
-    })
-  );
+    }
+
+    if (i + MAX_CONCURRENT < tasks.length) {
+      console.log(`\n⏳ Batch finished. Cooling down for 3s before next batch...`);
+      await sleep(3000);
+    }
+  }
 
   console.log(`\n========================================`);
   console.log(`🎉 Swarm Dispatch Summary (${results.length} tasks processed):`);
-  results.forEach((r) => {
-    const val = r.value || {};
-    console.log(`  - [${val.status}] ${val.title}`);
+  results.forEach((res) => {
+    console.log(`  - [${res.status}] ${res.title}`);
   });
 }
 
