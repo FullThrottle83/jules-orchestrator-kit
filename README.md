@@ -204,6 +204,20 @@ allow_paths: []
 
 ---
 
+<details>
+<summary><b>🤝 Contributing & Code Guidelines</b></summary>
+
+We welcome contributions! Please follow these core principles when submitting Pull Requests:
+
+1. **Zero External Dependencies**: Keep the orchestrator engine 100% dependency-free. Use ONLY native Node.js built-in modules (`node:fs`, `node:path`, `node:child_process`, `node:crypto`, `node:util`).
+2. **Verification Suite**: Ensure 100% of unit tests pass cleanly (`npm test`).
+3. **Conventional Commits**: Use standardized commit message prefixes (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
+4. **Cross-Platform Compatibility**: Always normalize Windows backslashes (`\`) to POSIX slashes (`/`) for glob patterns and paths.
+
+</details>
+
+---
+
 ## 📜 License & Disclaimer
 
 MIT License - feel free to use, modify, and share!
