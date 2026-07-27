@@ -14,7 +14,10 @@ if (!fs.existsSync(completedDir)) {
   fs.mkdirSync(completedDir, { recursive: true });
 }
 
-const files = fs.readdirSync(queueDir).filter(f => f.endsWith(".md"));
+const files = fs.readdirSync(queueDir).filter(
+  (f) => f.endsWith(".md") && f !== "README.md" && !f.startsWith("_") && !f.startsWith(".")
+);
+
 
 if (files.length === 0) {
   console.log("ℹ️ No tasks found in the queue.");

@@ -1,0 +1,30 @@
+name: Jules PR Audit & Test Gatekeeper
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  audit-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Run Jules PR Self-Audit Gatekeeper
+        run: node scripts/jules-self-audit.mjs
+        env:
+          CI: "true"
+          BASE_BRANCH: "main"

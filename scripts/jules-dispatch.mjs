@@ -1,7 +1,8 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import os from "node:os";
 import { resolveProjectCommands } from "./command-resolver.mjs";
 
 const taskTitle = process.argv[2];
@@ -43,10 +44,13 @@ function redactSecrets(text) {
   if (!text) return "";
   const patterns = [
     /gh[p|u|s|r]_[a-zA-Z0-9]{36}/g,
+    /github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}/g,
     /AKIA[0-9A-Z]{16}/g,
+    /AIzaSy[a-zA-Z0-9_\-]{33}/g,
     /Bearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
-    /sk-[a-zA-Z0-9]{32,}/g,
-    /-----BEGIN (RSA|OPENSSH|PRIVATE) KEY-----[\s\S]*?-----END \1 KEY-----/g,
+    /sk-(?:ant-api03-|proj-)?[a-zA-Z0-9\-\_]{32,}/g,
+    /xox[baprs]-[a-zA-Z0-9\-]{10,}/g,
+    /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/g,
   ];
   let sanitized = text;
   for (const pat of patterns) {
@@ -103,15 +107,14 @@ const baseRules = fs.existsSync(rulesPath)
 
 const dynamicRules = getDynamicGuardrails(rawPrompt);
 
-// Machine XML MCP Directive Envelope
+// Machine XML Directives
 const envelope = `
 <MCP_DIRECTIVE>
   <system_state>HEADLESS_CI_MODE</system_state>
   <strict_invariants>
-    <rule>1. NO CONVERSATION: Output ONLY machine-actionable tool calls or valid patches. No markdown explanations.</rule>
-    <rule>2. READ-BEFORE-WRITE (ZERO HALLUCINATION): You are FORBIDDEN from guessing internal API signatures. Before editing, use MCP docs or codebase search to verify exact function signatures.</rule>
-    <rule>3. VERIFICATION LOOP: After patching code, you MUST execute the verification commands and ensure 0 errors.</rule>
-    <rule>4. ABORT CONDITION: On repeated unresolvable test failures, output <status>ABORT_UNRESOLVABLE</status> and terminate.</rule>
+    <rule>1. READ-BEFORE-WRITE (ZERO HALLUCINATION): You are FORBIDDEN from guessing internal API signatures. Before editing, use search tools or MCP doc tools to verify exact signatures.</rule>
+    <rule>2. VERIFICATION LOOP: After patching code, you MUST execute the verification commands and ensure 0 errors.</rule>
+    <rule>3. ABORT CONDITION: On repeated unresolvable test failures, output <status>ABORT_UNRESOLVABLE</status> and terminate.</rule>
   </strict_invariants>
 </MCP_DIRECTIVE>
 `.trim();
@@ -129,7 +132,6 @@ if (!fs.existsSync(historyDir)) {
 const historyFile = path.join(historyDir, `${dateStr}-dispatch-${slug}.md`);
 fs.writeFileSync(historyFile, `---\ntype: jules_dispatch\ntitle: "${taskTitle}"\ntimestamp: "${new Date().toISOString()}"\n---\n# Jules Task Dispatch: ${taskTitle}\n\n## Prompt\n${rawPrompt}\n`, "utf-8");
 
-
 console.log(`🚀 Dispatching task to Google Jules: "${taskTitle}"...`);
 console.log(`📝 Logged dispatch history to: ${path.relative(process.cwd(), historyFile)}`);
 
@@ -137,37 +139,61 @@ console.log(`📝 Logged dispatch history to: ${path.relative(process.cwd(), his
 const apiKey = process.env.JULES_API_KEY;
 const repo = process.env.JULES_REPO;
 
-// Create ephemeral payload file to bypass OS ARG_MAX limits
 const payloadHash = crypto.createHash("sha256").update(taskTitle + Date.now()).digest("hex").slice(0, 12);
-const tmpPayloadFile = path.join("/tmp", `jules_payload_${payloadHash}.json`);
+const tmpPayloadFile = path.join(os.tmpdir(), `jules_payload_${payloadHash}.json`);
 fs.writeFileSync(tmpPayloadFile, JSON.stringify({ repo, title: taskTitle, prompt: fullPrompt }));
 
-if (apiKey && repo) {
-  console.log(`🌐 Using Jules REST API for repository ${repo}...`);
-  try {
-    const res = execSync(
-      `curl -s -X POST "https://jules.googleapis.com/v1alpha/sessions" \
-        -H "Authorization: Bearer ${apiKey}" \
-        -H "Content-Type: application/json" \
-        -d @${tmpPayloadFile}`,
-      { encoding: "utf-8" }
-    );
-    console.log(`✅ REST API Dispatch response:`, res.trim());
-  } catch (error) {
-    if (error.status === 429) {
-      console.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI to prevent API thrashing.`);
-      process.exit(1);
+async function executeDispatch() {
+  if (apiKey && repo) {
+    console.log(`🌐 Using Jules REST API for repository ${repo}...`);
+    const formattedSource = repo.startsWith("sources/") ? repo : (repo.includes("/") ? `sources/github/${repo}` : repo);
+    const payload = {
+      title: taskTitle,
+      prompt: fullPrompt,
+      sourceContext: {
+        source: formattedSource,
+        githubRepoContext: {
+          startingBranch: process.env.BASE_BRANCH || "main"
+        }
+      }
+    };
+
+    try {
+      const res = await fetch("https://jules.googleapis.com/v1alpha/sessions", {
+        method: "POST",
+        headers: {
+          "X-Goog-Api-Key": apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.status === 429) {
+        console.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI.`);
+        process.exit(1);
+      }
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+
+      const data = await res.json();
+      const sessionId = data.name || data.id || "Created";
+      console.log(`✅ REST API Dispatch response: Session ${sessionId} created successfully.`);
+      fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
+    } catch (error) {
+      console.warn(`⚠️ REST API dispatch failed, falling back to CLI...`, error.message);
+      dispatchViaCli(repo, tmpPayloadFile, taskTitle);
+    } finally {
+      fs.rmSync(tmpPayloadFile, { force: true });
     }
-    console.warn(`⚠️ REST API dispatch failed, falling back to CLI...`, error.message);
-    dispatchViaCli(repo, tmpPayloadFile, taskTitle);
-  } finally {
-    fs.rmSync(tmpPayloadFile, { force: true });
-  }
-} else {
-  try {
-    dispatchViaCli(repo, tmpPayloadFile, taskTitle);
-  } finally {
-    fs.rmSync(tmpPayloadFile, { force: true });
+  } else {
+    try {
+      dispatchViaCli(repo, tmpPayloadFile, taskTitle);
+    } finally {
+      fs.rmSync(tmpPayloadFile, { force: true });
+    }
   }
 }
 
@@ -186,7 +212,6 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
       args.push("--repo", targetRepo);
     }
 
-    // Safely pass promptToSend parameter
     args.push(promptToSend);
 
     console.log(`💻 Executing: jules ${args.join(" ")}...`);
@@ -197,3 +222,6 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
     process.exit(1);
   }
 }
+
+executeDispatch();
+

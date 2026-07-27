@@ -8,11 +8,15 @@
   },
   "scripts": {
     "init": "node bin/init.js",
+    "test": "node --test test/kit.test.mjs",
     "jules:dispatch": "node scripts/jules-dispatch.mjs",
     "jules:queue": "node scripts/jules-queue-runner.mjs",
     "jules:audit": "node scripts/jules-self-audit.mjs",
     "jules:swarm": "node scripts/jules-swarm.mjs",
     "jules:nightly": "python3 scripts/jules-nightly.py"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "keywords": [
     "jules",
@@ -22,6 +26,7 @@
     "mcp",
     "automation"
   ],
-  "author": "Antigravity Engineering",
+  "author": "Jonas (FullThrottle83)",
   "license": "MIT"
 }
+

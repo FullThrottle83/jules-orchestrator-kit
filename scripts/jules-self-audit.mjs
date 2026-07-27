@@ -1,9 +1,8 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveWorkspaceExecutionBoundary } from "./command-resolver.mjs";
-
-console.log("🔍 Running Jules PR Self-Audit Gatekeeper...\n");
 
 function runCommand(cmd, ignoreError = false) {
   try {
@@ -16,92 +15,148 @@ function runCommand(cmd, ignoreError = false) {
   }
 }
 
-// 1. Resolve target branch and merge-base with shallow clone defense
-const targetBranch = process.env.BASE_BRANCH || "main";
-console.log(`🎯 Target Branch: ${targetBranch}`);
-
-// In CI runners (e.g. GitHub Actions), unshallow history if shallow
-if (process.env.CI) {
-  console.log("☁️ CI environment detected. Fetching merge-base history...");
-  runCommand(`git fetch origin ${targetBranch} --depth=100 || git fetch origin ${targetBranch} --unshallow`, true);
-}
-
-const mainRef = runCommand(`git rev-parse --verify origin/${targetBranch}`, true) ? `origin/${targetBranch}` : targetBranch;
-const mergeBase = runCommand(`git merge-base HEAD ${mainRef}`, true);
-
-if (!mergeBase) {
-  console.error(`❌ FATAL: Could not compute merge-base with ${mainRef}. Make sure git history is unshallowed.`);
-  process.exit(1);
-}
-
-console.log(`🔗 Merge-Base Hash: ${mergeBase}`);
-
-// 2. Fetch modified files and filter out lockfiles & binary bloat
-const rawDiffFiles = runCommand(`git diff --name-only ${mergeBase}...HEAD`)
-  .split("\n")
-  .map((f) => f.trim())
-  .filter(Boolean);
-
-// Token-Protection: Ignore lockfiles and binary assets
-const isBloatFile = (file) => /(\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|\.png|\.jpg|\.jpeg|\.pdf|\.min\.js|\.map)$/i.test(file);
-const changedCodeFiles = rawDiffFiles.filter((f) => !isBloatFile(f));
-
-console.log(`\n📄 Modified Code Files (${changedCodeFiles.length} of ${rawDiffFiles.length} total changes):`);
-changedCodeFiles.forEach((file) => console.log(`   - ${file}`));
-
-// 3. Dynamic Restricted File Boundary Check with Glob Matching
-function loadForbiddenPatterns() {
-  const configPath = path.resolve(process.cwd(), ".agent/jules.yml");
-  if (fs.existsSync(configPath)) {
-    const content = fs.readFileSync(configPath, "utf-8");
-    const forbiddenMatch = content.match(/forbidden_paths:\s*\[([^\]]+)\]/);
-    if (forbiddenMatch) {
-      return forbiddenMatch[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+export function matchGlob(filepath, globPattern) {
+  const cleanPath = filepath.replace(/^\.\//, "");
+  const segments = globPattern.split("/");
+  const regexParts = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg === "**") {
+      regexParts.push("**");
+    } else {
+      regexParts.push(
+        seg
+          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*/g, "[^/]*")
+          .replace(/\?/g, ".")
+      );
     }
   }
-  return [".github/**", "**/secrets/**", "**/*.pem", "**/lock-manager/**"];
+  let patternStr = regexParts.join("/");
+  patternStr = patternStr.replace(/(^|\/)\*\*(\/|$)/g, (m, p1, p2) => {
+    if (p1 === "/" && p2 === "/") return "(?:/|/.*/)";
+    if (p1 === "/") return "(?:/.*)?";
+    if (p2 === "/") return "(?:.*/)?";
+    return ".*";
+  });
+  return new RegExp(`^${patternStr}$`, "i").test(cleanPath);
 }
 
-function matchGlob(filepath, globPattern) {
-  const regexStr = "^" + globPattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*/g, ".*")
-    .replace(/(?<!\.)\*/g, "[^/]*")
-    .replace(/\?/g, ".") + "$";
-  return new RegExp(regexStr, "i").test(filepath);
+
+export function loadForbiddenPatterns(configContent = "") {
+  const defaultForbidden = [
+    ".github/**",
+    "**/secrets/**",
+    "**/*.pem",
+    "**/lock-manager/**",
+    "scripts/jules-*",
+    ".agent/jules.yml"
+  ];
+  if (!configContent) return defaultForbidden;
+
+  // Flow style: forbidden_paths: [...]
+  const flowMatch = configContent.match(/forbidden_paths:\s*\[([^\]]+)\]/);
+  if (flowMatch) {
+    const parsed = flowMatch[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    return Array.from(new Set([...defaultForbidden, ...parsed]));
+  }
+
+  // Block style: forbidden_paths:\n  - "path1"\n  - "path2"
+  const lines = configContent.split("\n");
+  let inForbidden = false;
+  const blockParsed = [];
+  for (const line of lines) {
+    if (line.trim().startsWith("forbidden_paths:")) {
+      inForbidden = true;
+      continue;
+    }
+    if (inForbidden) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("-")) {
+        blockParsed.push(trimmed.slice(1).trim().replace(/^["']|["']$/g, ""));
+      } else if (trimmed && !trimmed.startsWith("#")) {
+        break;
+      }
+    }
+  }
+  if (blockParsed.length > 0) {
+    return Array.from(new Set([...defaultForbidden, ...blockParsed]));
+  }
+
+  return defaultForbidden;
 }
 
-const forbiddenPatterns = loadForbiddenPatterns();
-const violations = rawDiffFiles.filter((file) =>
-  forbiddenPatterns.some((pattern) => matchGlob(file, pattern))
-);
+export function runSelfAudit() {
+  console.log("🔍 Running Jules PR Self-Audit Gatekeeper...\n");
 
-if (violations.length > 0) {
-  console.error("\n❌ RESTRICTED FILE VIOLATION DETECTED!");
-  console.error("Jules PR attempted to modify forbidden system files:");
-  violations.forEach((v) => console.error(`   - ${v}`));
-  process.exit(1);
+  const targetBranch = process.env.BASE_BRANCH || "main";
+  console.log(`🎯 Target Branch: ${targetBranch}`);
+
+  if (process.env.CI) {
+    console.log("☁️ CI environment detected. Fetching merge-base history...");
+    runCommand(`git fetch origin ${targetBranch} --depth=100 || git fetch origin ${targetBranch} --unshallow`, true);
+  }
+
+  const mainRef = runCommand(`git rev-parse --verify origin/${targetBranch}`, true) ? `origin/${targetBranch}` : targetBranch;
+  const mergeBase = runCommand(`git merge-base HEAD ${mainRef}`, true);
+
+  if (!mergeBase) {
+    console.error(`❌ FATAL: Could not compute merge-base with ${mainRef}. Make sure git history is unshallowed.`);
+    process.exit(1);
+  }
+
+  console.log(`🔗 Merge-Base Hash: ${mergeBase}`);
+
+  const rawDiffFiles = runCommand(`git diff --name-only ${mergeBase}...HEAD`)
+    .split("\n")
+    .map((f) => f.trim())
+    .filter(Boolean);
+
+  const isBloatFile = (file) => /(\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|\.png|\.jpg|\.jpeg|\.pdf|\.min\.js|\.map)$/i.test(file);
+  const changedCodeFiles = rawDiffFiles.filter((f) => !isBloatFile(f));
+
+  console.log(`\n📄 Modified Code Files (${changedCodeFiles.length} of ${rawDiffFiles.length} total changes):`);
+  changedCodeFiles.forEach((file) => console.log(`   - ${file}`));
+
+  const trustedConfig = runCommand(`git show ${mainRef}:.agent/jules.yml`, true) || (fs.existsSync(path.resolve(process.cwd(), ".agent/jules.yml")) ? fs.readFileSync(path.resolve(process.cwd(), ".agent/jules.yml"), "utf-8") : "");
+  const forbiddenPatterns = loadForbiddenPatterns(trustedConfig);
+
+  const violations = rawDiffFiles.filter((file) =>
+    forbiddenPatterns.some((pattern) => matchGlob(file, pattern))
+  );
+
+  if (violations.length > 0) {
+    console.error("\n❌ RESTRICTED FILE VIOLATION DETECTED!");
+    console.error("Jules PR attempted to modify forbidden system files:");
+    violations.forEach((v) => console.error(`   - ${v}`));
+    process.exit(1);
+  }
+  console.log("\n✅ Restricted File Boundary Check: PASSED");
+
+  console.log("\n🛠️ Resolving Dynamic Verification Suite...");
+  const resolvedCmds = resolveWorkspaceExecutionBoundary(changedCodeFiles, process.cwd());
+  console.log(`📋 Discovered Execution Scope: ${resolvedCmds.source}`);
+
+  if (resolvedCmds.testCmd) {
+    console.log(`▶ Running Test Verification: ${resolvedCmds.testCmd}`);
+    runCommand(resolvedCmds.testCmd);
+  }
+  if (resolvedCmds.buildCmd) {
+    console.log(`▶ Running Build Verification: ${resolvedCmds.buildCmd}`);
+    runCommand(resolvedCmds.buildCmd);
+  }
+
+  if (!resolvedCmds.testCmd && !resolvedCmds.buildCmd) {
+    console.log("ℹ️ No build or test scripts found. Running git status check.");
+    runCommand("git status");
+  }
+
+  console.log("\n🎉 JULES PR SELF-AUDIT PASSED SUCCESSFULLY!");
 }
-console.log("\n✅ Restricted File Boundary Check: PASSED");
 
-// 4. Dynamic Verification Suite Execution (Monorepo Workspace Aware)
-console.log("\n🛠️ Resolving Dynamic Verification Suite...");
-const resolvedCmds = resolveWorkspaceExecutionBoundary(changedCodeFiles, process.cwd());
-console.log(`📋 Discovered Execution Scope: ${resolvedCmds.source}`);
-
-if (resolvedCmds.testCmd) {
-  console.log(`▶ Running Test Verification: ${resolvedCmds.testCmd}`);
-  runCommand(resolvedCmds.testCmd);
-}
-if (resolvedCmds.buildCmd) {
-  console.log(`▶ Running Build Verification: ${resolvedCmds.buildCmd}`);
-  runCommand(resolvedCmds.buildCmd);
+// Execute when invoked directly from CLI
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  runSelfAudit();
 }
 
-if (!resolvedCmds.testCmd && !resolvedCmds.buildCmd) {
-  console.log("ℹ️ No build or test scripts found. Running git status check.");
-  runCommand("git status");
-}
-
-console.log("\n🎉 JULES PR SELF-AUDIT PASSED SUCCESSFULLY!");
 

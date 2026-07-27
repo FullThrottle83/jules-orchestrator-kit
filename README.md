@@ -111,7 +111,10 @@ forbidden_paths:
 
 ---
 
-## 📜 License
+## 📜 License & Disclaimer
 
 MIT License - feel free to use, modify, and share!
+
+*Disclaimer: This is an independent open-source orchestration tool and is not officially affiliated with or endorsed by Google.*
+
 

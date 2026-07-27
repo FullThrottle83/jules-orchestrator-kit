@@ -1,6 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
+
+const execFileAsync = promisify(execFile);
 
 const tasksFile = process.argv[2];
 
@@ -22,14 +25,15 @@ if (!Array.isArray(tasks)) {
   process.exit(1);
 }
 
-console.log(`🐝 Launching Jules Swarm Orchestrator (${tasks.length} tasks, Rate-Limit Throttled)...`);
+const MAX_CONCURRENT = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10);
+const STAGGER_MS = parseInt(process.env.JULES_SWARM_STAGGER_MS || "1500", 10);
+
+console.log(`🐝 Launching Jules Swarm Orchestrator (${tasks.length} tasks, Concurrency: ${MAX_CONCURRENT})...`);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runSwarm() {
   const results = [];
-  const MAX_CONCURRENT = 2;
-  const STAGGER_MS = 2500; // 2.5s delay between dispatches to prevent API 429 thrashing
 
   for (let i = 0; i < tasks.length; i += MAX_CONCURRENT) {
     const batch = tasks.slice(i, i + MAX_CONCURRENT);
@@ -38,7 +42,6 @@ async function runSwarm() {
         const taskNum = i + bIdx + 1;
         const taskId = task.id || `task-${taskNum}`;
 
-        // Stagger dispatches inside batch
         if (bIdx > 0) {
           await sleep(STAGGER_MS * bIdx);
         }
@@ -47,10 +50,10 @@ async function runSwarm() {
         console.log(`[${taskNum}/${tasks.length}] Dispatching Swarm Task: ${task.title} (${taskId})`);
 
         try {
-          execFileSync("node", ["scripts/jules-dispatch.mjs", task.title, task.prompt], {
-            stdio: "inherit",
-            timeout: 15 * 60 * 1000, // 15 minute TTL
+          const { stdout } = await execFileAsync("node", ["scripts/jules-dispatch.mjs", task.title, task.prompt], {
+            timeout: 15 * 60 * 1000,
           });
+          if (stdout) console.log(stdout.trim());
           return { taskId, title: task.title, status: "SUCCESS" };
         } catch (error) {
           console.error(`⚠️ Failed task [${task.title}]:`, error.message);
@@ -68,8 +71,8 @@ async function runSwarm() {
     }
 
     if (i + MAX_CONCURRENT < tasks.length) {
-      console.log(`\n⏳ Batch finished. Cooling down for 3s before next batch...`);
-      await sleep(3000);
+      console.log(`\n⏳ Batch finished. Cooling down for 2s before next batch...`);
+      await sleep(2000);
     }
   }
 
@@ -81,3 +84,4 @@ async function runSwarm() {
 }
 
 runSwarm();
+
