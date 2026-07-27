@@ -31,7 +31,7 @@ This single command will:
 4. **Pre-Flight Secret Redaction & REST Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-redacts API keys (`ghp_`, `AKIA`, `sk-`, `Bearer`, RSA keys), bypasses OS `ARG_MAX` payload limits via ephemeral files, and handles HTTP 429 rate limits.
 5. **PR Self-Auditor & Glob Boundary Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), filters token bloat, enforces dynamic glob-based security boundaries (`forbidden_paths`), and runs scoped workspace test suites.
 6. **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, and moves finished tasks to `.agent/jules-queue/completed/`.
-7. **Rate-Limited Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Manages multi-task batches with controlled concurrency (`MAX_CONCURRENT = 2`), staggered dispatches (2.5s interval), and batch cooldowns to eliminate API rate-limit thrashing.
+7. **Rate-Limited Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Manages multi-task batches with controlled concurrency (`JULES_SWARM_CONCURRENCY`, default 3), staggered dispatches (1.5s interval), and batch cooldowns to eliminate API rate-limit thrashing.
 8. **Nightly Maintenance Suite (`scripts/jules-nightly.py`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning, unused env var cleanup).
 
 ---
@@ -53,7 +53,7 @@ npm run jules:queue
 ### Run Rate-Limited Swarm Dispatch
 
 ```bash
-node scripts/jules-swarm.mjs tasks.json
+JULES_SWARM_CONCURRENCY=5 node scripts/jules-swarm.mjs tasks.json
 ```
 
 ### Run Nightly Maintenance Suite
@@ -81,7 +81,7 @@ The command resolver automatically sniffs your codebase and invokes the right ve
 | **Nx Workspace** | `nx.json` | `npx nx run-many -t test -p <pkg> --with-deps` |
 | **Bun** | `bunfig.toml` / `bun.lockb` | `bun test && bun run build` |
 | **Deno** | `deno.json` / `deno.jsonc` | `deno test && deno task build` |
-| **JavaScript / TypeScript** | `package.json` | `npm run check:all && npm test && npm run build` |
+| **JavaScript / TypeScript** | `package.json` | `npm run check:all` or `npm test` |
 | **Rust** | `Cargo.toml` | `cargo test -p <pkg>` / `cargo test --workspace` |
 | **Go** | `go.mod` | `go test ./... && go build ./...` |
 | **Python** | `pyproject.toml` / `requirements.txt` | `pytest` |
@@ -91,7 +91,7 @@ The command resolver automatically sniffs your codebase and invokes the right ve
 | **Java (Maven)** | `pom.xml` | `mvn test && mvn compile` |
 | **Java (Gradle)** | `build.gradle` | `./gradlew test && ./gradlew assemble` |
 | **C / C++** | `Makefile` | `make test && make build` |
-| **Custom Config (v2)** | `.agent/jules.yml` | Configurable `test_cmd`, `build_cmd` & `forbidden_paths` |
+| **Custom Config (v2)** | `.agent/jules.yml` | Configurable `test_cmd`, `build_cmd`, `forbidden_paths` & `allow_paths` |
 
 ---
 
@@ -107,7 +107,11 @@ forbidden_paths:
   - "**/secrets/**"
   - "**/*.pem"
   - "**/lock-manager/**"
+  - "scripts/jules-*"
+  - ".agent/jules.yml"
+allow_paths: []
 ```
+
 
 ---
 

@@ -158,8 +158,9 @@ async function executeDispatch() {
       }
     };
 
+    let res;
     try {
-      const res = await fetch("https://jules.googleapis.com/v1alpha/sessions", {
+      res = await fetch("https://jules.googleapis.com/v1alpha/sessions", {
         method: "POST",
         headers: {
           "X-Goog-Api-Key": apiKey,
@@ -167,27 +168,42 @@ async function executeDispatch() {
         },
         body: JSON.stringify(payload)
       });
-
-      if (res.status === 429) {
-        console.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI.`);
-        process.exit(1);
+    } catch (fetchErr) {
+      console.warn(`⚠️ REST API request failed (network error), falling back to CLI...`, fetchErr.message);
+      try {
+        dispatchViaCli(repo, tmpPayloadFile, taskTitle);
+      } finally {
+        fs.rmSync(tmpPayloadFile, { force: true });
       }
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errText}`);
-      }
-
-      const data = await res.json();
-      const sessionId = data.name || data.id || "Created";
-      console.log(`✅ REST API Dispatch response: Session ${sessionId} created successfully.`);
-      fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
-    } catch (error) {
-      console.warn(`⚠️ REST API dispatch failed, falling back to CLI...`, error.message);
-      dispatchViaCli(repo, tmpPayloadFile, taskTitle);
-    } finally {
-      fs.rmSync(tmpPayloadFile, { force: true });
+      return;
     }
+
+    if (res.status === 429) {
+      console.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI.`);
+      fs.rmSync(tmpPayloadFile, { force: true });
+      process.exit(1);
+    }
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`⚠️ REST API returned HTTP ${res.status}: ${errText}, falling back to CLI...`);
+      try {
+        dispatchViaCli(repo, tmpPayloadFile, taskTitle);
+      } finally {
+        fs.rmSync(tmpPayloadFile, { force: true });
+      }
+      return;
+    }
+
+    let sessionId = "Created";
+    try {
+      const data = await res.json();
+      sessionId = data.name || data.id || sessionId;
+    } catch (_) {}
+
+    console.log(`✅ REST API Dispatch response: Session ${sessionId} created successfully.`);
+    fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
+    fs.rmSync(tmpPayloadFile, { force: true });
   } else {
     try {
       dispatchViaCli(repo, tmpPayloadFile, taskTitle);
@@ -196,6 +212,7 @@ async function executeDispatch() {
     }
   }
 }
+
 
 function dispatchViaCli(targetRepo, payloadFile, title) {
   try {

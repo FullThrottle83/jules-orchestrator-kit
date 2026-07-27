@@ -20,7 +20,8 @@ UNIVERSAL_NIGHTLY_TASKS = [
         "prompt": (
             "Perform a security review of the repository. "
             "Scan for hardcoded API keys, exposed secrets, unmasked PII in logs, "
-            "and unvalidated input parameters in public endpoints."
+            "and unvalidated input parameters in public endpoints. "
+            "Safety rule: Never commit untracked files or secrets to git."
         )
     },
     {
@@ -37,8 +38,11 @@ UNIVERSAL_NIGHTLY_TASKS = [
         "title": "Nightly Dead Code & Unused Exports Audit",
         "prompt": (
             "Audit the codebase for unused exports, dead files, and obsolete types. "
-            "Prune unused local utility functions and unreferenced types. "
-            "Verify that test and build suites pass cleanly before opening a PR."
+            "Prune unused local utility functions and unreferenced internal types. "
+            "SAFETY INVARIANTS: "
+            "1. DO NOT remove package dependencies from package.json, Cargo.toml, or requirements.txt (hygiene sweeps may ADD dependencies, never REMOVE). "
+            "2. DO NOT delete or commit untracked WIP files created by developers. "
+            "3. Verify that test and build suites pass 100% cleanly before submitting PR."
         )
     },
     {
@@ -51,6 +55,7 @@ UNIVERSAL_NIGHTLY_TASKS = [
         )
     }
 ]
+
 
 def log_nightly_history(task_results, dry_run=False):
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")

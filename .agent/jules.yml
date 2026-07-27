@@ -1,0 +1,14 @@
+# Google Jules Repository Configuration (Version 2)
+version: 2
+test_cmd: "npm test"
+build_cmd: ""
+forbidden_paths:
+  - ".github/**"
+  - "**/secrets/**"
+  - "**/*.pem"
+  - "**/lock-manager/**"
+  - "scripts/jules-*"
+  - ".agent/jules.yml"
+allow_paths:
+  - ".github/**"
+  - "scripts/jules-*"

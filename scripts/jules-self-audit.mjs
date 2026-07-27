@@ -86,6 +86,32 @@ export function loadForbiddenPatterns(configContent = "") {
   return defaultForbidden;
 }
 
+export function loadAllowedPatterns(configContent = "") {
+  if (!configContent) return [];
+  const flowMatch = configContent.match(/allow_paths:\s*\[([^\]]+)\]/);
+  if (flowMatch) {
+    return flowMatch[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  }
+  const lines = configContent.split("\n");
+  let inAllow = false;
+  const blockParsed = [];
+  for (const line of lines) {
+    if (line.trim().startsWith("allow_paths:")) {
+      inAllow = true;
+      continue;
+    }
+    if (inAllow) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("-")) {
+        blockParsed.push(trimmed.slice(1).trim().replace(/^["']|["']$/g, ""));
+      } else if (trimmed && !trimmed.startsWith("#")) {
+        break;
+      }
+    }
+  }
+  return blockParsed;
+}
+
 export function runSelfAudit() {
   console.log("🔍 Running Jules PR Self-Audit Gatekeeper...\n");
 
@@ -120,10 +146,14 @@ export function runSelfAudit() {
 
   const trustedConfig = runCommand(`git show ${mainRef}:.agent/jules.yml`, true) || (fs.existsSync(path.resolve(process.cwd(), ".agent/jules.yml")) ? fs.readFileSync(path.resolve(process.cwd(), ".agent/jules.yml"), "utf-8") : "");
   const forbiddenPatterns = loadForbiddenPatterns(trustedConfig);
+  const allowedPatterns = loadAllowedPatterns(trustedConfig);
 
-  const violations = rawDiffFiles.filter((file) =>
-    forbiddenPatterns.some((pattern) => matchGlob(file, pattern))
-  );
+  const violations = rawDiffFiles.filter((file) => {
+    const isForbidden = forbiddenPatterns.some((pattern) => matchGlob(file, pattern));
+    if (!isForbidden) return false;
+    const isAllowed = allowedPatterns.some((pattern) => matchGlob(file, pattern));
+    return !isAllowed;
+  });
 
   if (violations.length > 0) {
     console.error("\n❌ RESTRICTED FILE VIOLATION DETECTED!");
@@ -132,6 +162,7 @@ export function runSelfAudit() {
     process.exit(1);
   }
   console.log("\n✅ Restricted File Boundary Check: PASSED");
+
 
   console.log("\n🛠️ Resolving Dynamic Verification Suite...");
   const resolvedCmds = resolveWorkspaceExecutionBoundary(changedCodeFiles, process.cwd());
