@@ -2,8 +2,10 @@
 
 [![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org)
+[![Zero Dependencies](https://img.shields.io/badge/Dependencies-0-blue.svg)](#)
 
-A lightweight, framework-agnostic toolkit for turning **Google Jules** into a deterministic, autonomous background code builder for any repository (Next.js, Vite, Node, Bun, Deno, Python, Go, Rust, Elixir, Ruby, Swift, Java, C/C++, Monorepos, etc.).
+A lightweight, zero-dependency toolkit for turning **Google Jules** into a deterministic, autonomous background code builder for any repository (Next.js, Vite, Node, Bun, Deno, Python, Go, Rust, Elixir, Ruby, Swift, Java, C/C++, Monorepos, etc.).
 
 > **TL;DR**: Don't use Google Jules like a chat assistant. Use it as an autonomous background worker. Run `npx jules-orchestrator-kit` inside any repository to automatically detect your tech stack, generate prompt guardrails, set up test/build verification gates, and install Jules orchestration scripts.
 
@@ -15,8 +17,8 @@ Run this command inside the root of **any target repository**:
 
 ```bash
 npx jules-orchestrator-kit
-# or
-npx jules-init
+# or launch interactive setup wizard
+npx jules-init --interactive
 ```
 
 This single command will:
@@ -28,16 +30,43 @@ This single command will:
 
 ---
 
+## 🧠 Architecture: The Autonomous Loop
+
+```mermaid
+sequenceDiagram
+    participant CLI as CI Trigger / CLI
+    participant Orc as jules-orchestrator
+    participant Jules as Google Jules Agent
+    participant Git as Git Worktree Sandbox
+
+    CLI->>Orc: Dispatch Task ("Refactor Auth")
+    Orc->>Orc: Redact Secrets (Entropy & Patterns) + Path Traversal Defense
+    Orc->>Jules: Dispatch Context & Invariants
+    Jules->>Git: Propose Code Mutations
+    Orc->>Git: Execute Stack `build_cmd` & `test_cmd`
+    alt Verification Gates Fail
+        Git-->>Orc: stdout/stderr Trace
+        Orc->>Jules: Inject OODA Feedback Logs for Self-Correction
+    else Verification Gates Pass
+        Orc->>Git: Determinism Verified -> Commit & Push
+        Orc->>CLI: Metrics Logged (.agent/history/metrics.jsonl)
+    end
+```
+
+---
+
 ## 💡 What This Toolkit Provides
 
-1. **Init Scaffolding CLI (`bin/init.js`)**: Auto-scaffolds any repo in 1 second.
-2. **Monorepo & Command Resolver (`scripts/command-resolver.mjs`)**: Auto-detects project manifests and monorepo workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`, `Cargo.toml` workspaces) to run targeted affected package verifications instead of full-repo test suites.
+1. **Init Scaffolding CLI (`bin/init.js`)**: Auto-scaffolds any repo using `node:util.parseArgs` with interactive TTY wizard (`-i, --interactive`) and silent CI fallback.
+2. **Monorepo & Command Resolver (`scripts/command-resolver.mjs`)**: Auto-detects project manifests and monorepo workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`, `Cargo.toml` workspaces) to run targeted affected package verifications (`git diff`) instead of full-repo test suites.
 3. **Dynamic Guardrail Composition (`.agent/rules/dynamic-guardrails.json`)**: RegEx-based rule matching that injects targeted stack guardrails into prompts on-the-fly.
-4. **Pre-Flight Secret Redaction & REST/stdin Dispatcher (`scripts/jules-dispatch.mjs`)**: Auto-redacts API keys (`ghp_`, `AKIA`, `sk-`, `Bearer`, RSA keys), streams prompts over REST / stdin to bypass OS `ARG_MAX` shell limits, and handles HTTP 429 rate limits.
-
-5. **PR Self-Auditor & Glob Boundary Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), filters token bloat, enforces dynamic glob-based security boundaries (`forbidden_paths`), and runs scoped workspace test suites.
-6. **Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, and moves finished tasks to `.agent/jules-queue/completed/`.
-7. **Rate-Limited Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Manages multi-task batches with controlled concurrency (`JULES_SWARM_CONCURRENCY`, default 3), staggered dispatches (1.5s interval), and batch cooldowns to eliminate API rate-limit thrashing.
+4. **Shannon Entropy Redaction & REST/stdin Dispatcher (`scripts/jules-dispatch.mjs`)**:
+   - **Shannon Entropy Redaction**: Auto-redacts API keys and high-entropy secret tokens ($\text{entropy} > 3.6$, length $\ge 20$) alongside pattern matching (`ghp_`, `AKIA`, `sk-`, `Bearer`, RSA keys).
+   - **Path Traversal Defense**: Enforces canonical `realpathSync` boundaries to block directory traversal (`../`) and symlink attacks.
+   - **Payload Streaming**: Streams prompts over REST / stdin to bypass OS `ARG_MAX` shell limits and handle HTTP 429 rate limits.
+5. **PR Self-Auditor & Self-Healing Gatekeeper (`scripts/jules-self-audit.mjs`)**: Unshallows git history in CI runners (`git fetch --unshallow`), enforces `forbidden_paths`, extracts OODA feedback error traces on test failures, and logs telemetry to `.agent/history/metrics.jsonl`.
+6. **Transactional Queue Runner (`scripts/jules-queue-runner.mjs`)**: Iterates through `.agent/jules-queue/`, dispatches queued markdown tasks, moves completed tasks, and logs status transitions (`RUNNING`, `COMPLETED`, `FAILED`) to `.agent/jules-queue/queue.jsonl`.
+7. **Git Worktree Swarm Orchestrator (`scripts/jules-swarm.mjs`)**: Manages multi-task batches in isolated Git worktrees (`JULES_USE_WORKTREES=true`) with controlled concurrency (`JULES_SWARM_CONCURRENCY`), staggered dispatches, and batch cooldowns.
 8. **Nightly Maintenance Suite (`scripts/jules-nightly.mjs`)**: Schedules automated background audits (security leak scans, WCAG accessibility checks, dead code pruning, unused env var cleanup).
 
 ---
@@ -56,8 +85,10 @@ node scripts/jules-dispatch.mjs "Refactor rate limiter" "Implement sliding windo
 npm run jules:queue
 ```
 
+### Run Rate-Limited Swarm in Isolated Git Worktrees
+
 ```bash
-JULES_SWARM_CONCURRENCY=5 node scripts/jules-swarm.mjs tasks.json
+JULES_SWARM_CONCURRENCY=5 JULES_USE_WORKTREES=true node scripts/jules-swarm.mjs tasks.json
 ```
 
 Where `tasks.json` is formatted as:
@@ -126,8 +157,6 @@ allow_paths: []
 
 > 🛡️ **Security Trust Model**: `allow_paths` is read **strictly from the target base branch** (`origin/main`), never from untrusted PR branches. Any path specified in `allow_paths` on `main` overrides the immutable default forbidden paths for automated background workers.
 
-
-
 ---
 
 ## 📜 License & Disclaimer
@@ -135,5 +164,6 @@ allow_paths: []
 MIT License - feel free to use, modify, and share!
 
 *Disclaimer: This is an independent open-source orchestration tool and is not officially affiliated with or endorsed by Google.*
+
 
 
