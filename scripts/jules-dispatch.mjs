@@ -79,13 +79,16 @@ export function redactSecrets(text) {
   return sanitized;
 }
 
+const ASTRO_TRIGGER_RE = /\b(?:astro|components|pages|src\/.*\.astro)\b/i;
+const DB_TRIGGER_RE = /\b(?:db|database|d1|postgres|drizzle|migration|schema)\b/i;
+
 // 0.4 Dynamic Guardrails & Directive Definitions
 export function getDynamicGuardrails(prompt = "") {
   const guardrails = [];
-  if (/\b(?:astro|components|pages|src\/.*\.astro)\b/i.test(prompt)) {
+  if (ASTRO_TRIGGER_RE.test(prompt)) {
     guardrails.push("- Astro Guidance: Ensure zero client JS shipped by default. Use server islands or nano stores if state is required.");
   }
-  if (/\b(?:db|database|d1|postgres|drizzle|migration|schema)\b/i.test(prompt)) {
+  if (DB_TRIGGER_RE.test(prompt)) {
     guardrails.push("- Database Guidance: Do not modify migrations directly without inspecting current schema constraints.");
   }
   return guardrails.length > 0 ? `## Context-Specific Guardrails\n${guardrails.join("\n")}` : "";

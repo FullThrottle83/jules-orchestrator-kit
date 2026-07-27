@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr } from "../scripts/jules-self-audit.mjs";
 import { redactSecrets } from "../scripts/jules-dispatch.mjs";
@@ -175,6 +176,53 @@ describe("Security Input Validation", () => {
   test("handles consecutive double-star wildcards without regex syntax errors", () => {
     assert.equal(matchGlob("a/secrets/b/c/foo", "**/secrets/**/**/foo"), true);
     assert.equal(matchGlob("a/public/b/c/foo", "**/secrets/**/**/foo"), false);
+  });
+});
+
+describe("Workspace Boundary Resolution & Fallbacks", () => {
+  test("resolves Turborepo workspace execution boundary", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-turbo-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "turbo.json"), JSON.stringify({ pipeline: {} }));
+      fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify({ name: "root", private: true }));
+      const subDir = path.join(tmpDir, "packages", "app");
+      fs.mkdirSync(subDir, { recursive: true });
+      fs.writeFileSync(path.join(subDir, "package.json"), JSON.stringify({ name: "@scope/app" }));
+
+      const res = resolveWorkspaceExecutionBoundary(["packages/app/index.js"], tmpDir);
+      assert.ok(res.source.includes("Turborepo Workspace"));
+      assert.ok(res.testCmd.includes("--filter=@scope/app..."));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("resolves pnpm workspace execution boundary", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-pnpm-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
+      fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify({ name: "root" }));
+      const subDir = path.join(tmpDir, "packages", "web");
+      fs.mkdirSync(subDir, { recursive: true });
+      fs.writeFileSync(path.join(subDir, "package.json"), JSON.stringify({ name: "web" }));
+
+      const res = resolveWorkspaceExecutionBoundary(["packages/web/src/App.tsx"], tmpDir);
+      assert.ok(res.source.includes("pnpm Workspace"));
+      assert.ok(res.testCmd.includes("--filter=...web"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("handles malformed JSON in package.json gracefully", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-badjson-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "package.json"), "{ invalid_json: ");
+      const res = resolveProjectCommands(tmpDir);
+      assert.equal(res.source, "generic");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

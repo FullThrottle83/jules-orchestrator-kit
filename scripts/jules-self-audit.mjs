@@ -7,12 +7,12 @@ import { fileURLToPath } from "node:url";
 import { resolveWorkspaceExecutionBoundary } from "./command-resolver.mjs";
 import { log, logToHistory } from "./utils.mjs";
 
-function runCommand(cmd, ignoreError = false) {
+function runGitCommand(args, ignoreError = false) {
   try {
-    return execSync(cmd, { encoding: "utf-8" }).trim();
+    return execFileSync("git", args, { encoding: "utf-8" }).trim();
   } catch (error) {
     if (ignoreError) return "";
-    log.error(`Command failed: ${cmd}`);
+    log.error(`Git command failed: git ${args.join(" ")}`);
     log.error(error.message);
     process.exit(1);
   }
@@ -159,7 +159,7 @@ export function runSelfAudit() {
   log.info(`Target Branch: ${targetBranch}`);
 
   try {
-    execSync("git --version", { stdio: "ignore" });
+    execFileSync("git", ["--version"], { stdio: "ignore" });
   } catch {
     log.error("FATAL: git is not installed or not in PATH.");
     process.exit(1);
@@ -167,18 +167,17 @@ export function runSelfAudit() {
 
   if (process.env.CI) {
     log.info("☁️ CI environment detected. Fetching merge-base history...");
-    // Fix shallow git fetch flaw: break it into steps
-    runCommand(`git fetch origin ${targetBranch} --depth=100`, true);
-    const tmpRef = runCommand(`git rev-parse --verify origin/${targetBranch}`, true) ? `origin/${targetBranch}` : targetBranch;
-    const tmpMerge = runCommand(`git merge-base HEAD ${tmpRef}`, true);
+    runGitCommand(["fetch", "origin", targetBranch, "--depth=100"], true);
+    const tmpRef = runGitCommand(["rev-parse", "--verify", `origin/${targetBranch}`], true) ? `origin/${targetBranch}` : targetBranch;
+    const tmpMerge = runGitCommand(["merge-base", "HEAD", tmpRef], true);
     if (!tmpMerge) {
       log.warn("Shallow fetch failed to find merge-base, executing full unshallow...");
-      runCommand(`git fetch origin ${targetBranch} --unshallow`, true);
+      runGitCommand(["fetch", "origin", targetBranch, "--unshallow"], true);
     }
   }
 
-  const mainRef = runCommand(`git rev-parse --verify origin/${targetBranch}`, true) ? `origin/${targetBranch}` : targetBranch;
-  const mergeBase = runCommand(`git merge-base HEAD ${mainRef}`, true);
+  const mainRef = runGitCommand(["rev-parse", "--verify", `origin/${targetBranch}`], true) ? `origin/${targetBranch}` : targetBranch;
+  const mergeBase = runGitCommand(["merge-base", "HEAD", mainRef], true);
 
   if (!mergeBase) {
     log.error(`FATAL: Could not compute merge-base with ${mainRef}. Make sure git history is unshallowed.`);
@@ -187,7 +186,7 @@ export function runSelfAudit() {
 
   log.info(`Merge-Base Hash: ${mergeBase}`);
 
-  const rawDiffFiles = runCommand(`git diff -z --name-only ${mergeBase}...HEAD`)
+  const rawDiffFiles = runGitCommand(["diff", "-z", "--name-only", `${mergeBase}...HEAD`])
     .split("\0")
     .map((f) => f.trim().replace(/^["']|["']$/g, ""))
     .filter(Boolean);
@@ -200,7 +199,7 @@ export function runSelfAudit() {
 
   // Fail closed: Load security config exclusively from base branch (mainRef).
   // Never fall back to working-tree config which an untrusted PR could craft.
-  const trustedConfig = runCommand(`git show ${mainRef}:.agent/jules.yml`, true);
+  const trustedConfig = runGitCommand(["show", `${mainRef}:.agent/jules.yml`], true);
   const forbiddenPatterns = loadForbiddenPatterns(trustedConfig);
   const allowedPatterns = loadAllowedPatterns(trustedConfig);
 

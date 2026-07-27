@@ -6,8 +6,11 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { log, logToHistory } from "./utils.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const isDryRun = process.argv.includes("--dry-run");
 
@@ -63,7 +66,7 @@ function logNightlyHistory(taskResults, dryRun = false) {
   log.success(`Logged nightly audit summary to: ${path.relative(process.cwd(), historyFile)}`);
 }
 
-function dispatchTask(task, dryRun = false) {
+async function dispatchTask(task, dryRun = false) {
   const title = task.title;
   const fullPrompt = task.prompt;
 
@@ -77,7 +80,7 @@ function dispatchTask(task, dryRun = false) {
   const dispatchScript = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
   if (fs.existsSync(dispatchScript)) {
     try {
-      execFileSync("node", [dispatchScript, title, fullPrompt], { stdio: "inherit" });
+      await execFileAsync("node", [dispatchScript, title, fullPrompt]);
       return { id: task.id, title, status: "Dispatched successfully" };
     } catch (error) {
       log.error(`Failed to dispatch via jules-dispatch.mjs: ${error.message}`);
@@ -89,18 +92,18 @@ function dispatchTask(task, dryRun = false) {
   }
 }
 
-function main() {
+async function main() {
   log.header("Nightly Jules Maintenance & Audit Suite");
 
   if (isDryRun) {
     log.info("Running in DRY RUN mode. No tasks will be dispatched.");
   }
 
-  const results = [];
-  for (const task of UNIVERSAL_NIGHTLY_TASKS) {
-    const res = dispatchTask(task, isDryRun);
-    results.push(res);
-  }
+  const taskPromises = UNIVERSAL_NIGHTLY_TASKS.map((task) => dispatchTask(task, isDryRun));
+  const settled = await Promise.allSettled(taskPromises);
+  const results = settled.map((s, idx) =>
+    s.status === "fulfilled" ? s.value : { id: UNIVERSAL_NIGHTLY_TASKS[idx].id, title: UNIVERSAL_NIGHTLY_TASKS[idx].title, status: `Failed: ${s.reason}` }
+  );
 
   logNightlyHistory(results, isDryRun);
   const hasFailures = results.some((r) => r.status && (r.status.includes("Failed") || r.status.includes("error")));
@@ -112,4 +115,7 @@ function main() {
   }
 }
 
-main();
+main().catch((err) => {
+  log.error(`Unhandled error in nightly suite: ${err.message}`);
+  process.exit(1);
+});
