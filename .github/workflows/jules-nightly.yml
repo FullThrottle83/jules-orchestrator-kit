@@ -1,0 +1,21 @@
+name: Jules Nightly Self-Audit
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  nightly-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Dispatch Nightly Maintenance to Jules
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+          JULES_REPO: ${{ github.repository }}
+        run: |
+          node scripts/jules-nightly.mjs

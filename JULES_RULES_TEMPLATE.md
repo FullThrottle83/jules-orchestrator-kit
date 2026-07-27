@@ -50,4 +50,3 @@ Jules automatically infers test and build verification commands based on project
 - **Minimal Interference**: Preserve existing function signatures, comments, and style conventions.
 - **Falsifiable Claims**: Base all code changes on explicit error logs, file paths, line numbers, or test results.
 - **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
-
