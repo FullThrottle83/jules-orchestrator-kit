@@ -50,6 +50,54 @@ export function matchGlob(filepath, globPattern) {
 }
 
 
+export const EXECUTION_CONFIG_FILES = [
+  ".npmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  "pnpmfile.js",
+  "pnpmfile.cjs",
+  ".pnpmfile.cjs",
+  "jest.config.js",
+  "jest.config.cjs",
+  "jest.config.mjs",
+  "jest.config.ts",
+  "vitest.config.js",
+  "vitest.config.cjs",
+  "vitest.config.mjs",
+  "vitest.config.ts",
+  "playwright.config.js",
+  "playwright.config.ts",
+  "vite.config.js",
+  "vite.config.ts",
+  "webpack.config.js",
+  "webpack.config.cjs",
+  "webpack.config.mjs",
+  "rollup.config.js",
+  "rollup.config.mjs",
+  "esbuild.config.js",
+  "next.config.js",
+  "next.config.mjs",
+  "next.config.ts",
+  "babel.config.js",
+  "babel.config.cjs",
+  "babel.config.json",
+  ".babelrc",
+  "tsconfig.json",
+  "tsconfig.*.json",
+  "deno.json",
+  "deno.jsonc",
+  "bunfig.toml"
+];
+
+export const RESTRICTED_AGENT_FILES = [
+  "AGENTS.md",
+  "JULES_RULES_TEMPLATE.md",
+  ".agent/rules/**",
+  ".agent/workflows/**",
+  ".agent/jules.yml",
+  "jules.config.json"
+];
+
 export const COMMAND_DEFINING_FILES = [
   "package.json",
   "package-lock.json",
@@ -220,13 +268,26 @@ export function runSelfAudit() {
     .map((f) => f.trim().replace(/^["']|["']$/g, ""))
     .filter(Boolean);
 
+  const ALL_COMMAND_FILES = [...COMMAND_DEFINING_FILES, ...EXECUTION_CONFIG_FILES];
   const commandFileChanges = rawDiffFiles.filter((file) =>
-    COMMAND_DEFINING_FILES.some((cmdFile) => file === cmdFile || file.endsWith(`/${cmdFile}`))
+    ALL_COMMAND_FILES.some((cmdFile) => file === cmdFile || file.endsWith(`/${cmdFile}`) || matchGlob(file, cmdFile))
   );
 
   if (commandFileChanges.length > 0 && process.env.JULES_ALLOW_COMMAND_FILE_CHANGES !== "true" && process.env.JULES_ALLOW_COMMAND_FILE_CHANGES !== "1") {
     const err = new Error(
       "COMMAND FILE CHANGE DETECTED: " + commandFileChanges.join(", ") + ". Refusing to execute verification scripts from untrusted branch."
+    );
+    err.code = 3;
+    throw err;
+  }
+
+  const agentRuleChanges = rawDiffFiles.filter((file) =>
+    RESTRICTED_AGENT_FILES.some((pattern) => matchGlob(file, pattern))
+  );
+
+  if (agentRuleChanges.length > 0 && process.env.JULES_ALLOW_AGENT_RULE_CHANGES !== "true" && process.env.JULES_ALLOW_AGENT_RULE_CHANGES !== "1") {
+    const err = new Error(
+      "AGENT RULE FILE CHANGE DETECTED: " + agentRuleChanges.join(", ") + ". Refusing to load agent rules from untrusted branch."
     );
     err.code = 3;
     throw err;
@@ -381,8 +442,24 @@ export function runSelfAudit() {
       throw err;
     }
 
+function getOodaStateFile(mergeBase = "main") {
+  const oodaDir = path.resolve(process.cwd(), ".agent/state/ooda");
+  if (!fs.existsSync(oodaDir)) fs.mkdirSync(oodaDir, { recursive: true });
+
+  const keyInput = [
+    process.env.GITHUB_REPOSITORY || "",
+    process.env.GITHUB_REF || "",
+    process.env.GITHUB_HEAD_REF || "",
+    mergeBase,
+    process.cwd()
+  ].join("\u0000");
+
+  const key = crypto.createHash("sha256").update(keyInput).digest("hex").slice(0, 16);
+  return path.join(oodaDir, `${key}.json`);
+}
+
     let oodaRetries = 0;
-    const oodaStateFile = path.resolve(process.cwd(), ".agent/state/ooda.json");
+    const oodaStateFile = getOodaStateFile(mergeBase);
     try {
       if (fs.existsSync(oodaStateFile)) {
         const oodaData = JSON.parse(fs.readFileSync(oodaStateFile, "utf-8"));
@@ -401,8 +478,6 @@ export function runSelfAudit() {
     if (oodaRetries < 3) {
       log.info(`🛠️ Initiating OODA Auto-Repair (Attempt ${oodaRetries + 1}/3)...`);
       try {
-        const stateDir = path.resolve(process.cwd(), ".agent/state");
-        if (!fs.existsSync(stateDir)) fs.mkdirSync(stateDir, { recursive: true });
         fs.writeFileSync(oodaStateFile, JSON.stringify({ attempts: oodaRetries + 1, lastAttempt: new Date().toISOString() }), "utf-8");
       } catch (e) {}
       const prompt = `OODA Auto-Repair Attempt ${oodaRetries + 1}\n\nThe verification suite failed with the following errors after the previous patch:\n\n\`\`\`\n${failureLog.slice(-1500)}\n\`\`\`\n\nPlease fix the errors so the verification passes.`;
@@ -429,7 +504,7 @@ export function runSelfAudit() {
   }
 
   try {
-    const oodaStateFile = path.resolve(process.cwd(), ".agent/state/ooda.json");
+    const oodaStateFile = getOodaStateFile(mergeBase);
     if (fs.existsSync(oodaStateFile)) {
       fs.rmSync(oodaStateFile, { force: true });
     }

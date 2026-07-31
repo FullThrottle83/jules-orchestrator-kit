@@ -5,7 +5,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
-import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES } from "../scripts/jules-self-audit.mjs";
+import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES } from "../scripts/jules-self-audit.mjs";
 import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
@@ -88,10 +88,17 @@ allow_paths:
     assert.ok(allowed.includes(".github/**"));
   });
 
-  test("exports COMMAND_DEFINING_FILES guardrail array containing key package manifests", () => {
+  test("exports COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, and RESTRICTED_AGENT_FILES guardrails", () => {
     assert.ok(COMMAND_DEFINING_FILES.includes("package.json"));
     assert.ok(COMMAND_DEFINING_FILES.includes("Cargo.toml"));
     assert.ok(COMMAND_DEFINING_FILES.includes(".agent/jules.yml"));
+
+    assert.ok(EXECUTION_CONFIG_FILES.includes("vite.config.ts"));
+    assert.ok(EXECUTION_CONFIG_FILES.includes("jest.config.js"));
+    assert.ok(EXECUTION_CONFIG_FILES.includes(".npmrc"));
+
+    assert.ok(RESTRICTED_AGENT_FILES.includes("AGENTS.md"));
+    assert.ok(RESTRICTED_AGENT_FILES.includes("JULES_RULES_TEMPLATE.md"));
   });
 });
 

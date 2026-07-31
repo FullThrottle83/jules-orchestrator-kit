@@ -97,6 +97,39 @@ async function safeMoveAsync(src, dest) {
   }
 }
 
+function classifyQueueFailure(error) {
+  const message = String(error?.stderr || error?.stdout || error?.message || "");
+
+  if (/RESTRICTED FILE VIOLATION|COMMAND FILE CHANGE DETECTED|SECRET LEAK PREVENTED|AGENT RULE FILE CHANGE DETECTED/i.test(message)) return "security_violation";
+  if (/DIFF PAYLOAD TOO LARGE/i.test(message)) return "diff_too_large";
+  if (/Daily budget exhausted/i.test(message)) return "budget_exhausted";
+  if (/HTTP 429|Rate Limit Exceeded/i.test(message)) return "rate_limited";
+  if (/HTTP 5\d\d/i.test(message)) return "api_error";
+  return "unknown";
+}
+
+const queueStateDir = path.join(queueDir, ".state");
+if (!fs.existsSync(queueStateDir)) {
+  fs.mkdirSync(queueStateDir, { recursive: true });
+}
+
+function getTaskState(filename) {
+  const stateFile = path.join(queueStateDir, `${filename}.json`);
+  if (fs.existsSync(stateFile)) {
+    try {
+      return JSON.parse(fs.readFileSync(stateFile, "utf-8"));
+    } catch (_) {}
+  }
+  return { attempts: 0 };
+}
+
+function setTaskState(filename, stateObj) {
+  const stateFile = path.join(queueStateDir, `${filename}.json`);
+  try {
+    fs.writeFileSync(stateFile, JSON.stringify(stateObj, null, 2), "utf-8");
+  } catch (_) {}
+}
+
 async function runQueue() {
   for (let i = 0; i < files.length; i += MAX_CONCURRENT) {
     const batch = files.slice(i, i + MAX_CONCURRENT);
@@ -143,33 +176,27 @@ async function runQueue() {
           
           const destPath = path.join(completedDir, file);
           await safeMoveAsync(processingPath, destPath);
+          setTaskState(file, { status: "DISPATCHED", completed_at: new Date().toISOString() });
           logQueueState(file, "DISPATCHED");
           log.success(`Task dispatched successfully (Moved ${file} to completed/)`);
         } catch (error) {
           logQueueState(file, "FAILED", error);
-          
-          let attempts = 0;
-          const attemptMatch = content.match(/^attempts:\s*(\d+)/m);
-          if (attemptMatch) attempts = parseInt(attemptMatch[1], 10);
 
-          if (attempts >= 2) {
-             const destPath = path.join(failedDir, file);
-             try { await safeMoveAsync(processingPath, destPath); } catch (_) {}
-             log.error(`Task [${title}] failed 3 times. Moved to failed/. Error: ${error.message}`);
+          const failureClass = classifyQueueFailure(error);
+          const NON_RETRYABLE = new Set(["security_violation", "diff_too_large", "budget_exhausted"]);
+
+          const taskState = getTaskState(file);
+          const attempts = (taskState.attempts || 0) + 1;
+
+          if (NON_RETRYABLE.has(failureClass) || attempts >= 3) {
+            const destPath = path.join(failedDir, file);
+            setTaskState(file, { attempts, status: "FAILED_PERMANENT", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
+            try { await safeMoveAsync(processingPath, destPath); } catch (_) {}
+            log.error(`Task [${title}] failed (${failureClass}). Moved to failed/. Error: ${error.message}`);
           } else {
-             let newContent = content;
-             if (attemptMatch) {
-                newContent = content.replace(/^attempts:\s*\d+/m, `attempts: ${attempts + 1}`);
-             } else if (content.startsWith("---\n")) {
-                newContent = content.replace(/^---\n/, `---\nattempts: 1\n`);
-             } else {
-                newContent = `---\nattempts: 1\n---\n\n` + content;
-             }
-             try {
-               fs.writeFileSync(processingPath, newContent);
-               await safeMoveAsync(processingPath, filePath);
-             } catch (_) {}
-             log.warn(`Task [${title}] failed. Re-queued (Attempt ${attempts + 1}). Error: ${error.message}`);
+            setTaskState(file, { attempts, status: "REQUEUED", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
+            try { await safeMoveAsync(processingPath, filePath); } catch (_) {}
+            log.warn(`Task [${title}] failed (${failureClass}). Re-queued (Attempt ${attempts}/3). Error: ${error.message}`);
           }
         }
       })

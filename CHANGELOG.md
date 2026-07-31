@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-31
+### Added & Hardened (Autonomous Fleet Reliability Core)
+- **Zero-Trust Base-Branch Rule Extraction**: `getBaseRules()` now fetches `AGENTS.md` and `JULES_RULES_TEMPLATE.md` directly from `origin/main` via `git show`, preventing untrusted PR branches from injecting malicious agent instructions.
+- **Agent Rule Change Guardrail**: Added `RESTRICTED_AGENT_FILES` check (`AGENTS.md`, `JULES_RULES_TEMPLATE.md`, `.agent/rules/**`, `.agent/workflows/**`). Modifications fail closed with Exit Code 3 unless `JULES_ALLOW_AGENT_RULE_CHANGES=true`.
+- **Executable Build Config Guardrail**: Expanded `COMMAND_DEFINING_FILES` with `EXECUTION_CONFIG_FILES` (`jest.config.*`, `vitest.config.*`, `playwright.config.*`, `vite.config.*`, `webpack.config.*`, `next.config.*`, `babel.config.*`, `tsconfig.json`, `.npmrc`, `pnpmfile.*`).
+- **Safe Dispatch Cleanup**: Replaced `process.exit(7)` inside `executeDispatch` with a thrown error (`err.code = 7`), guaranteeing `finally { cleanupTmp(); }` executes and wipes temporary payload files.
+- **Queue Failure Classification & Non-Retryable Exceptions**: Added `classifyQueueFailure()` to `jules-queue-runner.mjs`. Immediately moves security violations (`Exit Code 3`), secret leaks (`Exit Code 6`), payload bloat (`Exit Code 5`), and budget limits (`Exit Code 7`) to `.agent/jules-queue/failed/` without wasting retry attempts.
+- **Queue Sidecar State Architecture**: Queue task attempt history is now stored in `.agent/jules-queue/.state/<file>.json` instead of mutating task markdown files.
+- **Scoped OODA Retry State**: Scoped `.agent/state/ooda/<key>.json` by PR/branch/merge-base hash to eliminate race conditions between concurrent CI runs.
+
 ## [0.6.3] - 2026-07-31
 ### Fixed & Hardened
 - **Removed Unverified Third-Party Setup URL**: Replaced misleading `app.jules.ai/setup` link in `bin/init.js` with official Google Jules portal `https://jules.google`.
