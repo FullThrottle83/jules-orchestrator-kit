@@ -41,7 +41,9 @@ function loadEnv() {
     }
   }
 }
-loadEnv();
+if (isMainModule) {
+  loadEnv();
+}
 
 // 0.2 Pre-Flight Secret Redaction Gate (RegEx + Env Denylist)
 export function redactSecrets(text) {
@@ -52,7 +54,7 @@ export function redactSecrets(text) {
   for (const [envKey, envVal] of Object.entries(process.env)) {
     if (
       envVal &&
-      envVal.length >= 6 &&
+      envVal.length >= 20 &&
       /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH/i.test(envKey)
     ) {
       if (sanitized.includes(envVal)) {
@@ -155,7 +157,7 @@ if (isMainModule) {
   if (fs.existsSync(possiblePath)) {
     try {
       const verifiedPath = path.resolve(process.cwd(), possiblePath);
-      if (verifiedPath.startsWith(process.cwd())) {
+      if (!path.relative(process.cwd(), verifiedPath).startsWith('..')) {
         const fd = fs.openSync(verifiedPath, "r");
         try {
           const stat = fs.fstatSync(fd);
@@ -269,10 +271,11 @@ async function executeDispatch() {
               "X-Goog-Api-Key": apiKey,
               "Content-Type": "application/json"
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(30000)
           });
 
-          if (res.ok || res.status === 429) {
+          if (res.ok || res.status === 429 || res.status === 400 || res.status === 401) {
             break;
           }
 
@@ -300,8 +303,17 @@ async function executeDispatch() {
       }
 
       if (res.status === 429) {
-        log.error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Will NOT fallback to CLI.`);
-        process.exit(1);
+        const retryAfter = res.headers.get("Retry-After");
+        const err = new Error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Retry after: ${retryAfter || 'unknown'}`);
+        err.code = 1;
+        throw err;
+      }
+
+      if (res.status === 400 || res.status === 401) {
+        const errText = await res.text().catch(() => "");
+        const err = new Error(`❌ Jules REST API returned HTTP ${res.status}: ${errText}`);
+        err.code = 1;
+        throw err;
       }
 
       if (!res.ok) {
@@ -350,8 +362,9 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
     execFileSync("jules", args, { input: promptToSend, stdio: ["pipe", "inherit", "inherit"] });
     log.success(`Successfully dispatched task "${title}" to Jules CLI.`);
   } catch (error) {
-    log.error(`Failed to dispatch task to Jules CLI: ${error.message}`);
-    process.exit(1);
+    const err = new Error(`Failed to dispatch task to Jules CLI: ${error.message}`);
+    err.code = 1;
+    throw err;
   }
 }
 

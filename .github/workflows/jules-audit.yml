@@ -9,6 +9,9 @@ on:
 jobs:
   audit-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['18.x', '20.x', '22.x', '24.x']
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,7 +21,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node-version }}
+
+      - name: Syntax Check
+        run: node --check scripts/*.mjs bin/*.js
 
       - name: Run Unit Tests
         run: npm test

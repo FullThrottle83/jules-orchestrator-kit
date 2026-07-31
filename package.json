@@ -1,6 +1,7 @@
 {
   "name": "jules-orchestrator-kit",
   "version": "0.5.1",
+  "description": "Orchestration kit for running Google Jules autonomous agents.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/FullThrottle83/jules-orchestrator-kit.git"
@@ -56,6 +57,6 @@
     "mcp",
     "automation"
   ],
-  "author": "Google Open Source",
+  "author": "FullThrottle83",
   "license": "MIT"
 }

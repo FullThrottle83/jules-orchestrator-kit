@@ -60,7 +60,7 @@ npm run jules:status
 - If tests failed, Jules fixed the code and re-ran tests.
 - You'll receive a Pull Request with working, verified code.
 
-> 🔐 **New in v0.3.0 (The Epistemic Bridge)**: The init script generates a cryptographic Handshake Token (`.agent/JULES_WEB_SETUP.md`). Paste this into the Jules Web UI to sync your environment perfectly.
+> 🔐 **New in v0.5.0 (The Epistemic Bridge)**: The init script generates a cryptographic Handshake Token (`.agent/JULES_WEB_SETUP.md`). Paste this into the Jules Web UI to sync your environment perfectly.
 
 ---
 
@@ -193,7 +193,7 @@ allow_paths: []
 | Feature               | What It Does                                 | Example                               |
 | --------------------- | -------------------------------------------- | ------------------------------------- |
 | **Automatic Testing** | Runs test suite against every AI change      | `test_cmd: "npm test"`                |
-| **Self-Fixing**       | Jules automatically corrects failed tests    | Retries up to 4 times before blocking |
+| **Self-Fixing**       | Jules automatically corrects failed tests    | Retries up to 3 times before blocking |
 | **Secret Protection** | Hides API keys, passwords, tokens            | Entropy > 3.6, length ≥ 20            |
 | **Path Restrictions** | Blocks changes to sensitive files            | `.env`, `*.pem`, `.github/**`         |
 | **Scope Boundaries**  | Prevents changes outside task scope          | `scope: ["src/auth/**"]`              |

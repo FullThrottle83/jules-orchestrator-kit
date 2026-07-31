@@ -8,6 +8,7 @@
     "astro.config.mjs",
     "wrangler.jsonc",
     ".github/**",
-    ".agent/jules.yml"
+    ".agent/jules.yml",
+    ".agent/protected-paths.json"
   ]
 }

@@ -11,10 +11,9 @@ function runGitCommand(args, ignoreError = false) {
   try {
     return execFileSync("git", args, { encoding: "utf-8" }).trim();
   } catch (error) {
-    if (ignoreError) return "";
-    log.error(`Git command failed: git ${args.join(" ")}`);
-    log.error(error.message);
-    process.exit(1);
+    const err = new Error(`Git command failed: git ${args.join(" ")}\n${error.message}`);
+    err.code = 1;
+    throw err;
   }
 }
 
@@ -153,16 +152,18 @@ export function runSelfAudit() {
   const targetBranch = process.env.BASE_BRANCH || "main";
   const SAFE_BRANCH = /^[a-zA-Z0-9._\/-]+$/;
   if (!SAFE_BRANCH.test(targetBranch)) {
-    log.error(`FATAL: Invalid BASE_BRANCH "${targetBranch}". Must match ^[a-zA-Z0-9._\\/-]+$`);
-    process.exit(2);
+    const err = new Error(`FATAL: Invalid BASE_BRANCH "${targetBranch}". Must match ^[a-zA-Z0-9._\\/-]+$`);
+    err.code = 2;
+    throw err;
   }
   log.info(`Target Branch: ${targetBranch}`);
 
   try {
     execFileSync("git", ["--version"], { stdio: "ignore" });
   } catch {
-    log.error("FATAL: git is not installed or not in PATH.");
-    process.exit(2);
+    const err = new Error("FATAL: git is not installed or not in PATH.");
+    err.code = 2;
+    throw err;
   }
 
   if (process.env.CI) {
@@ -180,8 +181,9 @@ export function runSelfAudit() {
   const mergeBase = runGitCommand(["merge-base", "HEAD", mainRef], true);
 
   if (!mergeBase) {
-    log.error(`FATAL: Could not compute merge-base with ${mainRef}. Make sure git history is unshallowed.`);
-    process.exit(2);
+    const err = new Error(`FATAL: Could not compute merge-base with ${mainRef}. Make sure git history is unshallowed.`);
+    err.code = 2;
+    throw err;
   }
 
   log.info(`Merge-Base Hash: ${mergeBase}`);
@@ -211,10 +213,9 @@ export function runSelfAudit() {
   });
 
   if (violations.length > 0) {
-    log.error("RESTRICTED FILE VIOLATION DETECTED!");
-    log.error("Jules PR attempted to modify forbidden system files:");
-    violations.forEach((v) => log.error(`   - ${v}`));
-    process.exit(3);
+    const err = new Error("RESTRICTED FILE VIOLATION DETECTED!");
+    err.code = 3;
+    throw err;
   }
   log.success("Restricted File Boundary Check: PASSED");
 
@@ -254,7 +255,7 @@ export function runSelfAudit() {
 
   if (!resolvedCmds.testCmd && !resolvedCmds.buildCmd) {
     log.info("No build or test scripts found. Running git status check.");
-    runCommand("git status");
+    execSync("git status", { stdio: "inherit" });
   }
 
   const durationMs = Date.now() - startTime;
@@ -270,45 +271,10 @@ export function runSelfAudit() {
     log.error("OODA SELF-HEALING FEEDBACK LOG:");
     log.dim(failureLog.slice(-1500));
 
-    // OODA Circuit Breaker: Fingerprint failure trace using SHA-256
-    const normalizedError = failureLog
-      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/g, "TIMESTAMP")
-      .replace(/0x[0-9a-fA-F]+/g, "HEX")
-      .replace(/\d+/g, "NUM")
-      .trim();
-    const errorHash = crypto.createHash("sha256").update(normalizedError).digest("hex");
-
-    const circuitFile = path.resolve(process.cwd(), ".agent/history/ooda-circuit.json");
-    let prevCircuit = { hash: "", count: 0 };
-    if (fs.existsSync(circuitFile)) {
-      try {
-        prevCircuit = JSON.parse(fs.readFileSync(circuitFile, "utf-8"));
-      } catch (_) {}
-    }
-
-    if (prevCircuit.hash === errorHash && prevCircuit.count >= 1) {
-      log.error("❌ OODA CIRCUIT BREAKER TRIPPED: Consecutive identical failure detected.");
-      log.error("Agent generated code with identical error trace twice in a row. Aborting auto-repair.");
-      try {
-        fs.writeFileSync(circuitFile, JSON.stringify({ hash: "", count: 0 }));
-      } catch (_) {}
-      process.exit(4);
-    }
-
-    try {
-      fs.writeFileSync(
-        circuitFile,
-        JSON.stringify({
-          hash: errorHash,
-          count: prevCircuit.hash === errorHash ? prevCircuit.count + 1 : 1,
-          updatedAt: new Date().toISOString()
-        })
-      );
-    } catch (_) {}
-
     if (process.env.CI && !process.env.ALLOW_AUTO_REPAIR) {
-      log.error("CI environment detected and ALLOW_AUTO_REPAIR is not set. Failing fast to save CI minutes.");
-      process.exit(4);
+      const err = new Error("CI environment detected and ALLOW_AUTO_REPAIR is not set. Failing fast to save CI minutes.");
+      err.code = 4;
+      throw err;
     }
 
     let oodaRetries = 0;
@@ -342,28 +308,29 @@ export function runSelfAudit() {
     } else {
       log.error("❌ OODA Auto-Repair exhausted maximum retries (3). Giving up.");
     }
-    
-    process.exit(4);
+    const err = new Error("OODA Auto-Repair failed or exhausted.");
+    err.code = 4;
+    throw err;
   }
 
   log.success("🎉 JULES PR SELF-AUDIT PASSED SUCCESSFULLY!");
 }
 
 export function runPreflightSandbox() {
-  log.header("Initializing Pre-Flight Sandbox (Steril Simulering)...");
+  log.header("Initializing Pre-Flight Sandbox (Sterile Simulation)...");
   
   const runId = crypto.randomBytes(4).toString("hex");
   const sandboxDir = path.join(os.tmpdir(), `jules-preflight-${runId}`);
   const tempArchive = path.join(os.tmpdir(), `jules-archive-${runId}.tar`);
   
   try {
-    log.step("[1/4]", `Skapar isolerad miljö i ${sandboxDir}...`);
+    log.step("[1/5]", `Creating isolated environment in ${sandboxDir}...`);
     fs.mkdirSync(sandboxDir, { recursive: true });
     
     execSync(`git archive HEAD -o "${tempArchive}"`);
     execSync(`tar -xf "${tempArchive}" -C "${sandboxDir}"`);
     
-    log.step("[2/4]", "Steriliserar miljövariabler...");
+    log.step("[2/5]", "Sterilizing environment variables...");
     const sterileEnv = { ...process.env };
     const stripKeys = ["DATABASE_URL", "NPM_TOKEN", "GITHUB_TOKEN", "GH_TOKEN", "AWS_ACCESS_KEY_ID", "STRIPE_TEST_KEY"];
     for (const key of stripKeys) {
@@ -372,11 +339,21 @@ export function runPreflightSandbox() {
       }
     }
     
-    log.step("[3/4]", "Löser beroenden i sandlådan...");
+    log.step("[3/5]", "Installing dependencies in sandbox (npm ci)...");
+    const packageJsonPath = path.join(sandboxDir, "package.json");
+    if (fs.existsSync(packageJsonPath)) {
+      try {
+        execSync("npm ci --ignore-scripts", { cwd: sandboxDir, stdio: "ignore" });
+      } catch (e) {
+        log.warn("npm ci failed or wasn't needed. Proceeding...");
+      }
+    }
+
+    log.step("[4/5]", "Resolving execution boundary in sandbox...");
     const resolvedCmds = resolveWorkspaceExecutionBoundary([], sandboxDir);
     
     if (resolvedCmds.testCmd || resolvedCmds.buildCmd) {
-      log.step("[4/4]", `Kör verifiering: ${resolvedCmds.testCmd || resolvedCmds.buildCmd}`);
+      log.step("[5/5]", `Running verification: ${resolvedCmds.testCmd || resolvedCmds.buildCmd}`);
       execSync(resolvedCmds.testCmd || resolvedCmds.buildCmd, {
         cwd: sandboxDir,
         env: sterileEnv,
@@ -384,14 +361,15 @@ export function runPreflightSandbox() {
       });
       log.success("Pre-Flight Passed. Zero epistemic drift detected.");
     } else {
-      log.info("Inga test/bygg-kommandon hittades för verifiering.");
+      log.info("No test/build commands found for verification.");
       log.success("Pre-Flight Passed (No-Op).");
     }
   } catch (err) {
-    log.error("\nPRE-FLIGHT MISSLYCKADES!");
-    log.error("Agenten skulle förmodligen krascha (The 5-Minute Drop-off) i Web UI på grund av saknade beroenden.");
-    log.error(err.message);
-    process.exit(1);
+    log.error("\nPRE-FLIGHT FAILED!");
+    log.error("The agent would likely crash (The 5-Minute Drop-off) in the Web UI due to missing dependencies.");
+    const wrappedErr = new Error(err.message);
+    wrappedErr.code = 1;
+    throw wrappedErr;
   } finally {
     try {
       fs.rmSync(sandboxDir, { recursive: true, force: true });
@@ -406,10 +384,15 @@ export function runPreflightSandbox() {
 
 // Execute when invoked directly from CLI
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
-  if (process.argv.includes("--preflight")) {
-    runPreflightSandbox();
-  } else {
-    runSelfAudit();
+  try {
+    if (process.argv.includes("--preflight")) {
+      runPreflightSandbox();
+    } else {
+      runSelfAudit();
+    }
+  } catch (err) {
+    if (err.message) log.error(err.message);
+    process.exit(err.code || 1);
   }
 }
 
