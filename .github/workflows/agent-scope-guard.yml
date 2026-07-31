@@ -1,0 +1,56 @@
+name: Agent Scope Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  scope-guard:
+    runs-on: ubuntu-latest
+    if: startsWith(github.head_ref, 'jules/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify Scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "Checking files modified in PR..."
+          MODIFIED_FILES=$(git diff --name-only $BASE_SHA $HEAD_SHA)
+          
+          # Read protected paths
+          PROTECTED_PATHS=$(node -e "const paths = require('./.agent/protected-paths.json').protected; console.log(paths.join(' '));")
+          
+          echo "Protected patterns: $PROTECTED_PATHS"
+          
+          VIOLATION_FOUND=0
+          
+          # Use micromatch or similar simple matching via bash for CI simplicity. 
+          # Here we just use a simple regex grep for patterns.
+          for FILE in $MODIFIED_FILES; do
+            echo "Checking: $FILE"
+            for PATTERN in $PROTECTED_PATHS; do
+              # Convert simple glob to regex for bash
+              REGEX=$(echo "$PATTERN" | sed -e 's/\./\\./g' -e 's/\*\*/.*/g' -e 's/\*/[^/]*/g')
+              if [[ "$FILE" =~ ^$REGEX$ ]] || [[ "$FILE" =~ ^$REGEX/ ]]; then
+                echo "::error file=$FILE::File violates protected paths constraint: Matches pattern '$PATTERN'"
+                VIOLATION_FOUND=1
+              fi
+            done
+          done
+          
+          if [ $VIOLATION_FOUND -eq 1 ]; then
+            echo "::error::PR modifies protected files. Jules agent is not allowed to modify these files without explicit manual review bypass."
+            exit 1
+          fi
+          
+          echo "Scope check passed. No protected files were modified."

@@ -49,3 +49,37 @@ Jules automatically infers test and build verification commands via `scripts/com
 - **Minimal Interference**: Preserve existing function signatures, comments, and zero-dependency architecture.
 - **Falsifiable Claims**: Base all code changes on explicit error logs, file paths, line numbers, or test results.
 - **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
+- **Rebase Before PR**: Fetch latest `main`, rebase onto `origin/main`, re-execute verification suite. If the resulting diff is empty, close/abort PR without pushing.
+- **Diff Payload Governor**: API forcefully truncates diff payloads > 80 KB. Keep total diff payload under 75 KB (`git diff | wc -c`).
+
+---
+
+## 5. System Prompting & Guardrail Best Practices
+
+To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhere to the rules defined in `.agent/rules/jules-protocol.md`.
+
+### Multi-Agent Coordination & Handover Architecture
+
+- **Multi-Agent Mutex Lock Protocol**: Prevent concurrent file modification collisions. Check and acquire locks before modifying paths:
+  ```bash
+  node scripts/lock-manager.mjs acquire <agent_name> <task_id> <file_paths...> --unattended
+  ```
+- **The Baton Pass Protocol**: Write handover documents when a session pauses or hands off work (e.g. `.agent/history/YYYY-MM-DD-handover-[task_id].md`).
+
+### Standard Jules Guardrails Footer
+
+Append this footer to all Jules dispatches:
+
+```text
+Read AGENTS.md and .agent/rules/jules-protocol.md BEFORE starting.
+Follow all rules strictly.
+
+TASK: <description>
+
+HARD CONSTRAINTS:
+- Do NOT modify package.json, pnpm-lock.yaml, tsconfig.json, astro.config.mjs, wrangler.jsonc, or .github/ files. Enforced in CI by Agent Scope Guard.
+- Diff Payload Governor: Keep total diff payload under 75 KB (`git diff | wc -c`) to prevent API truncation (~80 KB limit).
+- Verify before finishing: Run full type-check, lint, and unit test suites.
+- BEFORE opening the PR: Run `git fetch origin main && git rebase origin/main`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.
+- Delete ALL temporary files (.py, .sh, .patch, debug logs) before submitting.
+```

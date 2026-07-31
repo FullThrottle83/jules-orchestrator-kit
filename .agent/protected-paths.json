@@ -1,0 +1,13 @@
+{
+  "protected": [
+    "package.json",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+    "tsconfig.json",
+    "astro.config.mjs",
+    "wrangler.jsonc",
+    ".github/**",
+    ".agent/jules.yml"
+  ]
+}

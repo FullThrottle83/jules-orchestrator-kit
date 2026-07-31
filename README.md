@@ -197,6 +197,8 @@ allow_paths: []
 | **Secret Protection** | Hides API keys, passwords, tokens            | Entropy > 3.6, length ≥ 20            |
 | **Path Restrictions** | Blocks changes to sensitive files            | `.env`, `*.pem`, `.github/**`         |
 | **Scope Boundaries**  | Prevents changes outside task scope          | `scope: ["src/auth/**"]`              |
+| **Agent Scope Guard** | CI-enforced protected paths manifestation    | `.agent/protected-paths.json`         |
+| **Payload Governor**  | Hard cap to prevent > 80 KB payload failures | Diffs capped at 75 KB                 |
 
 
 | Feature                 | Use Case                                  | Command                                    |
@@ -210,6 +212,8 @@ allow_paths: []
 | **Pre-Flight Sandbox**  | Test setup locally before cloud execution | `node scripts/jules-self-audit.mjs --preflight`                    |
 | **Security Fencing**    | Prompt injection defense & secret masking | Automatic `<UNTRUSTED_TASK_CONTEXT>` encapsulation                 |
 | **OODA Feedback**       | Self-healing from test failures           | Logs to `.agent/history/metrics.jsonl`                             |
+| **Mutex Lock Protocol** | Prevent concurrent file collisions        | `node scripts/lock-manager.mjs acquire`                            |
+| **Baton Pass Protocol** | Stateful handovers to human/other AI      | `.agent/history/*-handover-*.md`                                   |
 
 ---
 
