@@ -11,7 +11,7 @@
 > [!WARNING]
 > **Alpha Release:** This kit is in active development. Please exercise caution before integrating it into critical production pipelines.
 > 
-> **API Budget Warning:** Autonomous loops (like OODA self-healing or large swarms) can consume significant Google Jules API quotas. We strongly recommend setting hard billing limits or starting with `JULES_DRY_RUN=1` to understand the workflow before scaling up!
+> **Task Limit Warning:** Autonomous loops (like OODA self-healing or large swarms) can quickly consume your daily Google Jules task limits (e.g., 100 tasks/day on Pro, 300 tasks/day on Ultra). We strongly recommend starting with `JULES_DRY_RUN=1` to understand the workflow before scaling up!
 
 > **💡 TL;DR**: Run `npx jules-orchestrator-kit` in your repo, assign tasks, and get working, tested Pull Requests—no manual review needed.
 
