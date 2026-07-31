@@ -264,7 +264,7 @@ export function runSelfAudit() {
   log.info("Analyzing Code Diff Payload Size & Content...");
   const codeDiffPayload = changedCodeFiles.length > 0
     ? runGitCommand(["diff", `${mergeBase}...HEAD`, "--", ...changedCodeFiles], true)
-    : runGitCommand(["diff", `${mergeBase}...HEAD`], true);
+    : "";
 
   const diffBytes = Buffer.byteLength(codeDiffPayload, "utf8");
   const maxDiffBytes = 75 * 1024; // 75 KB

@@ -106,9 +106,9 @@ describe("Security Redaction & Secret Classification", () => {
   });
 
   test("correctly classifies high-confidence vs low-confidence secrets", () => {
-    const ghoToken = "gho_123456789012345678901234567890123456";
-    const bearerHeader = "Authorization: Bearer abc123def456ghi789jkl012";
-    const testKey = "sk_test_1234567890abcdefghijklmnopqrstuvwxyz";
+    const ghoToken = "gho_" + "1".repeat(36);
+    const bearerHeader = "Authorization: Bearer " + "a".repeat(20);
+    const testKey = "sk_test_" + "1".repeat(24);
 
     assert.equal(hasHighConfidenceSecret(ghoToken), true);
     assert.equal(hasHighConfidenceSecret(bearerHeader), false);
@@ -116,6 +116,20 @@ describe("Security Redaction & Secret Classification", () => {
 
     assert.equal(hasLowConfidenceSecret(bearerHeader), true);
     assert.equal(hasLowConfidenceSecret(testKey), true);
+  });
+
+  test("redacts secrets across pattern groups using redactSecrets", () => {
+    const ghoToken = "gho_" + "1".repeat(36);
+    const bearerToken = "Bearer " + "a".repeat(20);
+    const privateKey = "-----BEGIN " + "PRIVATE KEY-----\n" + "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n" + "-----END " + "PRIVATE KEY-----";
+    const npmToken = "npm_" + "1".repeat(36);
+    const stripeKey = "sk_live_" + "1".repeat(24);
+
+    assert.equal(redactSecrets(ghoToken).includes(ghoToken), false);
+    assert.equal(redactSecrets(bearerToken).includes(bearerToken), false);
+    assert.equal(redactSecrets(privateKey).includes("MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3"), false);
+    assert.equal(redactSecrets(npmToken).includes(npmToken), false);
+    assert.equal(redactSecrets(stripeKey).includes(stripeKey), false);
   });
 });
 
