@@ -23,8 +23,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Syntax Check
-        run: for f in scripts/*.mjs bin/*.js index.mjs; do node --check "$f" || exit 1; done
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Linter
+        run: npm run lint
 
       - name: Run Unit Tests
         run: npm test

@@ -6,7 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { log, logToHistory } from "./utils.mjs";
 

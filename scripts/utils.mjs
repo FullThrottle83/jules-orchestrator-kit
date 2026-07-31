@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+
 import { promisify } from "node:util";
 
 // ANSI colors for standardizing CLI DX
@@ -41,7 +41,7 @@ export function ensureDir(dirPath) {
   }
 }
 
-export function logToHistory(filename, content, type = "audit") {
+export function logToHistory(filename, content) {
   const dateStr = new Date().toISOString().split("T")[0];
   const historyDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/history");
   ensureDir(historyDir);

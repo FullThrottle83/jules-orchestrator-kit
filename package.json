@@ -44,7 +44,8 @@
     "jules:cleanup": "node scripts/jules-cleanup.mjs",
     "jules:scan": "node scripts/jules-scan-todos.mjs",
     "jules:swarm": "node scripts/jules-swarm.mjs",
-    "jules:nightly": "node scripts/jules-nightly.mjs"
+    "jules:nightly": "node scripts/jules-nightly.mjs",
+    "lint": "eslint --env node --env es2024 --parser-options ecmaVersion:2022,sourceType:module --rule 'no-undef: error' --rule 'no-unused-vars: error' \"scripts/**/*.mjs\" \"bin/**/*.js\" index.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -58,5 +59,8 @@
     "automation"
   ],
   "author": "FullThrottle83",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^8.57.1"
+  }
 }

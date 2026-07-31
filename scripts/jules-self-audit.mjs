@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveWorkspaceExecutionBoundary } from "./command-resolver.mjs";
-import { log, logToHistory, redactSecrets, hasHighConfidenceSecret, hasLowConfidenceSecret } from "./utils.mjs";
+import { log, hasHighConfidenceSecret, hasLowConfidenceSecret } from "./utils.mjs";
 
 function runGitCommand(args, ignoreError = false) {
   try {

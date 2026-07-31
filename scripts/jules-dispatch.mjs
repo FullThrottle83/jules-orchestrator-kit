@@ -4,8 +4,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { resolveProjectCommands } from "./command-resolver.mjs";
-import { log, logToHistory, redactSecrets, appendLedger, checkDailyBudget, reserveDailyBudget } from "./utils.mjs";
+
+import { log, logToHistory, redactSecrets, appendLedger, reserveDailyBudget } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
@@ -327,7 +327,7 @@ async function executeDispatch() {
       let sessionId = "Created";
       try {
         const data = await res.json();
-        const { sessionId: sId, status: responseStatus } = data;
+        const { sessionId: sId } = data;
         sessionId = sId || data.name || data.id || sessionId;
         log.success(`REST API Dispatch response: Session ${sessionId} created successfully.`);
         fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);

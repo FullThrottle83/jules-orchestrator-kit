@@ -7,5 +7,4 @@ node_modules/
 .agent/jules-queue/.processing/
 .agent/jules-queue/*.md
 !.agent/jules-queue/README.md
-ROADMAP_V1.md
 
