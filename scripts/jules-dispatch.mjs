@@ -67,8 +67,7 @@ export function redactSecrets(text) {
   for (const [envKey, envVal] of Object.entries(process.env)) {
     if (
       envVal &&
-      envVal.length >= 20 &&
-      calculateShannonEntropy(envVal) > 3.6 &&
+      (envVal.length >= 20 || calculateShannonEntropy(envVal) > 3.6) &&
       /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH/i.test(envKey)
     ) {
       if (sanitized.includes(envVal)) {
@@ -290,10 +289,17 @@ async function executeDispatch() {
           });
 
           if (res.status === 429) {
-            const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10);
+            const raw = res.headers.get("Retry-After");
+            let waitSec = Number.parseInt(raw ?? "", 10);
+            if (!Number.isFinite(waitSec)) {
+              const asDate = raw ? Date.parse(raw) : NaN;
+              waitSec = Number.isFinite(asDate) ? Math.ceil((asDate - Date.now()) / 1000) : 5;
+            }
+            waitSec = Math.min(Math.max(waitSec, 0), 60);
+
             if (attempts < maxAttempts) {
-              log.warn(`⚠️ REST API Rate Limit Exceeded (HTTP 429). Retrying after ${retryAfter}s...`);
-              await new Promise((r) => setTimeout(r, retryAfter * 1000));
+              log.warn(`⚠️ REST API Rate Limit Exceeded (HTTP 429). Retrying after ${waitSec}s...`);
+              await new Promise((r) => setTimeout(r, waitSec * 1000));
               continue;
             }
           }
@@ -326,8 +332,15 @@ async function executeDispatch() {
       }
 
       if (res.status === 429) {
-        const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10);
-        const err = new Error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Retry after: ${retryAfter}s`);
+        const raw = res.headers.get("Retry-After");
+        let waitSec = Number.parseInt(raw ?? "", 10);
+        if (!Number.isFinite(waitSec)) {
+          const asDate = raw ? Date.parse(raw) : NaN;
+          waitSec = Number.isFinite(asDate) ? Math.ceil((asDate - Date.now()) / 1000) : 5;
+        }
+        waitSec = Math.min(Math.max(waitSec, 0), 60);
+        
+        const err = new Error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Retry after: ${waitSec}s`);
         err.code = 1;
         throw err;
       }

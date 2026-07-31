@@ -349,9 +349,9 @@ export function runPreflightSandbox() {
 
     if (installCmd) {
       try {
-        execSync(installCmd, { cwd: sandboxDir, stdio: "ignore" });
+        execSync(installCmd, { cwd: sandboxDir, stdio: "pipe", encoding: "utf-8" });
       } catch (e) {
-        log.warn(`${installCmd} failed or wasn't needed. Proceeding...`);
+        log.warn(`${installCmd} failed or wasn't needed. Output: ${e.stdout}\nError: ${e.stderr}\nProceeding...`);
       }
     } else {
       log.info("Skipping dependency installation (no lockfile detected).");

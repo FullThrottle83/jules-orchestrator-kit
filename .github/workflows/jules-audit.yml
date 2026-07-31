@@ -30,7 +30,7 @@ jobs:
         run: npm test
 
       - name: Run Jules PR Self-Audit Gatekeeper
-        if: matrix.node-version == '24.x' && github.event_name == 'pull_request' && (startsWith(github.actor, 'google-labs-jules') || contains(github.actor, 'jules'))
+        if: matrix.node-version == '20.x' && github.event_name == 'pull_request' && (startsWith(github.actor, 'google-labs-jules') || contains(github.actor, 'jules'))
         run: node scripts/jules-self-audit.mjs
         env:
           CI: "true"
