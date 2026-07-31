@@ -29,6 +29,10 @@ npm run jules:create "Refactor Auth"
 npm run jules:queue
 ```
 
+> 💡 **Vendored Scripts Architecture**:
+> `npx jules-orchestrator-kit` (or `npx jules-init`) copies zero-dependency orchestration scripts directly into your project's `./scripts/` directory. This ensures full code transparency, auditability, and zero external dependency risk in CI.
+> To update vendored scripts to the latest release, run `npx jules-orchestrator-kit --force`.
+
 ---
 
 ## How It Works

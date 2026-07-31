@@ -237,6 +237,8 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
       "jules:create": "node scripts/jules-create.mjs",
       "jules:status": "node scripts/jules-status.mjs",
       "jules:audit": "node scripts/jules-self-audit.mjs",
+      "jules:cleanup": "node scripts/jules-cleanup.mjs",
+      "jules:scan": "node scripts/jules-scan-todos.mjs",
       "jules:swarm": "node scripts/jules-swarm.mjs",
       "jules:nightly": "node scripts/jules-nightly.mjs"
     };
@@ -257,9 +259,34 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
   }
 }
 
+// 5b. Ensure target repository has .gitignore entries for sensitive and runtime state
+const targetGitignorePath = path.join(targetDir, ".gitignore");
+const requiredGitignoreEntries = [
+  ".env",
+  ".agent/history/",
+  ".agent/state/",
+  ".agent/jules-queue/*.md",
+  "!.agent/jules-queue/README.md"
+];
+
+let gitignoreContent = fs.existsSync(targetGitignorePath)
+  ? fs.readFileSync(targetGitignorePath, "utf-8")
+  : "";
+
+const missingEntries = requiredGitignoreEntries.filter(
+  (entry) => !gitignoreContent.includes(entry)
+);
+
+if (missingEntries.length > 0) {
+  const prefix = gitignoreContent && !gitignoreContent.endsWith("\n") ? "\n" : "";
+  const addedBlock = `${prefix}# Jules Orchestrator Runtime State & Credentials\n${missingEntries.join("\n")}\n`;
+  fs.appendFileSync(targetGitignorePath, addedBlock, "utf-8");
+  console.log("✅ Added required security entries to .gitignore");
+}
+
 console.log("\n🎉 Google Jules Orchestration Kit successfully initialized!");
 
-// 6. Generate Cryptographic Handshake (JULES_WEB_SETUP.md)
+// 6. Generate Encoded Workspace Manifest (JULES_WEB_SETUP.md)
 const agentState = {
   v: 1,
   schema: "jules.init/v1",
@@ -280,14 +307,14 @@ const hash = crypto.createHash("sha256").update(canonicalJson, "utf8").digest("h
 const compressed = zlib.brotliCompressSync(Buffer.from(canonicalJson, "utf8"));
 const payloadToken = `JULES1.${hash}.${compressed.toString("base64url")}`;
 
-const setupMdContent = `# JULES Web Setup
+const setupMdContent = `# Google Jules Encoded Workspace Manifest
 
 > **Generated**: ${agentState.generatedAt}
-> **Setup Code**: \`${payloadToken}\`
+> **Workspace Manifest Code**: \`${payloadToken}\`
 
-## 🔗 Web Dashboard Setup
-1. Open Jules Web UI (https://app.jules.ai/setup)
-2. Paste your Setup Code:
+## 🔗 Official Setup & Documentation
+1. Documentation & Guide: https://jules.google
+2. Workspace Manifest Code:
 \`\`\`
 ${payloadToken}
 \`\`\`
@@ -300,12 +327,12 @@ ${payloadToken}
 
 fs.writeFileSync(path.join(targetDir, ".agent", "JULES_WEB_SETUP.md"), setupMdContent, "utf-8");
 
-console.log("\n🔗 Web Dashboard Setup");
+console.log("\n🔗 Google Jules Setup Complete");
 console.log("  Your local agent configurations are ready.");
-console.log(`  👉 Setup Code: \x1b[36m${payloadToken}\x1b[0m`);
-console.log("\n  (A backup of this setup code was written to .agent/JULES_WEB_SETUP.md)");
+console.log(`  👉 Encoded Workspace Manifest: \x1b[36m${payloadToken}\x1b[0m`);
+console.log("\n  (A backup was written to .agent/JULES_WEB_SETUP.md)");
 console.log("\nNext Steps:");
-console.log("  1. Paste the Setup Code into Jules Web UI.");
+console.log("  1. See official documentation at https://jules.google");
 console.log("  2. Set environment variables: JULES_REPO=\"owner/repo\"");
 console.log("  3. Scaffold a new task: npm run jules:create \"My Feature\"");
 console.log("  4. Dispatch the queue:  npm run jules:queue");

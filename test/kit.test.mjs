@@ -413,6 +413,32 @@ describe("Node.js SDK Entrypoint (index.mjs)", () => {
   });
 });
 
+describe("CLI Initializer (bin/init.js)", () => {
+  test("scaffolds target repo, injects missing scripts, updates .gitignore, and creates JULES_WEB_SETUP.md", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-init-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify({ name: "test-app", scripts: { test: "node --test" } }));
+      const initScript = path.resolve(process.cwd(), "bin/init.js");
+      execFileSync("node", [initScript], { cwd: tmpDir, stdio: "pipe" });
+
+      const pkg = JSON.parse(fs.readFileSync(path.join(tmpDir, "package.json"), "utf-8"));
+      assert.ok(pkg.scripts["jules:cleanup"]);
+      assert.ok(pkg.scripts["jules:scan"]);
+      assert.ok(pkg.scripts["jules:dispatch"]);
+
+      const gitignore = fs.readFileSync(path.join(tmpDir, ".gitignore"), "utf-8");
+      assert.ok(gitignore.includes(".env"));
+      assert.ok(gitignore.includes(".agent/state/"));
+
+      const setupMd = fs.readFileSync(path.join(tmpDir, ".agent/JULES_WEB_SETUP.md"), "utf-8");
+      assert.ok(setupMd.includes("https://jules.google"));
+      assert.equal(setupMd.includes("app.jules.ai"), false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
 
 
 
