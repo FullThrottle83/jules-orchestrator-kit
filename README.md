@@ -15,7 +15,13 @@ The orchestrator automates verification, scopes file boundaries, and prevents Ju
 > [!CAUTION]
 > **Task Limit Warning:** Autonomous loops can quickly consume your daily API limits. We strongly recommend starting with `JULES_DRY_RUN=1` to understand the workflow before scaling up.
 
-### Quick Start
+## Prerequisites
+To use this kit, you will need:
+- Node.js `18.0.0` or higher
+- `git` installed and available in your PATH
+- A Google Jules REST API key (set as `JULES_API_KEY`) **OR** the native `jules` binary in your PATH.
+
+## Quick Start
 Navigate to your project root and run:
 ```bash
 npx jules-orchestrator-kit
@@ -73,6 +79,39 @@ You can supercharge Jules with external MCP servers by connecting them to your e
 
 ---
 
+## Integration Interfaces
+
+The orchestrator supports three primary integration channels:
+
+**1. Direct REST API Mode (`jules.googleapis.com`)**
+When `JULES_API_KEY` and `JULES_REPO` are present in your environment, payloads are dispatched directly to the official Google Jules REST API endpoint. Handles HTTP 429 rate limits gracefully.
+
+**2. Native Jules CLI Fallback**
+If no API key is configured, the kit seamlessly falls back to invoking your local `jules` CLI binary via standard streams.
+
+**3. Programmatic Node.js SDK (`index.mjs`)**
+Downstream Node.js tools, MCP servers, and LLM orchestrators can import kit functions directly:
+```js
+import { runSelfAudit, scanCodebaseForTodos, resolveProjectCommands } from "jules-orchestrator-kit";
+
+// Run pre-flight sandbox check
+await runPreflightSandbox();
+
+// Scan codebase for TODO/FIXME tasks
+const tasks = scanCodebaseForTodos(process.cwd());
+```
+
+---
+
+## Known Limitations
+
+**Code Suggestions (Web UI Only)**
+Currently, there is no way to automatically extract "Suggestions" (the inline code review comments Jules sometimes proposes instead of direct commits) via the CLI or API. Suggestions can only be read directly inside the **Jules Web UI**.
+
+*Workaround for Local LLM Users:* If you are tinkering with Jules alongside a local LLM and Jules leaves a Suggestion, the easiest workflow is to open the Jules Web UI, copy the suggestion block, and paste it back into your local LLM.
+
+---
+
 ## Supported Tech Stacks
 
 | Stack / Ecosystem           | Manifest / Workspace File             | Test Command                             | Build Command                            |
@@ -108,7 +147,7 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 | `npm run jules:create` | Scaffolds a new boilerplate task markdown file |
 | `npm run jules:status` | Shows the real-time status of all queued and completed tasks |
 | `npm run jules:audit` | Runs the self-audit gatekeeper (verifies tests, forbidden paths, and scope) |
-| `npm run jules:cleanup` | Cleans up orphaned worktrees and lockfiles |
+| `npm run jules:cleanup` | Audits and closes merged or stale REST sessions |
 | `npm run jules:scan` | Scans the codebase for TODO/FIXME comments and generates a suggested tasks file |
 | `npm run jules:swarm` | Launches a multi-agent swarm in parallel across isolated worktrees |
 | `npm run jules:nightly` | Nightly maintenance job (usually triggered in CI) |
@@ -117,21 +156,25 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 
 | Variable | Description |
 | -------- | ----------- |
-| `JULES_API_KEY` | Your Google Jules REST API key (required for API mode). |
-| `JULES_REPO` | Target repository name/identifier. |
-| `JULES_DRY_RUN` | Set to `1` to run without executing mutating API calls. |
-| `BASE_BRANCH` | The target base branch for security checks (defaults to `main`). |
-| `CI` | Set automatically in CI environments; alters fallback behaviors. |
-| `ALLOW_AUTO_REPAIR` | Set to `1` to allow OODA repair loops in CI environments. |
-| `JULES_WEB_SETUP` | Cryptographic handshake token for web integration. |
-| `GITHUB_HEAD_REF` | Used during PR self-audit to determine branch context. |
-| `DATABASE_URL` | Sterilized during pre-flight sandbox tests. |
-| `NPM_TOKEN` | Sterilized during pre-flight sandbox tests. |
-| `GITHUB_TOKEN` / `GH_TOKEN` | Sterilized during pre-flight sandbox tests. |
-| `AWS_ACCESS_KEY_ID` | Sterilized during pre-flight sandbox tests. |
-| `STRIPE_TEST_KEY` | Sterilized during pre-flight sandbox tests. |
-
-*(Note: There are other internal variables used during execution, but these are the primary ones for users).*
+| `JULES_API_KEY` | Your Google Jules REST API key (required for API mode) |
+| `GEMINI_API_KEY` | Alias for `JULES_API_KEY` (fallback) |
+| `JULES_API_URL` | Override the Jules REST API URL |
+| `JULES_REPO` | Target GitHub Repository (Format: `owner/repo`) |
+| `JULES_REPOLESS` | Set to `true` or `1` to run in repoless/serverless mode |
+| `JULES_DRY_RUN` | Set to `true` or `1` to simulate dispatching without making API calls |
+| `BASE_BRANCH` | Base branch for PR Audits & Merge-Base calculations (Default: `main`) |
+| `GITHUB_HEAD_REF` | PR Head Branch (Used dynamically by CI during OODA repair) |
+| `JULES_PROJECT_ROOT` | Root directory of the project (Auto-assigned during swarm executions) |
+| `JULES_SWARM_CONCURRENCY` | Maximum parallel dispatches for swarm runs (Default: `3`) |
+| `JULES_SWARM_STAGGER_MS` | Dispatch stagger interval in milliseconds (Default: `1500`) |
+| `JULES_PACE_MS` | Rate-limit for the `jules:queue` command (Default: `500`) |
+| `JULES_USE_WORKTREES` | Use Git Worktrees instead of cloning for swarm isolation (Default: `false`) |
+| `JULES_SLOT_INDEX` | Current slot index for partitioning tasks (Swarm mode) |
+| `JULES_SLOT_TOTAL` | Total number of slots for partitioning tasks (Swarm mode) |
+| `CI` | Set to `true` to change log output and fail-fast behaviors for CI environments |
+| `ALLOW_AUTO_REPAIR` | Set to `true` to allow OODA Auto-Repair even when running in CI |
+| `GITHUB_STEP_SUMMARY` | GitHub Actions Step Summary File Path |
+| `NO_COLOR` | Set to `true` to disable ANSI color output |
 
 ### Exit Codes
 The Gatekeeper (`jules-self-audit.mjs` and related scripts) uses standard exit codes to signal status to CI systems.
