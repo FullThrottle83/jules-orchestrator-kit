@@ -13,7 +13,7 @@ När 1.0 är släppt lovar vi att strukturen för `.agent/jules.yml` och exit co
 - [x] **En Linter i CI:** ESLint configurerad med `no-undef` och `no-unused-vars` och integrerad i GitHub Actions (jules-audit.yml).
 - [ ] **Integrationstester:** Ett end-to-end testfall som faktiskt kör `runSelfAudit` mot ett temporärt git-repo för att testa OODA-buggar och exit-vägar i praktiken.
 - [ ] **Skarpa Körningar (Proof of Concept):** Dokumenterade bevis på att hela orkestreringskedjan har kört framgångsrikt mot riktiga Jules-instanser.
-- [ ] **Dokumenterade Mönster (71 mönster):** Tydlig dokumentation av de interna processerna och specifikt felsöknings-guider för varje exit code (så en användare som möter exit 3 ska veta precis varför).
+- [ ] **Dokumenterade Mönster:** Tydlig dokumentation av de inbyggda guardrail-listorna och specifikt felsöknings-guider för varje exit code (så en användare som möter exit 3 ska veta precis varför).
 - [ ] **Stabilitetslöfte formulerat:** `.agent/jules.yml` schemat och exitkoderna formaliseras i dokumentationen.
 
 ## Enda Featuren före v1.0: MCP Server Integration

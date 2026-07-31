@@ -3,7 +3,7 @@
  * Suggested Tasks Scanner for Google Jules
  * Scans codebase for TODO, FIXME, HACK, and OPTIMIZE comments, ranks them by priority,
  * and generates a tasks JSON file formatted for jules-swarm or jules-dispatch.
- * Zero external dependencies.
+ * Zero runtime dependencies.
  */
 
 import fs from "node:fs";

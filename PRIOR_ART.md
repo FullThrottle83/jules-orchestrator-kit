@@ -28,6 +28,6 @@ Det ärliga svaret på vad *detta* kit gör som de andra inte gör är **grinden
 - **Verifiering & OODA-loop:** Automatiska reparationer med testkörningar (upp till 3 försök) innan den ger upp.
 - **Scope-kontroll (Agent Scope Guard):** Hård kontroll över att Jules inte kan ändra kommandofiler (`package.json`, `.github/`) om inte explicit tillåtet.
 - **Hemlighetsskanning:** Inbyggd redigering av AWS, GitHub och npm-nycklar (både med hög och låg konfidens) direkt i loggflödet, *innan* det sparas på disk.
-- **Atomic Budgeting:** Ett lokalt ledger-system (`.agent/state/ledger.json`) som hanterar dagliga sessionsbudgetar och blockerar runaway loops (t.ex. att Jules bränner din token-budget av misstag).
+- **Atomic Budgeting:** Ett lokalt ledger-system (`.agent/state/sessions/YYYY-MM-DD.jsonl`) som hanterar dagliga sessionsbudgetar och blockerar runaway loops (t.ex. att Jules bränner din token-budget av misstag).
 
 Dessa mekanismer är kärnan i `jules-orchestrator-kit` och anledningen till att vi kan leverera stabilitet.

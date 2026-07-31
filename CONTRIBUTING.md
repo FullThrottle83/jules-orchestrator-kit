@@ -4,7 +4,7 @@ First off, thank you for considering contributing to the Jules Orchestrator Kit!
 
 ## Core Principles
 
-1. **Zero External Dependencies**: We strive to keep this kit as lightweight and secure as possible. Use ONLY native Node.js built-in modules (`node:fs`, `node:path`, `node:child_process`, `node:crypto`, `node:util`).
+1. **Zero Runtime Dependencies**: We strive to keep this kit as lightweight and secure as possible. Use ONLY native Node.js built-in modules (`node:fs`, `node:path`, `node:child_process`, `node:crypto`, `node:util`).
 2. **Verification Suite**: Ensure 100% of unit tests pass cleanly before submitting a Pull Request (`npm test`).
 3. **Cross-Platform Compatibility**: Always normalize Windows backslashes (`\`) to POSIX slashes (`/`) for glob patterns and paths.
 4. **Conventional Commits**: Please use standardized prefixes for your commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).

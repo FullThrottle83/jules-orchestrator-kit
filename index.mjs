@@ -1,7 +1,7 @@
 /**
  * jules-orchestrator-kit Node.js SDK
  * Primary entrypoint for programmatically orchestrating Google Jules workflows.
- * Zero external dependencies.
+ * Zero runtime dependencies.
  */
 
 export { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "./scripts/command-resolver.mjs";

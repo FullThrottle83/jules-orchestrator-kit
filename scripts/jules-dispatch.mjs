@@ -4,7 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-
+import { resolveProjectCommands } from "./command-resolver.mjs";
 import { log, logToHistory, redactSecrets, appendLedger, reserveDailyBudget } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
@@ -179,7 +179,17 @@ if (isMainModule) {
   const domainGuardrails = getDynamicGuardrails(rawPrompt);
   const slotDirective = getSlotPartitionDirective(process.env.JULES_SLOT_INDEX, process.env.JULES_SLOT_TOTAL);
 
-  fullPrompt = `${baseRules}\n\n${domainGuardrails}\n\n${slotDirective}\n\n## Task Specification: ${taskTitle}\n\n${rawPrompt}`;
+  const commands = resolveProjectCommands(process.cwd());
+  const mcpDirective = `<MCP_DIRECTIVE>
+  <system_state>HEADLESS_CI_MODE</system_state>
+  <strict_invariants>
+    <rule>READ-BEFORE-WRITE: Inspect target files before applying changes.</rule>
+    <rule>VERIFICATION LOOP: After patching, execute \`${commands.testCmd}\`.</rule>
+    <rule>ANTI-PATCH: Do NOT create out-of-band shell scripts or disable assertions.</rule>
+  </strict_invariants>
+</MCP_DIRECTIVE>`;
+
+  fullPrompt = `${baseRules}\n\n${mcpDirective}\n\n${domainGuardrails}\n\n${slotDirective}\n\n<UNTRUSTED_TASK_CONTEXT>\n## Task Specification: ${taskTitle}\n\n${rawPrompt}\n</UNTRUSTED_TASK_CONTEXT>`;
 
   const dateStr = new Date().toISOString().split("T")[0];
   const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");

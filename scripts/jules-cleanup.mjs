@@ -3,7 +3,7 @@
  * Jules Session Cleanup & PR Audit Utility
  * Cross-references active/completed Jules REST API sessions with GitHub PR merge status
  * to report and safely close merged or stale sessions.
- * Zero external dependencies.
+ * Zero runtime dependencies.
  */
 
 import { execFileSync } from "node:child_process";

@@ -205,7 +205,7 @@ The Gatekeeper (`jules-self-audit.mjs` and related scripts) uses standard exit c
 
 ## Contributing
 We welcome contributions! Please follow these core principles:
-1. **Zero External Dependencies**: Use ONLY native Node.js built-in modules (`node:fs`, `node:path`, `node:child_process`, `node:crypto`, `node:util`).
+1. **Zero Runtime Dependencies**: Use ONLY native Node.js built-in modules (`node:fs`, `node:path`, `node:child_process`, `node:crypto`, `node:util`).
 2. **Verification Suite**: Ensure 100% of unit tests pass cleanly (`npm test`).
 3. **Conventional Commits**: Use standardized prefixes (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
 4. **Cross-Platform Compatibility**: Normalize Windows backslashes (`\`) to POSIX slashes (`/`) for glob patterns and paths.

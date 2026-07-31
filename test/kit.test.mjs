@@ -148,7 +148,7 @@ describe("Atomic Budget Reservation & Ledger Check", () => {
 
   test("counts only budget_reserved events, avoiding double-counting with session_dispatched", () => {
     const check1 = checkDailyBudget(300);
-    const res = reserveDailyBudget(300, "test-key-single-event");
+    reserveDailyBudget(300, "test-key-single-event");
     const check2 = checkDailyBudget(300);
     assert.equal(check2.used, check1.used + 1);
   });
