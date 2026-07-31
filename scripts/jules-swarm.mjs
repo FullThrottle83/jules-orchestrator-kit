@@ -74,6 +74,9 @@ function reapOrphanedWorktrees() {
           fs.rmSync(wtPath, { recursive: true, force: true });
         } catch (_) {}
       }
+      try {
+        execFileSync("git", ["branch", "-D", `jules/${entry}`], { stdio: "ignore" });
+      } catch (_) {}
     }
   } catch (_) {}
   try {

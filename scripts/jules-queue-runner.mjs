@@ -26,15 +26,17 @@ ensureDir(completedDir);
 ensureDir(processingDir);
 
 // Recover any tasks left in .processing from a previous run or crash
-try {
-  const processingFiles = fs.readdirSync(processingDir).filter(f => f.endsWith(".md"));
-  for (const f of processingFiles) {
-    const procPath = path.join(processingDir, f);
+const STALE_MS = 15 * 60 * 1000;
+const processingFiles = fs.readdirSync(processingDir).filter(f => f.endsWith(".md"));
+for (const f of processingFiles) {
+  const procPath = path.join(processingDir, f);
+  try {
+    if (Date.now() - fs.statSync(procPath).mtimeMs < STALE_MS) continue;
     const backToQueue = path.join(queueDir, f);
     fs.renameSync(procPath, backToQueue);
-    log.info(`Recovered interrupted task ${f} from .processing/`);
-  }
-} catch (_) {}
+    log.info(`Recovered stale task ${f} from .processing/`);
+  } catch (_) {}
+}
 
 function logQueueState(file, status, error = null) {
   const entry = JSON.stringify({
@@ -108,6 +110,8 @@ async function runQueue() {
         // Atomic claim: move from queueDir to processingDir before dispatching
         try {
           safeMoveSync(filePath, processingPath);
+          const now = new Date();
+          fs.utimesSync(processingPath, now, now);
         } catch (claimErr) {
           // Another runner already claimed this task file or file missing
           return;

@@ -58,6 +58,16 @@ function calculateShannonEntropy(str) {
   }, 0);
 }
 
+function parseRetryAfter(res) {
+  const raw = res.headers.get("Retry-After");
+  let waitSec = Number.parseInt(raw ?? "", 10);
+  if (!Number.isFinite(waitSec)) {
+    const asDate = raw ? Date.parse(raw) : NaN;
+    waitSec = Number.isFinite(asDate) ? Math.ceil((asDate - Date.now()) / 1000) : 5;
+  }
+  return Math.min(Math.max(waitSec, 0), 60);
+}
+
 // 0.2 Pre-Flight Secret Redaction Gate (RegEx + Env Denylist)
 export function redactSecrets(text) {
   if (!text) return "";
@@ -270,16 +280,6 @@ async function executeDispatch() {
       } else {
         log.info(`Using Repoless Jules REST API session (serverless mode)...`);
       }
-
-function parseRetryAfter(res) {
-  const raw = res.headers.get("Retry-After");
-  let waitSec = Number.parseInt(raw ?? "", 10);
-  if (!Number.isFinite(waitSec)) {
-    const asDate = raw ? Date.parse(raw) : NaN;
-    waitSec = Number.isFinite(asDate) ? Math.ceil((asDate - Date.now()) / 1000) : 5;
-  }
-  return Math.min(Math.max(waitSec, 0), 60);
-}
 
       let res;
       let attempts = 0;
