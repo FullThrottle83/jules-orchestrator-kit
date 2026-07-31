@@ -3,12 +3,12 @@
   "version": "0.5.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/google/jules-orchestrator-kit.git"
+    "url": "git+https://github.com/FullThrottle83/jules-orchestrator-kit.git"
   },
   "bugs": {
-    "url": "https://github.com/google/jules-orchestrator-kit/issues"
+    "url": "https://github.com/FullThrottle83/jules-orchestrator-kit/issues"
   },
-  "homepage": "https://github.com/google/jules-orchestrator-kit#readme",
+  "homepage": "https://github.com/FullThrottle83/jules-orchestrator-kit#readme",
   "type": "module",
   "bin": {
     "jules-init": "bin/init.js",
