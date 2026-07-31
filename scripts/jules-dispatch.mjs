@@ -271,6 +271,16 @@ async function executeDispatch() {
         log.info(`Using Repoless Jules REST API session (serverless mode)...`);
       }
 
+function parseRetryAfter(res) {
+  const raw = res.headers.get("Retry-After");
+  let waitSec = Number.parseInt(raw ?? "", 10);
+  if (!Number.isFinite(waitSec)) {
+    const asDate = raw ? Date.parse(raw) : NaN;
+    waitSec = Number.isFinite(asDate) ? Math.ceil((asDate - Date.now()) / 1000) : 5;
+  }
+  return Math.min(Math.max(waitSec, 0), 60);
+}
+
       let res;
       let attempts = 0;
       const maxAttempts = 2;
@@ -289,14 +299,7 @@ async function executeDispatch() {
           });
 
           if (res.status === 429) {
-            const raw = res.headers.get("Retry-After");
-            let waitSec = Number.parseInt(raw ?? "", 10);
-            if (!Number.isFinite(waitSec)) {
-              const asDate = raw ? Date.parse(raw) : NaN;
-              waitSec = Number.isFinite(asDate) ? Math.ceil((asDate - Date.now()) / 1000) : 5;
-            }
-            waitSec = Math.min(Math.max(waitSec, 0), 60);
-
+            const waitSec = parseRetryAfter(res);
             if (attempts < maxAttempts) {
               log.warn(`⚠️ REST API Rate Limit Exceeded (HTTP 429). Retrying after ${waitSec}s...`);
               await new Promise((r) => setTimeout(r, waitSec * 1000));
@@ -332,14 +335,7 @@ async function executeDispatch() {
       }
 
       if (res.status === 429) {
-        const raw = res.headers.get("Retry-After");
-        let waitSec = Number.parseInt(raw ?? "", 10);
-        if (!Number.isFinite(waitSec)) {
-          const asDate = raw ? Date.parse(raw) : NaN;
-          waitSec = Number.isFinite(asDate) ? Math.ceil((asDate - Date.now()) / 1000) : 5;
-        }
-        waitSec = Math.min(Math.max(waitSec, 0), 60);
-        
+        const waitSec = parseRetryAfter(res);
         const err = new Error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Retry after: ${waitSec}s`);
         err.code = 1;
         throw err;

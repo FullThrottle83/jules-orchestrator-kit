@@ -25,6 +25,17 @@ if (!fs.existsSync(queueDir)) {
 ensureDir(completedDir);
 ensureDir(processingDir);
 
+// Recover any tasks left in .processing from a previous run or crash
+try {
+  const processingFiles = fs.readdirSync(processingDir).filter(f => f.endsWith(".md"));
+  for (const f of processingFiles) {
+    const procPath = path.join(processingDir, f);
+    const backToQueue = path.join(queueDir, f);
+    fs.renameSync(procPath, backToQueue);
+    log.info(`Recovered interrupted task ${f} from .processing/`);
+  }
+} catch (_) {}
+
 function logQueueState(file, status, error = null) {
   const entry = JSON.stringify({
     timestamp: new Date().toISOString(),
@@ -102,9 +113,14 @@ async function runQueue() {
           return;
         }
 
-        const title = file.replace(/\.md$/, "").replace(/-/g, " ");
+        let title = file.replace(/\.md$/, "").replace(/-/g, " ");
         
         const content = fs.readFileSync(processingPath, "utf-8").trim();
+        const h1Match = content.match(/^#\s+(.+)$/m);
+        if (h1Match && h1Match[1].trim()) {
+          title = h1Match[1].trim();
+        }
+        
         if (!content || content.length < 10) {
           log.warn(`Task file ${file} is empty or invalid. Skipping dispatch.`);
           const destPath = path.join(completedDir, file);
@@ -125,6 +141,7 @@ async function runQueue() {
           log.success(`Task dispatched successfully (Moved ${file} to completed/)`);
         } catch (error) {
           logQueueState(file, "FAILED", error);
+          try { await safeMoveAsync(processingPath, filePath); } catch (_) {}
           log.error(`Failed to dispatch task [${title}]: ${error.message}`);
         }
       })
