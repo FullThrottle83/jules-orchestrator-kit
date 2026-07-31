@@ -10,7 +10,7 @@ Security is a top priority for this orchestration kit, as it manages AI agents w
 
 If you discover a security vulnerability within this project, please DO NOT open a public issue.
 
-Instead, please send an email to the maintainers or use the GitHub Security Advisory feature to report it privately.
+Instead, please use the GitHub Security Advisory feature to report it privately.
 
 We will endeavor to respond to your report within 48 hours and work with you to resolve the issue as quickly as possible.
 

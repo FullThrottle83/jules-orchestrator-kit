@@ -11,6 +11,7 @@ function runGitCommand(args, ignoreError = false) {
   try {
     return execFileSync("git", args, { encoding: "utf-8" }).trim();
   } catch (error) {
+    if (ignoreError) return "";
     const err = new Error(`Git command failed: git ${args.join(" ")}\n${error.message}`);
     err.code = 1;
     throw err;
@@ -213,7 +214,7 @@ export function runSelfAudit() {
   });
 
   if (violations.length > 0) {
-    const err = new Error("RESTRICTED FILE VIOLATION DETECTED!");
+    const err = new Error("RESTRICTED FILE VIOLATION DETECTED: " + violations.join(", "));
     err.code = 3;
     throw err;
   }
@@ -339,14 +340,21 @@ export function runPreflightSandbox() {
       }
     }
     
-    log.step("[3/5]", "Installing dependencies in sandbox (npm ci)...");
-    const packageJsonPath = path.join(sandboxDir, "package.json");
-    if (fs.existsSync(packageJsonPath)) {
+    log.step("[3/5]", "Resolving package manager and installing dependencies...");
+    let installCmd = "";
+    if (fs.existsSync(path.join(sandboxDir, "pnpm-lock.yaml"))) installCmd = "pnpm install --ignore-scripts";
+    else if (fs.existsSync(path.join(sandboxDir, "bun.lockb"))) installCmd = "bun install --ignore-scripts";
+    else if (fs.existsSync(path.join(sandboxDir, "yarn.lock"))) installCmd = "yarn install --ignore-scripts";
+    else if (fs.existsSync(path.join(sandboxDir, "package-lock.json"))) installCmd = "npm ci --ignore-scripts";
+
+    if (installCmd) {
       try {
-        execSync("npm ci --ignore-scripts", { cwd: sandboxDir, stdio: "ignore" });
+        execSync(installCmd, { cwd: sandboxDir, stdio: "ignore" });
       } catch (e) {
-        log.warn("npm ci failed or wasn't needed. Proceeding...");
+        log.warn(`${installCmd} failed or wasn't needed. Proceeding...`);
       }
+    } else {
+      log.info("Skipping dependency installation (no lockfile detected).");
     }
 
     log.step("[4/5]", "Resolving execution boundary in sandbox...");

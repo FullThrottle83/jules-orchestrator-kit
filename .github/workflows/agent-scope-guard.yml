@@ -27,8 +27,8 @@ jobs:
           echo "Checking files modified in PR..."
           MODIFIED_FILES=$(git diff --name-only $BASE_SHA $HEAD_SHA)
           
-          # Read protected paths from origin/main
-          PROTECTED_PATHS=$(node -e "const paths = JSON.parse(require('child_process').execSync('git show origin/main:.agent/protected-paths.json', {encoding:'utf8'})).protected; console.log(paths.join(' '));")
+          # Read protected paths from origin/${{ github.base_ref }}
+          PROTECTED_PATHS=$(node -e "const paths = JSON.parse(require('child_process').execSync('git show origin/${{ github.base_ref }}:.agent/protected-paths.json', {encoding:'utf8'})).protected; console.log(paths.join(' '));")
           
           echo "Protected patterns: $PROTECTED_PATHS"
           

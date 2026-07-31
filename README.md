@@ -103,13 +103,12 @@ graph TD
     D -->|Test Failure| G{"5. OODA Repair<br/><i>(Retries < 3?)</i>"}:::gate
     
     G -->|Retry| C
-    G -->|Circuit Tripped| H["❌ Exit 4<br/>Diagnostic Abort"]:::error
+    G -->|Max Retries| H["❌ Exit 4<br/>Diagnostic Abort"]:::error
 ```
 
 > 💡 **Core Architectural Invariants**:
 > - **Zero-Trust Base-Branch Security**: Security rules (`forbidden_paths`) are fetched exclusively from `origin/main` (never untrusted PR branches).
 > - **Dynamic Command Resolution (`command-resolver.mjs`)**: Auto-detects workspace boundaries (Turborepo, pnpm, Nx, Cargo, pytest, npm).
-> - **SHA-256 OODA Circuit Breaker**: Fingerprints failure traces (`ooda-circuit.json`). Halts auto-repair if identical errors repeat.
 
 <details>
 <summary><b>🔍 View Detailed Sequence Diagram (Step-by-Step Execution Protocol)</b></summary>
@@ -148,10 +147,9 @@ sequenceDiagram
         Orc->>Git: Record Telemetry (`metrics.jsonl`)
         Orc-->>Trigger: Dispatch Succeeded (Exit 0)
     else Verification Failed (OODA Feedback Triggered)
-        Gate->>Gate: Fingerprint Trace (SHA-256 Error Hash & Check Circuit Breaker)
-        alt Auto-Repair Eligible (Retries < 3 & Circuit OK)
+        alt Auto-Repair Eligible (Retries < 3)
             Gate->>API: Auto-Dispatch Repair Prompt with Stderr Trace
-        else Circuit Tripped / Max Retries Exceeded
+        else Max Retries Exceeded
             Gate-->>Orc: Verification Exhausted
             Orc-->>Trigger: Abort & Log Diagnostic Feedback (Exit 4)
         end
@@ -194,7 +192,7 @@ allow_paths: []
 | --------------------- | -------------------------------------------- | ------------------------------------- |
 | **Automatic Testing** | Runs test suite against every AI change      | `test_cmd: "npm test"`                |
 | **Self-Fixing**       | Jules automatically corrects failed tests    | Retries up to 3 times before blocking |
-| **Secret Protection** | Hides API keys, passwords, tokens            | Entropy > 3.6, length ≥ 20            |
+| **Secret Protection** | Hides API keys, passwords, tokens            | Shannon Entropy > 3.6, length ≥ 20    |
 | **Path Restrictions** | Blocks changes to sensitive files            | `.env`, `*.pem`, `.github/**`         |
 | **Scope Boundaries**  | Prevents changes outside task scope          | `scope: ["src/auth/**"]`              |
 | **Agent Scope Guard** | CI-enforced protected paths manifestation    | `.agent/protected-paths.json`         |

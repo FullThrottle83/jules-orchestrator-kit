@@ -24,13 +24,13 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Syntax Check
-        run: node --check scripts/*.mjs bin/*.js
+        run: for f in scripts/*.mjs bin/*.js index.mjs; do node --check "$f" || exit 1; done
 
       - name: Run Unit Tests
         run: npm test
 
       - name: Run Jules PR Self-Audit Gatekeeper
-        if: github.event_name == 'pull_request' && (startsWith(github.actor, 'google-labs-jules') || contains(github.actor, 'jules'))
+        if: matrix.node-version == '24.x' && github.event_name == 'pull_request' && (startsWith(github.actor, 'google-labs-jules') || contains(github.actor, 'jules'))
         run: node scripts/jules-self-audit.mjs
         env:
           CI: "true"

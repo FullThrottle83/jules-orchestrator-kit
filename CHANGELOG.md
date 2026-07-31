@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated path-traversal vulnerability in `jules-dispatch.mjs` to properly use `path.relative` with bounds checking instead of a weak `.startsWith` match.
 - Added `AbortSignal.timeout(30000)` to fetch calls to prevent hanging REST API connections.
 - Handled HTTP 400 and 401 gracefully by throwing errors rather than incorrectly falling back to CLI.
-- Respected the `Retry-After` header when HTTP 429 limits are hit.
-- Restrict `redactSecrets` matching to entropy limits of length >= 20.
+- Respected the `Retry-After` header when HTTP 429 limits are hit by waiting before retry.
+- Restrict `redactSecrets` matching to Shannon entropy limits > 3.6 and length >= 20.
 - Ensure `.agent/protected-paths.json` is immutable via `origin/main` loading and self-protection.
 - Handled missing node_modules when testing in the preflight sandbox using `npm ci --ignore-scripts`.
 - Wrapped `loadEnv()` in an `isMainModule` check to prevent unintended mutations when importing via SDK.

@@ -45,6 +45,19 @@ if (isMainModule) {
   loadEnv();
 }
 
+function calculateShannonEntropy(str) {
+  const len = str.length;
+  if (len === 0) return 0;
+  const frequencies = {};
+  for (let i = 0; i < len; i++) {
+    frequencies[str[i]] = (frequencies[str[i]] || 0) + 1;
+  }
+  return Object.values(frequencies).reduce((sum, count) => {
+    const p = count / len;
+    return sum - p * Math.log2(p);
+  }, 0);
+}
+
 // 0.2 Pre-Flight Secret Redaction Gate (RegEx + Env Denylist)
 export function redactSecrets(text) {
   if (!text) return "";
@@ -55,6 +68,7 @@ export function redactSecrets(text) {
     if (
       envVal &&
       envVal.length >= 20 &&
+      calculateShannonEntropy(envVal) > 3.6 &&
       /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH/i.test(envKey)
     ) {
       if (sanitized.includes(envVal)) {
@@ -275,6 +289,15 @@ async function executeDispatch() {
             signal: AbortSignal.timeout(30000)
           });
 
+          if (res.status === 429) {
+            const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10);
+            if (attempts < maxAttempts) {
+              log.warn(`⚠️ REST API Rate Limit Exceeded (HTTP 429). Retrying after ${retryAfter}s...`);
+              await new Promise((r) => setTimeout(r, retryAfter * 1000));
+              continue;
+            }
+          }
+
           if (res.ok || res.status === 429 || res.status === 400 || res.status === 401) {
             break;
           }
@@ -303,8 +326,8 @@ async function executeDispatch() {
       }
 
       if (res.status === 429) {
-        const retryAfter = res.headers.get("Retry-After");
-        const err = new Error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Retry after: ${retryAfter || 'unknown'}`);
+        const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10);
+        const err = new Error(`❌ Jules REST API Rate Limit Exceeded (HTTP 429). Retry after: ${retryAfter}s`);
         err.code = 1;
         throw err;
       }
@@ -371,6 +394,6 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
 if (isMainModule) {
   executeDispatch().catch((err) => {
     log.error(`❌ Fatal unhandled rejection in dispatch: ${err.message}`);
-    process.exit(1);
+    process.exit(err.code || 1);
   });
 }
