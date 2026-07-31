@@ -185,8 +185,8 @@ export function resolveWorkspaceExecutionBoundary(modifiedFiles = [], projectRoo
   if (fs.existsSync(path.join(projectRoot, "pnpm-workspace.yaml"))) {
     const filters = targets.map((t) => `--filter=...${t}`).join(" ");
     return {
-      buildCmd: `pnpm ${filters} build`,
-      testCmd: `pnpm ${filters} test`,
+      buildCmd: `pnpm ${filters} run build`,
+      testCmd: `pnpm ${filters} run test`,
       source: `pnpm Workspace (${targets.join(", ")})`,
     };
   }

@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveProjectCommands } from "./command-resolver.mjs";
-import { log, logToHistory } from "./utils.mjs";
+import { log, logToHistory, redactSecrets, appendLedger, checkDailyBudget } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
@@ -45,19 +45,6 @@ if (isMainModule) {
   loadEnv();
 }
 
-function calculateShannonEntropy(str) {
-  const len = str.length;
-  if (len === 0) return 0;
-  const frequencies = {};
-  for (let i = 0; i < len; i++) {
-    frequencies[str[i]] = (frequencies[str[i]] || 0) + 1;
-  }
-  return Object.values(frequencies).reduce((sum, count) => {
-    const p = count / len;
-    return sum - p * Math.log2(p);
-  }, 0);
-}
-
 function parseRetryAfter(res) {
   const raw = res.headers.get("Retry-After");
   let waitSec = Number.parseInt(raw ?? "", 10);
@@ -66,42 +53,6 @@ function parseRetryAfter(res) {
     waitSec = Number.isFinite(asDate) ? Math.ceil((asDate - Date.now()) / 1000) : 5;
   }
   return Math.min(Math.max(waitSec, 0), 60);
-}
-
-// 0.2 Pre-Flight Secret Redaction Gate (RegEx + Env Denylist)
-export function redactSecrets(text) {
-  if (!text) return "";
-  let sanitized = text;
-
-  // Redact active env secrets from denylist keys (*_KEY, *_SECRET, *_TOKEN, etc.)
-  for (const [envKey, envVal] of Object.entries(process.env)) {
-    if (
-      envVal &&
-      (envVal.length >= 20 || calculateShannonEntropy(envVal) > 3.6) &&
-      /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH/i.test(envKey)
-    ) {
-      if (sanitized.includes(envVal)) {
-        sanitized = sanitized.split(envVal).join("[REDACTED_ENV_SECRET]");
-      }
-    }
-  }
-
-  const patterns = [
-    /gh[pusr]_[a-zA-Z0-9]{36}/g,
-    /github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}/g,
-    /AKIA[0-9A-Z]{16}/g,
-    /AIzaSy[a-zA-Z0-9_\-]{33}/g,
-    /ya29\.[a-zA-Z0-9_\-]{20,}/g,
-    /Bearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
-    /sk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}/g,
-    /xox[baprs]-[a-zA-Z0-9\-]{10,}/g,
-    /eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}/g,
-    /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/g,
-  ];
-  for (const pat of patterns) {
-    sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
-  }
-  return sanitized;
 }
 
 const ASTRO_TRIGGER_RE = /\b(?:astro|components|pages|src\/.*\.astro)\b/i;
@@ -152,6 +103,7 @@ let fullPrompt = "";
 let historyFile = "";
 let tmpPayloadFile = "";
 let tmpDir = "";
+let taskKey = "";
 
 const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 export function getAlphaRange(index, total) {
@@ -237,10 +189,13 @@ if (isMainModule) {
   log.info(`Dispatching task to Google Jules: "${taskTitle}"...`);
   log.success(`Logged dispatch history to: ${path.relative(process.cwd(), historyFile)}`);
 
-  const payloadHash = crypto.createHash("sha256").update(taskTitle + Date.now()).digest("hex").slice(0, 12);
+  const hashInput = [repo || "repoless", taskTitle, rawPrompt, process.env.BASE_BRANCH || "main", dateStr].join("\u0000");
+  taskKey = crypto.createHash("sha256").update(hashInput).digest("hex").slice(0, 12);
+  
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-payload-"));
-  tmpPayloadFile = path.join(tmpDir, `payload_${payloadHash}.json`);
+  tmpPayloadFile = path.join(tmpDir, `payload_${taskKey}.json`);
   fs.writeFileSync(tmpPayloadFile, JSON.stringify({ repo, title: taskTitle, prompt: fullPrompt }), { mode: 0o600 });
+
 }
 
 function cleanupTmp() {
@@ -263,6 +218,14 @@ async function executeDispatch() {
     }
 
     if (apiKey && (repo || isRepoless)) {
+      const budgetLimit = process.env.JULES_DAILY_BUDGET ? parseInt(process.env.JULES_DAILY_BUDGET, 10) : 300;
+      const budgetCheck = checkDailyBudget(budgetLimit);
+      
+      if (!budgetCheck.ok) {
+        log.warn(`Daily budget exhausted (${budgetCheck.used}/${budgetCheck.budget} sessions). Aborting dispatch.`);
+        process.exit(7); // Budget exhausted exit code
+      }
+
       const payload = {
         title: taskTitle,
         prompt: fullPrompt,
@@ -362,6 +325,7 @@ async function executeDispatch() {
         sessionId = sId || data.name || data.id || sessionId;
         log.success(`REST API Dispatch response: Session ${sessionId} created successfully.`);
         fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
+        appendLedger("sessions", { task_key: taskKey, session_id: sessionId, status: "dispatched", task_title: taskTitle });
       } catch (jsonErr) {
         log.warn("⚠️ Failed to parse REST API JSON response:", jsonErr.message);
       }
@@ -393,6 +357,7 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
     log.step("💻", `Executing: jules ${args.join(" ")} (prompt passed via stdin)...`);
     execFileSync("jules", args, { input: promptToSend, stdio: ["pipe", "inherit", "inherit"] });
     log.success(`Successfully dispatched task "${title}" to Jules CLI.`);
+    appendLedger("sessions", { task_key: taskKey, session_id: "CLI", status: "dispatched", task_title: title });
   } catch (error) {
     const err = new Error(`Failed to dispatch task to Jules CLI: ${error.message}`);
     err.code = 1;

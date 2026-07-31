@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveWorkspaceExecutionBoundary } from "./command-resolver.mjs";
-import { log, logToHistory } from "./utils.mjs";
+import { log, logToHistory, redactSecrets } from "./utils.mjs";
 
 function runGitCommand(args, ignoreError = false) {
   try {
@@ -33,7 +33,7 @@ export function matchGlob(filepath, globPattern) {
         seg
           .replace(/[.+^${}()|[\]\\]/g, "\\$&")
           .replace(/\*/g, "[^/]*")
-          .replace(/\?/g, ".")
+          .replace(/\?/g, "[^/]")
       );
     }
   }
@@ -220,8 +220,48 @@ export function runSelfAudit() {
   }
   log.success("Restricted File Boundary Check: PASSED");
 
-  log.info("Resolving Dynamic Verification Suite...");
-  const resolvedCmds = resolveWorkspaceExecutionBoundary(changedCodeFiles, process.cwd());
+  log.info("Analyzing Diff Payload Size & Content...");
+  const diffPayload = runGitCommand(["diff", `${mergeBase}...HEAD`], true);
+  const diffBytes = Buffer.byteLength(diffPayload, "utf8");
+  const maxDiffBytes = 75 * 1024; // 75 KB
+
+  if (diffBytes > maxDiffBytes) {
+    const err = new Error(`DIFF PAYLOAD TOO LARGE: ${diffBytes} bytes exceeds ${maxDiffBytes} bytes. Split the task.`);
+    err.code = 5;
+    throw err;
+  }
+  
+  const redactedDiff = redactSecrets(diffPayload);
+  if (redactedDiff !== diffPayload) {
+    const err = new Error("SECRET LEAK PREVENTED: Secret-like content detected in diff. Aborting.");
+    err.code = 6;
+    throw err;
+  }
+  log.success(`Diff Inspection Check: PASSED (${diffBytes} bytes, No Secrets Detected)`);
+
+  log.info("Resolving Dynamic Verification Suite from Trusted Base Branch...");
+  
+  const runId = crypto.randomBytes(4).toString("hex");
+  const trustedDir = path.join(os.tmpdir(), `jules-trusted-tree-${runId}`);
+  const tempArchive = path.join(os.tmpdir(), `jules-trusted-archive-${runId}.tar`);
+  
+  let resolutionRoot = process.cwd();
+  try {
+    fs.mkdirSync(trustedDir, { recursive: true });
+    execSync(`git archive ${mainRef} -o "${tempArchive}"`);
+    execSync(`tar -xf "${tempArchive}" -C "${trustedDir}"`);
+    resolutionRoot = trustedDir;
+  } catch (err) {
+    log.warn(`Failed to extract trusted base branch. Falling back to working tree for command resolution.`);
+  }
+
+  const resolvedCmds = resolveWorkspaceExecutionBoundary(changedCodeFiles, resolutionRoot);
+  
+  try {
+    fs.rmSync(trustedDir, { recursive: true, force: true });
+    if (fs.existsSync(tempArchive)) fs.rmSync(tempArchive, { force: true });
+  } catch (e) {}
+
   log.info(`Discovered Execution Scope: ${resolvedCmds.source}`);
 
   const startTime = Date.now();

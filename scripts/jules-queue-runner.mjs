@@ -13,6 +13,7 @@ const dispatchScript = path.resolve(__dirname, "jules-dispatch.mjs");
 
 const queueDir = path.resolve(process.cwd(), ".agent/jules-queue");
 const completedDir = path.resolve(process.cwd(), ".agent/jules-queue/completed");
+const failedDir = path.resolve(process.cwd(), ".agent/jules-queue/failed");
 const queueLogFile = path.join(queueDir, "queue.jsonl");
 
 const processingDir = path.resolve(process.cwd(), ".agent/jules-queue/.processing");
@@ -23,6 +24,7 @@ if (!fs.existsSync(queueDir)) {
 }
 
 ensureDir(completedDir);
+ensureDir(failedDir);
 ensureDir(processingDir);
 
 // Recover any tasks left in .processing from a previous run or crash
@@ -145,8 +147,30 @@ async function runQueue() {
           log.success(`Task dispatched successfully (Moved ${file} to completed/)`);
         } catch (error) {
           logQueueState(file, "FAILED", error);
-          try { await safeMoveAsync(processingPath, filePath); } catch (_) {}
-          log.error(`Failed to dispatch task [${title}]: ${error.message}`);
+          
+          let attempts = 0;
+          const attemptMatch = content.match(/^attempts:\s*(\d+)/m);
+          if (attemptMatch) attempts = parseInt(attemptMatch[1], 10);
+
+          if (attempts >= 2) {
+             const destPath = path.join(failedDir, file);
+             try { await safeMoveAsync(processingPath, destPath); } catch (_) {}
+             log.error(`Task [${title}] failed 3 times. Moved to failed/. Error: ${error.message}`);
+          } else {
+             let newContent = content;
+             if (attemptMatch) {
+                newContent = content.replace(/^attempts:\s*\d+/m, `attempts: ${attempts + 1}`);
+             } else if (content.startsWith("---\n")) {
+                newContent = content.replace(/^---\n/, `---\nattempts: 1\n`);
+             } else {
+                newContent = `---\nattempts: 1\n---\n\n` + content;
+             }
+             try {
+               fs.writeFileSync(processingPath, newContent);
+               await safeMoveAsync(processingPath, filePath);
+             } catch (_) {}
+             log.warn(`Task [${title}] failed. Re-queued (Attempt ${attempts + 1}). Error: ${error.message}`);
+          }
         }
       })
     );

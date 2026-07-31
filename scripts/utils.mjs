@@ -92,3 +92,89 @@ export function resolveMarkdownConflict(content) {
 
   return result.join("\n");
 }
+
+export function calculateShannonEntropy(str) {
+  const len = str.length;
+  if (len === 0) return 0;
+  const frequencies = {};
+  for (let i = 0; i < len; i++) {
+    frequencies[str[i]] = (frequencies[str[i]] || 0) + 1;
+  }
+  return Object.values(frequencies).reduce((sum, count) => {
+    const p = count / len;
+    return sum - p * Math.log2(p);
+  }, 0);
+}
+
+export function redactSecrets(text) {
+  if (!text) return "";
+  let sanitized = text;
+
+  for (const [envKey, envVal] of Object.entries(process.env)) {
+    if (
+      envVal &&
+      (envVal.length >= 20 || calculateShannonEntropy(envVal) > 3.6) &&
+      /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH/i.test(envKey)
+    ) {
+      if (sanitized.includes(envVal)) {
+        sanitized = sanitized.split(envVal).join("[REDACTED_ENV_SECRET]");
+      }
+    }
+  }
+
+  const patterns = [
+    /gh[pusr]_[a-zA-Z0-9]{36}/g,
+    /github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}/g,
+    /AKIA[0-9A-Z]{16}/g,
+    /AIzaSy[a-zA-Z0-9_\-]{33}/g,
+    /ya29\.[a-zA-Z0-9_\-]{20,}/g,
+    /Bearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
+    /sk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}/g,
+    /xox[baprs]-[a-zA-Z0-9\-]{10,}/g,
+    /eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}/g,
+    /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/g,
+  ];
+  for (const pat of patterns) {
+    sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
+  }
+  return sanitized;
+}
+
+export function appendLedger(ledgerName, payload) {
+  const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state");
+  ensureDir(stateDir);
+  const ledgerPath = path.join(stateDir, `${ledgerName}.jsonl`);
+  const entry = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    ...payload
+  }) + "\n";
+  fs.appendFileSync(ledgerPath, entry, "utf-8");
+  return ledgerPath;
+}
+
+export function checkDailyBudget(maxSessions = 300) {
+  const dateStr = new Date().toISOString().split("T")[0];
+  const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state");
+  const sessionsLedger = path.join(stateDir, "sessions.jsonl");
+  
+  if (!fs.existsSync(sessionsLedger)) {
+    return { ok: true, used: 0, budget: maxSessions };
+  }
+
+  const content = fs.readFileSync(sessionsLedger, "utf-8");
+  const lines = content.split("\n").filter(Boolean);
+  
+  let usedToday = 0;
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line);
+      if (entry.timestamp && entry.timestamp.startsWith(dateStr)) {
+        usedToday++;
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  return { ok: usedToday < maxSessions, used: usedToday, budget: maxSessions };
+}

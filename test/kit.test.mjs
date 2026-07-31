@@ -6,8 +6,8 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict } from "../scripts/utils.mjs";
-import { redactSecrets, getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
+import { resolveMarkdownConflict, redactSecrets } from "../scripts/utils.mjs";
+import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
 
