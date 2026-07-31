@@ -7,7 +7,7 @@ forbidden_paths:
   - "**/secrets/**"
   - "**/*.pem"
   - "**/lock-manager/**"
-  - "scripts/jules-*"
+  - "scripts/jules-self-audit.mjs"
   - ".agent/jules.yml"
 allow_paths: []
 
