@@ -8,6 +8,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { log, ensureDir } from "./utils.mjs";
 
 const IGNORE_DIRS = new Set([
@@ -22,9 +23,8 @@ const IGNORE_DIRS = new Set([
   "coverage",
   ".next",
   ".turbo",
-  "tmp_repos",
-  "tmp_repos2",
-  "tmp_repos3"
+  "test",
+  "scripts/jules-scan-todos.mjs"
 ]);
 
 const IGNORE_EXTS = new Set([
@@ -61,15 +61,15 @@ export function scanCodebaseForTodos(rootDir = process.cwd(), options = {}) {
         walk(fullPath);
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
-        if (IGNORE_EXTS.has(ext)) continue;
+        if (IGNORE_EXTS.has(ext) || IGNORE_DIRS.has(relPath)) continue;
 
         try {
           const content = fs.readFileSync(fullPath, "utf-8");
           const lines = content.split("\n");
           for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
             const line = lines[lineIdx];
-            // Ignore false positives from regex definitions, test assertions, or scanner string literals
-            if (/TAG_REGEX|assert\.|tasks\.some|log\.info\("Zero TODO|\/FIXME comments/i.test(line)) {
+            // Ignore false positives from regex definitions or scanner string literals
+            if (/TAG_REGEX|tasks\.some|log\.info\("Zero TODO|\/FIXME comments/i.test(line)) {
               continue;
             }
             const match = line.match(TAG_REGEX);
@@ -137,6 +137,6 @@ export function runScanner() {
   log.info(`Run \`npx jules-swarm ${path.relative(process.cwd(), outputPath)}\` to execute all tasks in parallel.`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.url.slice(7))) {
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   runScanner();
 }
