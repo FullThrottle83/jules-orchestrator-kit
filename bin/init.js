@@ -265,6 +265,9 @@ const requiredGitignoreEntries = [
   ".env",
   ".agent/history/",
   ".agent/state/",
+  ".agent/jules-queue/.state/",
+  ".agent/jules-queue/failed/",
+  ".agent/jules-queue/.processing/",
   ".agent/jules-queue/*.md",
   "!.agent/jules-queue/README.md"
 ];

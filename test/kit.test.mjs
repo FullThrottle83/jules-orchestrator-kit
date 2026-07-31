@@ -5,8 +5,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
-import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret } from "../scripts/utils.mjs";
+import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
+import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
@@ -439,6 +439,34 @@ describe("CLI Initializer (bin/init.js)", () => {
       const setupMd = fs.readFileSync(path.join(tmpDir, ".agent/JULES_WEB_SETUP.md"), "utf-8");
       assert.ok(setupMd.includes("https://jules.google"));
       assert.equal(setupMd.includes("app.jules.ai"), false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("OODA State Module Scoping & Ledger Pruning", () => {
+  test("exports getOodaStateFile cleanly at module top-level scope", () => {
+    assert.equal(typeof getOodaStateFile, "function");
+    const stateFile = getOodaStateFile("main");
+    assert.ok(stateFile.includes(".agent/state/ooda"));
+  });
+
+  test("prunes old ledger files older than retention days", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-ledger-"));
+    try {
+      const oldFile = path.join(tmpDir, "2025-01-01.jsonl");
+      const newFile = path.join(tmpDir, "2026-07-31.jsonl");
+      fs.writeFileSync(oldFile, "{}");
+      fs.writeFileSync(newFile, "{}");
+
+      const thirtyOneDaysAgo = Date.now() - 31 * 24 * 60 * 60 * 1000;
+      fs.utimesSync(oldFile, new Date(thirtyOneDaysAgo), new Date(thirtyOneDaysAgo));
+
+      pruneOldLedgers(tmpDir, 30);
+
+      assert.equal(fs.existsSync(oldFile), false);
+      assert.equal(fs.existsSync(newFile), true);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

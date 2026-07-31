@@ -208,6 +208,22 @@ export function parseAndCleanStderr(stderrStr) {
   return lines.slice(-100).join("\n");
 }
 
+export function getOodaStateFile(mergeBase = "main") {
+  const oodaDir = path.resolve(process.cwd(), ".agent/state/ooda");
+  if (!fs.existsSync(oodaDir)) fs.mkdirSync(oodaDir, { recursive: true });
+
+  const keyInput = [
+    process.env.GITHUB_REPOSITORY || "",
+    process.env.GITHUB_REF || "",
+    process.env.GITHUB_HEAD_REF || "",
+    mergeBase,
+    process.cwd()
+  ].join("\u0000");
+
+  const key = crypto.createHash("sha256").update(keyInput).digest("hex").slice(0, 16);
+  return path.join(oodaDir, `${key}.json`);
+}
+
 export function logAuditMetrics(metrics) {
   const historyDir = path.resolve(process.cwd(), ".agent/history");
   if (!fs.existsSync(historyDir)) {
@@ -275,7 +291,9 @@ export function runSelfAudit() {
 
   if (commandFileChanges.length > 0 && process.env.JULES_ALLOW_COMMAND_FILE_CHANGES !== "true" && process.env.JULES_ALLOW_COMMAND_FILE_CHANGES !== "1") {
     const err = new Error(
-      "COMMAND FILE CHANGE DETECTED: " + commandFileChanges.join(", ") + ". Refusing to execute verification scripts from untrusted branch."
+      "COMMAND / BUILD CONFIG FILE CHANGE DETECTED: [" + commandFileChanges.join(", ") + "]. " +
+      "Refusing to execute verification scripts from untrusted branch. " +
+      "To override for legitimate dependency updates, set JULES_ALLOW_COMMAND_FILE_CHANGES=true."
     );
     err.code = 3;
     throw err;
@@ -287,7 +305,9 @@ export function runSelfAudit() {
 
   if (agentRuleChanges.length > 0 && process.env.JULES_ALLOW_AGENT_RULE_CHANGES !== "true" && process.env.JULES_ALLOW_AGENT_RULE_CHANGES !== "1") {
     const err = new Error(
-      "AGENT RULE FILE CHANGE DETECTED: " + agentRuleChanges.join(", ") + ". Refusing to load agent rules from untrusted branch."
+      "AGENT RULE FILE CHANGE DETECTED: [" + agentRuleChanges.join(", ") + "]. " +
+      "Refusing to load agent rules from untrusted branch. " +
+      "To override for legitimate rule updates, set JULES_ALLOW_AGENT_RULE_CHANGES=true."
     );
     err.code = 3;
     throw err;
@@ -441,22 +461,6 @@ export function runSelfAudit() {
       err.code = 4;
       throw err;
     }
-
-function getOodaStateFile(mergeBase = "main") {
-  const oodaDir = path.resolve(process.cwd(), ".agent/state/ooda");
-  if (!fs.existsSync(oodaDir)) fs.mkdirSync(oodaDir, { recursive: true });
-
-  const keyInput = [
-    process.env.GITHUB_REPOSITORY || "",
-    process.env.GITHUB_REF || "",
-    process.env.GITHUB_HEAD_REF || "",
-    mergeBase,
-    process.cwd()
-  ].join("\u0000");
-
-  const key = crypto.createHash("sha256").update(keyInput).digest("hex").slice(0, 16);
-  return path.join(oodaDir, `${key}.json`);
-}
 
     let oodaRetries = 0;
     const oodaStateFile = getOodaStateFile(mergeBase);

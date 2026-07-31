@@ -165,10 +165,29 @@ export function redactSecrets(text) {
   return sanitized;
 }
 
+export function pruneOldLedgers(stateDir, retentionDays = 30) {
+  try {
+    if (!fs.existsSync(stateDir)) return;
+    const now = Date.now();
+    const maxAgeMs = retentionDays * 24 * 60 * 60 * 1000;
+    const files = fs.readdirSync(stateDir);
+    files.forEach((file) => {
+      if (file.endsWith(".jsonl")) {
+        const filePath = path.join(stateDir, file);
+        const stat = fs.statSync(filePath);
+        if (now - stat.mtimeMs > maxAgeMs) {
+          try { fs.unlinkSync(filePath); } catch (_) {}
+        }
+      }
+    });
+  } catch (_) {}
+}
+
 export function getDailyLedgerPath(ledgerName = "sessions") {
   const dateStr = new Date().toISOString().split("T")[0];
   const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state", ledgerName);
   ensureDir(stateDir);
+  pruneOldLedgers(stateDir, 30);
   return path.join(stateDir, `${dateStr}.jsonl`);
 }
 
@@ -183,7 +202,6 @@ export function appendLedger(ledgerName, payload) {
 }
 
 export function checkDailyBudget(maxSessions = 300) {
-  const dateStr = new Date().toISOString().split("T")[0];
   const ledgerPath = getDailyLedgerPath("sessions");
   
   if (!fs.existsSync(ledgerPath)) {

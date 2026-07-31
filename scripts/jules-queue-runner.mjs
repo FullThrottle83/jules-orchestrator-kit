@@ -183,20 +183,26 @@ async function runQueue() {
           logQueueState(file, "FAILED", error);
 
           const failureClass = classifyQueueFailure(error);
-          const NON_RETRYABLE = new Set(["security_violation", "diff_too_large", "budget_exhausted"]);
+          const NON_RETRYABLE = new Set(["security_violation", "diff_too_large"]);
 
           const taskState = getTaskState(file);
-          const attempts = (taskState.attempts || 0) + 1;
 
-          if (NON_RETRYABLE.has(failureClass) || attempts >= 3) {
-            const destPath = path.join(failedDir, file);
-            setTaskState(file, { attempts, status: "FAILED_PERMANENT", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
-            try { await safeMoveAsync(processingPath, destPath); } catch (_) {}
-            log.error(`Task [${title}] failed (${failureClass}). Moved to failed/. Error: ${error.message}`);
-          } else {
-            setTaskState(file, { attempts, status: "REQUEUED", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
+          if (failureClass === "budget_exhausted") {
+            setTaskState(file, { attempts: taskState.attempts || 0, status: "DEFERRED_BUDGET", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
             try { await safeMoveAsync(processingPath, filePath); } catch (_) {}
-            log.warn(`Task [${title}] failed (${failureClass}). Re-queued (Attempt ${attempts}/3). Error: ${error.message}`);
+            log.warn(`Task [${title}] deferred due to daily budget limit. Left in queue for next budget reset.`);
+          } else {
+            const attempts = (taskState.attempts || 0) + 1;
+            if (NON_RETRYABLE.has(failureClass) || attempts >= 3) {
+              const destPath = path.join(failedDir, file);
+              setTaskState(file, { attempts, status: "FAILED_PERMANENT", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
+              try { await safeMoveAsync(processingPath, destPath); } catch (_) {}
+              log.error(`Task [${title}] failed (${failureClass}). Moved to failed/. Error: ${error.message}`);
+            } else {
+              setTaskState(file, { attempts, status: "REQUEUED", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
+              try { await safeMoveAsync(processingPath, filePath); } catch (_) {}
+              log.warn(`Task [${title}] failed (${failureClass}). Re-queued (Attempt ${attempts}/3). Error: ${error.message}`);
+            }
           }
         }
       })

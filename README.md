@@ -167,7 +167,8 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 | `JULES_REPOLESS` | Set to `true` or `1` to run in repoless/serverless mode |
 | `JULES_DRY_RUN` | Set to `true` or `1` to simulate dispatching without making API calls |
 | `JULES_DAILY_BUDGET` | Daily max session budget for autonomous dispatches (Default: `300`) |
-| `JULES_ALLOW_COMMAND_FILE_CHANGES` | Set to `true` to allow PR changes to command-defining files like `package.json` (Default: `false`) |
+| `JULES_ALLOW_COMMAND_FILE_CHANGES` | Set to `true` to allow PR changes to command/config files like `package.json`, `tsconfig.json`, `vite.config.ts` (Default: `false`) |
+| `JULES_ALLOW_AGENT_RULE_CHANGES` | Set to `true` to allow PR changes to agent rule files like `AGENTS.md`, `JULES_RULES_TEMPLATE.md` (Default: `false`) |
 | `BASE_BRANCH` | Base branch for PR Audits & Merge-Base calculations (Default: `main`) |
 | `GITHUB_HEAD_REF` | PR Head Branch (Used dynamically by CI during OODA repair) |
 | `JULES_PROJECT_ROOT` | Root directory of the project (Auto-assigned during swarm executions) |

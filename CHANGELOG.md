@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-07-31
+### Fixed & Hardened
+- **OODA Function Module-Scope Fix**: Moved `getOodaStateFile` to top-level module scope in `jules-self-audit.mjs`. Fixed a `ReferenceError` caused by block-scoping in strict mode that prevented OODA state files from being deleted upon passing audits.
+- **Queue Budget Deferral**: Daily budget exhaustion (`budget_exhausted`) is no longer treated as permanent failure. Tasks are left/re-queued as `DEFERRED_BUDGET` without incrementing retry attempt counts.
+- **Automatic 30-Day Ledger Pruning**: Added `pruneOldLedgers()` to `utils.mjs` to automatically clean up date-stamped `.jsonl` files older than 30 days.
+- **Enhanced Guardrail Error Messages**: Updated `jules-self-audit.mjs` error messages to explicitly list offending files and matching override flags (`JULES_ALLOW_COMMAND_FILE_CHANGES=true` or `JULES_ALLOW_AGENT_RULE_CHANGES=true`).
+- **Complete Gitignore Scaffolding**: Added `.agent/jules-queue/.state/`, `.agent/jules-queue/failed/`, and `.agent/jules-queue/.processing/` to root `.gitignore` and `bin/init.js`.
+
 ## [0.8.0] - 2026-07-31
 ### Added & Hardened (Fleet Intelligence & Nightly Architecture)
 - **Daily Ledger Rotation**: Session ledgers rotate into daily date-stamped files (`.agent/state/sessions/YYYY-MM-DD.jsonl`), preventing ledger bloat and speeding up daily budget calculations.
