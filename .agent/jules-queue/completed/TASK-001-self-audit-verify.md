@@ -1,12 +1,15 @@
-# Self-Audit and Verification
+---
+title: "Self-Audit & Zero Dependency Verification"
+type: "jules_dispatch"
+---
+# Self-Audit & Zero Dependency Verification
 
-Din uppgift är att agera självrevisor (Self-Auditor) för `jules-orchestrator-kit`. 
-Vi vill "äta vår egen hundmat" genom att låta Jules utvärdera Jules-repo:t.
+Your task is to act as the Self-Auditor for `jules-orchestrator-kit`.
+We want to "eat our own dogfood" by letting Jules evaluate the Jules repo.
 
-**Uppgifter:**
-1. Läs igenom `AGENTS.md` och kontrollera att de senaste ändringarna i `scripts/utils.mjs`, `scripts/jules-queue-runner.mjs` och `scripts/jules-dispatch.mjs` respekterar "Lean Engineering Protocol" (noll externa beroenden).
-2. Verifiera att ingen av filerna innehåller onödiga console.logs som borde ha bytts ut mot vår centrala DX-logger (`log.info`, `log.success`, etc).
-3. Om du hittar kod som bryter mot mönstret, refaktorera den!
-4. Till sist, försäkra dig om att du kan köra verifieringssviten framgångsrikt.
+1. Read through `AGENTS.md` and verify that the latest changes in `scripts/utils.mjs`, `scripts/jules-queue-runner.mjs`, and `scripts/jules-dispatch.mjs` respect the "Lean Engineering Protocol" (zero external dependencies).
+2. Verify that none of the files contain unnecessary console.logs that should have been replaced with our central DX-logger (`log.info`, `log.success`, etc).
+3. If you find code that breaks the pattern, refactor it!
+4. Finally, ensure that you can successfully run the verification suite.
 
-Detta är ett viktigt steg för att bekräfta att "The 5-Minute Drop-off"-problematiken är borta.
+This is an important step to confirm that "The 5-Minute Drop-off" issue is gone.

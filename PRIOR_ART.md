@@ -1,33 +1,28 @@
-# Prior Art & Inspirations
+# Prior Art & Differentiation
 
-Denna dokumentation listar de projekt inom AI-agent-ekosystemet som inspirerat utvecklingen av `jules-orchestrator-kit`, samt vad detta kit gör annorlunda.
+This documentation lists the projects in the AI agent ecosystem that inspired the development of `jules-orchestrator-kit`, and clarifies how this kit differs.
 
-## Inspirationskällor
+## Core Inspirations
 
-### jules-supervisor
-- **Inspiration:** Konceptet kring "Human Escalation Bridge" via chattkanaler (som Telegram eller Slack). Hantering av tillstånd där agenter fastnar i `AWAITING_USER_FEEDBACK` och väntar på asynkron mänsklig input.
-- **Vår skillnad:** Vi bygger in den asynkrona eskaleringen i den centrala `jules-queue-runner.mjs` så att det blir en inbyggd state-hantering, utan att kräva ett externt supervisor-verktyg som snurrar bredvid.
+- **Inspiration:** The concept of a "Human Escalation Bridge" via chat channels (like Telegram or Slack), handling states where agents get stuck in `AWAITING_USER_FEEDBACK` waiting for asynchronous human input.
+- **Our Difference:** We build the asynchronous escalation into the core `jules-queue-runner.mjs` so it becomes built-in state management, without requiring an external supervisor tool spinning alongside it.
 
-### google-labs-code/jules-skills
-- **Inspiration:** Lokal CI Verification Container Runner (t.ex. via Nektos Act). Att förpacka exekveringen i isolerade miljöer innan PR skapas för att säkerställa att en agent inte introducerar miljö-specifika buggar.
-- **Vår skillnad:** Vi fokuserar just nu på `npm test` i värdmiljön för att hålla dependencies på noll (enligt vår strikta Zero Dependencies-policy), men sneglar på hur de orkestrerar säkra sandlådor.
+- **Inspiration:** Local CI Verification Container Runner (e.g., via Nektos Act). Packaging execution in isolated environments before a PR is created to ensure an agent does not introduce environment-specific bugs.
+- **Our Difference:** We are currently focusing on `npm test` in the host environment to keep dependencies at zero (according to our strict Zero Dependencies policy), but we are keeping an eye on how they orchestrate secure sandboxes.
 
-### jules-mcp-server
-- **Inspiration:** Att exponera Jules funktionalitet via Model Context Protocol (MCP), särskilt över HTTP-strömmar (Streamable MCP Bridge) för verktyg som n8n och Hermes Agent.
-- **Vår skillnad:** Vi planerar att bygga en **0-dependency stdio MCP server** (`src/mcp-server.mjs`) istället för en fullfjädrad HTTP/Express-server, för att möjliggöra direkt inbäddning inuti Claude Desktop, Cursor och Antigravity utan portkonflikter och onödig överbyggnad.
+- **Inspiration:** Exposing Jules functionality via the Model Context Protocol (MCP), particularly over HTTP streams (Streamable MCP Bridge) for tools like n8n and Hermes Agent.
+- **Our Difference:** We plan to build a **0-dependency stdio MCP server** (`src/mcp-server.mjs`) instead of a full-fledged HTTP/Express server, to enable direct embedding inside Claude Desktop, Cursor, and Antigravity without port conflicts and unnecessary overhead.
 
-### antigravity-jules-orchestration
-- **Inspiration:** Cloud Build Auto-Fix Webhooks. Ett mönster där webhook-endpoints tar emot misslyckade deployment-byggen från Vercel/Cloudflare och automatiskt skickar ut Jules på en "fix-session".
-- **Vår skillnad:** Vårt kit exponerar OODA-loopen i CLI:t, vilket gör det möjligt att bygga samma logik lokalt eller via bash-skript, innan en HTTP-server ens behöver vara inblandad.
+- **Inspiration:** Cloud Build Auto-Fix Webhooks. A pattern where webhook endpoints receive failed deployment builds from Vercel/Cloudflare and automatically dispatch Jules on a "fix-session".
+- **Our Difference:** Our kit exposes the OODA loop in the CLI, making it possible to build the exact same logic locally or via bash scripts, before an HTTP server even needs to be involved.
 
----
+## What makes jules-orchestrator-kit unique?
 
-## Sammanfattning av differentiering
+The honest answer to what *this* kit does that the others don't is **the gate**:
 
-Det ärliga svaret på vad *detta* kit gör som de andra inte gör är **grinden**:
-- **Verifiering & OODA-loop:** Automatiska reparationer med testkörningar (upp till 3 försök) innan den ger upp.
-- **Scope-kontroll (Agent Scope Guard):** Hård kontroll över att Jules inte kan ändra kommandofiler (`package.json`, `.github/`) om inte explicit tillåtet.
-- **Hemlighetsskanning:** Inbyggd redigering av AWS, GitHub och npm-nycklar (både med hög och låg konfidens) direkt i loggflödet, *innan* det sparas på disk.
-- **Atomic Budgeting:** Ett lokalt ledger-system (`.agent/state/sessions/YYYY-MM-DD.jsonl`) som hanterar dagliga sessionsbudgetar och blockerar runaway loops (t.ex. att Jules bränner din token-budget av misstag).
+- **Verification & OODA-loop:** Automatic repairs with test runs (up to 3 attempts) before giving up.
+- **Scope Control (Agent Scope Guard):** Strict control ensuring Jules cannot modify command files (`package.json`, `.github/`) unless explicitly allowed.
+- **Secret Scanning:** Built-in redaction of AWS, GitHub, and npm keys (both high and low confidence) directly in the log stream, *before* it gets saved to disk.
+- **Atomic Budgeting:** A local ledger system (`.agent/state/sessions/YYYY-MM-DD.jsonl`) that manages daily session budgets and blocks runaway loops (e.g., Jules accidentally burning your token budget).
 
-Dessa mekanismer är kärnan i `jules-orchestrator-kit` och anledningen till att vi kan leverera stabilitet.
+These mechanisms are the core of `jules-orchestrator-kit` and the reason we can deliver stability.

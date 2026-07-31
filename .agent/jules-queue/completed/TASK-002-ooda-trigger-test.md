@@ -1,11 +1,14 @@
-# OODA Trigger Test
+---
+title: "Trigger OODA Auto-Repair Loop"
+type: "jules_dispatch"
+---
+# Trigger OODA Auto-Repair Loop
 
-Din uppgift är att medvetet och tillfälligt introducera ett logiskt fel i testfilen `test/kit.test.mjs`.
+Your task is to intentionally and temporarily introduce a logical error in the test file `test/kit.test.mjs`.
 
-**Instruktioner:**
-1. Öppna `test/kit.test.mjs`.
-2. Hitta testet "Dynamic Command Resolver" -> "resolves default verification commands from manifest or config".
-3. Ändra `assert.equal(res.testCmd, "npm test");` till `assert.equal(res.testCmd, "npm BROKEN");`.
-4. Spara filen och avsluta.
+1. Open `test/kit.test.mjs`.
+2. Locate the test `resolves default verification commands from manifest or config`.
+3. Change `assert.equal(res.testCmd, "npm test");` to `assert.equal(res.testCmd, "npm BROKEN");`.
+4. Save the file and exit.
 
-Målet med denna uppgift är att simulera ett mänskligt misstag som orsakar att testsviten misslyckas. Eftersom vi nu har implementerat en autonom OODA-reparationsloop (Auto-Repair Re-dispatch) kommer orkestratorn omedelbart att upptäcka felet och skicka tillbaka det till dig (eller en annan jules-instans) som en ny auto-repair uppgift med felmeddelandet, varpå du autonomt kommer att rätta felet igen.
+The goal of this task is to simulate a human error that causes the test suite to fail. Since we have now implemented an autonomous OODA repair loop (Auto-Repair Re-dispatch), the orchestrator will immediately detect the error and send it back to you (or another jules instance) as a new auto-repair task containing the error message, at which point you will autonomously fix the error again.
