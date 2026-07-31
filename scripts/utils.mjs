@@ -106,6 +106,42 @@ export function calculateShannonEntropy(str) {
   }, 0);
 }
 
+export const HIGH_CONFIDENCE_PATTERNS = [
+  /\bgh[pousr]_[a-zA-Z0-9]{36,}\b/g,
+  /\bgithub_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}\b/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /\bnpm_[a-zA-Z0-9]{36}\b/g,
+  /\bsk_live_[0-9a-zA-Z]{24,}\b/g,
+];
+
+export const LOW_CONFIDENCE_PATTERNS = [
+  /\bAIza[0-9A-Za-z_-]{30,40}\b/g,
+  /\bya29\.[a-zA-Z0-9_\-]{20,}\b/g,
+  /\bBearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
+  /\bsk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}\b/g,
+  /\bxox[baprs]-[a-zA-Z0-9\-]{10,}\b/g,
+  /\beyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\b/g,
+  /\b(?:rk|pk)_(?:live|test)_[0-9a-zA-Z]{24,}\b/g,
+  /\bsk_test_[0-9a-zA-Z]{24,}\b/g,
+];
+
+export function hasHighConfidenceSecret(text) {
+  if (!text) return false;
+  return HIGH_CONFIDENCE_PATTERNS.some((pat) => {
+    pat.lastIndex = 0;
+    return pat.test(text);
+  });
+}
+
+export function hasLowConfidenceSecret(text) {
+  if (!text) return false;
+  return LOW_CONFIDENCE_PATTERNS.some((pat) => {
+    pat.lastIndex = 0;
+    return pat.test(text);
+  });
+}
+
 export function redactSecrets(text) {
   if (!text) return "";
   let sanitized = text;
@@ -122,21 +158,8 @@ export function redactSecrets(text) {
     }
   }
 
-  const patterns = [
-    /\bgh[pousr]_[a-zA-Z0-9]{36,}\b/g,
-    /\bgithub_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}\b/g,
-    /\bAKIA[0-9A-Z]{16}\b/g,
-    /\bAIza[0-9A-Za-z_-]{30,40}\b/g,
-    /\bya29\.[a-zA-Z0-9_\-]{20,}\b/g,
-    /\bBearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
-    /\bsk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}\b/g,
-    /\bxox[baprs]-[a-zA-Z0-9\-]{10,}\b/g,
-    /\beyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\b/g,
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-    /\bnpm_[a-zA-Z0-9]{36}\b/g,
-    /\b(?:sk|rk|pk)_(?:live|test)_[0-9a-zA-Z]{24,}\b/g,
-  ];
-  for (const pat of patterns) {
+  const allPatterns = [...HIGH_CONFIDENCE_PATTERNS, ...LOW_CONFIDENCE_PATTERNS];
+  for (const pat of allPatterns) {
     sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
   }
   return sanitized;
@@ -173,7 +196,7 @@ export function checkDailyBudget(maxSessions = 300) {
       if (
         entry.timestamp &&
         entry.timestamp.startsWith(dateStr) &&
-        (entry.event === "session_dispatched" || entry.event === "budget_reserved" || !entry.event)
+        (entry.event === "budget_reserved" || !entry.event)
       ) {
         usedToday++;
       }
@@ -185,22 +208,41 @@ export function checkDailyBudget(maxSessions = 300) {
   return { ok: usedToday < maxSessions, used: usedToday, budget: maxSessions };
 }
 
+function sleepSync(ms) {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch (_) {}
+}
+
 export function reserveDailyBudget(maxSessions = 300, taskKey = "") {
   const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state");
   ensureDir(stateDir);
 
   const lockFile = path.join(stateDir, "budget.lock");
   let fd;
+  const maxLockAttempts = 10;
 
-  try {
-    fd = fs.openSync(lockFile, "wx");
-  } catch {
-    // If lock fails, wait 50ms and retry once before returning locked state
+  for (let attempt = 0; attempt < maxLockAttempts; attempt++) {
     try {
-      fd = fs.openSync(lockFile, "w");
-    } catch {
-      return { ok: false, reason: "locked", used: null, budget: maxSessions };
+      try {
+        const stat = fs.statSync(lockFile);
+        if (Date.now() - stat.mtimeMs > 30000) {
+          fs.rmSync(lockFile, { force: true });
+        }
+      } catch (_) {}
+
+      fd = fs.openSync(lockFile, "wx");
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      if (attempt < maxLockAttempts - 1) {
+        sleepSync(Math.floor(50 + Math.random() * 50));
+      }
     }
+  }
+
+  if (fd === undefined) {
+    return { ok: false, reason: "locked", used: null, budget: maxSessions };
   }
 
   try {

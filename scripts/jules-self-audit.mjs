@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveWorkspaceExecutionBoundary } from "./command-resolver.mjs";
-import { log, logToHistory, redactSecrets } from "./utils.mjs";
+import { log, logToHistory, redactSecrets, hasHighConfidenceSecret, hasLowConfidenceSecret } from "./utils.mjs";
 
 function runGitCommand(args, ignoreError = false) {
   try {
@@ -261,24 +261,37 @@ export function runSelfAudit() {
   }
   log.success("Restricted File Boundary Check: PASSED");
 
-  log.info("Analyzing Diff Payload Size & Content...");
-  const diffPayload = runGitCommand(["diff", `${mergeBase}...HEAD`], true);
-  const diffBytes = Buffer.byteLength(diffPayload, "utf8");
+  log.info("Analyzing Code Diff Payload Size & Content...");
+  const codeDiffPayload = changedCodeFiles.length > 0
+    ? runGitCommand(["diff", `${mergeBase}...HEAD`, "--", ...changedCodeFiles], true)
+    : runGitCommand(["diff", `${mergeBase}...HEAD`], true);
+
+  const diffBytes = Buffer.byteLength(codeDiffPayload, "utf8");
   const maxDiffBytes = 75 * 1024; // 75 KB
 
   if (diffBytes > maxDiffBytes) {
-    const err = new Error(`DIFF PAYLOAD TOO LARGE: ${diffBytes} bytes exceeds ${maxDiffBytes} bytes. Split the task.`);
+    const err = new Error(`DIFF PAYLOAD TOO LARGE: ${diffBytes} bytes exceeds ${maxDiffBytes} bytes limit for code files. Split the task.`);
     err.code = 5;
     throw err;
   }
   
-  const redactedDiff = redactSecrets(diffPayload);
-  if (redactedDiff !== diffPayload) {
-    const err = new Error("SECRET LEAK PREVENTED: Secret-like content detected in diff. Aborting.");
+  const fullDiffPayload = runGitCommand(["diff", `${mergeBase}...HEAD`], true);
+  const addedLines = fullDiffPayload
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .map((line) => line.slice(1))
+    .join("\n");
+
+  if (hasHighConfidenceSecret(addedLines)) {
+    const err = new Error("SECRET LEAK PREVENTED: High-confidence secret token or private key detected in added diff lines. Aborting.");
     err.code = 6;
     throw err;
   }
-  log.success(`Diff Inspection Check: PASSED (${diffBytes} bytes, No Secrets Detected)`);
+
+  if (hasLowConfidenceSecret(addedLines)) {
+    log.warn("SECURITY WARNING: Low-confidence secret or test key pattern detected in added diff lines.");
+  }
+  log.success(`Diff Inspection Check: PASSED (${diffBytes} bytes code diff, No Active High-Confidence Secrets)`);
 
   log.info("Resolving Dynamic Verification Suite from Trusted Base Branch...");
   
@@ -414,6 +427,13 @@ export function runSelfAudit() {
     err.code = 4;
     throw err;
   }
+
+  try {
+    const oodaStateFile = path.resolve(process.cwd(), ".agent/state/ooda.json");
+    if (fs.existsSync(oodaStateFile)) {
+      fs.rmSync(oodaStateFile, { force: true });
+    }
+  } catch (_) {}
 
   log.success("🎉 JULES PR SELF-AUDIT PASSED SUCCESSFULLY!");
 }

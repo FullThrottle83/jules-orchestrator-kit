@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-07-31
+### Fixed & Hardened
+- **Atomic Budget Lock Fix**: Fixed `reserveDailyBudget` lock fallback. Implemented exclusive `wx` lock retries with random jitter sleep (`50-100ms`), eliminating lock override bug.
+- **Budget Counting Fix**: `checkDailyBudget` now counts exclusively `budget_reserved` events, preventing double-counting with `session_dispatched`.
+- **Added-Line Secret Scanner**: Secret scanner now evaluates enclaves of added diff lines (`+` prefix, ignoring `+++` headers) and separates High-Confidence secrets (Exit Code 6) from Low-Confidence/Test Keys (warnings).
+- **Code Diff Payload Governor**: Calculated 75 KB payload governor size strictly on code files (`changedCodeFiles`), preventing lockfiles from triggering false positive Exit Code 5 errors.
+- **Documentation**: Documented `JULES_DAILY_BUDGET` and `JULES_ALLOW_COMMAND_FILE_CHANGES` in `README.md` and `.env.example`. Added `allow_paths` deny-by-default note.
+
 ## [0.6.0] - 2026-07-31
 ### Security & Resilience Hardening
 - **Command File Guardrail**: Added `COMMAND_DEFINING_FILES` check to `jules-self-audit.mjs`. PRs modifying `package.json`, `Cargo.toml`, `.agent/jules.yml` fail closed with Exit Code 3 unless `JULES_ALLOW_COMMAND_FILE_CHANGES=true` is set.

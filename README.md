@@ -162,6 +162,8 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 | `JULES_REPO` | Target GitHub Repository (Format: `owner/repo`) |
 | `JULES_REPOLESS` | Set to `true` or `1` to run in repoless/serverless mode |
 | `JULES_DRY_RUN` | Set to `true` or `1` to simulate dispatching without making API calls |
+| `JULES_DAILY_BUDGET` | Daily max session budget for autonomous dispatches (Default: `300`) |
+| `JULES_ALLOW_COMMAND_FILE_CHANGES` | Set to `true` to allow PR changes to command-defining files like `package.json` (Default: `false`) |
 | `BASE_BRANCH` | Base branch for PR Audits & Merge-Base calculations (Default: `main`) |
 | `GITHUB_HEAD_REF` | PR Head Branch (Used dynamically by CI during OODA repair) |
 | `JULES_PROJECT_ROOT` | Root directory of the project (Auto-assigned during swarm executions) |
@@ -175,6 +177,10 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 | `ALLOW_AUTO_REPAIR` | Set to `true` to allow OODA Auto-Repair even when running in CI |
 | `GITHUB_STEP_SUMMARY` | GitHub Actions Step Summary File Path |
 | `NO_COLOR` | Set to `true` to disable ANSI color output |
+
+> [!NOTE]
+> **Scope Enforcement via `allow_paths`**
+> In `.agent/jules.yml`, defining `allow_paths` acts as a strict allowlist (deny-by-default). When non-empty, any file modified outside `allow_paths` will trigger a security violation (Exit Code 3). `forbidden_paths` always take absolute precedence and cannot be overridden.
 
 ### Exit Codes
 The Gatekeeper (`jules-self-audit.mjs` and related scripts) uses standard exit codes to signal status to CI systems.

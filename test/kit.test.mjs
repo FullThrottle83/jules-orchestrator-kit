@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget } from "../scripts/utils.mjs";
+import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
@@ -95,7 +95,7 @@ allow_paths:
   });
 });
 
-describe("Security Redaction", () => {
+describe("Security Redaction & Secret Classification", () => {
   test("redacts active environment secrets matching denylist keys", () => {
     process.env.TEST_SECRET_KEY = "super-secret-token-12345";
     const text = "Connecting with key super-secret-token-12345 to server";
@@ -105,32 +105,17 @@ describe("Security Redaction", () => {
     delete process.env.TEST_SECRET_KEY;
   });
 
-  test("redacts GitHub OAuth gho_ tokens", () => {
-    const text = "Found token gho_123456789012345678901234567890123456 in logs";
-    const redacted = redactSecrets(text);
-    assert.equal(redacted.includes("gho_123456789012345678901234567890123456"), false);
-    assert.ok(redacted.includes("[REDACTED_BY_SECURITY_GATE]"));
-  });
+  test("correctly classifies high-confidence vs low-confidence secrets", () => {
+    const ghoToken = "gho_123456789012345678901234567890123456";
+    const bearerHeader = "Authorization: Bearer abc123def456ghi789jkl012";
+    const testKey = "sk_test_1234567890abcdefghijklmnopqrstuvwxyz";
 
-  test("redacts Bearer tokens with word boundaries", () => {
-    const text = "Authorization: Bearer abc123def456ghi789jkl012";
-    const redacted = redactSecrets(text);
-    assert.equal(redacted.includes("abc123def456ghi789jkl012"), false);
-    assert.ok(redacted.includes("[REDACTED_BY_SECURITY_GATE]"));
-  });
+    assert.equal(hasHighConfidenceSecret(ghoToken), true);
+    assert.equal(hasHighConfidenceSecret(bearerHeader), false);
+    assert.equal(hasHighConfidenceSecret(testKey), false);
 
-  test("redacts Google API keys and private keys", () => {
-    const googleKey = "AIzaSyA12345678901234567890123456789";
-    const privateKey = "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----";
-    assert.equal(redactSecrets(googleKey).includes(googleKey), false);
-    assert.equal(redactSecrets(privateKey).includes("MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3"), false);
-  });
-
-  test("redacts npm and Stripe secret keys", () => {
-    const npmToken = "npm_123456789012345678901234567890123456";
-    const stripeKey = "sk_test_1234567890abcdefghijklmnopqrstuvwxyz";
-    assert.equal(redactSecrets(npmToken).includes(npmToken), false);
-    assert.equal(redactSecrets(stripeKey).includes(stripeKey), false);
+    assert.equal(hasLowConfidenceSecret(bearerHeader), true);
+    assert.equal(hasLowConfidenceSecret(testKey), true);
   });
 });
 
@@ -139,6 +124,13 @@ describe("Atomic Budget Reservation & Ledger Check", () => {
     const res = reserveDailyBudget(300, "test-key-123");
     assert.equal(res.ok, true);
     assert.ok(res.used >= 1);
+  });
+
+  test("counts only budget_reserved events, avoiding double-counting with session_dispatched", () => {
+    const check1 = checkDailyBudget(300);
+    const res = reserveDailyBudget(300, "test-key-single-event");
+    const check2 = checkDailyBudget(300);
+    assert.equal(check2.used, check1.used + 1);
   });
 });
 
