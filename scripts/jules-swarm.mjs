@@ -194,8 +194,8 @@ async function runSwarm() {
             env: {
               ...process.env,
               JULES_PROJECT_ROOT: process.env.JULES_PROJECT_ROOT,
-              JULES_SLOT_INDEX: String(bIdx + 1),
-              JULES_SLOT_TOTAL: String(batch.length)
+              JULES_SLOT_INDEX: String(taskNum),
+              JULES_SLOT_TOTAL: String(tasks.length)
             },
           });
           if (stdout) log.dim(stdout.trim());

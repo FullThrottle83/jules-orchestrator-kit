@@ -44,6 +44,23 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
     }
   }
 
+function detectPackageManager(root, pkg = {}) {
+  if (fs.existsSync(path.join(root, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs.existsSync(path.join(root, "yarn.lock"))) return "yarn";
+  if (fs.existsSync(path.join(root, "bun.lockb"))) return "bun";
+  if (fs.existsSync(path.join(root, "package-lock.json"))) return "npm";
+
+  const pm = pkg.packageManager;
+  if (typeof pm === "string") {
+    if (pm.startsWith("pnpm")) return "pnpm";
+    if (pm.startsWith("yarn")) return "yarn";
+    if (pm.startsWith("bun")) return "bun";
+    if (pm.startsWith("npm")) return "npm";
+  }
+
+  return "npm";
+}
+
   // 2. Dynamic Detector Strategy List
   const detectors = [
     {
@@ -59,20 +76,21 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
       resolve: (root) => {
         try {
           const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8"));
+          const pm = detectPackageManager(root, pkg);
           const scripts = pkg.scripts || {};
-          let verifyScript = scripts["check:all"] ? "npm run check:all" : "";
+          let verifyScript = scripts["check:all"] ? `${pm} run check:all` : "";
           if (!verifyScript) {
             const parts = [];
-            if (scripts.lint) parts.push("npm run lint");
-            else if (scripts.check) parts.push("npm run check");
-            if (scripts.test) parts.push("npm test");
+            if (scripts.lint) parts.push(`${pm} run lint`);
+            else if (scripts.check) parts.push(`${pm} run check`);
+            if (scripts.test) parts.push(`${pm} test`);
             verifyScript = parts.join(" && ");
           }
-          const buildScript = scripts.build ? "npm run build" : "";
+          const buildScript = scripts.build ? `${pm} run build` : "";
           return {
-            testCmd: verifyScript || "npm test",
+            testCmd: verifyScript || `${pm} test`,
             buildCmd: buildScript,
-            source: "package.json",
+            source: `package.json (${pm})`,
           };
         } catch (err) {
           console.warn("⚠️ Failed to parse package.json:", err.message);

@@ -165,10 +165,15 @@ export function redactSecrets(text) {
   return sanitized;
 }
 
-export function appendLedger(ledgerName, payload) {
-  const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state");
+export function getDailyLedgerPath(ledgerName = "sessions") {
+  const dateStr = new Date().toISOString().split("T")[0];
+  const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state", ledgerName);
   ensureDir(stateDir);
-  const ledgerPath = path.join(stateDir, `${ledgerName}.jsonl`);
+  return path.join(stateDir, `${dateStr}.jsonl`);
+}
+
+export function appendLedger(ledgerName, payload) {
+  const ledgerPath = getDailyLedgerPath(ledgerName);
   const entry = JSON.stringify({
     timestamp: new Date().toISOString(),
     ...payload
@@ -179,33 +184,30 @@ export function appendLedger(ledgerName, payload) {
 
 export function checkDailyBudget(maxSessions = 300) {
   const dateStr = new Date().toISOString().split("T")[0];
-  const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state");
-  const sessionsLedger = path.join(stateDir, "sessions.jsonl");
+  const ledgerPath = getDailyLedgerPath("sessions");
   
-  if (!fs.existsSync(sessionsLedger)) {
+  if (!fs.existsSync(ledgerPath)) {
     return { ok: true, used: 0, budget: maxSessions };
   }
 
-  const content = fs.readFileSync(sessionsLedger, "utf-8");
+  const content = fs.readFileSync(ledgerPath, "utf-8");
   const lines = content.split("\n").filter(Boolean);
   
   let usedToday = 0;
   for (const line of lines) {
     try {
       const entry = JSON.parse(line);
-      if (
-        entry.timestamp &&
-        entry.timestamp.startsWith(dateStr) &&
-        (entry.event === "budget_reserved" || !entry.event)
-      ) {
+      if (entry.event === "budget_reserved" || !entry.event) {
         usedToday++;
       }
-    } catch (e) {
-      // Ignore
-    }
+    } catch (_) {}
   }
 
-  return { ok: usedToday < maxSessions, used: usedToday, budget: maxSessions };
+  return {
+    ok: usedToday < maxSessions,
+    used: usedToday,
+    budget: maxSessions
+  };
 }
 
 function sleepSync(ms) {

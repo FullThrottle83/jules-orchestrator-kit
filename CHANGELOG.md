@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-31
+### Added & Hardened (Fleet Intelligence & Nightly Architecture)
+- **Daily Ledger Rotation**: Session ledgers rotate into daily date-stamped files (`.agent/state/sessions/YYYY-MM-DD.jsonl`), preventing ledger bloat and speeding up daily budget calculations.
+- **Package Manager Detection**: `resolveProjectCommands` now automatically detects `pnpm` (`pnpm-lock.yaml`), `yarn` (`yarn.lock`), `bun` (`bun.lockb`), and `packageManager` fields before falling back to `npm`.
+- **JSON Status Reporting**: Added `--json` output flag to `scripts/jules-status.mjs` for programmatic status and budget metric consumption.
+- **Global Swarm Partitioning**: Updated `scripts/jules-swarm.mjs` to pass global task indices across the entire swarm queue rather than per-batch indices.
+
 ## [0.7.0] - 2026-07-31
 ### Added & Hardened (Autonomous Fleet Reliability Core)
 - **Zero-Trust Base-Branch Rule Extraction**: `getBaseRules()` now fetches `AGENTS.md` and `JULES_RULES_TEMPLATE.md` directly from `origin/main` via `git show`, preventing untrusted PR branches from injecting malicious agent instructions.
