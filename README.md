@@ -182,10 +182,13 @@ The Gatekeeper (`jules-self-audit.mjs` and related scripts) uses standard exit c
 | Code | Meaning | Action Taken |
 | ---- | ------- | ------------ |
 | `0`  | **Success** | All tests and security checks passed. |
-| `1`  | **General Error** | Missing dependencies, syntax error, or general failure. Execution aborted. |
-| `2`  | **Setup / Context Error** | Git not found, invalid `BASE_BRANCH`, or shallow history preventing merge-base calculation. |
-| `3`  | **Security Violation** | Modified file breached `forbidden_paths` or `allow_paths` boundary. Fails closed immediately. |
+| `1`  | **General Error** | Missing dependencies, syntax error, or general failure. |
+| `2`  | **Setup / Context Error** | Git not found, invalid `BASE_BRANCH`, or trusted base branch extraction failure. |
+| `3`  | **Security Violation** | Modified file breached `forbidden_paths` or changed command-defining files (`package.json`, `Cargo.toml`). Fails closed immediately. |
 | `4`  | **Verification Exhausted** | Tests failed and the OODA Auto-Repair loop either exhausted its max retries or is disabled. |
+| `5`  | **Diff Payload Too Large** | Diff payload size exceeded 75 KB payload governor limit. Split task. |
+| `6`  | **Secret Leak Prevented** | Secret-like pattern detected in diff. Aborted immediately. |
+| `7`  | **Budget Exhausted** | Daily session budget limit reached or budget state locked. |
 
 ---
 

@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveProjectCommands } from "./command-resolver.mjs";
-import { log, logToHistory, redactSecrets, appendLedger, checkDailyBudget } from "./utils.mjs";
+import { log, logToHistory, redactSecrets, appendLedger, checkDailyBudget, reserveDailyBudget } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
@@ -217,15 +217,15 @@ async function executeDispatch() {
       return;
     }
 
-    if (apiKey && (repo || isRepoless)) {
-      const budgetLimit = process.env.JULES_DAILY_BUDGET ? parseInt(process.env.JULES_DAILY_BUDGET, 10) : 300;
-      const budgetCheck = checkDailyBudget(budgetLimit);
-      
-      if (!budgetCheck.ok) {
-        log.warn(`Daily budget exhausted (${budgetCheck.used}/${budgetCheck.budget} sessions). Aborting dispatch.`);
-        process.exit(7); // Budget exhausted exit code
-      }
+    const budgetLimit = process.env.JULES_DAILY_BUDGET ? parseInt(process.env.JULES_DAILY_BUDGET, 10) : 300;
+    const budgetCheck = reserveDailyBudget(budgetLimit, taskKey);
+    
+    if (!budgetCheck.ok) {
+      log.warn(`Daily budget exhausted or locked (${budgetCheck.used}/${budgetCheck.budget} sessions). Aborting dispatch.`);
+      process.exit(7); // Budget exhausted exit code
+    }
 
+    if (apiKey && (repo || isRepoless)) {
       const payload = {
         title: taskTitle,
         prompt: fullPrompt,
@@ -325,7 +325,7 @@ async function executeDispatch() {
         sessionId = sId || data.name || data.id || sessionId;
         log.success(`REST API Dispatch response: Session ${sessionId} created successfully.`);
         fs.appendFileSync(historyFile, `\n## Session\n- ID: \`${sessionId}\`\n`);
-        appendLedger("sessions", { task_key: taskKey, session_id: sessionId, status: "dispatched", task_title: taskTitle });
+        appendLedger("sessions", { event: "session_dispatched", task_key: taskKey, session_id: sessionId, status: "dispatched", task_title: taskTitle, mode: "api" });
       } catch (jsonErr) {
         log.warn("⚠️ Failed to parse REST API JSON response:", jsonErr.message);
       }
@@ -357,7 +357,7 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
     log.step("💻", `Executing: jules ${args.join(" ")} (prompt passed via stdin)...`);
     execFileSync("jules", args, { input: promptToSend, stdio: ["pipe", "inherit", "inherit"] });
     log.success(`Successfully dispatched task "${title}" to Jules CLI.`);
-    appendLedger("sessions", { task_key: taskKey, session_id: "CLI", status: "dispatched", task_title: title });
+    appendLedger("sessions", { event: "session_dispatched", task_key: taskKey, session_id: "CLI", status: "dispatched", task_title: title, mode: "cli" });
   } catch (error) {
     const err = new Error(`Failed to dispatch task to Jules CLI: ${error.message}`);
     err.code = 1;

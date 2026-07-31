@@ -5,8 +5,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
-import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets } from "../scripts/utils.mjs";
+import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES } from "../scripts/jules-self-audit.mjs";
+import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
@@ -48,7 +48,7 @@ describe("Glob Matcher (matchGlob)", () => {
   });
 });
 
-describe("Forbidden & Allowed Patterns Parser", () => {
+describe("Forbidden & Allowed Patterns Parser & Command File Guardrails", () => {
   test("always includes default immutable security paths when config is empty or missing", () => {
     const patterns = loadForbiddenPatterns("");
     assert.ok(patterns.includes("scripts/jules-*"));
@@ -87,6 +87,12 @@ allow_paths:
     assert.ok(allowed.includes("scripts/jules-*"));
     assert.ok(allowed.includes(".github/**"));
   });
+
+  test("exports COMMAND_DEFINING_FILES guardrail array containing key package manifests", () => {
+    assert.ok(COMMAND_DEFINING_FILES.includes("package.json"));
+    assert.ok(COMMAND_DEFINING_FILES.includes("Cargo.toml"));
+    assert.ok(COMMAND_DEFINING_FILES.includes(".agent/jules.yml"));
+  });
 });
 
 describe("Security Redaction", () => {
@@ -97,6 +103,42 @@ describe("Security Redaction", () => {
     assert.equal(redacted.includes("super-secret-token-12345"), false);
     assert.ok(redacted.includes("[REDACTED_ENV_SECRET]"));
     delete process.env.TEST_SECRET_KEY;
+  });
+
+  test("redacts GitHub OAuth gho_ tokens", () => {
+    const text = "Found token gho_123456789012345678901234567890123456 in logs";
+    const redacted = redactSecrets(text);
+    assert.equal(redacted.includes("gho_123456789012345678901234567890123456"), false);
+    assert.ok(redacted.includes("[REDACTED_BY_SECURITY_GATE]"));
+  });
+
+  test("redacts Bearer tokens with word boundaries", () => {
+    const text = "Authorization: Bearer abc123def456ghi789jkl012";
+    const redacted = redactSecrets(text);
+    assert.equal(redacted.includes("abc123def456ghi789jkl012"), false);
+    assert.ok(redacted.includes("[REDACTED_BY_SECURITY_GATE]"));
+  });
+
+  test("redacts Google API keys and private keys", () => {
+    const googleKey = "AIzaSyA12345678901234567890123456789";
+    const privateKey = "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----";
+    assert.equal(redactSecrets(googleKey).includes(googleKey), false);
+    assert.equal(redactSecrets(privateKey).includes("MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3"), false);
+  });
+
+  test("redacts npm and Stripe secret keys", () => {
+    const npmToken = "npm_123456789012345678901234567890123456";
+    const stripeKey = "sk_test_1234567890abcdefghijklmnopqrstuvwxyz";
+    assert.equal(redactSecrets(npmToken).includes(npmToken), false);
+    assert.equal(redactSecrets(stripeKey).includes(stripeKey), false);
+  });
+});
+
+describe("Atomic Budget Reservation & Ledger Check", () => {
+  test("reserves daily budget and respects maximum session limits", () => {
+    const res = reserveDailyBudget(300, "test-key-123");
+    assert.equal(res.ok, true);
+    assert.ok(res.used >= 1);
   });
 });
 

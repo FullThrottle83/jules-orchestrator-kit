@@ -123,16 +123,18 @@ export function redactSecrets(text) {
   }
 
   const patterns = [
-    /gh[pusr]_[a-zA-Z0-9]{36}/g,
-    /github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}/g,
-    /AKIA[0-9A-Z]{16}/g,
-    /AIzaSy[a-zA-Z0-9_\-]{33}/g,
-    /ya29\.[a-zA-Z0-9_\-]{20,}/g,
-    /Bearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
-    /sk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}/g,
-    /xox[baprs]-[a-zA-Z0-9\-]{10,}/g,
-    /eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}/g,
-    /-----BEGIN (?:RSA|OPENSSH|EC|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|OPENSSH|EC|PRIVATE) KEY-----/g,
+    /\bgh[pousr]_[a-zA-Z0-9]{36,}\b/g,
+    /\bgithub_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}\b/g,
+    /\bAKIA[0-9A-Z]{16}\b/g,
+    /\bAIza[0-9A-Za-z_-]{30,40}\b/g,
+    /\bya29\.[a-zA-Z0-9_\-]{20,}\b/g,
+    /\bBearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
+    /\bsk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}\b/g,
+    /\bxox[baprs]-[a-zA-Z0-9\-]{10,}\b/g,
+    /\beyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\b/g,
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    /\bnpm_[a-zA-Z0-9]{36}\b/g,
+    /\b(?:sk|rk|pk)_(?:live|test)_[0-9a-zA-Z]{24,}\b/g,
   ];
   for (const pat of patterns) {
     sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
@@ -168,7 +170,11 @@ export function checkDailyBudget(maxSessions = 300) {
   for (const line of lines) {
     try {
       const entry = JSON.parse(line);
-      if (entry.timestamp && entry.timestamp.startsWith(dateStr)) {
+      if (
+        entry.timestamp &&
+        entry.timestamp.startsWith(dateStr) &&
+        (entry.event === "session_dispatched" || entry.event === "budget_reserved" || !entry.event)
+      ) {
         usedToday++;
       }
     } catch (e) {
@@ -177,4 +183,51 @@ export function checkDailyBudget(maxSessions = 300) {
   }
 
   return { ok: usedToday < maxSessions, used: usedToday, budget: maxSessions };
+}
+
+export function reserveDailyBudget(maxSessions = 300, taskKey = "") {
+  const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state");
+  ensureDir(stateDir);
+
+  const lockFile = path.join(stateDir, "budget.lock");
+  let fd;
+
+  try {
+    fd = fs.openSync(lockFile, "wx");
+  } catch {
+    // If lock fails, wait 50ms and retry once before returning locked state
+    try {
+      fd = fs.openSync(lockFile, "w");
+    } catch {
+      return { ok: false, reason: "locked", used: null, budget: maxSessions };
+    }
+  }
+
+  try {
+    const check = checkDailyBudget(maxSessions);
+    if (!check.ok) {
+      return check;
+    }
+
+    appendLedger("sessions", {
+      event: "budget_reserved",
+      task_key: taskKey,
+      status: "reserved"
+    });
+
+    return {
+      ok: true,
+      used: check.used + 1,
+      budget: maxSessions
+    };
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+      try {
+        fs.rmSync(lockFile, { force: true });
+      } catch {}
+    }
+  }
 }

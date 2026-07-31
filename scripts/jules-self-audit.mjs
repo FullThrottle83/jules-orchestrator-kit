@@ -50,6 +50,32 @@ export function matchGlob(filepath, globPattern) {
 }
 
 
+export const COMMAND_DEFINING_FILES = [
+  "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "yarn.lock",
+  "bun.lockb",
+  "turbo.json",
+  "nx.json",
+  "lerna.json",
+  "rush.json",
+  "Cargo.toml",
+  "Cargo.lock",
+  "go.mod",
+  "go.sum",
+  "pyproject.toml",
+  "setup.py",
+  "requirements.txt",
+  "Makefile",
+  "build.gradle",
+  "build.gradle.kts",
+  "pom.xml",
+  ".agent/jules.yml",
+  "jules.config.json"
+];
+
 /**
  * Lightweight Zero-Dependency YAML Pattern Extractor
  * Extracts forbidden_paths and allow_paths arrays from jules.yml.
@@ -194,6 +220,18 @@ export function runSelfAudit() {
     .map((f) => f.trim().replace(/^["']|["']$/g, ""))
     .filter(Boolean);
 
+  const commandFileChanges = rawDiffFiles.filter((file) =>
+    COMMAND_DEFINING_FILES.some((cmdFile) => file === cmdFile || file.endsWith(`/${cmdFile}`))
+  );
+
+  if (commandFileChanges.length > 0 && process.env.JULES_ALLOW_COMMAND_FILE_CHANGES !== "true" && process.env.JULES_ALLOW_COMMAND_FILE_CHANGES !== "1") {
+    const err = new Error(
+      "COMMAND FILE CHANGE DETECTED: " + commandFileChanges.join(", ") + ". Refusing to execute verification scripts from untrusted branch."
+    );
+    err.code = 3;
+    throw err;
+  }
+
   const isBloatFile = (file) => /(\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|\.png|\.jpg|\.jpeg|\.pdf|\.min\.js|\.map)$/i.test(file);
   const changedCodeFiles = rawDiffFiles.filter((f) => !isBloatFile(f));
 
@@ -208,9 +246,12 @@ export function runSelfAudit() {
 
   const violations = rawDiffFiles.filter((file) => {
     const isForbidden = forbiddenPatterns.some((pattern) => matchGlob(file, pattern));
-    if (!isForbidden) return false;
-    const isAllowed = allowedPatterns.some((pattern) => matchGlob(file, pattern));
-    return !isAllowed;
+    if (isForbidden) return true; // Immutable forbidden path — CANNOT be overridden by allow_paths
+    if (allowedPatterns.length > 0) {
+      const isAllowed = allowedPatterns.some((pattern) => matchGlob(file, pattern));
+      return !isAllowed;
+    }
+    return false;
   });
 
   if (violations.length > 0) {
@@ -245,22 +286,31 @@ export function runSelfAudit() {
   const trustedDir = path.join(os.tmpdir(), `jules-trusted-tree-${runId}`);
   const tempArchive = path.join(os.tmpdir(), `jules-trusted-archive-${runId}.tar`);
   
-  let resolutionRoot = process.cwd();
+  let resolutionRoot;
   try {
     fs.mkdirSync(trustedDir, { recursive: true });
-    execSync(`git archive ${mainRef} -o "${tempArchive}"`);
-    execSync(`tar -xf "${tempArchive}" -C "${trustedDir}"`);
+    execFileSync("git", ["archive", mainRef, "-o", tempArchive]);
+    execFileSync("tar", ["-xf", tempArchive, "-C", trustedDir]);
     resolutionRoot = trustedDir;
   } catch (err) {
-    log.warn(`Failed to extract trusted base branch. Falling back to working tree for command resolution.`);
+    const error = new Error("FATAL: Failed to extract trusted base branch for command resolution. Refusing to fall back to working tree.\n" + err.message);
+    error.code = 2;
+    throw error;
   }
 
-  const resolvedCmds = resolveWorkspaceExecutionBoundary(changedCodeFiles, resolutionRoot);
-  
+  let resolvedCmds;
   try {
-    fs.rmSync(trustedDir, { recursive: true, force: true });
-    if (fs.existsSync(tempArchive)) fs.rmSync(tempArchive, { force: true });
-  } catch (e) {}
+    resolvedCmds = resolveWorkspaceExecutionBoundary(changedCodeFiles, resolutionRoot);
+  } finally {
+    try {
+      if (trustedDir && fs.existsSync(trustedDir)) {
+        fs.rmSync(trustedDir, { recursive: true, force: true });
+      }
+      if (tempArchive && fs.existsSync(tempArchive)) {
+        fs.rmSync(tempArchive, { force: true });
+      }
+    } catch (e) {}
+  }
 
   log.info(`Discovered Execution Scope: ${resolvedCmds.source}`);
 
@@ -319,18 +369,29 @@ export function runSelfAudit() {
     }
 
     let oodaRetries = 0;
+    const oodaStateFile = path.resolve(process.cwd(), ".agent/state/ooda.json");
     try {
-      const history = execSync("git log -n 5 --format=%B", { encoding: "utf-8" });
-      const matches = history.match(/OODA Auto-Repair/gi);
-      if (matches) {
-        oodaRetries = matches.length;
+      if (fs.existsSync(oodaStateFile)) {
+        const oodaData = JSON.parse(fs.readFileSync(oodaStateFile, "utf-8"));
+        oodaRetries = oodaData.attempts || 0;
+      } else {
+        const history = execSync("git log -n 5 --format=%B", { encoding: "utf-8" });
+        const matches = history.match(/OODA Auto-Repair/gi);
+        if (matches) {
+          oodaRetries = matches.length;
+        }
       }
     } catch (e) {
-      // Ignorera git-fel här
+      // Ignorera fel här
     }
 
     if (oodaRetries < 3) {
       log.info(`🛠️ Initiating OODA Auto-Repair (Attempt ${oodaRetries + 1}/3)...`);
+      try {
+        const stateDir = path.resolve(process.cwd(), ".agent/state");
+        if (!fs.existsSync(stateDir)) fs.mkdirSync(stateDir, { recursive: true });
+        fs.writeFileSync(oodaStateFile, JSON.stringify({ attempts: oodaRetries + 1, lastAttempt: new Date().toISOString() }), "utf-8");
+      } catch (e) {}
       const prompt = `OODA Auto-Repair Attempt ${oodaRetries + 1}\n\nThe verification suite failed with the following errors after the previous patch:\n\n\`\`\`\n${failureLog.slice(-1500)}\n\`\`\`\n\nPlease fix the errors so the verification passes.`;
       
       const dispatchScript = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
