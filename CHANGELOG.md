@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Zero-Trust Base Branch Extraction**: Switched to safe `execFileSync` for `git archive` and `tar` without working-tree fallback on extraction error.
 - **Enhanced Secret Redaction**: Added support for `gho_` GitHub OAuth tokens, word boundaries for Bearer tokens, generalized Google API key patterns, npm tokens, and Stripe keys.
 - **Atomic Budget Reservation**: Implemented `reserveDailyBudget` with `.agent/state/budget.lock` file locking and event filtering for concurrent dispatch protection.
-- **Sidecar OODA State**: Spårar OODA-retries via `.agent/state/ooda.json` istället för textmatchning i `git log`.
+- **Sidecar OODA State**: Tracks OODA retries via `.agent/state/ooda.json` instead of fragile text matching in `git log`.
 
 ## [0.5.2] - 2026-07-31
 ### Added

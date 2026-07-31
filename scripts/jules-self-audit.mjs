@@ -382,7 +382,7 @@ export function runSelfAudit() {
         }
       }
     } catch (e) {
-      // Ignorera fel här
+      // Ignore errors here
     }
 
     if (oodaRetries < 3) {
@@ -486,7 +486,7 @@ export function runPreflightSandbox() {
         fs.rmSync(tempArchive, { force: true });
       }
     } catch (e) {
-      // Ignorera fel vid cleanup
+      // Ignore cleanup errors
     }
   }
 }
