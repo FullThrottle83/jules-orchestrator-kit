@@ -137,7 +137,7 @@ async function runQueue() {
         logQueueState(file, "RUNNING");
         
         try {
-          await execFileAsync("node", [dispatchScript, title, processingPath]);
+          await execFileAsync("node", [dispatchScript, title, processingPath], { timeout: 10 * 60 * 1000 });
           
           const destPath = path.join(completedDir, file);
           await safeMoveAsync(processingPath, destPath);
