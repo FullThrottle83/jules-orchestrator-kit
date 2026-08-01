@@ -5,8 +5,6 @@
     "package-lock.json",
     "yarn.lock",
     "tsconfig.json",
-    "astro.config.mjs",
-    "wrangler.jsonc",
     ".github/**",
     ".agent/jules.yml",
     ".agent/protected-paths.json"

@@ -99,7 +99,7 @@ Follow all rules strictly.
 TASK: <description>
 
 HARD CONSTRAINTS:
-- Do NOT modify package.json, pnpm-lock.yaml, tsconfig.json, astro.config.mjs, wrangler.jsonc, or .github/ files. Enforced in CI by Agent Scope Guard.
+- Do NOT modify package.json, pnpm-lock.yaml, tsconfig.json, or .github/ files. Enforced in CI by Agent Scope Guard.
 - Diff Payload Governor: Keep total diff payload under 75 KB (`git diff | wc -c`) to prevent API truncation (~80 KB limit).
 - Verify before finishing: Run full type-check, lint, and unit test suites.
 - BEFORE opening the PR: Run `git fetch origin main && git rebase origin/main`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.

@@ -6,10 +6,12 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir } from "../scripts/utils.mjs";
+import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
+import { fetchSessionPatch } from "../scripts/jules-patch.mjs";
+import { buildSyncManifest, pushReservationManifest } from "../scripts/jules-swarm.mjs";
 
 describe("Dynamic Command Resolver", () => {
   test("resolves default verification commands from manifest or config", () => {
@@ -177,13 +179,6 @@ describe("Self-Healing OODA Feedback Parser", () => {
 describe("Dynamic Guardrails Triggers Regex", () => {
   const dgcPath = path.resolve(process.cwd(), ".agent/rules/dynamic-guardrails.json");
   const dgc = JSON.parse(fs.readFileSync(dgcPath, "utf-8"));
-
-  test("Astro trigger fires on .astro files, not on standard text", () => {
-    const astroRule = dgc.rules.find((r) => r.trigger.includes("astro"));
-    const regex = new RegExp(astroRule.trigger, "i");
-    assert.equal(regex.test("edit src/components/Header.astro"), true);
-    assert.equal(regex.test("edit src/components/Header.tsx"), false);
-  });
 
   test("Database trigger uses word boundaries and ignores substring matches like feedback", () => {
     const dbRule = dgc.rules.find((r) => r.trigger.includes("db"));
@@ -498,6 +493,86 @@ describe("SDK Utilities (loadEnv & ensureDir)", () => {
     );
   });
 });
+
+describe("SDK Cache Isolation", () => {
+  test("getIsolatedCacheDir respects JULES_CACHE_DIR and defaults to ~/.cache/jules-orchestrator-kit", () => {
+    const originalEnv = process.env.JULES_CACHE_DIR;
+    try {
+      delete process.env.JULES_CACHE_DIR;
+      const defaultPath = getIsolatedCacheDir();
+      assert.ok(defaultPath.includes(".cache"));
+      assert.ok(defaultPath.endsWith("jules-orchestrator-kit"));
+
+      process.env.JULES_CACHE_DIR = "/tmp/custom-jules-cache";
+      const customPath = getIsolatedCacheDir();
+      assert.equal(customPath, path.resolve("/tmp/custom-jules-cache"));
+    } finally {
+      if (originalEnv) process.env.JULES_CACHE_DIR = originalEnv;
+      else delete process.env.JULES_CACHE_DIR;
+    }
+  });
+
+  test("ensureSdkCacheIsolation creates target directory and sets JULES_CACHE_DIR env", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-cache-"));
+    const originalEnv = process.env.JULES_CACHE_DIR;
+    try {
+      process.env.JULES_CACHE_DIR = path.join(tmpDir, "isolated");
+      const createdDir = ensureSdkCacheIsolation();
+      assert.ok(fs.existsSync(createdDir));
+      assert.equal(process.env.JULES_CACHE_DIR, createdDir);
+    } finally {
+      if (originalEnv) process.env.JULES_CACHE_DIR = originalEnv;
+      else delete process.env.JULES_CACHE_DIR;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Swarm Reservation Push & Sync Manifest", () => {
+  test("buildSyncManifest formats tasks into valid JSON manifest structure", () => {
+    const tasks = [
+      { id: "t1", title: "Task 1", scope: ["src/a/**"] },
+      { id: "t2", title: "Task 2", scope: null }
+    ];
+    const manifest = buildSyncManifest(tasks);
+    assert.equal(manifest.version, 1);
+    assert.equal(manifest.totalTasks, 2);
+    assert.equal(manifest.reservations.length, 2);
+    assert.equal(manifest.reservations[0].id, "t1");
+    assert.deepEqual(manifest.reservations[0].scope, ["src/a/**"]);
+  });
+
+  test("pushReservationManifest writes sync-manifest.json and handles dry-run mode", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-swarm-"));
+    const originalDry = process.env.JULES_DRY_RUN;
+    try {
+      process.env.JULES_DRY_RUN = "true";
+      const manifest = buildSyncManifest([{ id: "t1", title: "Dry Task" }]);
+      const res = await pushReservationManifest(manifest, tmpDir);
+
+      assert.equal(res.status, "DRY_RUN");
+      assert.ok(fs.existsSync(path.join(tmpDir, ".agent/sync-manifest.json")));
+      const saved = JSON.parse(fs.readFileSync(path.join(tmpDir, ".agent/sync-manifest.json"), "utf-8"));
+      assert.equal(saved.totalTasks, 1);
+    } finally {
+      if (originalDry !== undefined) process.env.JULES_DRY_RUN = originalDry;
+      else delete process.env.JULES_DRY_RUN;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Headless Jules Patch Extractor", () => {
+  test("fetchSessionPatch validates input arguments", async () => {
+    await assert.rejects(
+      async () => {
+        await fetchSessionPatch("");
+      },
+      (err) => err.message.includes("Session ID is required")
+    );
+  });
+});
+
 
 
 

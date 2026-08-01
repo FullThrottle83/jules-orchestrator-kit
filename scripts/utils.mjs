@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
 import { promisify } from "node:util";
 
@@ -323,4 +324,19 @@ export function reserveDailyBudget(maxSessions = 300, taskKey = "") {
       } catch {}
     }
   }
+}
+
+export function getIsolatedCacheDir() {
+  const customCache = process.env.JULES_CACHE_DIR;
+  if (customCache) {
+    return path.resolve(customCache);
+  }
+  return path.join(os.homedir(), ".cache", "jules-orchestrator-kit");
+}
+
+export function ensureSdkCacheIsolation() {
+  const cacheDir = getIsolatedCacheDir();
+  ensureDir(cacheDir);
+  process.env.JULES_CACHE_DIR = cacheDir;
+  return cacheDir;
 }

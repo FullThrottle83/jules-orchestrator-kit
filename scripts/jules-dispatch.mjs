@@ -5,21 +5,12 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveProjectCommands } from "./command-resolver.mjs";
-import { log, logToHistory, redactSecrets, appendLedger, reserveDailyBudget, getLocalDateString, loadEnv } from "./utils.mjs";
+import { log, logToHistory, redactSecrets, appendLedger, reserveDailyBudget, getLocalDateString, loadEnv, ensureSdkCacheIsolation } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
-const taskTitle = isMainModule ? process.argv[2] : "";
-const taskPromptArg = isMainModule ? process.argv[3] : "";
-
-if (isMainModule && (!taskTitle || !taskPromptArg)) {
-  log.error(
-    'Usage: node scripts/jules-dispatch.mjs <task-title> <path-to-prompt.md | "raw prompt string">'
-  );
-  process.exit(1);
-}
-
 if (isMainModule) {
+  ensureSdkCacheIsolation();
   loadEnv();
 }
 
@@ -33,7 +24,6 @@ function parseRetryAfter(res) {
   return Math.min(Math.max(waitSec, 0), 60);
 }
 
-const ASTRO_TRIGGER_RE = /\b(?:astro|components|pages|src\/.*\.astro)\b/i;
 const DB_TRIGGER_RE = /\b(?:db|database|d1|postgres|drizzle|migration|schema|sql)\b/i;
 const SECURITY_TRIGGER_RE = /\b(?:auth|security|sentinel|token|secret|password|sanitiz|rbac|permission)\b/i;
 const PERF_TRIGGER_RE = /\b(?:perf|performance|bolt|cache|memoiz|optimiz|bundle)\b/i;
@@ -42,9 +32,6 @@ const CLEANUP_TRIGGER_RE = /\b(?:refactor|cleanup|janitor|lint|deprecated|deadco
 // 0.4 Dynamic Guardrails & Directive Definitions
 export function getDynamicGuardrails(prompt = "") {
   const guardrails = [];
-  if (ASTRO_TRIGGER_RE.test(prompt)) {
-    guardrails.push("- Astro Guidance: Ensure zero client JS shipped by default. Use server islands or nano stores if state is required.");
-  }
   if (DB_TRIGGER_RE.test(prompt)) {
     guardrails.push("- Database Guidance (Alchemist): Do not modify migrations directly without inspecting current schema constraints.");
   }
@@ -101,6 +88,7 @@ let historyFile = "";
 let tmpPayloadFile = "";
 let tmpDir = "";
 let taskKey = "";
+let taskTitle = "";
 
 const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 export function getAlphaRange(index, total) {
@@ -131,7 +119,7 @@ if (isMainModule) {
     process.exit(0);
   }
 
-  let taskTitle = inputArg;
+  taskTitle = inputArg;
   let rawContent = process.argv[3] || "";
 
   if (fs.existsSync(inputArg) && fs.statSync(inputArg).isFile()) {

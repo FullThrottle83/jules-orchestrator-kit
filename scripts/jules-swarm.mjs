@@ -2,42 +2,50 @@ import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { log, sleep } from "./utils.mjs";
 
 const execFileAsync = promisify(execFile);
 
-const tasksFile = process.argv[2];
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
-if (!tasksFile) {
-  log.error("Usage: node scripts/jules-swarm.mjs <path-to-tasks.json>");
-  log.error('Format of tasks.json: [ { "id": "t1", "title": "Task 1", "prompt": "Description 1", "scope": ["src/moduleA/**"] } ]');
-  process.exit(1);
+let tasks = [];
+let MAX_CONCURRENT = 3;
+let STAGGER_MS = 1500;
+let USE_WORKTREES = false;
+
+if (isMainModule) {
+  const tasksFile = process.argv[2];
+
+  if (!tasksFile) {
+    log.error("Usage: node scripts/jules-swarm.mjs <path-to-tasks.json>");
+    log.error('Format of tasks.json: [ { "id": "t1", "title": "Task 1", "prompt": "Description 1", "scope": ["src/moduleA/**"] } ]');
+    process.exit(1);
+  }
+
+  const resolvedPath = path.resolve(process.cwd(), tasksFile);
+  if (!fs.existsSync(resolvedPath)) {
+    log.error(`Tasks file not found: ${resolvedPath}`);
+    process.exit(1);
+  }
+
+  tasks = JSON.parse(fs.readFileSync(resolvedPath, "utf-8"));
+  if (!Array.isArray(tasks)) {
+    log.error("tasks.json must contain a JSON array of task objects.");
+    process.exit(1);
+  }
+
+  const parsedConcurrent = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10);
+  MAX_CONCURRENT = Number.isFinite(parsedConcurrent) && parsedConcurrent > 0 ? parsedConcurrent : 3;
+
+  const parsedStagger = parseInt(process.env.JULES_SWARM_STAGGER_MS || "1500", 10);
+  STAGGER_MS = Number.isFinite(parsedStagger) && parsedStagger >= 0 ? parsedStagger : 1500;
+
+  USE_WORKTREES = process.env.JULES_USE_WORKTREES === "true";
+
+  process.env.JULES_PROJECT_ROOT = process.cwd();
+  log.info(`Launching Jules Swarm Orchestrator (${tasks.length} tasks, Concurrency: ${MAX_CONCURRENT}, Worktrees: ${USE_WORKTREES ? "ENABLED" : "DISABLED"})...`);
 }
-
-const resolvedPath = path.resolve(process.cwd(), tasksFile);
-if (!fs.existsSync(resolvedPath)) {
-  log.error(`Tasks file not found: ${resolvedPath}`);
-  process.exit(1);
-}
-
-const tasks = JSON.parse(fs.readFileSync(resolvedPath, "utf-8"));
-if (!Array.isArray(tasks)) {
-  log.error("tasks.json must contain a JSON array of task objects.");
-  process.exit(1);
-}
-
-const parsedConcurrent = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10);
-const MAX_CONCURRENT = Number.isFinite(parsedConcurrent) && parsedConcurrent > 0 ? parsedConcurrent : 3;
-
-const parsedStagger = parseInt(process.env.JULES_SWARM_STAGGER_MS || "1500", 10);
-const STAGGER_MS = Number.isFinite(parsedStagger) && parsedStagger >= 0 ? parsedStagger : 1500;
-
-const USE_WORKTREES = process.env.JULES_USE_WORKTREES === "true";
-
-// Ensure root project path is preserved for history logs even when running in worktrees
-process.env.JULES_PROJECT_ROOT = process.cwd();
-
-log.info(`Launching Jules Swarm Orchestrator (${tasks.length} tasks, Concurrency: ${MAX_CONCURRENT}, Worktrees: ${USE_WORKTREES ? "ENABLED" : "DISABLED"})...`);
 
 const activeWorktrees = new Set();
 
@@ -149,7 +157,66 @@ async function removeWorktree(wtDir, branchName) {
   }
 }
 
+export function buildSyncManifest(tasksList = []) {
+  const reservations = tasksList.map((t, idx) => ({
+    id: t.id || `task-${idx + 1}`,
+    title: t.title || "",
+    scope: t.scope || null,
+    reservedAt: new Date().toISOString()
+  }));
+
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    totalTasks: tasksList.length,
+    reservations
+  };
+}
+
+export async function pushReservationManifest(manifest, projectRoot = process.cwd()) {
+  const agentDir = path.resolve(projectRoot, ".agent");
+  const manifestPath = path.join(agentDir, "sync-manifest.json");
+
+  try {
+    await fs.promises.mkdir(agentDir, { recursive: true });
+    await fs.promises.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+
+    if (process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1") {
+      log.dim("[DRY RUN] Generated .agent/sync-manifest.json reservation manifest (git push skipped).");
+      return { status: "DRY_RUN", path: manifestPath };
+    }
+
+    const baseBranch = process.env.BASE_BRANCH || "main";
+
+    try {
+      execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectRoot, stdio: "ignore" });
+    } catch {
+      log.dim("Not in a git repository. Skipped git push for sync manifest.");
+      return { status: "SKIPPED_NOT_GIT", path: manifestPath };
+    }
+
+    try {
+      execFileSync("git", ["add", manifestPath], { cwd: projectRoot, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", "chore(jules): reservation-push sync manifest before swarm dispatch [skip ci]"], { cwd: projectRoot, stdio: "ignore" });
+      log.info(`Committed reservation manifest to Git. Pushing to origin/${baseBranch}...`);
+
+      execFileSync("git", ["push", "origin", `HEAD:${baseBranch}`], { cwd: projectRoot, stdio: "ignore" });
+      log.success(`Pushed reservation manifest to origin/${baseBranch}. Remote Jules VMs will see locked scopes.`);
+      return { status: "PUSHED", path: manifestPath };
+    } catch (gitErr) {
+      log.warn(`⚠️ Git push reservation manifest failed (${gitErr.message}). Continuing local dispatch...`);
+      return { status: "FAILED_GIT", error: gitErr.message, path: manifestPath };
+    }
+  } catch (err) {
+    log.warn(`⚠️ Failed to build or save sync manifest: ${err.message}`);
+    return { status: "ERROR", error: err.message };
+  }
+}
+
 async function runSwarm() {
+  const manifest = buildSyncManifest(tasks);
+  await pushReservationManifest(manifest);
+
   if (USE_WORKTREES) {
     reapOrphanedWorktrees();
   }
@@ -237,7 +304,9 @@ async function runSwarm() {
   }
 }
 
-runSwarm().catch((err) => {
-  log.error(`Unhandled swarm rejection: ${err.message}`);
-  process.exit(1);
-});
+if (isMainModule) {
+  runSwarm().catch((err) => {
+    log.error(`Unhandled swarm rejection: ${err.message}`);
+    process.exit(1);
+  });
+}

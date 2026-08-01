@@ -1,10 +1,6 @@
 {
   "rules": [
     {
-      "trigger": "\\.astro",
-      "guardrail": "## 🟢 ASTRO GUARDRAILS\n- DO NOT run `biome check --write --unsafe` on `.astro` files (destroys frontmatter).\n- DO NOT import 'sharp' into runtime bundles."
-    },
-    {
       "trigger": "\\b(db|database|drizzle|sql\\w*|postgres\\w*|sqlite\\w*|mysql\\w*)\\b",
       "guardrail": "## 🗄️ DATABASE GUARDRAILS\n- Always batch multiple database statements.\n- DO NOT write destructive migrations (`DROP TABLE`) without explicit user consent."
     },
