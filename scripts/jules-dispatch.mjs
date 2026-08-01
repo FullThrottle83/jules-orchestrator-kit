@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveProjectCommands } from "./command-resolver.mjs";
-import { log, logToHistory, redactSecrets, appendLedger, reserveDailyBudget, getLocalDateString } from "./utils.mjs";
+import { log, logToHistory, redactSecrets, appendLedger, reserveDailyBudget, getLocalDateString, loadEnv } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
@@ -19,28 +19,6 @@ if (isMainModule && (!taskTitle || !taskPromptArg)) {
   process.exit(1);
 }
 
-// 0. Environment Variables Auto-Load (.env support without extra dependencies)
-function loadEnv() {
-  const envPath = path.resolve(process.cwd(), ".env");
-  if (fs.existsSync(envPath)) {
-    const lines = fs.readFileSync(envPath, "utf-8").split("\n");
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eqIdx = trimmed.indexOf("=");
-      if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim().replace(/^export\s+/, "");
-        let val = trimmed.slice(eqIdx + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.slice(1, -1);
-        }
-        if (!process.env[key]) {
-          process.env[key] = val;
-        }
-      }
-    }
-  }
-}
 if (isMainModule) {
   loadEnv();
 }

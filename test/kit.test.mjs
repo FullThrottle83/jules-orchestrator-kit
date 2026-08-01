@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers } from "../scripts/utils.mjs";
+import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
@@ -470,6 +470,32 @@ describe("OODA State Module Scoping & Ledger Pruning", () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("SDK Utilities (loadEnv & ensureDir)", () => {
+  test("loadEnv loads environment variables from .env without crashing", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-env-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, ".env"), "TEST_JULES_KIT_VAR=hello_world\n# Comment\nexport ANOTHER_VAR=123");
+      loadEnv(tmpDir);
+      assert.equal(process.env.TEST_JULES_KIT_VAR, "hello_world");
+      assert.equal(process.env.ANOTHER_VAR, "123");
+    } finally {
+      delete process.env.TEST_JULES_KIT_VAR;
+      delete process.env.ANOTHER_VAR;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("ensureDir throws an Error instead of terminating process on creation failure", () => {
+    assert.throws(
+      () => {
+        // Passing an invalid filename path with null byte or forbidden path
+        ensureDir("\0invalid_path");
+      },
+      (err) => err instanceof Error
+    );
   });
 });
 

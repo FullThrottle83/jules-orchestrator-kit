@@ -9,30 +9,14 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { log } from "./utils.mjs";
+import { fileURLToPath } from "node:url";
+import { log, loadEnv } from "./utils.mjs";
 
-function loadEnv() {
-  const envPath = path.resolve(process.cwd(), ".env");
-  if (fs.existsSync(envPath)) {
-    const lines = fs.readFileSync(envPath, "utf-8").split("\n");
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eqIdx = trimmed.indexOf("=");
-      if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim().replace(/^export\s+/, "");
-        let val = trimmed.slice(eqIdx + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.slice(1, -1);
-        }
-        if (!process.env[key]) {
-          process.env[key] = val;
-        }
-      }
-    }
-  }
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (isMainModule) {
+  loadEnv();
 }
-loadEnv();
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run") || process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1";
@@ -197,4 +181,11 @@ export async function runCleanup() {
       log.info(`Run with \`--close-merged\` to delete the ${merged.length} merged session(s).`);
     }
   }
+}
+
+if (isMainModule) {
+  runCleanup().catch((err) => {
+    log.error(`Cleanup audit failed: ${err.message}`);
+    process.exit(1);
+  });
 }

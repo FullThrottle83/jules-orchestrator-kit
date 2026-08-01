@@ -29,6 +29,28 @@ export const log = {
 
 export const sleep = promisify(setTimeout);
 
+export function loadEnv(customCwd = process.cwd()) {
+  const envPath = path.resolve(customCwd, ".env");
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, "utf-8").split("\n");
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim().replace(/^export\s+/, "");
+        let val = trimmed.slice(eqIdx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+}
+
 export function ensureDir(dirPath) {
   try {
     if (!fs.existsSync(dirPath)) {
@@ -37,7 +59,9 @@ export function ensureDir(dirPath) {
   } catch (error) {
     log.error(`EACCES: Insufficient permissions or failed to create directory: ${dirPath}`);
     log.error(error.message);
-    process.exit(1);
+    const err = new Error(`Failed to create directory ${dirPath}: ${error.message}`);
+    err.code = "EACCES";
+    throw err;
   }
 }
 

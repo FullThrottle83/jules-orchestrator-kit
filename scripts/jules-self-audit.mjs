@@ -425,6 +425,14 @@ export function runSelfAudit() {
   let failureLog = "";
 
   const runVerification = (cmd) => {
+    if (typeof cmd !== "string" || !cmd.trim()) {
+      return false;
+    }
+    if (/[\r\n\0]/.test(cmd)) {
+      log.error(`Security violation: Invalid control characters in command: ${cmd}`);
+      failureLog = `Security violation: Invalid control characters in verification command`;
+      return false;
+    }
     try {
       execSync(cmd, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       return true;
