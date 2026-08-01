@@ -183,8 +183,15 @@ export function pruneOldLedgers(stateDir, retentionDays = 30) {
   } catch (_) {}
 }
 
+export function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function getDailyLedgerPath(ledgerName = "sessions") {
-  const dateStr = new Date().toISOString().split("T")[0];
+  const dateStr = getLocalDateString();
   const stateDir = path.resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/state", ledgerName);
   ensureDir(stateDir);
   pruneOldLedgers(stateDir, 30);

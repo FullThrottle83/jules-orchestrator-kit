@@ -9,7 +9,10 @@ import { log, hasHighConfidenceSecret, hasLowConfidenceSecret } from "./utils.mj
 
 function runGitCommand(args, ignoreError = false) {
   try {
-    return execFileSync("git", args, { encoding: "utf-8" }).trim();
+    return execFileSync("git", args, {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", ignoreError ? "ignore" : "pipe"],
+    }).trim();
   } catch (error) {
     if (ignoreError) return "";
     const err = new Error(`Git command failed: git ${args.join(" ")}\n${error.message}`);
@@ -325,18 +328,27 @@ export function runSelfAudit() {
   const forbiddenPatterns = loadForbiddenPatterns(trustedConfig);
   const allowedPatterns = loadAllowedPatterns(trustedConfig);
 
-  const violations = rawDiffFiles.filter((file) => {
-    const isForbidden = forbiddenPatterns.some((pattern) => matchGlob(file, pattern));
-    if (isForbidden) return true; // Immutable forbidden path — CANNOT be overridden by allow_paths
+  const violationsWithDetails = [];
+  rawDiffFiles.forEach((file) => {
+    const matchedForbidden = forbiddenPatterns.find((pattern) => matchGlob(file, pattern));
+    if (matchedForbidden) {
+      violationsWithDetails.push(`${file} (matched forbidden pattern '${matchedForbidden}')`);
+      return;
+    }
     if (allowedPatterns.length > 0) {
       const isAllowed = allowedPatterns.some((pattern) => matchGlob(file, pattern));
-      return !isAllowed;
+      if (!isAllowed) {
+        violationsWithDetails.push(`${file} (not permitted in allow_paths [${allowedPatterns.join(", ")}])`);
+      }
     }
-    return false;
   });
 
-  if (violations.length > 0) {
-    const err = new Error("RESTRICTED FILE VIOLATION DETECTED: " + violations.join(", "));
+  if (violationsWithDetails.length > 0) {
+    const err = new Error(
+      `RESTRICTED FILE VIOLATION DETECTED (config read from ${mainRef}:.agent/jules.yml):\n` +
+      violationsWithDetails.map((v) => `  - ${v}`).join("\n") +
+      "\nTo override restricted file checks, set JULES_ALLOW_RESTRICTED_FILES=true."
+    );
     err.code = 3;
     throw err;
   }

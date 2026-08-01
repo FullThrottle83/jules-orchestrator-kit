@@ -1,7 +1,7 @@
 # Roadmap to v1.0
 
 This roadmap is intended to visualize the path to v1.0. 
-**Zero Dependencies** is a *product feature* of this project, not a habit. Any external databases (beyond future built-in modules) and complex frameworks are avoided for the core components. 
+**Zero Runtime Dependencies** is a *product feature* of this project, not a habit. Any external databases (beyond future built-in modules) and complex frameworks are avoided for the core components. 
 
 For a comparison with related projects in the ecosystem (which inspired us), see [PRIOR_ART.md](./PRIOR_ART.md).
 

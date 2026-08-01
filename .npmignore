@@ -1,12 +1,9 @@
 .agent/history/
 .agent/worktrees/
+.agent/state/
 .agent/jules-queue/completed/
+.agent/jules-queue/failed/
 .agent/jules-queue/.processing/
 .agent/jules-queue/*.md
 !.agent/jules-queue/README.md
 *.log
-package-lock.json
-ROADMAP_V1.md
-PRIOR_ART.md
-eslint.config.mjs
-.github/

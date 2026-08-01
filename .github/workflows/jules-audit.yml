@@ -23,14 +23,22 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Cache OODA state & ledgers
+        uses: actions/cache@v4
+        with:
+          path: .agent/state/
+          key: ooda-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            ooda-state-${{ runner.os }}-
+
       - name: Install dependencies
         run: npm install
 
       - name: Run Linter
-        run: npm run lint
+        run: npm run lint --if-present
 
       - name: Run Unit Tests
-        run: npm test
+        run: npm test --if-present
 
       - name: Run Jules PR Self-Audit Gatekeeper
         if: matrix.node-version == '20.x' && github.event_name == 'pull_request' && (startsWith(github.actor, 'google-labs-jules') || contains(github.actor, 'jules'))

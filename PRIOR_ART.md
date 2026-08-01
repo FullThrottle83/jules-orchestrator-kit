@@ -8,7 +8,7 @@ This documentation lists the projects in the AI agent ecosystem that inspired th
 - **Our Difference:** We build the asynchronous escalation into the core `jules-queue-runner.mjs` so it becomes built-in state management, without requiring an external supervisor tool spinning alongside it.
 
 - **Inspiration:** Local CI Verification Container Runner (e.g., via Nektos Act). Packaging execution in isolated environments before a PR is created to ensure an agent does not introduce environment-specific bugs.
-- **Our Difference:** We are currently focusing on `npm test` in the host environment to keep dependencies at zero (according to our strict Zero Dependencies policy), but we are keeping an eye on how they orchestrate secure sandboxes.
+- **Our Difference:** We are currently focusing on `npm test` in the host environment to keep runtime dependencies at zero (according to our strict Zero Runtime Dependencies policy), but we are keeping an eye on how they orchestrate secure sandboxes.
 
 - **Inspiration:** Exposing Jules functionality via the Model Context Protocol (MCP), particularly over HTTP streams (Streamable MCP Bridge) for tools like n8n and Hermes Agent.
 - **Our Difference:** We plan to build a **0-dependency stdio MCP server** (`src/mcp-server.mjs`) instead of a full-fledged HTTP/Express server, to enable direct embedding inside Claude Desktop, Cursor, and Antigravity without port conflicts and unnecessary overhead.

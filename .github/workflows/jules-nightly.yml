@@ -13,6 +13,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Cache OODA state & ledgers
+        uses: actions/cache@v4
+        with:
+          path: .agent/state/
+          key: ooda-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            ooda-state-${{ runner.os }}-
       - name: Dispatch Nightly Maintenance to Jules
         env:
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}

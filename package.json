@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Orchestration kit for running Google Jules autonomous agents.",
   "repository": {
     "type": "git",
@@ -27,7 +27,7 @@
     ".agent/rules/",
     ".agent/workflows/",
     ".agent/jules-queue/README.md",
-    ".github/",
+    ".github/workflows/jules-audit.yml",
     ".env.example",
     "JULES_RULES_TEMPLATE.md",
     "README.md",

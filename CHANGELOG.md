@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-08-01
+### Fixed & Hardened
+- **Safe CI Template Scaffold**: Updated `.github/workflows/jules-audit.yml` to use `npm run lint --if-present` and `npm test --if-present`, preventing scaffolded user repositories without a `lint` script from failing CI on first push.
+- **Untrusted Prompt Fencing & Security Header**: Added `# SECURITY DIRECTIVE — UNTRUSTED CONTENT FENCE` header and untrusted specifications instruction inside `<UNTRUSTED_TASK_CONTEXT>`. Omitted `<rule>VERIFICATION LOOP` tag when `testCmd` is empty.
+- **Queue Runner Non-Zero Exit on Permanent Failures**: Updated `jules-queue-runner.mjs` to exit with code 1 when any queue tasks fail permanently. Added explicit `cli_error` failure classification for CLI execution errors.
+- **Package Payload Shrink**: Excluded `.github/social-preview.png` and scoped `files` in `package.json` to `.github/workflows/jules-audit.yml`, reducing npm tarball size by 87% (from 332.9 kB down to 44.8 kB). Removed dead entries from `.npmignore`.
+- **Detailed Restricted File Violations**: Updated `jules-self-audit.mjs` to explicitly output matching pattern / `allow_paths` rules, specify that config was loaded from `${mainRef}:.agent/jules.yml`, and state the `JULES_ALLOW_RESTRICTED_FILES=true` override flag.
+- **Git Stderr Leak Fix**: Suppressed `fatal: Needed a single revision` stderr output in `runGitCommand` during fallback handling when `ignoreError` is true.
+- **Local Date & Timezone Alignment**: Exported `getLocalDateString()` in `utils.mjs` using local year/month/day instead of UTC `toISOString()`, fixing 02:00 CEST budget reset drift.
+- **CI OODA State Caching**: Added `actions/cache@v4` step for `.agent/state/` to `.github/workflows/jules-audit.yml` and `jules-nightly.yml`.
+- **Documentation Sync**: Updated `PRIOR_ART.md` and `ROADMAP_V1.md` to reference "Zero Runtime Dependencies".
+
 ## [0.8.1] - 2026-07-31
 ### Fixed & Hardened
 - **OODA Function Module-Scope Fix**: Moved `getOodaStateFile` to top-level module scope in `jules-self-audit.mjs`. Fixed a `ReferenceError` caused by block-scoping in strict mode that prevented OODA state files from being deleted upon passing audits.

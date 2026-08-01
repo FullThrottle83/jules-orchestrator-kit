@@ -105,6 +105,7 @@ function classifyQueueFailure(error) {
   if (/Daily budget exhausted/i.test(message)) return "budget_exhausted";
   if (/HTTP 429|Rate Limit Exceeded/i.test(message)) return "rate_limited";
   if (/HTTP 5\d\d/i.test(message)) return "api_error";
+  if (/command not found|ENOENT|CLI|execFile|spawn|exit code/i.test(message)) return "cli_error";
   return "unknown";
 }
 
@@ -131,6 +132,7 @@ function setTaskState(filename, stateObj) {
 }
 
 async function runQueue() {
+  let permanentFailuresCount = 0;
   for (let i = 0; i < files.length; i += MAX_CONCURRENT) {
     const batch = files.slice(i, i + MAX_CONCURRENT);
     await Promise.allSettled(
@@ -194,6 +196,7 @@ async function runQueue() {
           } else {
             const attempts = (taskState.attempts || 0) + 1;
             if (NON_RETRYABLE.has(failureClass) || attempts >= 3) {
+              permanentFailuresCount++;
               const destPath = path.join(failedDir, file);
               setTaskState(file, { attempts, status: "FAILED_PERMANENT", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
               try { await safeMoveAsync(processingPath, destPath); } catch (_) {}
@@ -207,6 +210,10 @@ async function runQueue() {
         }
       })
     );
+  }
+  if (permanentFailuresCount > 0) {
+    log.error(`Queue processing complete with ${permanentFailuresCount} failed task(s).`);
+    process.exit(1);
   }
   log.header("Queue processing complete!");
 }

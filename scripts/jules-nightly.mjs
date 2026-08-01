@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { log, logToHistory } from "./utils.mjs";
+import { log, logToHistory, getLocalDateString } from "./utils.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -55,7 +55,7 @@ const UNIVERSAL_NIGHTLY_TASKS = [
 
 function logNightlyHistory(taskResults, dryRun = false) {
   const modeLabel = dryRun ? "[DRY RUN]" : "[DISPATCHED]";
-  const dateStr = new Date().toISOString().split("T")[0];
+  const dateStr = getLocalDateString();
   let content = `---\ntype: nightly_jules_audit\ntimestamp: "${new Date().toISOString()}"\nstatus: "${modeLabel}"\n---\n# Nightly Jules Maintenance Suite Audit - ${dateStr}\n\nSummary of automated audit dispatches:\n\n`;
 
   for (const res of taskResults) {
