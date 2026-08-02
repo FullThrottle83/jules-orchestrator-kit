@@ -14,15 +14,17 @@ let MAX_CONCURRENT = 3;
 let STAGGER_MS = 1500;
 let USE_WORKTREES = false;
 
+const activeChildProcesses = new Set();
+
 if (isMainModule) {
   process.on("SIGINT", () => {
-    log.dim("SIGINT received. Cleaning up active Git worktrees...");
+    log.dim("SIGINT received. Cleaning up active processes and Git worktrees...");
     cleanupAllWorktreesSync();
     process.exit(130);
   });
 
   process.on("SIGTERM", () => {
-    log.dim("SIGTERM received. Cleaning up active Git worktrees...");
+    log.dim("SIGTERM received. Cleaning up active processes and Git worktrees...");
     cleanupAllWorktreesSync();
     process.exit(143);
   });
@@ -62,6 +64,13 @@ if (isMainModule) {
 const activeWorktrees = new Set();
 
 function cleanupAllWorktreesSync() {
+  for (const child of Array.from(activeChildProcesses)) {
+    try {
+      child.kill("SIGTERM");
+    } catch (_) {}
+  }
+  activeChildProcesses.clear();
+
   for (const item of Array.from(activeWorktrees)) {
     if (item.wtDir && fs.existsSync(item.wtDir)) {
       try {
@@ -264,7 +273,7 @@ async function runSwarm() {
 
         try {
           const dispatchScript = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
-          const { stdout } = await execFileAsync("node", [dispatchScript, task.title, effectivePrompt], {
+          const child = execFile("node", [dispatchScript, task.title, effectivePrompt], {
             cwd: execCwd,
             timeout: 15 * 60 * 1000,
             env: {
@@ -273,6 +282,18 @@ async function runSwarm() {
               JULES_SLOT_INDEX: String(taskNum),
               JULES_SLOT_TOTAL: String(tasks.length)
             },
+          });
+          activeChildProcesses.add(child);
+
+          const { stdout } = await new Promise((resolve, reject) => {
+            let out = "";
+            child.stdout?.on("data", (data) => { out += data; });
+            child.on("error", reject);
+            child.on("close", (code) => {
+              activeChildProcesses.delete(child);
+              if (code === 0) resolve({ stdout: out });
+              else reject(new Error(`Process exited with code ${code}`));
+            });
           });
           if (stdout) log.dim(stdout.trim());
           return { taskId, title: task.title, status: "SUCCESS" };
