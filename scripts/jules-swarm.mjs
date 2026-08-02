@@ -181,28 +181,35 @@ export async function pushReservationManifest(manifest, projectRoot = process.cw
     await fs.promises.mkdir(agentDir, { recursive: true });
     await fs.promises.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
 
-    if (process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1") {
+    const allowRemotePush = process.env.JULES_SWARM_REMOTE_PUSH === "true" || process.env.JULES_SWARM_REMOTE_PUSH === "1";
+    const isDryRun = process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1";
+
+    if (isDryRun) {
       log.dim("[DRY RUN] Generated .agent/sync-manifest.json reservation manifest (git push skipped).");
       return { status: "DRY_RUN", path: manifestPath };
     }
 
-    const baseBranch = process.env.BASE_BRANCH || "main";
+    if (!allowRemotePush) {
+      log.info(`Generated local swarm reservation manifest: ${manifestPath}`);
+      return { status: "SAVED_LOCAL", path: manifestPath };
+    }
 
     try {
-      execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectRoot, stdio: "ignore" });
+      await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectRoot });
     } catch {
       log.dim("Not in a git repository. Skipped git push for sync manifest.");
       return { status: "SKIPPED_NOT_GIT", path: manifestPath };
     }
 
     try {
-      execFileSync("git", ["add", manifestPath], { cwd: projectRoot, stdio: "ignore" });
-      execFileSync("git", ["commit", "-m", "chore(jules): reservation-push sync manifest before swarm dispatch [skip ci]"], { cwd: projectRoot, stdio: "ignore" });
-      log.info(`Committed reservation manifest to Git. Pushing to origin/${baseBranch}...`);
+      const manifestBranch = `jules/swarm-manifest-${Date.now()}`;
+      await execFileAsync("git", ["add", manifestPath], { cwd: projectRoot });
+      await execFileAsync("git", ["commit", "-m", "chore(jules): reservation sync manifest [skip ci]"], { cwd: projectRoot });
+      log.info(`Committed reservation manifest to Git. Pushing to origin/${manifestBranch}...`);
 
-      execFileSync("git", ["push", "origin", `HEAD:${baseBranch}`], { cwd: projectRoot, stdio: "ignore" });
-      log.success(`Pushed reservation manifest to origin/${baseBranch}. Remote Jules VMs will see locked scopes.`);
-      return { status: "PUSHED", path: manifestPath };
+      await execFileAsync("git", ["push", "origin", `HEAD:${manifestBranch}`], { cwd: projectRoot });
+      log.success(`Pushed reservation manifest to origin/${manifestBranch}.`);
+      return { status: "PUSHED", branch: manifestBranch, path: manifestPath };
     } catch (gitErr) {
       log.warn(`⚠️ Git push reservation manifest failed (${gitErr.message}). Continuing local dispatch...`);
       return { status: "FAILED_GIT", error: gitErr.message, path: manifestPath };

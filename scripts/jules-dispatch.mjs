@@ -96,7 +96,7 @@ export function getAlphaRange(index, total) {
   const size = Math.ceil(26 / total);
   const start = ALPHA[Math.min(index * size, 25)];
   const end = ALPHA[Math.min((index + 1) * size - 1, 25)];
-  return start === end ? start : `${start}–${end}`;
+  return start === end ? start : `${start}-${end}`;
 }
 
 export function getSlotPartitionDirective(slotIdxStr, slotTotalStr) {

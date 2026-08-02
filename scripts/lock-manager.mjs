@@ -13,9 +13,11 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const MANIFEST_PATH = path.join(process.cwd(), '.agent', 'sync-manifest.json');
+const MANIFEST_PATH = path.join(process.cwd(), '.agent', 'file-locks.json');
 const TTL_MS = 20 * 60 * 1000; // 20 minutes
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
 async function readManifest() {
   try {
@@ -175,7 +177,9 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error('Unhandled error:', err);
-  process.exit(1);
-});
+if (isMainModule) {
+  main().catch(err => {
+    console.error('Unhandled error:', err);
+    process.exit(1);
+  });
+}

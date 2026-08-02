@@ -1,6 +1,23 @@
 import fs from "node:fs";
 import path from "node:path";
 
+export function detectPackageManager(root = process.cwd(), pkg = {}) {
+  if (fs.existsSync(path.join(root, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs.existsSync(path.join(root, "yarn.lock"))) return "yarn";
+  if (fs.existsSync(path.join(root, "bun.lockb"))) return "bun";
+  if (fs.existsSync(path.join(root, "package-lock.json"))) return "npm";
+
+  const pm = pkg.packageManager;
+  if (typeof pm === "string") {
+    if (pm.startsWith("pnpm")) return "pnpm";
+    if (pm.startsWith("yarn")) return "yarn";
+    if (pm.startsWith("bun")) return "bun";
+    if (pm.startsWith("npm")) return "npm";
+  }
+
+  return "npm";
+}
+
 /**
  * Dynamic Framework-Agnostic Command Resolver
  * Sniffs project manifests to return proper build & test verification commands.
@@ -43,23 +60,6 @@ export function resolveProjectCommands(projectRoot = process.cwd()) {
       console.warn("⚠️ Failed to parse jules.config.json:", err.message);
     }
   }
-
-function detectPackageManager(root, pkg = {}) {
-  if (fs.existsSync(path.join(root, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs.existsSync(path.join(root, "yarn.lock"))) return "yarn";
-  if (fs.existsSync(path.join(root, "bun.lockb"))) return "bun";
-  if (fs.existsSync(path.join(root, "package-lock.json"))) return "npm";
-
-  const pm = pkg.packageManager;
-  if (typeof pm === "string") {
-    if (pm.startsWith("pnpm")) return "pnpm";
-    if (pm.startsWith("yarn")) return "yarn";
-    if (pm.startsWith("bun")) return "bun";
-    if (pm.startsWith("npm")) return "npm";
-  }
-
-  return "npm";
-}
 
   // 2. Dynamic Detector Strategy List
   const detectors = [

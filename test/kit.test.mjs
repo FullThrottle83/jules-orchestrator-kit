@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
-import { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "../scripts/command-resolver.mjs";
+import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
 import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
@@ -14,6 +14,17 @@ import { fetchSessionPatch } from "../scripts/jules-patch.mjs";
 import { buildSyncManifest, pushReservationManifest } from "../scripts/jules-swarm.mjs";
 
 describe("Dynamic Command Resolver", () => {
+  test("detects package manager correctly based on lockfiles", () => {
+    assert.equal(detectPackageManager(process.cwd()), "npm");
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-pm-test-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "pnpm-lock.yaml"), "");
+      assert.equal(detectPackageManager(tmpDir), "pnpm");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   test("resolves default verification commands from manifest or config", () => {
     const res = resolveProjectCommands(process.cwd());
     assert.ok(res.source.startsWith("package.json") || res.source === ".agent/jules.yml");
@@ -357,8 +368,8 @@ Footer
 
 describe("Parallel Slot Partitioning", () => {
   test("computes correct alphabetical ranges for concurrent slots", () => {
-    assert.equal(getAlphaRange(0, 2), "A–M");
-    assert.equal(getAlphaRange(1, 2), "N–Z");
+    assert.equal(getAlphaRange(0, 2), "A-M");
+    assert.equal(getAlphaRange(1, 2), "N-Z");
   });
 
   test("builds parallel slot directive when slot index and total are valid", () => {
@@ -540,6 +551,25 @@ describe("Swarm Reservation Push & Sync Manifest", () => {
     assert.equal(manifest.reservations.length, 2);
     assert.equal(manifest.reservations[0].id, "t1");
     assert.deepEqual(manifest.reservations[0].scope, ["src/a/**"]);
+  });
+
+  test("pushReservationManifest saves manifest locally by default without pushing", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-swarm-local-"));
+    const originalRemote = process.env.JULES_SWARM_REMOTE_PUSH;
+    const originalDry = process.env.JULES_DRY_RUN;
+    delete process.env.JULES_SWARM_REMOTE_PUSH;
+    delete process.env.JULES_DRY_RUN;
+    try {
+      const manifest = buildSyncManifest([{ id: "t1", title: "Local Task" }]);
+      const res = await pushReservationManifest(manifest, tmpDir);
+
+      assert.equal(res.status, "SAVED_LOCAL");
+      assert.ok(fs.existsSync(path.join(tmpDir, ".agent/sync-manifest.json")));
+    } finally {
+      if (originalRemote !== undefined) process.env.JULES_SWARM_REMOTE_PUSH = originalRemote;
+      if (originalDry !== undefined) process.env.JULES_DRY_RUN = originalDry;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   test("pushReservationManifest writes sync-manifest.json and handles dry-run mode", async () => {

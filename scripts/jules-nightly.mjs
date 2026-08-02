@@ -8,9 +8,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { log, logToHistory, getLocalDateString } from "./utils.mjs";
 
 const execFileAsync = promisify(execFile);
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
 const isDryRun = process.argv.includes("--dry-run");
 
@@ -124,7 +126,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  log.error(`Unhandled error in nightly suite: ${err.message}`);
-  process.exit(1);
-});
+if (isMainModule) {
+  main().catch((err) => {
+    log.error(`Unhandled error in nightly suite: ${err.message}`);
+    process.exit(1);
+  });
+}

@@ -6,14 +6,18 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { log, ensureDir } from "./utils.mjs";
 
-const taskTitle = process.argv[2];
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
-if (!taskTitle) {
-  log.error("Usage: npm run jules:create \"Task Title\"");
-  process.exit(1);
-}
+if (isMainModule) {
+  const taskTitle = process.argv[2];
+
+  if (!taskTitle) {
+    log.error("Usage: npm run jules:create \"Task Title\"");
+    process.exit(1);
+  }
 
 const queueDir = path.resolve(process.cwd(), ".agent/jules-queue");
 ensureDir(queueDir);
@@ -64,4 +68,5 @@ try {
 } catch (err) {
   log.error(`Failed to create task file: ${err.message}`);
   process.exit(1);
+}
 }

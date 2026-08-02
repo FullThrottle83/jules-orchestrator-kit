@@ -4,16 +4,13 @@ import { loadEnv, ensureSdkCacheIsolation, log } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
-export async function fetchSessionPatch(sessionId) {
+export async function fetchSessionPatch(sessionId, options = {}) {
   if (!sessionId || typeof sessionId !== "string") {
     throw new Error("Session ID is required.");
   }
 
-  loadEnv();
-  ensureSdkCacheIsolation();
-
-  const apiKey = process.env.JULES_API_KEY || process.env.GEMINI_API_KEY || "";
-  const apiUrlBase = process.env.JULES_API_URL || "https://jules.googleapis.com/v1alpha/sessions";
+  const apiKey = options.apiKey || process.env.JULES_API_KEY || process.env.GEMINI_API_KEY || "";
+  const apiUrlBase = options.apiUrl || process.env.JULES_API_URL || "https://jules.googleapis.com/v1alpha/sessions";
 
   // Normalize session ID (handles full resource name "sessions/123" or short ID "123")
   const sessionPath = sessionId.startsWith("sessions/") ? sessionId : `sessions/${sessionId}`;
@@ -70,11 +67,17 @@ export async function fetchSessionPatch(sessionId) {
       diff
     };
   } catch (sdkErr) {
+    if (sdkErr.code === "ERR_MODULE_NOT_FOUND" || sdkErr.message?.includes("Cannot find package")) {
+      throw new Error("No API key configured and @google/jules-sdk is not installed. Set JULES_API_KEY or install @google/jules-sdk.");
+    }
     throw new Error(`Failed to retrieve session patch: ${sdkErr.message}`);
   }
 }
 
 if (isMainModule) {
+  loadEnv();
+  ensureSdkCacheIsolation();
+
   const args = process.argv.slice(2);
   const isJson = args.includes("--json");
   const filteredArgs = args.filter((arg) => !arg.startsWith("--"));

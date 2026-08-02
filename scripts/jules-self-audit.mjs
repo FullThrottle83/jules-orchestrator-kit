@@ -548,8 +548,8 @@ export function runPreflightSandbox() {
     log.step("[1/5]", `Creating isolated environment in ${sandboxDir}...`);
     fs.mkdirSync(sandboxDir, { recursive: true });
     
-    execSync(`git archive HEAD -o "${tempArchive}"`);
-    execSync(`tar -xf "${tempArchive}" -C "${sandboxDir}"`);
+    execFileSync("git", ["archive", "HEAD", "-o", tempArchive]);
+    execFileSync("tar", ["-xf", tempArchive, "-C", sandboxDir]);
     
     log.step("[2/5]", "Sterilizing environment variables...");
     const sterileEnv = { ...process.env };
