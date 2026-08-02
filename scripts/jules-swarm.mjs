@@ -15,6 +15,18 @@ let STAGGER_MS = 1500;
 let USE_WORKTREES = false;
 
 if (isMainModule) {
+  process.on("SIGINT", () => {
+    log.dim("SIGINT received. Cleaning up active Git worktrees...");
+    cleanupAllWorktreesSync();
+    process.exit(130);
+  });
+
+  process.on("SIGTERM", () => {
+    log.dim("SIGTERM received. Cleaning up active Git worktrees...");
+    cleanupAllWorktreesSync();
+    process.exit(143);
+  });
+
   const tasksFile = process.argv[2];
 
   if (!tasksFile) {
@@ -92,17 +104,7 @@ function reapOrphanedWorktrees() {
   } catch (_) {}
 }
 
-process.on("SIGINT", () => {
-  log.dim("SIGINT received. Cleaning up active Git worktrees...");
-  cleanupAllWorktreesSync();
-  process.exit(130);
-});
 
-process.on("SIGTERM", () => {
-  log.dim("SIGTERM received. Cleaning up active Git worktrees...");
-  cleanupAllWorktreesSync();
-  process.exit(143);
-});
 
 async function createWorktree(taskId) {
   const slug = taskId.toLowerCase().replace(/[^a-z0-9]+/g, "-");

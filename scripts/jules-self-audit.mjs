@@ -164,10 +164,12 @@ export function loadForbiddenPatterns(configContent = "") {
       continue;
     }
     if (inForbidden) {
-      const trimmed = line.trim();
+      const lineWithoutComment = line.split("#")[0];
+      const trimmed = lineWithoutComment.trim();
       if (trimmed.startsWith("-")) {
-        blockParsed.push(trimmed.slice(1).trim().replace(/^["']|["']$/g, ""));
-      } else if (trimmed && !trimmed.startsWith("#")) {
+        const val = trimmed.slice(1).trim().replace(/^["']|["']$/g, "");
+        if (val) blockParsed.push(val);
+      } else if (trimmed) {
         break;
       }
     }
@@ -442,7 +444,8 @@ export function runSelfAudit() {
       return false;
     }
     try {
-      execSync(cmd, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const timeoutMs = parseInt(process.env.JULES_VERIFY_TIMEOUT_MS || "600000", 10);
+      execSync(cmd, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs });
       return true;
     } catch (err) {
       failureLog = parseAndCleanStderr((err.stderr || "") + "\n" + (err.stdout || "") + "\n" + (err.message || ""));

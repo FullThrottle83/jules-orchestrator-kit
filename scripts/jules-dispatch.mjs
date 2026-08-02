@@ -275,6 +275,7 @@ async function executeDispatch() {
       const payload = {
         title: taskTitle,
         prompt: fullPrompt,
+        automationMode: process.env.JULES_AUTOMATION_MODE || "AUTOMATION_MODE_AUTO_PR"
       };
 
       if (!isRepoless && repo) {
@@ -395,7 +396,7 @@ function dispatchViaCli(targetRepo, payloadFile, title) {
       }
     }
 
-    const args = ["new"];
+    const args = ["remote", "new"];
     if (targetRepo) {
       args.push("--repo", targetRepo);
     }

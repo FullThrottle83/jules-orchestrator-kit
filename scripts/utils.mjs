@@ -136,8 +136,11 @@ export const HIGH_CONFIDENCE_PATTERNS = [
   /\bgithub_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}\b/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /-----BEGIN PUTTY PRIVATE KEY-----/g,
   /\bnpm_[a-zA-Z0-9]{36}\b/g,
   /\bsk_live_[0-9a-zA-Z]{24,}\b/g,
+  /\bsbp_[a-zA-Z0-9]{40,}\b/g,
+  /\bhf_[a-zA-Z0-9]{34,}\b/g,
 ];
 
 export const LOW_CONFIDENCE_PATTERNS = [
@@ -149,6 +152,8 @@ export const LOW_CONFIDENCE_PATTERNS = [
   /\beyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\b/g,
   /\b(?:rk|pk)_(?:live|test)_[0-9a-zA-Z]{24,}\b/g,
   /\bsk_test_[0-9a-zA-Z]{24,}\b/g,
+  /https:\/\/hooks\.slack\.com\/services\/T[a-zA-Z0-9_]+\/B[a-zA-Z0-9_]+\/[a-zA-Z0-9_]+/g,
+  /\b(?:postgres|postgresql|mongodb|mongodb\+srv|redis|mysql):\/\/[^:]+:[^@]+@[^:\s\/]+/gi,
 ];
 
 export function hasHighConfidenceSecret(text) {

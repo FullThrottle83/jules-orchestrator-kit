@@ -99,10 +99,11 @@ async function safeMoveAsync(src, dest) {
 
 function classifyQueueFailure(error) {
   const message = String(error?.stderr || error?.stdout || error?.message || "");
+  const code = error?.code;
 
-  if (/RESTRICTED FILE VIOLATION|COMMAND FILE CHANGE DETECTED|SECRET LEAK PREVENTED|AGENT RULE FILE CHANGE DETECTED/i.test(message)) return "security_violation";
-  if (/DIFF PAYLOAD TOO LARGE/i.test(message)) return "diff_too_large";
-  if (/Daily budget exhausted/i.test(message)) return "budget_exhausted";
+  if (code === 6 || /RESTRICTED FILE VIOLATION|COMMAND FILE CHANGE DETECTED|SECRET LEAK PREVENTED|AGENT RULE FILE CHANGE DETECTED|Security violation/i.test(message)) return "security_violation";
+  if (code === 5 || /DIFF PAYLOAD TOO LARGE|DIFF TOO LARGE/i.test(message)) return "diff_too_large";
+  if (code === 7 || /Daily budget exhausted|budget exhausted/i.test(message)) return "budget_exhausted";
   if (/HTTP 429|Rate Limit Exceeded/i.test(message)) return "rate_limited";
   if (/HTTP 5\d\d/i.test(message)) return "api_error";
   if (/command not found|ENOENT|CLI|execFile|spawn|exit code/i.test(message)) return "cli_error";
