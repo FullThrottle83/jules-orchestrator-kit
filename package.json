@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "init": "node bin/init.js",
-    "test": "node --test test/kit.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "jules:dispatch": "node scripts/jules-dispatch.mjs",
     "jules:queue": "node scripts/jules-queue-runner.mjs",
     "jules:create": "node scripts/jules-create.mjs",
