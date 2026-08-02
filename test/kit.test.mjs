@@ -7,7 +7,7 @@ import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
 import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation } from "../scripts/utils.mjs";
-import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective } from "../scripts/jules-dispatch.mjs";
+import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective, extractImageAttachments, getMultimodalAttachmentDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
 import { fetchSessionPatch } from "../scripts/jules-patch.mjs";
@@ -600,6 +600,30 @@ describe("Headless Jules Patch Extractor", () => {
       },
       (err) => err.message.includes("Session ID is required")
     );
+  });
+});
+
+describe("Multimodal Image Attachment Extraction", () => {
+  test("extracts referenced image files and generates attachment directive", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-img-"));
+    try {
+      const imgPath = path.join(tmpDir, "mockup.png");
+      fs.writeFileSync(imgPath, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
+
+      const prompt = `Please build UI based on ![Mockup](mockup.png) specification.`;
+      const attachments = extractImageAttachments(prompt, tmpDir);
+
+      assert.equal(attachments.length, 1);
+      assert.equal(attachments[0].relPath, "mockup.png");
+      assert.equal(attachments[0].mime, "image/png");
+      assert.ok(attachments[0].dataUri.startsWith("data:image/png;base64,"));
+
+      const directive = getMultimodalAttachmentDirective(attachments);
+      assert.ok(directive.includes("Multimodal Task Attachments"));
+      assert.ok(directive.includes("mockup.png"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 
