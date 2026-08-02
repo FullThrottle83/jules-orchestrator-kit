@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-08-03
+### Security & Architectural Hardening
+- **P0 Untrusted Prompt Envelope Noncing**: Replaced static `<UNTRUSTED_TASK_CONTEXT>` tags in `jules-dispatch.mjs` with crypto-random nonced tags (`<UNTRUSTED_TASK_CONTEXT_${nonce}>`) and case-insensitive closing tag stripping to prevent prompt injection escapes.
+- **P0 Image Attachment Containment & Path Traversal Prevention**: Added `realpathSync` root containment checks in `extractImageAttachments` to block traversal attacks (`../../../etc/passwd.svg`) and eliminated the wasteful 500KB `dataUri` exfiltration vector.
+- **P0 Secret Scanner Buffer Overflow & Fail-Closed Policy**: Expanded `runGitCommand` buffer in `jules-self-audit.mjs` to 25MB (`maxBuffer`) and disabled silent error swallowing on git diff execution (`ignoreError = false`), guaranteeing secret scans fail-closed on massive diffs.
+- **P0 Unconditional CI Audit & Scope Guard Workflows**: Removed `jules/` head ref and actor restrictions from `.github/workflows/agent-scope-guard.yml` and `.github/workflows/jules-audit.yml`, ensuring gatekeeper checks run on all PRs regardless of actor.
+- **P0 Syntax Fix for Status CLI**: Removed duplicated broken `try`-block in `scripts/jules-status.mjs`.
+- **P1-8 End-to-End Integration Test Harness**: Added `test/integration.test.mjs` running end-to-end CLI tests in isolated temporary Git repos, asserting exit codes 0, 3, 5, 6, 7, 8 across 58 total test cases.
+- **P1 REST API Payload & CLI Fallback**: Added `automationMode: AUTOMATION_MODE_AUTO_PR` to REST payloads and updated CLI fallback to `jules remote new`.
+- **P1 Redaction Expansion (13+ Patterns)**: Expanded secret scanner in `utils.mjs` for Cloudflare tokens, Supabase service keys, HuggingFace tokens, Slack webhooks, PuTTY keys, and database connection strings.
+- **P1 Concurrency & Exit Codes**: Separated budget state lock contention (Exit Code 8) from daily limit exhaustion (Exit Code 7) with automatic re-queuing without retry penalties in `jules-queue-runner.mjs`.
+- **P1 Trusted Rules Isolation**: Split `BASE_BRANCH` ref from session `START_BRANCH` in `jules-dispatch.mjs` and enforced fail-closed fallback to embedded directives when running in CI.
+- **P2 Dynamic Guardrails & Lock Manager**: Connected `.agent/rules/dynamic-guardrails.json` at runtime, added `JULES_ALLOW_RESTRICTED_FILES=true` override support, wired `--unattended` in `lock-manager.mjs`, and added process lifecycle tracking in `jules-swarm.mjs`.
+
 ## [0.8.2] - 2026-08-01
 ### Fixed & Hardened
 - **Safe CI Template Scaffold**: Updated `.github/workflows/jules-audit.yml` to use `npm run lint --if-present` and `npm test --if-present`, preventing scaffolded user repositories without a `lint` script from failing CI on first push.
