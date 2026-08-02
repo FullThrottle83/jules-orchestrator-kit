@@ -78,8 +78,11 @@ function cleanExpiredLocks(manifest) {
   return changed;
 }
 
-async function acquireLocks(agentName, taskId, files) {
+async function acquireLocks(agentName, taskId, files, isUnattended = false) {
   await withManifestLock(async () => {
+    if (isUnattended) {
+      console.log(`[lock-manager] Operating in unattended mode for task ${taskId}`);
+    }
     const manifest = await readManifest();
   cleanExpiredLocks(manifest);
   
@@ -150,20 +153,20 @@ async function main() {
     const agentName = args[1];
     const taskId = args[2];
     const unattendedIndex = args.indexOf('--unattended');
-    
+    const isUnattended = unattendedIndex !== -1;
     let files = [];
-    if (unattendedIndex !== -1) {
+    if (isUnattended) {
        files = args.slice(3, unattendedIndex).concat(args.slice(unattendedIndex + 1));
     } else {
        files = args.slice(3);
     }
     
     if (!agentName || !taskId || files.length === 0) {
-      console.error('Usage: acquire <agent_name> <task_id> <file_paths...>');
+      console.error('Usage: acquire <agent_name> <task_id> <file_paths...> [--unattended]');
       process.exit(1);
     }
     
-    await acquireLocks(agentName, taskId, files);
+    await acquireLocks(agentName, taskId, files, isUnattended);
   } else if (command === 'release') {
     const taskId = args[1];
     if (!taskId) {

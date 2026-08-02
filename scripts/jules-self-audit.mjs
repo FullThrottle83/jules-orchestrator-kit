@@ -141,7 +141,8 @@ export function loadForbiddenPatterns(configContent = "") {
     ".github/**",
     "**/secrets/**",
     "**/*.pem",
-    "**/lock-manager/**",
+    "**/.env*",
+    "**/lock-manager*",
     "scripts/jules-*",
     ".agent/jules.yml"
   ];
@@ -347,13 +348,17 @@ export function runSelfAudit() {
   });
 
   if (violationsWithDetails.length > 0) {
-    const err = new Error(
-      `RESTRICTED FILE VIOLATION DETECTED (config read from ${mainRef}:.agent/jules.yml):\n` +
-      violationsWithDetails.map((v) => `  - ${v}`).join("\n") +
-      "\nTo override restricted file checks, set JULES_ALLOW_RESTRICTED_FILES=true."
-    );
-    err.code = 3;
-    throw err;
+    if (process.env.JULES_ALLOW_RESTRICTED_FILES === "true") {
+      log.warn("JULES_ALLOW_RESTRICTED_FILES=true is set. Bypassing restricted file boundary check.");
+    } else {
+      const err = new Error(
+        `RESTRICTED FILE VIOLATION DETECTED (config read from ${mainRef}:.agent/jules.yml):\n` +
+        violationsWithDetails.map((v) => `  - ${v}`).join("\n") +
+        "\nTo override restricted file checks, set JULES_ALLOW_RESTRICTED_FILES=true."
+      );
+      err.code = 3;
+      throw err;
+    }
   }
   log.success("Restricted File Boundary Check: PASSED");
 
@@ -499,15 +504,9 @@ export function runSelfAudit() {
       if (fs.existsSync(oodaStateFile)) {
         const oodaData = JSON.parse(fs.readFileSync(oodaStateFile, "utf-8"));
         oodaRetries = oodaData.attempts || 0;
-      } else {
-        const history = execSync("git log -n 5 --format=%B", { encoding: "utf-8" });
-        const matches = history.match(/OODA Auto-Repair/gi);
-        if (matches) {
-          oodaRetries = matches.length;
-        }
       }
     } catch (e) {
-      // Ignore errors here
+      // Ignore reading errors
     }
 
     if (oodaRetries < 3) {
@@ -521,7 +520,8 @@ export function runSelfAudit() {
       try {
         const env = { 
           ...process.env, 
-          BASE_BRANCH: process.env.GITHUB_HEAD_REF || targetBranch 
+          START_BRANCH: process.env.GITHUB_HEAD_REF || targetBranch,
+          BASE_BRANCH: targetBranch
         };
         execFileSync("node", [dispatchScript, "OODA Auto-Repair", prompt], {
           stdio: "inherit",

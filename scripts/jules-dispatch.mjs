@@ -32,18 +32,38 @@ const CLEANUP_TRIGGER_RE = /\b(?:refactor|cleanup|janitor|lint|deprecated|deadco
 // 0.4 Dynamic Guardrails & Directive Definitions
 export function getDynamicGuardrails(prompt = "") {
   const guardrails = [];
-  if (DB_TRIGGER_RE.test(prompt)) {
-    guardrails.push("- Database Guidance (Alchemist): Do not modify migrations directly without inspecting current schema constraints.");
+  const jsonPath = path.resolve(process.cwd(), ".agent/rules/dynamic-guardrails.json");
+  if (fs.existsSync(jsonPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+      if (Array.isArray(data.rules)) {
+        for (const rule of data.rules) {
+          if (rule.trigger && rule.directive) {
+            const re = new RegExp(rule.trigger, "i");
+            if (re.test(prompt)) {
+              guardrails.push(`- ${rule.name || "Guidance"}: ${rule.directive}`);
+            }
+          }
+        }
+      }
+    } catch (_) {}
   }
-  if (SECURITY_TRIGGER_RE.test(prompt)) {
-    guardrails.push("- Security Guidance (Sentinel): Enforce strict input sanitization, RBAC checks, and secret redaction.");
+
+  if (guardrails.length === 0) {
+    if (DB_TRIGGER_RE.test(prompt)) {
+      guardrails.push("- Database Guidance (Alchemist): Do not modify migrations directly without inspecting current schema constraints.");
+    }
+    if (SECURITY_TRIGGER_RE.test(prompt)) {
+      guardrails.push("- Security Guidance (Sentinel): Enforce strict input sanitization, RBAC checks, and secret redaction.");
+    }
+    if (PERF_TRIGGER_RE.test(prompt)) {
+      guardrails.push("- Performance Guidance (Bolt): Benchmark bottlenecks, optimize memoization/caching, and prevent token/memory bloat.");
+    }
+    if (CLEANUP_TRIGGER_RE.test(prompt)) {
+      guardrails.push("- Clean Code Guidance (Janitor): Remove dead code, fix lint errors, and preserve existing API contracts.");
+    }
   }
-  if (PERF_TRIGGER_RE.test(prompt)) {
-    guardrails.push("- Performance Guidance (Bolt): Benchmark bottlenecks, optimize memoization/caching, and prevent token/memory bloat.");
-  }
-  if (CLEANUP_TRIGGER_RE.test(prompt)) {
-    guardrails.push("- Clean Code Guidance (Janitor): Remove dead code, fix lint errors, and preserve existing API contracts.");
-  }
+
   return guardrails.length > 0 ? `## Context-Specific Guardrails\n${guardrails.join("\n")}` : "";
 }
 
@@ -119,13 +139,22 @@ function getTrustedFile(mainRef, filePath) {
 }
 
 function getBaseRules(projectRoot = process.cwd()) {
-  const mainRef = process.env.BASE_BRANCH || "origin/main";
+  const mainRef = process.env.RULES_REF || process.env.BASE_BRANCH || "origin/main";
 
   const trustedTemplate = getTrustedFile(mainRef, "JULES_RULES_TEMPLATE.md");
   if (trustedTemplate) return trustedTemplate;
 
   const trustedAgents = getTrustedFile(mainRef, "AGENTS.md");
   if (trustedAgents) return trustedAgents;
+
+  // Fail-closed in CI: do not load untrusted working tree files
+  if (process.env.CI) {
+    log.warn("Running in CI and trusted rules file not found on base ref. Using secure default directives.");
+    return `## Operational Directives
+- **Read Before Write**: Always inspect target files and symbol definitions before modifying code.
+- **Verification**: Execute test and build verification suite and ensure 0 errors.
+- **Anti-Patch Invariant**: Do NOT create out-of-band shell scripts (patch.sh, test-fix.sh) or disable assertions to force tests to pass.`;
+  }
 
   const templatePath = path.join(projectRoot, "JULES_RULES_TEMPLATE.md");
   if (fs.existsSync(templatePath)) {
@@ -226,8 +255,7 @@ if (isMainModule) {
 
   historyFile = logToHistory(
     `dispatch-${slug}.md`,
-    `---\ntype: jules_dispatch\ntitle: "${taskTitle}"\ntimestamp: "${new Date().toISOString()}"\n---\n# Jules Task Dispatch: ${taskTitle}\n\n## Prompt\n${rawPrompt}\n`,
-    "dispatch"
+    `---\ntype: jules_dispatch\ntitle: "${taskTitle}"\ntimestamp: "${new Date().toISOString()}"\n---\n# Jules Task Dispatch: ${taskTitle}\n\n## Prompt\n${rawPrompt}\n`
   );
 
   log.info(`Dispatching task to Google Jules: "${taskTitle}"...`);
@@ -265,8 +293,14 @@ async function executeDispatch() {
     const budgetCheck = reserveDailyBudget(budgetLimit, taskKey);
     
     if (!budgetCheck.ok) {
-      log.warn(`Daily budget exhausted or locked (${budgetCheck.used}/${budgetCheck.budget} sessions). Aborting dispatch.`);
-      const err = new Error(`Daily budget exhausted or locked (${budgetCheck.used}/${budgetCheck.budget} sessions). Aborting dispatch.`);
+      if (budgetCheck.reason === "locked") {
+        log.warn("Budget state lock contention (lock busy). Aborting dispatch for retry.");
+        const err = new Error("Budget state lock contention (lock busy). Aborting dispatch.");
+        err.code = 8;
+        throw err;
+      }
+      log.warn(`Daily budget exhausted (${budgetCheck.used}/${budgetCheck.budget} sessions). Aborting dispatch.`);
+      const err = new Error(`Daily budget exhausted (${budgetCheck.used}/${budgetCheck.budget} sessions). Aborting dispatch.`);
       err.code = 7;
       throw err;
     }
@@ -284,7 +318,7 @@ async function executeDispatch() {
         payload.sourceContext = {
           source: formattedSource,
           githubRepoContext: {
-            startingBranch: process.env.BASE_BRANCH || "main"
+            startingBranch: process.env.START_BRANCH || process.env.BASE_BRANCH || "main"
           }
         };
       } else {

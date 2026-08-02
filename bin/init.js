@@ -157,7 +157,7 @@ if (!fs.existsSync(yamlConfigPath) || isForce) {
 version: 2
 test_cmd: "${detected.testCmd || "npm test"}"
 build_cmd: "${detected.buildCmd || "npm run build"}"
-forbidden_paths: [".github/**", "**/secrets/**", "**/*.pem", "**/lock-manager/**"]
+forbidden_paths: [".github/**", "**/.env*", "**/*.pem", "**/lock-manager*"]
 `;
   fs.writeFileSync(yamlConfigPath, yamlContent, "utf-8");
   console.log("✅ Created: .agent/jules.yml");
