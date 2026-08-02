@@ -20,53 +20,6 @@ if (!fs.existsSync(queueLogPath)) {
   process.exit(0);
 }
 
-try {
-  const content = fs.readFileSync(queueLogPath, "utf-8");
-  const lines = content.split("\n").filter(Boolean);
-  
-  if (lines.length === 0) {
-    if (isJson) {
-      console.log(JSON.stringify({ queue: [], budget: budgetInfo }, null, 2));
-    } else {
-      log.info("Queue log is empty.");
-    }
-    process.exit(0);
-  }
-
-  // We only want the latest status for each task file
-  const statusMap = new Map();
-
-  for (const line of lines) {
-    try {
-      const entry = JSON.parse(line);
-      if (entry.file) {
-        statusMap.set(entry.file, {
-          file: entry.file,
-          Task: entry.file.replace(/^TASK-\d+-/, "").replace(/\.md$/, ""),
-          Status: entry.status,
-          Timestamp: entry.timestamp,
-          Error: entry.error || null
-        });
-      }
-    } catch (e) {
-      // Ignore malformed lines
-    }
-  }
-
-  const tasksList = Array.from(statusMap.values());
-
-  if (isJson) {
-    console.log(JSON.stringify({ queue: tasksList, budget: budgetInfo }, null, 2));
-    process.exit(0);
-  }
-
-  if (tasksList.length === 0) {
-    log.info("No parseable task events found in queue.jsonl");
-      log.info("Queue log is empty. No tasks have been dispatched yet.");
-    }
-    process.exit(0);
-  }
-
   try {
     const content = fs.readFileSync(queueLogPath, "utf-8");
     const lines = content.split("\n").filter(Boolean);

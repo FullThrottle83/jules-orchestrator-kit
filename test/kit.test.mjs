@@ -616,11 +616,17 @@ describe("Multimodal Image Attachment Extraction", () => {
       assert.equal(attachments.length, 1);
       assert.equal(attachments[0].relPath, "mockup.png");
       assert.equal(attachments[0].mime, "image/png");
-      assert.ok(attachments[0].dataUri.startsWith("data:image/png;base64,"));
+      assert.ok(attachments[0].absPath.endsWith("mockup.png"), "absPath should end with filename");
+      assert.ok(typeof attachments[0].size === "number", "size should be a number");
 
       const directive = getMultimodalAttachmentDirective(attachments);
       assert.ok(directive.includes("Multimodal Task Attachments"));
       assert.ok(directive.includes("mockup.png"));
+
+      // P0-4: Path traversal must be rejected
+      const traversalPrompt = `See ![Evil](../../../etc/passwd.svg)`;
+      const blocked = extractImageAttachments(traversalPrompt, tmpDir);
+      assert.equal(blocked.length, 0, "path traversal should be blocked");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

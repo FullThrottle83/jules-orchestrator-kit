@@ -7,7 +7,6 @@ on:
 jobs:
   scope-guard:
     runs-on: ubuntu-latest
-    if: startsWith(github.head_ref, 'jules/')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

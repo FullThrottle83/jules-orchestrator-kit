@@ -11,6 +11,7 @@ function runGitCommand(args, ignoreError = false) {
   try {
     return execFileSync("git", args, {
       encoding: "utf-8",
+      maxBuffer: 25 * 1024 * 1024,
       stdio: ["pipe", "pipe", ignoreError ? "ignore" : "pipe"],
     }).trim();
   } catch (error) {
@@ -368,7 +369,14 @@ export function runSelfAudit() {
     throw err;
   }
   
-  const fullDiffPayload = runGitCommand(["diff", `${mergeBase}...HEAD`], true);
+  let fullDiffPayload = "";
+  try {
+    fullDiffPayload = runGitCommand(["diff", `${mergeBase}...HEAD`], false);
+  } catch (err) {
+    const error = new Error("DIFF PAYLOAD TOO LARGE: The PR diff exceeds the maximum buffer size (25MB) and cannot be safely scanned for secrets. Please split the task into smaller PRs.");
+    error.code = 5;
+    throw error;
+  }
   const addedLines = fullDiffPayload
     .split("\n")
     .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
