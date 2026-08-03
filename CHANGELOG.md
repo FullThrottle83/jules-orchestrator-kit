@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-08-03
+### Added & Modularized (Universal Architecture & Security Hardening)
+- **Modular Domain Architecture (`src/`)**: Completely refactored from vendored script prototype into native ESM modules (`src/config.mjs`, `src/security.mjs`, `src/git.mjs`, `src/provider.mjs`, `src/state.mjs`, `src/engine.mjs`).
+- **Unified Command-Line Interface (`agentctl`)**: Added single `bin/agentctl.mjs` CLI executable supporting `dispatch`, `gate`/`audit`, `queue`, `swarm`, `lock`, `doctor`, and `init` with `--json` output options.
+- **Provider-Agnostic Engine Architecture**: Configuration-driven template adapters supporting `http` and `exec` providers (`jules`, `claude-code`, `codex`, Ollama, Bedrock) with shell-less execution (`spawnSync`, `shell: false`).
+- **Zero-Dependency Guarantee**: Core engine built strictly using native Node.js ≥ 18 built-in modules (`node:fs`, `node:path`, `node:child_process`, `node:crypto`, `node:util`).
+- **Centralized Scope Normalizer & Trusted Origin Resolution**: `normalizeScope()` guarantees `BUILTIN_DENY` patterns (`.git/**`, `**/.env`, `**/*.pem`, `.github/**`, etc.) are merged unconditionally, and `gate()` fetches rules strictly from `origin/${base}` via `showFromOrigin()`.
+- **Adversarial Test Suite (`test/adversarial.test.mjs`)**: 90/90 unit, integration, and adversarial security tests locking in shell injection defense, fail-closed git resolution, prototype pollution guards, and lock atomic creation.
+
 ## [0.8.6] - 2026-08-03
 ### Added & Hardened (Community Audit & Security Enhancements)
 - **Safety Gate Verification Engine**: Added `checkSafetyGate()` in `scripts/jules-merge-swarm.mjs` to inspect active worker locks (`.agent/state/locks/*.json`) before squashing PRs, preventing active session merge collisions.
