@@ -225,7 +225,7 @@ export function anonymizePii(text) {
   });
 
   // Mask phone numbers (formatted with international prefix or standard delimiters)
-  sanitized = sanitized.replace(/\b(?:\+\d{1,3}[\s-]?)?\(?\d{2,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}\b/g, (phone) => {
+  sanitized = sanitized.replace(/(?:(?:\+\d{1,3}[\s-]?)|\b)\(?\d{2,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}\b/g, (phone) => {
     const digitsOnly = phone.replace(/\D/g, "");
     if (digitsOnly.length >= 7 && digitsOnly.length <= 15) {
       return "[REDACTED_PHONE]";
