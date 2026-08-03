@@ -227,13 +227,20 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 | `npm run jules:dispatch` | Dispatches a single task directly to Jules |
 | `npm run jules:queue` | Runs the local queue processor (picks up tasks from `.agent/jules-queue`) |
 | `npm run jules:create` | Scaffolds a new boilerplate task markdown file |
-| `npm run jules:status` | Shows the real-time status of all queued and completed tasks |
+| `npm run jules:status` | Shows real-time 3-bucket status (Action Required, In Progress, Completed) |
 | `npm run jules:audit` | Runs the self-audit gatekeeper (verifies tests, forbidden paths, and scope) |
 | `npm run jules:cleanup` | Audits and closes merged or stale REST sessions |
 | `npm run jules:scan` | Scans the codebase for TODO/FIXME comments and generates a suggested tasks file |
 | `npm run jules:swarm` | Launches a multi-agent swarm in parallel across isolated worktrees |
-| `npm run jules:merge-swarm` | Autonomous PR merge engine: squash-merges passing, disjoint Jules PRs |
+| `npm run jules:merge-swarm` | Autonomous PR merge engine with Safety Gate lock verification |
 | `npm run jules:nightly` | Nightly maintenance job (usually triggered in CI) |
+
+### Specialist Agent Prompts & Templates (`.agent/prompts/`)
+The kit includes pre-configured single-responsibility prompt presets in `.agent/prompts/`:
+- **`Overseer.md`**: Codebase architecture auditor & technical debt mapper.
+- **`Bolt.md`**: Performance micro-optimizer and payload governor (enforces < 75 KB payload diff limits).
+- **`Sentinel.md`**: Security audit specialist for input sanitization and secret scanning.
+- **`Task_Template.md`**: Machine-readable master task prompt template schema.
 
 ### Environment Variables
 

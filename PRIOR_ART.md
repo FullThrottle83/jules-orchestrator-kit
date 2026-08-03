@@ -16,6 +16,18 @@ This documentation lists the projects in the AI agent ecosystem that inspired th
 - **Inspiration:** Cloud Build Auto-Fix Webhooks. A pattern where webhook endpoints receive failed deployment builds from Vercel/Cloudflare and automatically dispatch Jules on a "fix-session".
 - **Our Difference:** Our kit exposes the OODA loop in the CLI, making it possible to build the exact same logic locally or via bash scripts, before an HTTP server even needs to be involved.
 
+- **Inspiration (`jules-pr-reviewer`, `maxi-reviewer`):** Prompt injection defense (`UNTRUSTED` fencing) and pre-flight static analysis layering.
+- **Our Difference:** We integrate random nonced `<UNTRUSTED_TASK_CONTEXT_${nonce}>` tags directly in `jules-dispatch.mjs` alongside pre-flight static check layering (`runPreflightStaticCheck()`), ensuring zero third-party dependencies.
+
+- **Inspiration (`Jules-Companion`, `jules-supervisor`):** Safety Gate verification prior to merging multi-session swarm PRs and phase-branch guardrails.
+- **Our Difference:** Built-in `checkSafetyGate()` in `scripts/jules-merge-swarm.mjs` that inspects active worker locks (`.agent/state/locks/*.json`) to prevent merging incomplete or active swarm branches.
+
+- **Inspiration (`jules-agent-roster`, `jules-autonomous-agents`, `jules-prompts`):** Specialized prompt rosters (`Overseer`, `Bolt`, `Sentinel`) and machine-readable task templates.
+- **Our Difference:** Pre-configured specialist prompt presets in `.agent/prompts/` that enforce atomic payload limits (< 75 KB) and zero-dependency refactoring rules out of the box.
+
+- **Inspiration (`jules-me`):** Priority-based 3-bucket status classification.
+- **Our Difference:** Native `categorizeTaskStatus()` in `scripts/jules-status.mjs` grouping active tasks into *🚨 Action Required*, *⏳ In Progress*, and *✅ Completed*.
+
 ## What makes jules-orchestrator-kit unique?
 
 The honest answer to what *this* kit does that the others don't is **the gate**:

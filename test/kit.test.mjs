@@ -710,7 +710,67 @@ describe("Swarm Concurrency & Merge Engine Hardening", () => {
     const output = execFileSync("node", [mergeScript, "--dry-run"], { encoding: "utf-8" });
     assert.ok(output.includes("Jules swarm branches") || output.includes("No open Jules PRs"));
   });
+
+  test("checkSafetyGate detects active worker lock files", async () => {
+    const { checkSafetyGate } = await import("../scripts/jules-merge-swarm.mjs");
+    const locksDir = path.resolve(process.cwd(), ".agent/state/locks");
+    fs.mkdirSync(locksDir, { recursive: true });
+    const lockFile = path.join(locksDir, "test-lock.json");
+    try {
+      fs.writeFileSync(lockFile, JSON.stringify({ branch: "jules/test-branch", agent: "Worker1" }));
+      const gateResult = checkSafetyGate("jules/test-branch");
+      assert.equal(gateResult.safe, false);
+      assert.ok(gateResult.reason.includes("Active lock held by worker"));
+
+      const safeResult = checkSafetyGate("jules/other-branch");
+      assert.equal(safeResult.safe, true);
+    } finally {
+      if (fs.existsSync(lockFile)) fs.rmSync(lockFile);
+    }
+  });
 });
+
+describe("Specialist Agent Prompt Presets", () => {
+  test("loads Overseer, Bolt, and Sentinel prompt presets", () => {
+    const promptsDir = path.resolve(process.cwd(), ".agent/prompts");
+    assert.ok(fs.existsSync(path.join(promptsDir, "Overseer.md")));
+    assert.ok(fs.existsSync(path.join(promptsDir, "Bolt.md")));
+    assert.ok(fs.existsSync(path.join(promptsDir, "Sentinel.md")));
+
+    const overseer = fs.readFileSync(path.join(promptsDir, "Overseer.md"), "utf-8");
+    assert.ok(overseer.includes("Overseer Protocol"));
+
+    const bolt = fs.readFileSync(path.join(promptsDir, "Bolt.md"), "utf-8");
+    assert.ok(bolt.includes("Payload Budgeting"));
+
+    const sentinel = fs.readFileSync(path.join(promptsDir, "Sentinel.md"), "utf-8");
+    assert.ok(sentinel.includes("Vulnerability Mitigation"));
+
+    assert.ok(fs.existsSync(path.join(promptsDir, "Task_Template.md")));
+    const template = fs.readFileSync(path.join(promptsDir, "Task_Template.md"), "utf-8");
+    assert.ok(template.includes("Master Task Prompt Template"));
+  });
+});
+
+describe("Pre-Analysis Layering & Status Categorization", () => {
+  test("categorizeTaskStatus correctly partitions session states", async () => {
+    const { categorizeTaskStatus } = await import("../scripts/jules-status.mjs");
+    assert.equal(categorizeTaskStatus("AWAITING_PLAN_APPROVAL"), "action_required");
+    assert.equal(categorizeTaskStatus("AWAITING_USER_FEEDBACK"), "action_required");
+    assert.equal(categorizeTaskStatus("IN_PROGRESS"), "in_progress");
+    assert.equal(categorizeTaskStatus("dispatched"), "in_progress");
+    assert.equal(categorizeTaskStatus("COMPLETED"), "completed");
+    assert.equal(categorizeTaskStatus("FAILED"), "completed");
+  });
+
+  test("runPreflightStaticCheck handles clean and missing scripts gracefully", async () => {
+    const { runPreflightStaticCheck } = await import("../scripts/jules-dispatch.mjs");
+    const result = runPreflightStaticCheck(process.cwd());
+    assert.equal(typeof result, "string");
+  });
+});
+
+
 
 
 

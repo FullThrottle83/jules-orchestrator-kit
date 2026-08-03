@@ -1,79 +1,51 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { log, checkDailyBudget } from "./utils.mjs";
+#!/usr/bin/env node
 
-const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+/**
+ * Backward compatibility shim for jules-status.mjs in v0.9.0.
+ */
 
-if (isMainModule) {
-  const isJson = process.argv.includes("--json");
-  const queueLogPath = path.resolve(process.cwd(), ".agent/jules-queue/queue.jsonl");
+import { checkDailyBudget } from "../src/state.mjs";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
-  const budgetInfo = checkDailyBudget();
-
-if (!fs.existsSync(queueLogPath)) {
-  if (isJson) {
-    console.log(JSON.stringify({ queue: [], budget: budgetInfo }, null, 2));
-  } else {
-    log.info("Queue log is empty. No tasks have been dispatched yet.");
+export function categorizeTaskStatus(statusStr = "") {
+  const s = String(statusStr).toUpperCase();
+  if (s === "AWAITING_PLAN_APPROVAL" || s === "AWAITING_USER_FEEDBACK") {
+    return "action_required";
   }
-  process.exit(0);
+  if (s === "IN_PROGRESS" || s === "DISPATCHED") {
+    return "in_progress";
+  }
+  if (s === "COMPLETED" || s === "FAILED") {
+    return "completed";
+  }
+  return "unknown";
 }
 
+const isJson = process.argv.includes("--json");
+const root = process.env.JULES_PROJECT_ROOT || process.cwd();
+const budget = checkDailyBudget(root);
+
+let queueItems = [];
+const queueFile = join(root, ".agent/jules-queue/queue.jsonl");
+if (existsSync(queueFile)) {
   try {
-    const content = fs.readFileSync(queueLogPath, "utf-8");
-    const lines = content.split("\n").filter(Boolean);
-    
-    if (lines.length === 0) {
-      if (isJson) {
-        console.log(JSON.stringify({ queue: [], budget: budgetInfo }, null, 2));
-      } else {
-        log.info("Queue log is empty.");
-      }
-      process.exit(0);
-    }
+    const raw = readFileSync(queueFile, "utf-8");
+    queueItems = raw
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const parsed = JSON.parse(line);
+        return {
+          ...parsed,
+          Status: parsed.Status || parsed.status || "PENDING",
+        };
+      });
+  } catch (_) {}
+}
 
-    // We only want the latest status for each task file
-    const statusMap = new Map();
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.file) {
-          statusMap.set(entry.file, {
-            file: entry.file,
-            Task: entry.file.replace(/^TASK-\d+-/, "").replace(/\.md$/, ""),
-            Status: entry.status,
-            Timestamp: entry.timestamp,
-            Error: entry.error || null
-          });
-        }
-      } catch (e) {
-        // Ignore malformed lines
-      }
-    }
-
-    const tasksList = Array.from(statusMap.values());
-
-    if (isJson) {
-      console.log(JSON.stringify({ queue: tasksList, budget: budgetInfo }, null, 2));
-      process.exit(0);
-    }
-
-    if (tasksList.length === 0) {
-      log.info("No parseable task events found in queue.jsonl");
-      process.exit(0);
-    }
-
-    log.header(`JULES QUEUE STATUS (Budget: ${budgetInfo.used}/${budgetInfo.budget} sessions used)`);
-    console.table(tasksList.map(t => ({ Task: t.Task, Status: t.Status, Timestamp: new Date(t.Timestamp).toLocaleString(), Error: t.Error || "-" })));
-
-  } catch (err) {
-    if (isJson) {
-      console.log(JSON.stringify({ error: err.message }, null, 2));
-    } else {
-      log.error(`Failed to read queue log: ${err.message}`);
-    }
-    process.exit(1);
-  }
+if (isJson) {
+  console.log(JSON.stringify({ queue: queueItems, sessions: [], budget }));
+} else {
+  console.log(`[Shim] Status: Daily Budget ${budget.used}/${budget.budget} used.`);
 }

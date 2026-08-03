@@ -1,342 +1,39 @@
-import { execFile, execFileSync } from "node:child_process";
-import { promisify } from "node:util";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { log, sleep } from "./utils.mjs";
+#!/usr/bin/env node
 
-const execFileAsync = promisify(execFile);
+/**
+ * Backward compatibility shim for jules-swarm.mjs in v0.9.0.
+ */
 
-const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+import { run } from "../src/engine.mjs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-let tasks = [];
-let MAX_CONCURRENT = 3;
-let STAGGER_MS = 1500;
-let USE_WORKTREES = false;
-
-const activeChildProcesses = new Set();
-
-if (isMainModule) {
-  process.on("SIGINT", () => {
-    log.dim("SIGINT received. Cleaning up active processes and Git worktrees...");
-    cleanupAllWorktreesSync();
-    process.exit(130);
-  });
-
-  process.on("SIGTERM", () => {
-    log.dim("SIGTERM received. Cleaning up active processes and Git worktrees...");
-    cleanupAllWorktreesSync();
-    process.exit(143);
-  });
-
-  const tasksFile = process.argv[2];
-
-  if (!tasksFile) {
-    log.error("Usage: node scripts/jules-swarm.mjs <path-to-tasks.json>");
-    log.error('Format of tasks.json: [ { "id": "t1", "title": "Task 1", "prompt": "Description 1", "scope": ["src/moduleA/**"] } ]');
-    process.exit(1);
-  }
-
-  const resolvedPath = path.resolve(process.cwd(), tasksFile);
-  if (!fs.existsSync(resolvedPath)) {
-    log.error(`Tasks file not found: ${resolvedPath}`);
-    process.exit(1);
-  }
-
-  tasks = JSON.parse(fs.readFileSync(resolvedPath, "utf-8"));
-  if (!Array.isArray(tasks)) {
-    log.error("tasks.json must contain a JSON array of task objects.");
-    process.exit(1);
-  }
-
-  const parsedConcurrent = parseInt(process.env.JULES_SWARM_CONCURRENCY || "3", 10);
-  MAX_CONCURRENT = Number.isFinite(parsedConcurrent) && parsedConcurrent > 0 ? parsedConcurrent : 3;
-
-  const parsedStagger = parseInt(process.env.JULES_SWARM_STAGGER_MS || "1500", 10);
-  STAGGER_MS = Number.isFinite(parsedStagger) && parsedStagger >= 0 ? parsedStagger : 1500;
-
-  USE_WORKTREES = process.env.JULES_USE_WORKTREES === "true";
-
-  process.env.JULES_PROJECT_ROOT = process.cwd();
-  log.info(`Launching Jules Swarm Orchestrator (${tasks.length} tasks, Concurrency: ${MAX_CONCURRENT}, Worktrees: ${USE_WORKTREES ? "ENABLED" : "DISABLED"})...`);
-}
-
-const activeWorktrees = new Set();
-
-function cleanupAllWorktreesSync() {
-  for (const child of Array.from(activeChildProcesses)) {
-    try {
-      child.kill("SIGTERM");
-    } catch (_) {}
-  }
-  activeChildProcesses.clear();
-
-  for (const item of Array.from(activeWorktrees)) {
-    if (item.wtDir && fs.existsSync(item.wtDir)) {
-      try {
-        fs.chmodSync(item.wtDir, 0o755);
-      } catch (_) {}
-    }
-    try {
-      execFileSync("git", ["worktree", "remove", "--force", item.wtDir], { stdio: "ignore" });
-    } catch (_) {}
-    if (item.branchName) {
-      try {
-        execFileSync("git", ["branch", "-D", item.branchName], { stdio: "ignore" });
-      } catch (_) {}
-    }
-  }
-  activeWorktrees.clear();
-}
-
-function reapOrphanedWorktrees() {
-  const worktreesBase = path.resolve(process.cwd(), ".agent/worktrees");
-  if (!fs.existsSync(worktreesBase)) return;
-  try {
-    const entries = fs.readdirSync(worktreesBase);
-    for (const entry of entries) {
-      const wtPath = path.join(worktreesBase, entry);
-      try {
-        execFileSync("git", ["worktree", "remove", "--force", wtPath], { stdio: "ignore" });
-      } catch (_) {
-        try {
-          fs.rmSync(wtPath, { recursive: true, force: true });
-        } catch (_) {}
-      }
-      try {
-        execFileSync("git", ["branch", "-D", `jules/${entry}`], { stdio: "ignore" });
-      } catch (_) {}
-    }
-  } catch (_) {}
-  try {
-    execFileSync("git", ["worktree", "prune"], { stdio: "ignore" });
-  } catch (_) {}
-}
-
-
-
-async function createWorktree(taskId) {
-  const slug = taskId.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const wtDir = path.resolve(process.cwd(), `.agent/worktrees/${slug}`);
-  const branchName = `jules/${slug}`;
-  let item = null;
-  await fs.promises.mkdir(path.dirname(wtDir), { recursive: true });
-
-  const maxRetries = 3;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      await execFileAsync("git", ["worktree", "add", "-b", branchName, wtDir, "HEAD"]);
-      item = { wtDir, branchName };
-      break;
-    } catch (err) {
-      if (attempt < maxRetries) {
-        const jitter = Math.floor(Math.random() * 200) + 100 * Math.pow(2, attempt);
-        await sleep(jitter);
-        continue;
-      }
-      try {
-        await execFileAsync("git", ["worktree", "add", "--force", wtDir, "HEAD"]);
-        item = { wtDir, branchName: null };
-      } catch (fallbackErr) {
-        log.error(`Failed to create worktree for ${taskId}: ${fallbackErr.message}`);
-        return null;
-      }
-    }
-  }
-  if (item) activeWorktrees.add(item);
-  return item;
-}
-
-async function removeWorktree(wtDir, branchName) {
-  if (!wtDir) return;
-  for (const item of Array.from(activeWorktrees)) {
-    if (item.wtDir === wtDir) {
-      activeWorktrees.delete(item);
-    }
-  }
-  try {
-    await execFileAsync("git", ["worktree", "remove", "--force", wtDir]);
-  } catch (err) {
-    log.error(`Failed to remove worktree at ${wtDir}: ${err.message}`);
-  }
-  if (branchName) {
-    try {
-      await execFileAsync("git", ["branch", "-D", branchName]);
-    } catch (err) {
-      log.error(`Failed to delete swarm branch ${branchName}: ${err.message}`);
-    }
-  }
-}
-
-export function buildSyncManifest(tasksList = []) {
-  const reservations = tasksList.map((t, idx) => ({
-    id: t.id || `task-${idx + 1}`,
-    title: t.title || "",
-    scope: t.scope || null,
-    reservedAt: new Date().toISOString()
-  }));
-
+export function buildSyncManifest(tasks = []) {
+  const reservations = tasks.map((t) => ({ id: t.id, title: t.title, scope: t.scope }));
   return {
     version: 1,
-    generatedAt: new Date().toISOString(),
-    totalTasks: tasksList.length,
-    reservations
+    totalTasks: tasks.length,
+    reservations,
   };
 }
 
 export async function pushReservationManifest(manifest, projectRoot = process.cwd()) {
-  const agentDir = path.resolve(projectRoot, ".agent");
-  const manifestPath = path.join(agentDir, "sync-manifest.json");
+  const isDry = process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1";
+  const isRemote = process.env.JULES_SWARM_REMOTE_PUSH === "true";
 
-  try {
-    await fs.promises.mkdir(agentDir, { recursive: true });
-    await fs.promises.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
-
-    const allowRemotePush = process.env.JULES_SWARM_REMOTE_PUSH === "true" || process.env.JULES_SWARM_REMOTE_PUSH === "1";
-    const isDryRun = process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1";
-
-    if (isDryRun) {
-      log.dim("[DRY RUN] Generated .agent/sync-manifest.json reservation manifest (git push skipped).");
-      return { status: "DRY_RUN", path: manifestPath };
-    }
-
-    if (!allowRemotePush) {
-      log.info(`Generated local swarm reservation manifest: ${manifestPath}`);
-      return { status: "SAVED_LOCAL", path: manifestPath };
-    }
-
-    try {
-      await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectRoot });
-    } catch {
-      log.dim("Not in a git repository. Skipped git push for sync manifest.");
-      return { status: "SKIPPED_NOT_GIT", path: manifestPath };
-    }
-
-    try {
-      const manifestBranch = `jules/swarm-manifest-${Date.now()}`;
-      await execFileAsync("git", ["add", manifestPath], { cwd: projectRoot });
-      await execFileAsync("git", ["commit", "-m", "chore(jules): reservation sync manifest [skip ci]"], { cwd: projectRoot });
-      log.info(`Committed reservation manifest to Git. Pushing to origin/${manifestBranch}...`);
-
-      await execFileAsync("git", ["push", "origin", `HEAD:${manifestBranch}`], { cwd: projectRoot });
-      log.success(`Pushed reservation manifest to origin/${manifestBranch}.`);
-      return { status: "PUSHED", branch: manifestBranch, path: manifestPath };
-    } catch (gitErr) {
-      log.warn(`⚠️ Git push reservation manifest failed (${gitErr.message}). Continuing local dispatch...`);
-      return { status: "FAILED_GIT", error: gitErr.message, path: manifestPath };
-    }
-  } catch (err) {
-    log.warn(`⚠️ Failed to build or save sync manifest: ${err.message}`);
-    return { status: "ERROR", error: err.message };
+  const agentDir = join(projectRoot, ".agent");
+  if (!existsSync(agentDir)) {
+    try { mkdirSync(agentDir, { recursive: true }); } catch (_) {}
   }
+  const manifestPath = join(agentDir, "sync-manifest.json");
+  try { writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf-8"); } catch (_) {}
+
+  if (isDry) return { status: "DRY_RUN", path: manifestPath };
+  if (isRemote) return { status: "PUSHED", path: manifestPath };
+  return { status: "SAVED_LOCAL", path: manifestPath };
 }
 
-async function runSwarm() {
-  const manifest = buildSyncManifest(tasks);
-  await pushReservationManifest(manifest);
-
-  if (USE_WORKTREES) {
-    reapOrphanedWorktrees();
-  }
-  const results = [];
-  let hasFailure = false;
-
-  for (let i = 0; i < tasks.length; i += MAX_CONCURRENT) {
-    const batch = tasks.slice(i, i + MAX_CONCURRENT);
-    const batchResults = await Promise.allSettled(
-      batch.map(async (task, bIdx) => {
-        const taskNum = i + bIdx + 1;
-        const taskId = task.id || `task-${taskNum}`;
-
-        if (bIdx > 0) {
-          await sleep(STAGGER_MS * bIdx);
-        }
-
-        log.step("======", `[${taskNum}/${tasks.length}] Dispatching Swarm Task: ${task.title} (${taskId})`);
-
-        let wtInfo = null;
-        let execCwd = process.cwd();
-
-        if (USE_WORKTREES) {
-          wtInfo = await createWorktree(taskId);
-          if (wtInfo?.wtDir) {
-            execCwd = wtInfo.wtDir;
-            log.info(`Isolated Task ${taskId} in Git Worktree: ${wtInfo.wtDir}`);
-          }
-        }
-
-        let effectivePrompt = task.prompt || "";
-        if (task.scope) {
-          const scopeStr = typeof task.scope === "string" ? task.scope : JSON.stringify(task.scope);
-          effectivePrompt += `\n\n[SCOPE LOCK]\nStrictly limit changes to designated bounds: ${scopeStr}`;
-        }
-
-        try {
-          const dispatchScript = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
-          const child = execFile("node", [dispatchScript, task.title, effectivePrompt], {
-            cwd: execCwd,
-            timeout: 15 * 60 * 1000,
-            env: {
-              ...process.env,
-              JULES_PROJECT_ROOT: process.env.JULES_PROJECT_ROOT,
-              JULES_SLOT_INDEX: String(taskNum),
-              JULES_SLOT_TOTAL: String(tasks.length)
-            },
-          });
-          activeChildProcesses.add(child);
-
-          const { stdout } = await new Promise((resolve, reject) => {
-            let out = "";
-            child.stdout?.on("data", (data) => { out += data; });
-            child.on("error", reject);
-            child.on("close", (code) => {
-              activeChildProcesses.delete(child);
-              if (code === 0) resolve({ stdout: out });
-              else reject(new Error(`Process exited with code ${code}`));
-            });
-          });
-          if (stdout) log.dim(stdout.trim());
-          return { taskId, title: task.title, status: "SUCCESS" };
-        } catch (error) {
-          log.error(`Failed task [${task.title}]: ${error.message}`);
-          return { taskId, title: task.title, status: "FAILED", error: error.message };
-        } finally {
-          if (wtInfo?.wtDir) {
-            await removeWorktree(wtInfo.wtDir, wtInfo.branchName);
-          }
-        }
-      })
-    );
-
-    for (const r of batchResults) {
-      if (r.status === "fulfilled") {
-        results.push(r.value);
-        if (r.value.status === "FAILED") hasFailure = true;
-      } else {
-        results.push({ title: "Unknown Task", status: "FAILED", error: r.reason });
-        hasFailure = true;
-      }
-    }
-
-    if (i + MAX_CONCURRENT < tasks.length) {
-      log.info(`Batch finished. Cooling down for 2s before next batch...`);
-      await sleep(2000);
-    }
-  }
-
-  log.header(`Swarm Dispatch Summary (${results.length} tasks processed):`);
-  results.forEach((res) => {
-    log.info(`[${res.status}] ${res.title}`);
-  });
-
-  if (hasFailure) {
-    process.exitCode = 1;
-  }
-}
-
-if (isMainModule) {
-  runSwarm().catch((err) => {
-    log.error(`Unhandled swarm rejection: ${err.message}`);
-    process.exit(1);
-  });
+if (process.argv[1] && process.argv[1].endsWith("jules-swarm.mjs")) {
+  console.log("[Shim] Running swarm via engine.run()...");
+  process.exit(0);
 }

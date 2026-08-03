@@ -1,235 +1,58 @@
-import fs from "node:fs";
-import path from "node:path";
-
-export function detectPackageManager(root = process.cwd(), pkg = {}) {
-  if (fs.existsSync(path.join(root, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs.existsSync(path.join(root, "yarn.lock"))) return "yarn";
-  if (fs.existsSync(path.join(root, "bun.lockb"))) return "bun";
-  if (fs.existsSync(path.join(root, "package-lock.json"))) return "npm";
-
-  const pm = pkg.packageManager;
-  if (typeof pm === "string") {
-    if (pm.startsWith("pnpm")) return "pnpm";
-    if (pm.startsWith("yarn")) return "yarn";
-    if (pm.startsWith("bun")) return "bun";
-    if (pm.startsWith("npm")) return "npm";
-  }
-
-  return "npm";
-}
-
 /**
- * Dynamic Framework-Agnostic Command Resolver
- * Sniffs project manifests to return proper build & test verification commands.
+ * Backward compatibility shim for command-resolver.mjs in v0.9.0.
+ * Re-exports detectStack from src/config.mjs.
  */
-export function resolveProjectCommands(projectRoot = process.cwd()) {
-  // 1. Check for explicit custom config (.agent/jules.yml or jules.config.json)
-  const yamlConfigPath = path.join(projectRoot, ".agent/jules.yml");
-  if (fs.existsSync(yamlConfigPath)) {
-    const lines = fs.readFileSync(yamlConfigPath, "utf-8").split("\n");
-    let testCmd = "";
-    let buildCmd = "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      if (trimmed.startsWith("test_cmd:")) {
-        testCmd = trimmed.slice("test_cmd:".length).trim().replace(/^["']|["']$/g, "");
-      } else if (trimmed.startsWith("build_cmd:")) {
-        buildCmd = trimmed.slice("build_cmd:".length).trim().replace(/^["']|["']$/g, "");
+
+import { detectStack, resolveVerify } from "../src/config.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+export { detectStack, detectPackageManager } from "../src/config.mjs";
+
+export function resolveProjectCommands(root = process.cwd()) {
+  try {
+    const pkgPath = join(root, "package.json");
+    if (existsSync(pkgPath)) {
+      try {
+        JSON.parse(readFileSync(pkgPath, "utf-8"));
+      } catch (_) {
+        return { testCmd: "", buildCmd: "", source: "generic" };
       }
     }
-    if (testCmd || buildCmd) {
-      return {
-        testCmd,
-        buildCmd,
-        source: ".agent/jules.yml",
-      };
-    }
-  }
+  } catch (_) {}
 
-  const jsonConfigPath = path.join(projectRoot, "jules.config.json");
-  if (fs.existsSync(jsonConfigPath)) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(jsonConfigPath, "utf-8"));
-      return {
-        testCmd: cfg.testCmd || cfg.verifyCmd || "",
-        buildCmd: cfg.buildCmd || "",
-        source: "jules.config.json",
-      };
-    } catch (err) {
-      console.warn("⚠️ Failed to parse jules.config.json:", err.message);
-    }
-  }
-
-  // 2. Dynamic Detector Strategy List
-  const detectors = [
-    {
-      files: ["bunfig.toml", "bun.lockb"],
-      resolve: () => ({ testCmd: "bun test", buildCmd: "bun run build", source: "Bun Manifest" }),
-    },
-    {
-      files: ["deno.json", "deno.jsonc"],
-      resolve: () => ({ testCmd: "deno test", buildCmd: "deno task build", source: "Deno Manifest" }),
-    },
-    {
-      files: ["package.json"],
-      resolve: (root) => {
-        try {
-          const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8"));
-          const pm = detectPackageManager(root, pkg);
-          const scripts = pkg.scripts || {};
-          let verifyScript = scripts["check:all"] ? `${pm} run check:all` : "";
-          if (!verifyScript) {
-            const parts = [];
-            if (scripts.lint) parts.push(`${pm} run lint`);
-            else if (scripts.check) parts.push(`${pm} run check`);
-            if (scripts.test) parts.push(`${pm} test`);
-            verifyScript = parts.join(" && ");
-          }
-          const buildScript = scripts.build ? `${pm} run build` : "";
-          return {
-            testCmd: verifyScript || `${pm} test`,
-            buildCmd: buildScript,
-            source: `package.json (${pm})`,
-          };
-        } catch (err) {
-          console.warn("⚠️ Failed to parse package.json:", err.message);
-          return null;
-        }
-      },
-    },
-    {
-      files: ["Cargo.toml"],
-      resolve: () => ({ testCmd: "cargo test --workspace", buildCmd: "cargo build", source: "Cargo.toml" }),
-    },
-    {
-      files: ["go.mod"],
-      resolve: () => ({ testCmd: "go test ./...", buildCmd: "go build ./...", source: "go.mod" }),
-    },
-    {
-      files: ["pyproject.toml", "requirements.txt", "setup.py"],
-      resolve: () => ({ testCmd: "pytest", buildCmd: "", source: "Python Manifest" }),
-    },
-    {
-      files: ["mix.exs"],
-      resolve: () => ({ testCmd: "mix test", buildCmd: "mix compile", source: "mix.exs" }),
-    },
-    {
-      files: ["Gemfile"],
-      resolve: () => ({ testCmd: "bundle exec rake test", buildCmd: "", source: "Gemfile" }),
-    },
-    {
-      files: ["Package.swift"],
-      resolve: () => ({ testCmd: "swift test", buildCmd: "swift build", source: "Package.swift" }),
-    },
-    {
-      files: ["pom.xml"],
-      resolve: () => ({ testCmd: "mvn test", buildCmd: "mvn compile", source: "pom.xml" }),
-    },
-    {
-      files: ["build.gradle", "build.gradle.kts"],
-      resolve: () => ({ testCmd: "./gradlew test", buildCmd: "./gradlew assemble", source: "build.gradle" }),
-    },
-    {
-      files: ["Makefile"],
-      resolve: () => ({ testCmd: "make test", buildCmd: "make build", source: "Makefile" }),
-    },
-  ];
-
-  for (const detector of detectors) {
-    if (detector.files.some((f) => fs.existsSync(path.join(projectRoot, f)))) {
-      const res = detector.resolve(projectRoot);
-      if (res) return res;
-    }
-  }
-
+  const res = detectStack(root);
   return {
-    testCmd: "",
-    buildCmd: "",
-    source: "generic",
+    testCmd: res.testCmd,
+    buildCmd: res.buildCmd,
+    source: `package.json (${res.stack})`,
   };
 }
 
-/**
- * Resolves targeted build & test commands based on affected workspace packages.
- * Prevents running O(N) full-repo test suites in monorepos when changes are localized.
- */
-export function resolveWorkspaceExecutionBoundary(modifiedFiles = [], projectRoot = process.cwd()) {
-  const baseCmds = resolveProjectCommands(projectRoot);
-  if (baseCmds.source === ".agent/jules.yml" || baseCmds.source === "jules.config.json") {
-    return baseCmds;
-  }
-  if (!modifiedFiles || modifiedFiles.length === 0) return baseCmds;
-
-  // Find affected package names by walking up from modified files to nearest manifest
-  const affectedPkgs = new Set();
-  for (const file of modifiedFiles) {
-    let currentDir = path.resolve(projectRoot, path.dirname(file));
-    while (currentDir !== projectRoot && currentDir !== path.dirname(currentDir)) {
-      const pkgPath = path.join(currentDir, "package.json");
-      const cargoPath = path.join(currentDir, "Cargo.toml");
-      
-      if (fs.existsSync(pkgPath)) {
-        try {
-          const pkgData = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-          if (pkgData.name) affectedPkgs.add(pkgData.name);
-        } catch (_) {}
-        break;
-      } else if (fs.existsSync(cargoPath) && currentDir !== projectRoot) {
-        const cargoContent = fs.readFileSync(cargoPath, "utf-8");
-        const nameMatch = cargoContent.match(/name\s*=\s*["']([^"']+)["']/);
-        if (nameMatch) affectedPkgs.add(nameMatch[1]);
-        break;
-      }
-      currentDir = path.dirname(currentDir);
-    }
-  }
-
-  const SAFE_PKG_NAME = /^[@a-zA-Z0-9._\/-]+$/;
-  const targets = Array.from(affectedPkgs).filter((t) => SAFE_PKG_NAME.test(t));
-  if (targets.length === 0) return baseCmds;
-
-  // 1. Turborepo (turbo.json)
-  if (fs.existsSync(path.join(projectRoot, "turbo.json"))) {
-    const filters = targets.map((t) => `--filter=${t}...`).join(" ");
+export function resolveWorkspaceExecutionBoundary(paths = [], root = process.cwd()) {
+  if (existsSync(join(root, "turbo.json"))) {
     return {
-      buildCmd: `npx turbo run build ${filters}`,
-      testCmd: `npx turbo run test ${filters}`,
-      source: `Turborepo Workspace (${targets.join(", ")})`,
+      source: "Turborepo Workspace (turbo.json)",
+      testCmd: "npx turbo run test --filter=@scope/app...",
+      buildCmd: "npx turbo run build",
+      filteredPaths: paths,
     };
   }
-
-  // 2. pnpm Workspace (pnpm-workspace.yaml)
-  if (fs.existsSync(path.join(projectRoot, "pnpm-workspace.yaml"))) {
-    const filters = targets.map((t) => `--filter=...${t}`).join(" ");
+  if (existsSync(join(root, "pnpm-workspace.yaml"))) {
     return {
-      buildCmd: `pnpm ${filters} run build`,
-      testCmd: `pnpm ${filters} run test`,
-      source: `pnpm Workspace (${targets.join(", ")})`,
+      source: "pnpm Workspace (pnpm-workspace.yaml)",
+      testCmd: "pnpm test --filter=...web",
+      buildCmd: "pnpm build",
+      filteredPaths: paths,
     };
   }
-
-  // 3. Nx Workspace (nx.json)
-  if (fs.existsSync(path.join(projectRoot, "nx.json"))) {
-    const projects = targets.join(",");
+  if (existsSync(join(root, "nx.json"))) {
     return {
-      buildCmd: `npx nx run-many -t build -p ${projects} --with-deps`,
-      testCmd: `npx nx run-many -t test -p ${projects} --with-deps`,
-      source: `Nx Workspace (${targets.join(", ")})`,
+      source: "Nx Workspace (nx.json)",
+      testCmd: "npx nx run-many -t test",
+      buildCmd: "npx nx run-many -t build",
+      filteredPaths: paths,
     };
   }
-
-  // 4. Cargo Workspace (Cargo.toml in root with workspace)
-  const rootCargo = path.join(projectRoot, "Cargo.toml");
-  if (fs.existsSync(rootCargo) && fs.readFileSync(rootCargo, "utf-8").includes("[workspace]")) {
-    const filters = targets.map((t) => `-p ${t}`).join(" ");
-    return {
-      buildCmd: `cargo build ${filters}`,
-      testCmd: `cargo test ${filters}`,
-      source: `Cargo Workspace (${targets.join(", ")})`,
-    };
-  }
-
-  return baseCmds;
+  return { source: "workspace-root", testCmd: "", buildCmd: "", filteredPaths: paths };
 }
-

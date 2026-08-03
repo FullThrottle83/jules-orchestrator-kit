@@ -1,12 +1,35 @@
 /**
- * jules-orchestrator-kit Node.js SDK
- * Primary entrypoint for programmatically orchestrating Google Jules workflows.
- * Zero runtime dependencies.
+ * Google Jules Orchestrator Kit - Node.js SDK (v0.9.0)
+ *
+ * Exposes core orchestrator functions for programmatically driving agent tasks,
+ * security auditing, repo gating, and state operations.
  */
 
+export { loadConfig, detectStack, resolveVerify, resolveRoot, normalizePath } from "./src/config.mjs";
+export {
+  shannonEntropy,
+  redactSecrets,
+  anonymizePii,
+  matchesGlob,
+  checkScope,
+  scanDiff,
+} from "./src/security.mjs";
+export { git, runCmd, changedFiles, diffBytes, diffText } from "./src/git.mjs";
+export { createProvider, JULES_PRESET, CLAUDE_PRESET, CODEX_PRESET } from "./src/provider.mjs";
+export {
+  appendLedger,
+  readLedger,
+  withBudget,
+  checkDailyBudget,
+  acquireLock,
+  releaseLock,
+  lockStatus,
+} from "./src/state.mjs";
+export { gate, dispatch, repair, run } from "./src/engine.mjs";
+
+// Legacy SDK shims for backward compatibility
 export { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "./scripts/command-resolver.mjs";
-export { runSelfAudit, runPreflightSandbox, loadForbiddenPatterns, loadAllowedPatterns, matchGlob, validateJulesConfig } from "./scripts/jules-self-audit.mjs";
+export { runSelfAudit, runPreflightSandbox } from "./scripts/jules-self-audit.mjs";
 export { scanCodebaseForTodos, runScanner } from "./scripts/jules-scan-todos.mjs";
-export { log, logToHistory, ensureDir, resolveMarkdownConflict, redactSecrets, anonymizePii, verifyLedgerIntegrity, loadEnv } from "./scripts/utils.mjs";
 export { getDynamicGuardrails, dispatchTask } from "./scripts/jules-dispatch.mjs";
 export { classifyQueueFailure } from "./scripts/jules-queue-runner.mjs";

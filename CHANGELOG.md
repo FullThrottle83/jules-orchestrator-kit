@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2026-08-03
+### Added & Hardened (Community Audit & Security Enhancements)
+- **Safety Gate Verification Engine**: Added `checkSafetyGate()` in `scripts/jules-merge-swarm.mjs` to inspect active worker locks (`.agent/state/locks/*.json`) before squashing PRs, preventing active session merge collisions.
+- **UNTRUSTED Prompt Injection Fencing & Pre-Flight Static Checks**: Enhanced `<UNTRUSTED_TASK_CONTEXT_${nonce}>` directives in `scripts/jules-dispatch.mjs` with explicit injection defense rules and added `runPreflightStaticCheck()` to pre-run static analysis (`eslint`, `tsc`, `npm run lint`) and inject error reports into `<PREFLIGHT_STATIC_ANALYZER_ERRORS>`.
+- **3-Bucket Status Categorization**: Added `categorizeTaskStatus()` in `scripts/jules-status.mjs` partitioning task outputs into *🚨 Action Required*, *⏳ In Progress*, and *✅ Completed / Terminal*.
+- **Specialist Agent Prompts & Master Template**: Added `.agent/prompts/` directory featuring `Overseer.md` (codebase audit specialist), `Bolt.md` (micro-performance optimizer), `Sentinel.md` (security auditor), and `Task_Template.md` (master prompt template).
+
 ## [0.8.5] - 2026-08-03
 ### Added & Hardened (Enterprise Governance & Swarm Core)
 - **Disjoint Swarm PR Auto-Merge Engine**: Added `scripts/jules-merge-swarm.mjs` (`npm run jules:merge-swarm`) to automatically verify CI checks, evaluate disjoint file cluster modifications (zero file collisions), and squash-merge passing Jules PRs (`gh pr merge --squash --delete-branch`).

@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.8.5",
+  "version": "0.9.0",
   "description": "Orchestration kit for running Google Jules autonomous agents.",
   "repository": {
     "type": "git",
@@ -12,8 +12,9 @@
   "homepage": "https://github.com/FullThrottle83/jules-orchestrator-kit#readme",
   "type": "module",
   "bin": {
+    "agentctl": "bin/agentctl.mjs",
     "jules-init": "bin/init.js",
-    "jules-orchestrator-kit": "bin/init.js"
+    "jules-orchestrator-kit": "bin/agentctl.mjs"
   },
   "main": "index.mjs",
   "exports": {
@@ -21,10 +22,12 @@
   },
   "files": [
     "index.mjs",
+    "src/",
     "bin/",
     "scripts/",
     ".agent/jules.yml",
     ".agent/rules/",
+    ".agent/prompts/",
     ".agent/workflows/",
     ".agent/jules-queue/README.md",
     ".github/workflows/jules-audit.yml",

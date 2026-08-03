@@ -1,188 +1,22 @@
-#!/usr/bin/env node
-
 /**
- * lock-manager.mjs
- * 
- * Manages multi-agent file locks to prevent concurrent modification collisions.
- * Uses .agent/sync-manifest.json as the lock registry.
- * 
- * Usage:
- *   node scripts/lock-manager.mjs acquire <agent_name> <task_id> <file_path1> <file_path2> [--unattended]
- *   node scripts/lock-manager.mjs release <task_id>
+ * Backward compatibility shim for lock-manager.mjs in v0.9.0.
+ * Delegates to src/state.mjs.
  */
 
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { acquireLock, releaseLock, lockStatus } from "../src/state.mjs";
 
-const MANIFEST_PATH = path.join(process.cwd(), '.agent', 'file-locks.json');
-const TTL_MS = 20 * 60 * 1000; // 20 minutes
-const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
-
-async function readManifest() {
-  try {
-    const data = await fs.readFile(MANIFEST_PATH, 'utf-8');
-    return JSON.parse(data);
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      return {};
-    }
-    throw err;
-  }
+export function acquire(agent, taskId, filePaths = [], opts = {}) {
+  return acquireLock(agent, taskId, filePaths, opts);
 }
 
-async function writeManifest(manifest) {
-  await fs.mkdir(path.dirname(MANIFEST_PATH), { recursive: true });
-  const tmp = MANIFEST_PATH + `.tmp-${process.pid}`;
-  await fs.writeFile(tmp, JSON.stringify(manifest, null, 2), 'utf-8');
-  await fs.rename(tmp, MANIFEST_PATH);
+export function release(agent, taskId, opts = {}) {
+  return releaseLock(agent, taskId, opts);
 }
 
-async function withManifestLock(fn) {
-  const lockPath = MANIFEST_PATH + ".lock";
-  await fs.mkdir(path.dirname(lockPath), { recursive: true });
-  for (let i = 0; i < 50; i++) {
-    try {
-      const stats = await fs.stat(lockPath);
-      if (Date.now() - stats.mtimeMs > 5 * 60 * 1000) {
-        await fs.rm(lockPath, { force: true });
-      }
-    } catch (_) {}
-
-    let handle;
-    try {
-      handle = await fs.open(lockPath, "wx");
-    } catch (err) {
-      if (err.code !== "EEXIST") throw err;
-      await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
-      continue;
-    }
-    try { return await fn(); }
-    finally {
-      try { await handle.close(); } catch (_) {}
-      await fs.rm(lockPath, { force: true });
-    }
-  }
-  throw new Error("Could not acquire manifest lock");
+export function status(opts = {}) {
+  return lockStatus(opts);
 }
 
-function cleanExpiredLocks(manifest) {
-  const now = Date.now();
-  let changed = false;
-  for (const [file, lock] of Object.entries(manifest)) {
-    if (lock.expiresAt < now) {
-      delete manifest[file];
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-async function acquireLocks(agentName, taskId, files, isUnattended = false) {
-  await withManifestLock(async () => {
-    if (isUnattended) {
-      console.log(`[lock-manager] Operating in unattended mode for task ${taskId}`);
-    }
-    const manifest = await readManifest();
-  cleanExpiredLocks(manifest);
-  
-  const now = Date.now();
-  const expiresAt = now + TTL_MS;
-
-  const conflicts = [];
-  for (const file of files) {
-    const normalizedFile = path.normalize(file);
-    if (manifest[normalizedFile] && manifest[normalizedFile].taskId !== taskId) {
-      conflicts.push({
-        file: normalizedFile,
-        lockedBy: manifest[normalizedFile].agentName,
-        task: manifest[normalizedFile].taskId
-      });
-    }
-  }
-
-    if (conflicts.length > 0) {
-      let msg = `Cannot acquire locks for task ${taskId}. Conflicts detected:\n`;
-      for (const conflict of conflicts) {
-        msg += `  - ${conflict.file} is locked by ${conflict.lockedBy} (Task: ${conflict.task})\n`;
-      }
-      throw new Error(msg.trim());
-    }
-
-  for (const file of files) {
-    const normalizedFile = path.normalize(file);
-    manifest[normalizedFile] = {
-      agentName,
-      taskId,
-      acquiredAt: now,
-      expiresAt
-    };
-  }
-
-    await writeManifest(manifest);
-    console.log(`SUCCESS: Acquired locks for task ${taskId} on ${files.length} files.`);
-  });
-}
-
-async function releaseLocks(taskId) {
-  await withManifestLock(async () => {
-    const manifest = await readManifest();
-  let releasedCount = 0;
-  
-  for (const [file, lock] of Object.entries(manifest)) {
-    if (lock.taskId === taskId) {
-      delete manifest[file];
-      releasedCount++;
-    }
-  }
-
-    if (releasedCount > 0) {
-      await writeManifest(manifest);
-      console.log(`SUCCESS: Released ${releasedCount} locks for task ${taskId}.`);
-    } else {
-      console.log(`INFO: No locks found for task ${taskId}.`);
-    }
-  });
-}
-
-async function main() {
-  const args = process.argv.slice(2);
-  const command = args[0];
-
-  if (command === 'acquire') {
-    const agentName = args[1];
-    const taskId = args[2];
-    const unattendedIndex = args.indexOf('--unattended');
-    const isUnattended = unattendedIndex !== -1;
-    let files = [];
-    if (isUnattended) {
-       files = args.slice(3, unattendedIndex).concat(args.slice(unattendedIndex + 1));
-    } else {
-       files = args.slice(3);
-    }
-    
-    if (!agentName || !taskId || files.length === 0) {
-      console.error('Usage: acquire <agent_name> <task_id> <file_paths...> [--unattended]');
-      process.exit(1);
-    }
-    
-    await acquireLocks(agentName, taskId, files, isUnattended);
-  } else if (command === 'release') {
-    const taskId = args[1];
-    if (!taskId) {
-      console.error('Usage: release <task_id>');
-      process.exit(1);
-    }
-    await releaseLocks(taskId);
-  } else {
-    console.error('Unknown command. Use "acquire" or "release".');
-    process.exit(1);
-  }
-}
-
-if (isMainModule) {
-  main().catch(err => {
-    console.error('Unhandled error:', err);
-    process.exit(1);
-  });
+export function cleanup() {
+  return { removed: 0 };
 }
