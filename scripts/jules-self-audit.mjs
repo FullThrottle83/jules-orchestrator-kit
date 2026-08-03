@@ -208,6 +208,50 @@ export function loadAllowedPatterns(configContent = "") {
   return blockParsed;
 }
 
+export function validateJulesConfig(configContent = "", jsonGuardrailsContent = "") {
+  const errors = [];
+
+  if (configContent) {
+    const forbidden = loadForbiddenPatterns(configContent);
+    const allowed = loadAllowedPatterns(configContent);
+    const allPatterns = [...forbidden, ...allowed];
+
+    for (const pat of allPatterns) {
+      if (typeof pat !== "string" || !pat.trim()) {
+        errors.push("Empty or non-string glob pattern found in configuration.");
+      }
+    }
+  }
+
+  if (jsonGuardrailsContent) {
+    try {
+      const data = JSON.parse(jsonGuardrailsContent);
+      if (Array.isArray(data.rules)) {
+        for (let i = 0; i < data.rules.length; i++) {
+          const rule = data.rules[i];
+          if (rule.trigger) {
+            try {
+              new RegExp(rule.trigger, "i");
+            } catch (reErr) {
+              errors.push(`Invalid RegExp trigger at rule index ${i} ('${rule.trigger}'): ${reErr.message}`);
+            }
+          }
+        }
+      }
+    } catch (jsonErr) {
+      errors.push(`Invalid JSON syntax in dynamic-guardrails.json: ${jsonErr.message}`);
+    }
+  }
+
+  if (errors.length > 0) {
+    const err = new Error(`CONFIG VALIDATION ERROR:\n` + errors.map((e) => `  - ${e}`).join("\n"));
+    err.code = 3;
+    return { ok: false, errors, err };
+  }
+
+  return { ok: true, errors: [] };
+}
+
 export function parseAndCleanStderr(stderrStr) {
   if (!stderrStr) return "";
   const clean = stderrStr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
@@ -329,6 +373,14 @@ export function runSelfAudit() {
   // Fail closed: Load security config exclusively from base branch (mainRef).
   // Never fall back to working-tree config which an untrusted PR could craft.
   const trustedConfig = runGitCommand(["show", `${mainRef}:.agent/jules.yml`], true);
+  const trustedJson = runGitCommand(["show", `${mainRef}:.agent/rules/dynamic-guardrails.json`], true);
+  
+  const validationRes = validateJulesConfig(trustedConfig, trustedJson);
+  if (!validationRes.ok) {
+    log.error(`Config validation failed: ${validationRes.err.message}`);
+    throw validationRes.err;
+  }
+
   const forbiddenPatterns = loadForbiddenPatterns(trustedConfig);
   const allowedPatterns = loadAllowedPatterns(trustedConfig);
 

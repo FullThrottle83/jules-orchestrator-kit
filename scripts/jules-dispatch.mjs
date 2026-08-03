@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveProjectCommands } from "./command-resolver.mjs";
-import { log, logToHistory, redactSecrets, appendLedger, reserveDailyBudget, getLocalDateString, loadEnv, ensureSdkCacheIsolation } from "./utils.mjs";
+import { log, logToHistory, redactSecrets, anonymizePii, appendLedger, reserveDailyBudget, getLocalDateString, loadEnv, ensureSdkCacheIsolation } from "./utils.mjs";
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
@@ -229,7 +229,7 @@ if (isMainModule) {
     rawContent = `Please review and complete the task titled: "${taskTitle}". Make minimal, precise changes, update existing tests, and run automated verification suite.`;
   }
 
-  rawPrompt = redactSecrets(rawContent);
+  rawPrompt = anonymizePii(redactSecrets(rawContent));
 
   const baseRules = getBaseRules(process.cwd());
   const domainGuardrails = getDynamicGuardrails(rawPrompt);

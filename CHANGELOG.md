@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] - 2026-08-03
+### Added & Hardened (Enterprise Governance Core)
+- **Automatic PII Anonymization**: Added `anonymizePii(text)` to `utils.mjs` and integrated into `jules-dispatch.mjs` to automatically mask emails (`[REDACTED_EMAIL]`), IPv4 addresses (`[REDACTED_IP]`), and phone numbers (`[REDACTED_PHONE]`) from outbound task prompts before sending to AI providers.
+- **Strict Fail-Closed Config Validator**: Added `validateJulesConfig(configContent, jsonContent)` in `jules-self-audit.mjs` to validate rules and RegExp triggers in `.agent/rules/dynamic-guardrails.json` and `.agent/jules.yml`. Invalid syntax or unparseable RegExp triggers fail closed with exit code 3 and explicit error logs.
+- **Ledger Hash-Chain Integrity Verification**: Added `verifyLedgerIntegrity(filePath)` to `utils.mjs` computing SHA-256 hash chains across JSONL ledger records to detect data corruption or unauthorized tampering.
+- **Expanded SDK Exports**: Re-exported `anonymizePii`, `verifyLedgerIntegrity`, and `validateJulesConfig` from `index.mjs` primary SDK entrypoint.
+
 ## [0.8.4] - 2026-08-03
 ### Fixed & Hardened
 - **Dynamic Guardrails Schema Alignment**: Fixed schema drift in `jules-dispatch.mjs:getDynamicGuardrails` by supporting both `rule.directive` and `rule.guardrail` properties from `.agent/rules/dynamic-guardrails.json`.

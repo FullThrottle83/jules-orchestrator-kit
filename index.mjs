@@ -5,8 +5,8 @@
  */
 
 export { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "./scripts/command-resolver.mjs";
-export { runSelfAudit, runPreflightSandbox, loadForbiddenPatterns, loadAllowedPatterns, matchGlob } from "./scripts/jules-self-audit.mjs";
+export { runSelfAudit, runPreflightSandbox, loadForbiddenPatterns, loadAllowedPatterns, matchGlob, validateJulesConfig } from "./scripts/jules-self-audit.mjs";
 export { scanCodebaseForTodos, runScanner } from "./scripts/jules-scan-todos.mjs";
-export { log, logToHistory, ensureDir, resolveMarkdownConflict, redactSecrets, loadEnv } from "./scripts/utils.mjs";
+export { log, logToHistory, ensureDir, resolveMarkdownConflict, redactSecrets, anonymizePii, verifyLedgerIntegrity, loadEnv } from "./scripts/utils.mjs";
 export { getDynamicGuardrails, dispatchTask } from "./scripts/jules-dispatch.mjs";
 export { classifyQueueFailure } from "./scripts/jules-queue-runner.mjs";

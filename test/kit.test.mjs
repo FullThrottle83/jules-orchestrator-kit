@@ -5,8 +5,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager } from "../scripts/command-resolver.mjs";
-import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation } from "../scripts/utils.mjs";
+import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
+import { resolveMarkdownConflict, redactSecrets, anonymizePii, verifyLedgerIntegrity, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective, extractImageAttachments, getMultimodalAttachmentDirective } from "../scripts/jules-dispatch.mjs";
 import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
@@ -161,6 +161,52 @@ describe("Security Redaction & Secret Classification", () => {
     assert.equal(redactSecrets(npmToken).includes(npmToken), false);
     assert.equal(redactSecrets(stripeKey).includes(stripeKey), false);
     assert.equal(redactSecrets(googleOauth).includes(googleOauth), false);
+  });
+
+  test("anonymizes PII (emails, IPs, phone numbers) from prompt text", () => {
+    const prompt = "Contact user john.doe@example.com at +46 70 123 45 67 or server 192.168.1.50 for support";
+    const cleaned = anonymizePii(prompt);
+
+    assert.equal(cleaned.includes("john.doe@example.com"), false);
+    assert.ok(cleaned.includes("[REDACTED_EMAIL]"));
+    assert.equal(cleaned.includes("+46 70 123 45 67"), false);
+    assert.ok(cleaned.includes("[REDACTED_PHONE]"));
+    assert.equal(cleaned.includes("192.168.1.50"), false);
+    assert.ok(cleaned.includes("[REDACTED_IP]"));
+    assert.ok(anonymizePii("127.0.0.1").includes("127.0.0.1"), "loopback IP preserved");
+  });
+
+  test("verifies ledger SHA-256 hash chain integrity", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-ledger-"));
+    try {
+      const ledgerFile = path.join(tmpDir, "sessions.jsonl");
+      const e1 = JSON.stringify({ event: "budget_reserved", timestamp: new Date().toISOString() });
+      const e2 = JSON.stringify({ event: "session_dispatched", timestamp: new Date().toISOString() });
+      fs.writeFileSync(ledgerFile, `${e1}\n${e2}\n`);
+
+      const validRes = verifyLedgerIntegrity(ledgerFile);
+      assert.equal(validRes.ok, true);
+      assert.equal(validRes.count, 2);
+      assert.ok(validRes.lastHash);
+
+      // Tamper with ledger line
+      fs.writeFileSync(ledgerFile, `INVALID JSON LINE\n`);
+      const invalidRes = verifyLedgerIntegrity(ledgerFile);
+      assert.equal(invalidRes.ok, false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("validates configuration and detects invalid regex triggers", () => {
+    const validYaml = "version: 2\nforbidden_paths: [\"src/**\"]\n";
+    const validJson = JSON.stringify({ rules: [{ trigger: "\\b(auth|security)\\b", guardrail: "Security" }] });
+    assert.equal(validateJulesConfig(validYaml, validJson).ok, true);
+
+    const invalidJson = JSON.stringify({ rules: [{ trigger: "[unclosed_regex", guardrail: "Invalid" }] });
+    const invalidRes = validateJulesConfig(validYaml, invalidJson);
+    assert.equal(invalidRes.ok, false);
+    assert.ok(invalidRes.errors[0].includes("Invalid RegExp trigger"));
   });
 });
 

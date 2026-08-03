@@ -205,6 +205,65 @@ export function redactSecrets(text) {
   return sanitized;
 }
 
+export function anonymizePii(text) {
+  if (!text) return "";
+  let sanitized = text;
+
+  // Mask email addresses
+  sanitized = sanitized.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "[REDACTED_EMAIL]");
+
+  // Mask IPv4 addresses (excluding 0.0.0.0, 127.0.0.1, 10.x, 192.168.x if needed, or mask all)
+  sanitized = sanitized.replace(/\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g, (ip) => {
+    if (ip === "127.0.0.1" || ip === "0.0.0.0") return ip;
+    return "[REDACTED_IP]";
+  });
+
+  // Mask phone numbers (formatted with international prefix or standard delimiters)
+  sanitized = sanitized.replace(/\b(?:\+\d{1,3}[\s-]?)?\(?\d{2,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}\b/g, (phone) => {
+    const digitsOnly = phone.replace(/\D/g, "");
+    if (digitsOnly.length >= 7 && digitsOnly.length <= 15) {
+      return "[REDACTED_PHONE]";
+    }
+    return phone;
+  });
+
+  return sanitized;
+}
+
+export function verifyLedgerIntegrity(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return { ok: false, count: 0, reason: "File not found" };
+  }
+  try {
+    const content = fs.readFileSync(filePath, "utf-8").trim();
+    if (!content) return { ok: true, count: 0 };
+
+    const lines = content.split("\n").filter(Boolean);
+    let previousHash = "";
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch (jsonErr) {
+        return { ok: false, count: i, reason: `Corrupted JSON record at line ${i + 1}: ${jsonErr.message}` };
+      }
+
+      if (!record.event || !record.timestamp) {
+        return { ok: false, count: i, reason: `Missing mandatory event/timestamp fields at line ${i + 1}` };
+      }
+
+      const lineHash = crypto.createHash("sha256").update(previousHash + line).digest("hex");
+      previousHash = lineHash;
+    }
+
+    return { ok: true, count: lines.length, lastHash: previousHash };
+  } catch (err) {
+    return { ok: false, count: 0, reason: err.message };
+  }
+}
+
 export function pruneOldLedgers(stateDir, retentionDays = 30) {
   try {
     if (!fs.existsSync(stateDir)) return;
