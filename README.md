@@ -232,6 +232,7 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 | `npm run jules:cleanup` | Audits and closes merged or stale REST sessions |
 | `npm run jules:scan` | Scans the codebase for TODO/FIXME comments and generates a suggested tasks file |
 | `npm run jules:swarm` | Launches a multi-agent swarm in parallel across isolated worktrees |
+| `npm run jules:merge-swarm` | Autonomous PR merge engine: squash-merges passing, disjoint Jules PRs |
 | `npm run jules:nightly` | Nightly maintenance job (usually triggered in CI) |
 
 ### Environment Variables
@@ -245,6 +246,7 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 | `JULES_REPOLESS` | Set to `true` or `1` to run in repoless/serverless mode |
 | `JULES_DRY_RUN` | Set to `true` or `1` to simulate dispatching without making API calls |
 | `JULES_DAILY_BUDGET` | Daily max session budget for autonomous dispatches (Default: `300`) |
+| `JULES_MAX_DIFF_KB` | Maximum git diff payload size in KB before aborting with Exit Code 5 (Default: `50`) |
 | `JULES_ALLOW_COMMAND_FILE_CHANGES` | Set to `true` to allow PR changes to command/config files like `package.json`, `tsconfig.json`, `vite.config.ts` (Default: `false`) |
 | `JULES_ALLOW_AGENT_RULE_CHANGES` | Set to `true` to allow PR changes to agent rule files like `AGENTS.md`, `JULES_RULES_TEMPLATE.md` (Default: `false`) |
 | `BASE_BRANCH` | Base branch for PR Audits & Merge-Base calculations (Default: `main`) |
@@ -271,12 +273,12 @@ The Gatekeeper (`jules-self-audit.mjs` and related scripts) uses standard exit c
 | Code | Meaning | Action Taken |
 | ---- | ------- | ------------ |
 | `0`  | **Success** | All tests and security checks passed. |
-| `1`  | **General Error** | Missing dependencies, syntax error, or general failure. |
-| `2`  | **Setup / Context Error** | Git not found, invalid `BASE_BRANCH`, or trusted base branch extraction failure. |
-| `3`  | **Security Violation** | Modified file breached `forbidden_paths` or changed command-defining files (`package.json`, `Cargo.toml`). Fails closed immediately. |
-| `4`  | **Verification Exhausted** | Tests failed and the OODA Auto-Repair loop either exhausted its max retries or is disabled. |
-| `5`  | **Diff Payload Too Large** | Diff payload size exceeded 75 KB payload governor limit. Split task. |
-| `6`  | **Secret Leak Prevented** | Secret-like pattern detected in diff. Aborted immediately. |
+| `1`  | **Pre-Dispatch / Arg Error** | Missing dependencies, prompt > 50 KB, syntax error, or pre-dispatch failure. |
+| `2`  | **API / Network / Quota Error** | REST API HTTP 429 rate limit, HTTP 400 `FAILED_PRECONDITION` quota (~30 active limit), or connection timeout. |
+| `3`  | **Security / Scope Violation** | Modified file breached `forbidden_paths` or changed command-defining files (`package.json`, `Cargo.toml`). Fails closed immediately. |
+| `4`  | **Verification Exhausted** | Tests failed and the OODA Auto-Repair loop either exhausted its max retries (3) or is disabled. |
+| `5`  | **Diff Payload Limit** | Diff payload size exceeded payload governor budget (`JULES_MAX_DIFF_KB`, default 50 KB). Split task. |
+| `6`  | **Secret Leak Prevented** | High-confidence secret or private key pattern detected in diff. Aborted immediately. |
 | `7`  | **Budget Exhausted** | Daily session budget limit reached or budget state locked. |
 
 ---

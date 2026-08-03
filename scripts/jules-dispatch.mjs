@@ -323,7 +323,7 @@ async function executeDispatch(_opts = {}) {
         payload.sourceContext = {
           source: formattedSource,
           githubRepoContext: {
-            startingBranch: process.env.START_BRANCH || process.env.BASE_BRANCH || "main"
+            startingBranch: process.env.BASE_BRANCH || "main"
           }
         };
       } else {
@@ -332,7 +332,7 @@ async function executeDispatch(_opts = {}) {
 
       let res;
       let attempts = 0;
-      const maxAttempts = 2;
+      const maxAttempts = 3;
       while (attempts < maxAttempts) {
         attempts++;
         try {
@@ -356,7 +356,24 @@ async function executeDispatch(_opts = {}) {
             }
           }
 
-          if (res.ok || res.status === 429 || res.status === 400 || res.status === 401) {
+          if (res.status === 400) {
+            const errText = await res.text().catch(() => "");
+            if (/FAILED_PRECONDITION|Precondition check failed|quota|active session/i.test(errText)) {
+              if (attempts < maxAttempts) {
+                log.warn(`⚠️ Active Session Limit reached (~30 concurrent max). Pausing 20s for VM slot release (attempt ${attempts}/${maxAttempts})...`);
+                await new Promise((r) => setTimeout(r, 20000));
+                continue;
+              }
+              const err = new Error(`❌ Jules REST API Active Session Limit Reached (HTTP 400 FAILED_PRECONDITION): ${errText}`);
+              err.code = 2;
+              throw err;
+            }
+            const err = new Error(`❌ Jules REST API returned HTTP 400: ${errText}`);
+            err.code = 1;
+            throw err;
+          }
+
+          if (res.ok || res.status === 429 || res.status === 401) {
             break;
           }
 
@@ -367,6 +384,9 @@ async function executeDispatch(_opts = {}) {
           }
           break;
         } catch (fetchErr) {
+          if (fetchErr.code === 1 || fetchErr.code === 2) {
+            throw fetchErr;
+          }
           if (attempts < maxAttempts) {
             log.warn(`⚠️ REST API attempt ${attempts} network error: ${fetchErr.message}. Retrying in 500ms...`);
             await new Promise((r) => setTimeout(r, 500));

@@ -105,7 +105,7 @@ export function classifyQueueFailure(error) {
   if (code === 5 || /DIFF PAYLOAD TOO LARGE|DIFF TOO LARGE/i.test(message)) return "diff_too_large";
   if (code === 8 || /lock contention|lock busy/i.test(message)) return "budget_locked";
   if (code === 7 || /Daily budget exhausted|budget exhausted/i.test(message)) return "budget_exhausted";
-  if (/HTTP 429|Rate Limit Exceeded/i.test(message)) return "rate_limited";
+  if (/HTTP 429|Rate Limit Exceeded|FAILED_PRECONDITION|Active Session Limit/i.test(message)) return "concurrency_limit";
   if (/HTTP 5\d\d/i.test(message)) return "api_error";
   if (/command not found|ENOENT|CLI|execFile|spawn|exit code/i.test(message)) return "cli_error";
   return "unknown";
@@ -199,6 +199,11 @@ async function runQueue() {
             setTaskState(file, { attempts: taskState.attempts || 0, status: "REQUEUED_LOCK_BUSY", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
             try { await safeMoveAsync(processingPath, filePath); } catch (_) {}
             log.warn(`Task [${title}] lock contention (busy). Re-queued for retry.`);
+          } else if (failureClass === "concurrency_limit") {
+            setTaskState(file, { attempts: taskState.attempts || 0, status: "REQUEUED_CONCURRENCY", failure_class: failureClass, last_error: error.message, updated_at: new Date().toISOString() });
+            try { await safeMoveAsync(processingPath, filePath); } catch (_) {}
+            log.warn(`Task [${title}] active session quota (~30) reached. Pausing 15s before re-queuing.`);
+            await sleep(15000);
           } else {
             const attempts = (taskState.attempts || 0) + 1;
             if (NON_RETRYABLE.has(failureClass) || attempts >= 3) {

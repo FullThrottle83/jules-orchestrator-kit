@@ -698,6 +698,21 @@ describe("Multimodal Image Attachment Extraction", () => {
   });
 });
 
+describe("Swarm Concurrency & Merge Engine Hardening", () => {
+  test("classifyQueueFailure identifies FAILED_PRECONDITION as concurrency_limit", async () => {
+    const { classifyQueueFailure } = await import("../scripts/jules-queue-runner.mjs");
+    assert.equal(classifyQueueFailure(new Error("HTTP 400 FAILED_PRECONDITION: Precondition check failed")), "concurrency_limit");
+    assert.equal(classifyQueueFailure(new Error("Active Session Limit reached")), "concurrency_limit");
+  });
+
+  test("jules-merge-swarm.mjs executes in dry-run mode cleanly", () => {
+    const mergeScript = path.resolve(process.cwd(), "scripts/jules-merge-swarm.mjs");
+    const output = execFileSync("node", [mergeScript, "--dry-run"], { encoding: "utf-8" });
+    assert.ok(output.includes("Jules swarm branches") || output.includes("No open Jules PRs"));
+  });
+});
+
+
 
 
 

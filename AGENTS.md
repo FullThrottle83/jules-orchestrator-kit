@@ -83,3 +83,20 @@ HARD CONSTRAINTS:
 - BEFORE opening the PR: Run `git fetch origin main && git rebase origin/main`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.
 - Delete ALL temporary files (.py, .sh, .patch, debug logs) before submitting.
 ```
+
+---
+
+## 6. Exit Code Registry for CI/CD Integration
+
+The orchestrator enforces standardized exit codes across all automation scripts (`jules-dispatch`, `jules-self-audit`, `jules-queue-runner`):
+
+| Exit Code | Classification | Description |
+| :--- | :--- | :--- |
+| `0` | **Success** | Task completed cleanly; PR opened or verification passed. |
+| `1` | **Pre-Dispatch / Arg Failure** | Invalid arguments, prompt > 50 KB, or pre-dispatch validation error. |
+| `2` | **API / Network Failure** | Jules API rate-limit (HTTP 429), `FAILED_PRECONDITION` concurrency quota, or connection timeout. |
+| `3` | **Scope Violation** | Attempted modification of restricted files (`.github/`, command files, agent rules). |
+| `4` | **OODA Exhausted** | Auto-repair loop reached maximum retries (3) without achieving clean verification. |
+| `5` | **Diff Payload Limit** | Post-change git diff exceeds payload budget (`JULES_MAX_DIFF_KB`, default 50 KB). |
+| `6` | **Secret Leak Prevented** | High-confidence secret or private key detected in patch diff. |
+

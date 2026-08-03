@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveWorkspaceExecutionBoundary } from "./command-resolver.mjs";
-import { log, hasHighConfidenceSecret, hasLowConfidenceSecret } from "./utils.mjs";
+import { log, hasHighConfidenceSecret, hasLowConfidenceSecret, redactSecrets, anonymizePii } from "./utils.mjs";
 
 function runGitCommand(args, ignoreError = false) {
   try {
@@ -420,10 +420,11 @@ export function runSelfAudit() {
     : "";
 
   const diffBytes = Buffer.byteLength(codeDiffPayload, "utf8");
-  const maxDiffBytes = 75 * 1024; // 75 KB
+  const maxDiffKb = parseInt(process.env.JULES_MAX_DIFF_KB || "50", 10);
+  const maxDiffBytes = maxDiffKb * 1024;
 
   if (diffBytes > maxDiffBytes) {
-    const err = new Error(`DIFF PAYLOAD TOO LARGE: ${diffBytes} bytes exceeds ${maxDiffBytes} bytes limit for code files. Split the task.`);
+    const err = new Error(`DIFF PAYLOAD TOO LARGE: ${diffBytes} bytes exceeds ${maxDiffKb} KB limit for code files. Split the task.`);
     err.code = 5;
     throw err;
   }
@@ -566,7 +567,8 @@ export function runSelfAudit() {
       try {
         fs.writeFileSync(oodaStateFile, JSON.stringify({ attempts: oodaRetries + 1, lastAttempt: new Date().toISOString() }), "utf-8");
       } catch (e) {}
-      const prompt = `OODA Auto-Repair Attempt ${oodaRetries + 1}\n\nThe verification suite failed with the following errors after the previous patch:\n\n\`\`\`\n${failureLog.slice(-1500)}\n\`\`\`\n\nPlease fix the errors so the verification passes.`;
+      const sanitizedFailureLog = redactSecrets(anonymizePii(failureLog.slice(-1500)));
+      const prompt = `OODA Auto-Repair Attempt ${oodaRetries + 1}\n\nThe verification suite failed with the following errors after the previous patch:\n\n\`\`\`\n${sanitizedFailureLog}\n\`\`\`\n\nPlease fix the errors so the verification passes.`;
       
       const dispatchScript = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs");
       try {

@@ -44,6 +44,7 @@
     "jules:cleanup": "node scripts/jules-cleanup.mjs",
     "jules:scan": "node scripts/jules-scan-todos.mjs",
     "jules:swarm": "node scripts/jules-swarm.mjs",
+    "jules:merge-swarm": "node scripts/jules-merge-swarm.mjs",
     "jules:patch": "node scripts/jules-patch.mjs",
     "jules:nightly": "node scripts/jules-nightly.mjs",
     "lint": "eslint ."
