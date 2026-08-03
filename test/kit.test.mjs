@@ -144,11 +144,23 @@ describe("Security Redaction & Secret Classification", () => {
     const npmToken = "npm_" + "1".repeat(36);
     const stripeKey = "sk_live_" + "1".repeat(24);
 
+    const googleOauth = "GOCSPX-" + "1".repeat(28);
+    const awsSts = "ASIA" + "1".repeat(16);
+    const gitlabPat = "glpat-" + "1".repeat(20);
+    const puttyKey = "PuTTY-User-Key-File-3: ssh-ed25519";
+
+    assert.equal(hasHighConfidenceSecret(ghoToken), true);
+    assert.equal(hasHighConfidenceSecret(googleOauth), true);
+    assert.equal(hasHighConfidenceSecret(awsSts), true);
+    assert.equal(hasHighConfidenceSecret(gitlabPat), true);
+    assert.equal(hasHighConfidenceSecret(puttyKey), true);
+
     assert.equal(redactSecrets(ghoToken).includes(ghoToken), false);
     assert.equal(redactSecrets(bearerToken).includes(bearerToken), false);
     assert.equal(redactSecrets(privateKey).includes("MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3"), false);
     assert.equal(redactSecrets(npmToken).includes(npmToken), false);
     assert.equal(redactSecrets(stripeKey).includes(stripeKey), false);
+    assert.equal(redactSecrets(googleOauth).includes(googleOauth), false);
   });
 });
 
@@ -292,7 +304,7 @@ describe("Workspace Boundary Resolution & Fallbacks", () => {
 describe("Specialized Domain Guardrails", () => {
   test("triggers Sentinel guardrail on security keywords", () => {
     const rules = getDynamicGuardrails("implement auth RBAC permissions and secret token sanitization");
-    assert.ok(rules.includes("Security Guidance (Sentinel)"));
+    assert.ok(rules.includes("Sentinel") || rules.includes("SECRET REDACTION GUARDRAILS"));
   });
 
   test("triggers Bolt guardrail on performance keywords", () => {
@@ -307,7 +319,12 @@ describe("Specialized Domain Guardrails", () => {
 
   test("triggers Alchemist guardrail on database keywords", () => {
     const rules = getDynamicGuardrails("update postgres drizzle schema migration");
-    assert.ok(rules.includes("Database Guidance (Alchemist)"));
+    assert.ok(rules.includes("Alchemist") || rules.includes("DATABASE GUARDRAILS"));
+  });
+
+  test("triggers JSON-configured dynamic guardrails when dynamic-guardrails.json is present", () => {
+    const rules = getDynamicGuardrails("update css theme and tailwind styling");
+    assert.ok(rules.includes("CSS & DESIGN GUARDRAILS") || rules.includes("tailwind"));
   });
 });
 
@@ -422,6 +439,8 @@ describe("Node.js SDK Entrypoint (index.mjs)", () => {
     assert.equal(typeof sdk.runScanner, "function");
     assert.equal(typeof sdk.redactSecrets, "function");
     assert.equal(typeof sdk.getDynamicGuardrails, "function");
+    assert.equal(typeof sdk.dispatchTask, "function");
+    assert.equal(typeof sdk.classifyQueueFailure, "function");
   });
 });
 

@@ -97,7 +97,7 @@ async function safeMoveAsync(src, dest) {
   }
 }
 
-function classifyQueueFailure(error) {
+export function classifyQueueFailure(error) {
   const message = String(error?.stderr || error?.stdout || error?.message || "");
   const code = error?.code;
 

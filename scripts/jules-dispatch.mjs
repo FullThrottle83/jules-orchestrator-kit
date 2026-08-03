@@ -38,10 +38,11 @@ export function getDynamicGuardrails(prompt = "") {
       const data = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
       if (Array.isArray(data.rules)) {
         for (const rule of data.rules) {
-          if (rule.trigger && rule.directive) {
+          const text = rule.directive || rule.guardrail;
+          if (rule.trigger && text) {
             const re = new RegExp(rule.trigger, "i");
             if (re.test(prompt)) {
-              guardrails.push(`- ${rule.name || "Guidance"}: ${rule.directive}`);
+              guardrails.push(text.startsWith("##") ? text : `- ${rule.name || "Guidance"}: ${text}`);
             }
           }
         }
@@ -280,7 +281,11 @@ function cleanupTmp() {
   }
 }
 
-async function executeDispatch() {
+export async function dispatchTask(_opts = {}) {
+  return executeDispatch(_opts);
+}
+
+async function executeDispatch(_opts = {}) {
   try {
     if (process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1") {
       log.dim(`[DRY RUN] Dispatch payload prepared successfully for task: "${taskTitle}".`);

@@ -135,12 +135,19 @@ export const HIGH_CONFIDENCE_PATTERNS = [
   /\bgh[pousr]_[a-zA-Z0-9]{36,}\b/g,
   /\bgithub_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}\b/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
+  /\bASIA[0-9A-Z]{16}\b/g,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-  /-----BEGIN PUTTY PRIVATE KEY-----/g,
+  /\bPuTTY-User-Key-File-\d+:/g,
   /\bnpm_[a-zA-Z0-9]{36}\b/g,
   /\bsk_live_[0-9a-zA-Z]{24,}\b/g,
   /\bsbp_[a-zA-Z0-9]{40,}\b/g,
   /\bhf_[a-zA-Z0-9]{34,}\b/g,
+  /\bGOCSPX-[a-zA-Z0-9_-]{28}\b/g,
+  /\bglpat-[a-zA-Z0-9_-]{20,}\b/g,
+  /\bdop_v1_[a-f0-9]{64}\b/g,
+  /\bSG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}\b/g,
+  /\bwhsec_[a-zA-Z0-9]{24,}\b/g,
+  /\bshpat_[a-f0-9]{32}\b/g,
 ];
 
 export const LOW_CONFIDENCE_PATTERNS = [
@@ -149,11 +156,14 @@ export const LOW_CONFIDENCE_PATTERNS = [
   /\bBearer\s+[a-zA-Z0-9\-\._~+\/]+=*/g,
   /\bsk-(?:ant-api03-|proj-|svcacct-)[a-zA-Z0-9\-\_]{32,}\b/g,
   /\bxox[baprs]-[a-zA-Z0-9\-]{10,}\b/g,
+  /\bxapp-\d+-[a-zA-Z0-9_]+-\d+-[a-zA-Z0-9_]+\b/g,
   /\beyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\b/g,
   /\b(?:rk|pk)_(?:live|test)_[0-9a-zA-Z]{24,}\b/g,
   /\bsk_test_[0-9a-zA-Z]{24,}\b/g,
   /https:\/\/hooks\.slack\.com\/services\/T[a-zA-Z0-9_]+\/B[a-zA-Z0-9_]+\/[a-zA-Z0-9_]+/g,
-  /\b(?:postgres|postgresql|mongodb|mongodb\+srv|redis|mysql):\/\/[^:]+:[^@]+@[^:\s\/]+/gi,
+  /\b[a-z][a-z0-9+.-]*:\/\/[^:\s]+:[^@\s]+@[^:\s\/]+/gi,
+  /\bAuthorization:\s*Basic\s+[A-Za-z0-9+/=]{16,}/gi,
+  /[?&]sig=[A-Za-z0-9%+/=]{20,}/g,
 ];
 
 export function hasHighConfidenceSecret(text) {
@@ -180,7 +190,7 @@ export function redactSecrets(text) {
     if (
       envVal &&
       (envVal.length >= 20 || calculateShannonEntropy(envVal) > 3.6) &&
-      /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH/i.test(envKey)
+      /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH|PASSPHRASE|URL|URI|DSN|CONNECTION|ACCOUNT/i.test(envKey)
     ) {
       if (sanitized.includes(envVal)) {
         sanitized = sanitized.split(envVal).join("[REDACTED_ENV_SECRET]");

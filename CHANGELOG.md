@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2026-08-03
+### Fixed & Hardened
+- **Dynamic Guardrails Schema Alignment**: Fixed schema drift in `jules-dispatch.mjs:getDynamicGuardrails` by supporting both `rule.directive` and `rule.guardrail` properties from `.agent/rules/dynamic-guardrails.json`.
+- **PuTTY PPK Format Pattern Fix**: Updated PuTTY secret scanning pattern in `utils.mjs` to match actual PPK key headers (`PuTTY-User-Key-File-\d+:`).
+- **Expanded Secret Redaction (10+ New Token Families)**: Added high-confidence & low-confidence secret regex patterns for Google OAuth client secrets (`GOCSPX-`), AWS STS tokens (`ASIA`), GitLab PATs (`glpat-`), DigitalOcean PATs (`dop_v1_`), SendGrid API keys (`SG.`), Stripe Webhook secrets (`whsec_`), Slack App Tokens (`xapp-`), Shopify PATs (`shpat_`), Basic Auth headers, and Azure SAS signatures (`?sig=`). Expanded env-var key matching filter to include `PASSPHRASE`, `URL`, `URI`, `DSN`, `CONNECTION`, `ACCOUNT`.
+- **SDK & MCP Export Readiness**: Exported `dispatchTask` in `jules-dispatch.mjs` and `classifyQueueFailure` in `jules-queue-runner.mjs`, making them available from the `index.mjs` primary SDK entrypoint for programmatical and MCP server invocation.
+
 ## [0.8.3] - 2026-08-03
 ### Security & Architectural Hardening
 - **P0 Untrusted Prompt Envelope Noncing**: Replaced static `<UNTRUSTED_TASK_CONTEXT>` tags in `jules-dispatch.mjs` with crypto-random nonced tags (`<UNTRUSTED_TASK_CONTEXT_${nonce}>`) and case-insensitive closing tag stripping to prevent prompt injection escapes.
