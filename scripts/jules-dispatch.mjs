@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Backward compatibility shim for jules-dispatch.mjs in v0.9.0.
+ * Backward compatibility shim for jules-dispatch.mjs in v0.9.1.
  * Delegates execution to bin/agentctl.mjs dispatch.
  */
 
@@ -9,6 +9,11 @@ import { dispatch } from "../src/engine.mjs";
 import { loadConfig } from "../src/config.mjs";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
+
+process.emitWarning(
+  "scripts/jules-dispatch.mjs is deprecated and will be removed in v1.0.0. Use 'agentctl dispatch' or the programmatic SDK.",
+  "DeprecationWarning"
+);
 
 const args = process.argv.slice(2);
 let title = "Task Dispatch";

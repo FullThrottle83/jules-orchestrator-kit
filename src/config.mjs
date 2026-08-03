@@ -1,6 +1,13 @@
 import { readFileSync, existsSync } from "node:fs";
-import { join, resolve, dirname, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { execSync } from "node:child_process";
+
+export class ConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
 
 const DEFAULTS = {
   version: 1,
@@ -29,6 +36,8 @@ const BUILTIN_DENY = [
   "**/*.key",
   "**/id_rsa*",
   ".agent/config.yml",
+  ".agent/jules.yml",
+  ".agent/jules-queue/**",
   ".github/**",
 ];
 
@@ -40,6 +49,19 @@ const BUILTIN_PROTECT = [
   "go.mod",
   "Makefile",
 ];
+
+const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function coerce(val) {
+  if (!val) return "";
+  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+    return val.slice(1, -1);
+  }
+  if (val === "true") return true;
+  if (val === "false") return false;
+  if (!isNaN(Number(val)) && val.trim() !== "") return Number(val);
+  return val;
+}
 
 export function normalizePath(p) {
   if (!p || typeof p !== "string") return "";
@@ -55,78 +77,67 @@ export function resolveRoot(cwd = process.cwd()) {
 }
 
 /**
- * Lightweight, zero-dependency YAML parser for key-value structures, arrays, and 2-level nested maps.
+ * Indent-stack zero-dependency YAML parser with prototype pollution protection.
  */
 export function parseYaml(src) {
-  if (!src || typeof src !== "string") return {};
-  const result = {};
+  if (!src || typeof src !== "string") return Object.create(null);
+  const root = Object.create(null);
+  const stack = [{ indent: -1, node: root }];
   const lines = src.split("\n");
-  let currentKey = null;
 
   for (let rawLine of lines) {
-    const indent = rawLine.length - rawLine.trimStart().length;
     const commentIdx = rawLine.indexOf("#");
-    let line = commentIdx !== -1 ? rawLine.slice(0, commentIdx) : rawLine;
+    const line = commentIdx !== -1 ? rawLine.slice(0, commentIdx) : rawLine;
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    if (trimmed.startsWith("- ") && currentKey) {
-      if (!Array.isArray(result[currentKey])) {
-        result[currentKey] = [];
+    const indent = rawLine.length - rawLine.trimStart().length;
+
+    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) {
+      stack.pop();
+    }
+
+    const top = stack[stack.length - 1];
+
+    if (trimmed.startsWith("- ")) {
+      if (top.key && top.parent) {
+        if (!Array.isArray(top.parent[top.key])) {
+          top.parent[top.key] = [];
+        }
+        top.parent[top.key].push(coerce(trimmed.slice(2).trim()));
+      } else if (Array.isArray(top.node)) {
+        top.node.push(coerce(trimmed.slice(2).trim()));
       }
-      const val = trimmed.slice(2).trim().replace(/^["']|["']$/g, "");
-      if (val) result[currentKey].push(val);
       continue;
     }
 
     const eqIdx = trimmed.indexOf(":");
     if (eqIdx > 0) {
-      const key = trimmed.slice(0, eqIdx).trim();
-      let val = trimmed.slice(eqIdx + 1).trim();
+      const rawKey = trimmed.slice(0, eqIdx).trim();
+      const valStr = trimmed.slice(eqIdx + 1).trim();
 
-      if (indent === 0) {
-        currentKey = key;
-        if (!val) {
-          // Could be array or nested map, initialized on next line
-        } else if (val.startsWith("[") && val.endsWith("]")) {
-          // Flow-style array: ["a", "b"]
-          const items = val
-            .slice(1, -1)
-            .split(",")
-            .map((s) => s.trim().replace(/^["']|["']$/g, ""))
-            .filter(Boolean);
-          result[key] = items;
-        } else if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          result[key] = val.slice(1, -1);
-        } else if (val === "true") {
-          result[key] = true;
-        } else if (val === "false") {
-          result[key] = false;
-        } else if (!isNaN(Number(val))) {
-          result[key] = Number(val);
-        } else {
-          result[key] = val;
-        }
-      } else if (indent > 0 && currentKey) {
-        if (typeof result[currentKey] !== "object" || result[currentKey] === null || Array.isArray(result[currentKey])) {
-          result[currentKey] = {};
-        }
-        let parsedVal = val;
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          parsedVal = val.slice(1, -1);
-        } else if (val === "true") {
-          parsedVal = true;
-        } else if (val === "false") {
-          parsedVal = false;
-        } else if (val && !isNaN(Number(val))) {
-          parsedVal = Number(val);
-        }
-        result[currentKey][key] = parsedVal;
+      if (BLOCKED_KEYS.has(rawKey)) {
+        throw new ConfigError(`Illegal prototype key "${rawKey}" detected in configuration`);
+      }
+
+      if (valStr === "") {
+        const child = Object.create(null);
+        top.node[rawKey] = child;
+        stack.push({ indent, node: child, key: rawKey, parent: top.node });
+      } else if (valStr.startsWith("[") && valStr.endsWith("]")) {
+        const items = valStr
+          .slice(1, -1)
+          .split(",")
+          .map((s) => coerce(s.trim()))
+          .filter((s) => s !== "");
+        top.node[rawKey] = items;
+      } else {
+        top.node[rawKey] = coerce(valStr);
       }
     }
   }
 
-  return result;
+  return root;
 }
 
 export function detectPackageManager(root = process.cwd(), pkg = {}) {
@@ -252,12 +263,14 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     : [join(root, ".agent/config.yml"), join(root, ".agent/jules.yml")];
 
   const configFile = candidates.find(existsSync);
-  let parsed = {};
+  let parsed = Object.create(null);
   if (configFile) {
     try {
       const raw = readFileSync(configFile, "utf-8");
       parsed = parseYaml(raw);
-    } catch (_) {}
+    } catch (err) {
+      if (err instanceof ConfigError) throw err;
+    }
   }
 
   const testCmd = parsed.test_cmd || parsed.verify?.test || "";

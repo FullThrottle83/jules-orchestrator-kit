@@ -126,7 +126,8 @@ export function matchesGlob(filePath, globPattern) {
   const regexParts = parts.map((part) => {
     if (part === "**") return "___GLOBSTAR___";
     if (part === "*") return "[^/]+";
-    return part.replace(/\./g, "\\.").replace(/\*/g, "[^/]*").replace(/\?/g, ".");
+    const escaped = part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return escaped.replace(/\\\*/g, "[^/]*").replace(/\\\?/g, ".");
   });
 
   let regexStr = regexParts.join("/");
@@ -146,15 +147,7 @@ export function matchesGlob(filePath, globPattern) {
 export function isForbiddenPath(filePath, config = {}) {
   const normFile = normalizePath(filePath);
   const forbidden = config.scope?.deny || config.forbidden_paths || [];
-  const allowed = config.scope?.allow || config.allow_paths || [];
-
-  for (const pattern of forbidden) {
-    if (matchesGlob(normFile, pattern)) {
-      return true;
-    }
-  }
-
-  return false;
+  return forbidden.some((pattern) => matchesGlob(normFile, pattern));
 }
 
 export function checkScope(files = [], scope = {}, opts = {}) {
@@ -166,19 +159,24 @@ export function checkScope(files = [], scope = {}, opts = {}) {
   for (const rawFile of files) {
     const file = normalizePath(rawFile);
 
-    const isExplicitlyAllowed = allow.some((pat) => matchesGlob(file, pat));
-    if (isExplicitlyAllowed) continue;
-
-    const isDenied = deny.some((pat) => matchesGlob(file, pat));
-    if (isDenied) {
-      violations.push({ file, reason: "Forbidden path restriction", rule: "deny" });
+    const matchedDeny = deny.find((pat) => matchesGlob(file, pat));
+    if (matchedDeny) {
+      violations.push({ file, reason: `Forbidden path restriction matched pattern "${matchedDeny}"`, rule: "deny", pattern: matchedDeny });
       continue;
     }
 
+    if (allow.length > 0) {
+      const isExplicitlyAllowed = allow.some((pat) => matchesGlob(file, pat));
+      if (!isExplicitlyAllowed) {
+        violations.push({ file, reason: "Path not included in allowed paths list", rule: "allow" });
+        continue;
+      }
+    }
+
     if (!opts.allowProtected) {
-      const isProtected = protect.some((pat) => matchesGlob(file, pat));
-      if (isProtected) {
-        violations.push({ file, reason: "Command-defining / agent rules file modification restriction", rule: "protect" });
+      const matchedProtect = protect.find((pat) => matchesGlob(file, pat));
+      if (matchedProtect) {
+        violations.push({ file, reason: `Protected file modification restriction matched pattern "${matchedProtect}"`, rule: "protect", pattern: matchedProtect });
       }
     }
   }
@@ -198,13 +196,17 @@ export function scanDiff(diffTextStr = "") {
     .join("\n");
 
   const hasHigh = hasHighConfidenceSecret(addedLines);
+  const hasLow = !hasHigh && hasLowConfidenceSecret(addedLines);
   const findings = [];
+
   if (hasHigh) {
-    findings.push({ severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", description: "High-confidence secret detected in added diff lines" });
+    findings.push({ severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", description: "High-confidence secret pattern detected in added diff lines" });
+  } else if (hasLow) {
+    findings.push({ severity: "HIGH", type: "LOW_CONFIDENCE_SECRET", description: "Low-confidence secret or authorization token detected in added diff lines" });
   }
 
   return {
-    ok: !hasHigh,
+    ok: !hasHigh && !hasLow,
     findings,
   };
 }

@@ -1,106 +1,128 @@
-import { execSync } from "node:child_process";
-import { normalizePath } from "./config.mjs";
+import { execFileSync } from "node:child_process";
+import { resolve, sep } from "node:path";
 
-export function git(cmd, opts = {}) {
+export class GateError extends Error {
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = "GateError";
+    this.code = opts.code || 1;
+  }
+}
+
+function normalizePath(p) {
+  if (!p || typeof p !== "string") return "";
+  return p.split(sep).join("/").replace(/\\/g, "/");
+}
+
+export function runCmd(command, opts = {}) {
   const cwd = opts.cwd || process.cwd();
   try {
-    return execSync(`git ${cmd}`, {
+    const stdout = execFileSync("sh", ["-c", command], {
       cwd,
-      encoding: "utf8",
-      stdio: opts.stdio || ["ignore", "pipe", "ignore"],
-      env: { ...process.env, ...opts.env },
-    }).trim();
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { status: 0, stdout: stdout.trim(), stderr: "" };
   } catch (err) {
-    if (opts.ignoreError) return "";
+    if (opts.ignoreError) {
+      return {
+        status: err.status || 1,
+        stdout: (err.stdout || "").toString().trim(),
+        stderr: (err.stderr || "").toString().trim(),
+      };
+    }
     throw err;
   }
 }
 
-export function runCmd(cmd, opts = {}) {
+/**
+ * Shell-safe git invoker using direct argument arrays (shell: false).
+ */
+export function git(args = [], opts = {}) {
   const cwd = opts.cwd || process.cwd();
+  const argArray = Array.isArray(args) ? args : String(args).split(" ").filter(Boolean);
   try {
-    const stdout = execSync(cmd, {
+    const stdout = execFileSync("git", argArray, {
       cwd,
-      encoding: "utf8",
+      encoding: "utf-8",
+      shell: false,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, ...opts.env },
-      timeout: opts.timeoutMs || 900000,
     });
-    return { stdout: stdout.trim(), stderr: "", status: 0 };
+    return opts.raw ? stdout : stdout.trim();
   } catch (err) {
     if (opts.ignoreError) {
-      return {
-        stdout: err.stdout ? err.stdout.toString().trim() : "",
-        stderr: err.stderr ? err.stderr.toString().trim() : err.message,
-        status: err.status || 1,
-      };
+      return "";
     }
-    return {
-      stdout: err.stdout ? err.stdout.toString().trim() : "",
-      stderr: err.stderr ? err.stderr.toString().trim() : err.message,
-      status: err.status || 1,
-    };
+    const stderr = (err.stderr || err.message || "").toString().trim();
+    throw new GateError(`Git command failed [git ${argArray.join(" ")}]: ${stderr}`);
   }
 }
 
-export function showFromOrigin(root, baseRef = "main", filePath = ".agent/config.yml") {
+export function resolveBase(root = process.cwd(), baseRef = "main") {
+  const candidates = [`origin/${baseRef}`, baseRef, `refs/remotes/origin/${baseRef}`];
+  for (const ref of candidates) {
+    try {
+      const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+        cwd: root,
+        encoding: "utf-8",
+        shell: false,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (res && res.trim()) {
+        return ref;
+      }
+    } catch (_) {}
+  }
+  throw new GateError(
+    `Cannot resolve base reference "${baseRef}". Ensure base branch is fetched (e.g., fetch-depth: 0 in CI).`,
+    { code: 1 }
+  );
+}
+
+export function changedFiles(root = process.cwd(), base = "main") {
+  const resolvedRef = resolveBase(root, base);
+  const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...HEAD`], {
+    cwd: root,
+    raw: true,
+  });
+  return raw
+    .split("\0")
+    .map(normalizePath)
+    .filter(Boolean);
+}
+
+export function diffBytes(root = process.cwd(), base = "main") {
+  const resolvedRef = resolveBase(root, base);
+  const raw = git(["diff", "--shortstat", `${resolvedRef}...HEAD`], { cwd: root });
+  if (!raw) return 0;
+  const match = raw.match(/(\d+)\s+insertion/i) || raw.match(/(\d+)\s+deletion/i);
+  const diffStr = git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
+  return Buffer.byteLength(diffStr, "utf-8");
+}
+
+export function diffText(root = process.cwd(), base = "main") {
+  const resolvedRef = resolveBase(root, base);
+  return git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
+}
+
+export function showFromOrigin(root = process.cwd(), base = "main", filePath = "") {
+  const resolvedRef = resolveBase(root, base);
+  const normPath = normalizePath(filePath);
   try {
-    return git(`show origin/${baseRef}:${filePath}`, { cwd: root });
+    return git(["show", `${resolvedRef}:${normPath}`], { cwd: root, raw: true });
   } catch (_) {
     return null;
   }
 }
 
-export function changedFiles(root, baseRef = "main") {
-  try {
-    const raw = git(`diff -z --name-only origin/${baseRef}...HEAD`, { cwd: root });
-    if (!raw) return [];
-    return raw.split("\0").map(normalizePath).filter(Boolean);
-  } catch (_) {
-    try {
-      const raw = git(`diff -z --name-only ${baseRef}...HEAD`, { cwd: root });
-      if (!raw) return [];
-      return raw.split("\0").map(normalizePath).filter(Boolean);
-    } catch (e) {
-      return [];
-    }
-  }
+export function worktreeAdd(root = process.cwd(), branch = "agent/task", targetDir = "") {
+  return git(["worktree", "add", targetDir, "-b", branch], { cwd: root });
 }
 
-export function diffBytes(root, baseRef = "main") {
-  try {
-    const diff = git(`diff origin/${baseRef}...HEAD`, { cwd: root });
-    return Buffer.byteLength(diff, "utf8");
-  } catch (_) {
-    try {
-      const diff = git(`diff ${baseRef}...HEAD`, { cwd: root });
-      return Buffer.byteLength(diff, "utf8");
-    } catch (e) {
-      return 0;
-    }
-  }
+export function worktreeRemove(root = process.cwd(), targetDir = "") {
+  return git(["worktree", "remove", targetDir, "--force"], { cwd: root });
 }
 
-export function diffText(root, baseRef = "main") {
-  try {
-    return git(`diff origin/${baseRef}...HEAD`, { cwd: root });
-  } catch (_) {
-    try {
-      return git(`diff ${baseRef}...HEAD`, { cwd: root });
-    } catch (e) {
-      return "";
-    }
-  }
-}
-
-export function worktreeAdd(root, branch, targetDir) {
-  return git(`worktree add ${targetDir} -b ${branch}`, { cwd: root });
-}
-
-export function worktreeRemove(root, targetDir) {
-  return git(`worktree remove --force ${targetDir}`, { cwd: root, ignoreError: true });
-}
-
-export function worktreePrune(root) {
-  return git("worktree prune", { cwd: root, ignoreError: true });
+export function worktreePrune(root = process.cwd()) {
+  return git(["worktree", "prune"], { cwd: root });
 }

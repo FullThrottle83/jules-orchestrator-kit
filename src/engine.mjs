@@ -1,6 +1,6 @@
-import { loadConfig } from "./config.mjs";
-import { checkScope, scanDiff } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, runCmd } from "./git.mjs";
+import { loadConfig, parseYaml } from "./config.mjs";
+import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
+import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd, GateError } from "./git.mjs";
 import { createProvider } from "./provider.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir } from "./state.mjs";
 import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
@@ -8,6 +8,7 @@ import { join } from "node:path";
 
 /**
  * Gatekeeper verification engine (Phase 1: Scope, Phase 2: Payload, Phase 3: Secrets, Phase 4: Verify Commands).
+ * FAILS CLOSED ON GIT OR CONFIG ERRORS.
  */
 export async function gate(opts = {}) {
   const root = opts.root || process.cwd();
@@ -15,31 +16,43 @@ export async function gate(opts = {}) {
   const base = opts.base || config.baseBranch || "main";
   const phases = [];
 
-  // Phase 1: Scope Guard
-  let trustedScope = config.scope;
-  const configPath = join(root, ".agent/config.yml");
-  const julesPath = join(root, ".agent/jules.yml");
-  const targetConfig = existsSync(configPath) ? configPath : existsSync(julesPath) ? julesPath : null;
+  let files = [];
+  let bytes = 0;
+  let diffStr = "";
 
-  if (targetConfig) {
+  try {
+    files = changedFiles(root, base);
+    bytes = diffBytes(root, base);
+    diffStr = diffText(root, base);
+  } catch (err) {
+    phases.push({ phase: "git_resolution", ok: false, error: err.message });
+    return { ok: false, code: 1, phases, error: err.message };
+  }
+
+  // Phase 1: Scope Guard (Fetch trusted config strictly from origin/base)
+  let trustedScope = config.scope;
+  let trustedVerify = config.verify;
+
+  const trustedConfigRaw = showFromOrigin(root, base, ".agent/config.yml") || showFromOrigin(root, base, ".agent/jules.yml");
+  if (trustedConfigRaw) {
     try {
-      const trustedConfigStr = runCmd(`git show ${base}:${targetConfig.slice(root.length + 1).replace(/\\/g, "/")}`, {
-        cwd: root,
-        ignoreError: true,
-      }).stdout;
-      const { parseYaml } = await import("./config.mjs");
-      const parsed = parseYaml(trustedConfigStr);
+      const parsed = parseYaml(trustedConfigRaw);
       if (parsed.scope || parsed.forbidden_paths) {
         trustedScope = {
           deny: parsed.scope?.deny || parsed.forbidden_paths || config.scope.deny,
           allow: parsed.scope?.allow || parsed.allow_paths || config.scope.allow,
-          protect: config.scope.protect,
+          protect: parsed.scope?.protect || config.scope.protect,
+        };
+      }
+      if (parsed.verify || parsed.test_cmd || parsed.build_cmd) {
+        trustedVerify = {
+          test: parsed.verify?.test || parsed.test_cmd || config.verify.test,
+          build: parsed.verify?.build || parsed.build_cmd || config.verify.build,
         };
       }
     } catch (_) {}
   }
 
-  const files = changedFiles(root, base);
   const scopeResult = checkScope(files, trustedScope, {
     allowProtected: opts.allowProtected || process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true",
   });
@@ -50,7 +63,6 @@ export async function gate(opts = {}) {
   }
 
   // Phase 2: Diff Payload Governor
-  const bytes = diffBytes(root, base);
   const limitBytes = (config.limits.diffKb || 75) * 1024;
   const payloadOk = bytes <= limitBytes;
   phases.push({ phase: "payload", ok: payloadOk, bytes, limitBytes });
@@ -59,16 +71,15 @@ export async function gate(opts = {}) {
   }
 
   // Phase 3: Diff Secret Scanner
-  const diffStr = diffText(root, base);
   const secretResult = scanDiff(diffStr);
   phases.push({ phase: "secrets", ok: secretResult.ok, findings: secretResult.findings });
   if (!secretResult.ok) {
     return { ok: false, code: 6, phases };
   }
 
-  // Phase 4: Automated Test & Build Verification
-  const testCmd = config.verify.test;
-  const buildCmd = config.verify.build;
+  // Phase 4: Automated Test & Build Verification (Uses trusted verify commands only)
+  const testCmd = trustedVerify.test;
+  const buildCmd = trustedVerify.build;
   let testResult = { ok: true, status: 0 };
   let buildResult = { ok: true, status: 0 };
 
@@ -137,7 +148,8 @@ export async function repair(failure, opts = {}) {
 }
 
 function buildRepairPrompt(failure, attempt, config) {
-  return `Auto-Repair Attempt #${attempt}\nCommand Failed: ${failure.command || "verify"}\nStderr:\n${failure.stderr || failure.stdout || "Unknown Error"}\n\nPlease fix the issue.`;
+  const cleanStderr = redactSecrets(failure.stderr || failure.stdout || "Unknown Error");
+  return `Auto-Repair Attempt #${attempt}\nCommand Failed: ${failure.command || "verify"}\nStderr:\n${cleanStderr}\n\nPlease fix the issue.`;
 }
 
 export async function dispatch(task, opts = {}) {
@@ -145,8 +157,18 @@ export async function dispatch(task, opts = {}) {
   const config = opts.config || loadConfig(root);
   const provider = createProvider(config.provider, config);
 
+  // Enforce prompt size limit
+  const promptKb = (config.limits.promptKb || 50) * 1024;
+  if (task.prompt && Buffer.byteLength(task.prompt, "utf-8") > promptKb) {
+    throw new Error(`Task prompt exceeds maximum payload limit of ${config.limits.promptKb} KB`);
+  }
+
+  // Redact secrets in prompt before dispatching
+  const cleanPrompt = redactSecrets(task.prompt);
+  const cleanTask = { ...task, prompt: cleanPrompt };
+
   return withBudget(
-    () => provider.dispatch(task, { root, dryRun: opts.dryRun }),
+    () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun }),
     root,
     config.limits.dailyTasks
   );
@@ -155,6 +177,7 @@ export async function dispatch(task, opts = {}) {
 export async function run(opts = {}) {
   const root = opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
+  const concurrency = opts.concurrency || config.limits.concurrency || 1;
   const queueDir = getQueueDir(root);
   const completedDir = join(queueDir, "completed");
   ensureDir(completedDir);
@@ -162,20 +185,24 @@ export async function run(opts = {}) {
   const files = readdirSync(queueDir).filter((f) => f.endsWith(".md"));
   const results = [];
 
-  for (const file of files) {
-    const srcPath = join(queueDir, file);
-    const content = readFileSync(srcPath, "utf-8");
-    const task = { title: file, prompt: content };
-
-    try {
-      const session = await dispatch(task, { root, config, dryRun: opts.dryRun });
-      const dstPath = join(completedDir, file);
-      try { renameSync(srcPath, dstPath); } catch (_) {}
-      appendLedger({ event: "task_completed", file, session }, root);
-      results.push({ file, ok: true, session });
-    } catch (err) {
-      results.push({ file, ok: false, error: err.message });
-    }
+  for (let i = 0; i < files.length; i += concurrency) {
+    const batch = files.slice(i, i + concurrency);
+    await Promise.all(
+      batch.map(async (file) => {
+        const srcPath = join(queueDir, file);
+        try {
+          const content = readFileSync(srcPath, "utf-8");
+          const task = { title: file, prompt: content };
+          const session = await dispatch(task, { root, config, dryRun: opts.dryRun });
+          const dstPath = join(completedDir, file);
+          renameSync(srcPath, dstPath);
+          appendLedger({ event: "task_completed", file, session }, root);
+          results.push({ file, ok: true, session });
+        } catch (err) {
+          results.push({ file, ok: false, error: err.message });
+        }
+      })
+    );
   }
 
   return { processed: results.length, results };
