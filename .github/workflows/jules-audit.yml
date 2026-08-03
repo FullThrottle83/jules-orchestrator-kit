@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: ['18.x', '20.x', '22.x']
+        node-version: ['22.x', '24.x']
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
         run: npm test --if-present
 
       - name: Run Jules PR Self-Audit Gatekeeper
-        if: matrix.node-version == '20.x' && github.event_name == 'pull_request'
+        if: matrix.node-version == '22.x' && github.event_name == 'pull_request'
         run: node scripts/jules-self-audit.mjs
         env:
           CI: "true"
