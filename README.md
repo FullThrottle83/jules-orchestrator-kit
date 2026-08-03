@@ -22,16 +22,21 @@ To use this kit, you will need:
 - A Google Jules REST API key (set as `JULES_API_KEY`) **OR** the native `jules` binary in your PATH.
 
 ## Quick Start
-Navigate to your project root and run:
+Initialize your repository:
 ```bash
-npx jules-orchestrator-kit
-npm run jules:create "Refactor Auth"
-npm run jules:queue
+npx jules-orchestrator-kit init
 ```
 
-> 💡 **Vendored Scripts Architecture**:
-> `npx jules-orchestrator-kit` (or `npx jules-init`) copies zero-dependency orchestration scripts directly into your project's `./scripts/` directory. This ensures full code transparency, auditability, and zero external dependency risk in CI.
-> To update vendored scripts to the latest release, run `npx jules-orchestrator-kit --force`.
+Dispatch a task or run the queue using `agentctl`:
+```bash
+agentctl dispatch --title "Refactor Auth" --prompt "Implement JWT verification in auth handler"
+agentctl queue
+agentctl gate
+```
+
+> 💡 **Unified Engine CLI (`agentctl`)**:
+> `agentctl` is the zero-dependency CLI executable that powers dispatching, safety gate auditing, mutex locks, and swarm management across all project types (Node, Rust, Go, Python, etc.).
+> Legacy `scripts/jules-*.mjs` shims are preserved for backward compatibility.
 
 ---
 
@@ -171,16 +176,16 @@ If no API key is configured, the kit seamlessly falls back to invoking your loca
 **3. Programmatic Node.js SDK (`index.mjs`)**
 Downstream Node.js tools, MCP servers, and LLM orchestrators can import kit functions directly:
 ```js
-import { runSelfAudit, dispatchTask, anonymizePii, verifyLedgerIntegrity, validateJulesConfig } from "jules-orchestrator-kit";
+import { gate, dispatch, anonymizePii, redactSecrets, acquireLock } from "jules-orchestrator-kit";
 
 // Anonymize sensitive PII (emails, IPs, phone numbers) before sending prompts
 const cleanPrompt = anonymizePii("Contact support at john@example.com");
 
 // Programmatically dispatch tasks
-await dispatchTask({ title: "Refactor Auth", prompt: cleanPrompt });
+await dispatch({ title: "Refactor Auth", prompt: cleanPrompt });
 
-// Verify cryptographic hash chain of event ledgers
-const integrity = verifyLedgerIntegrity(".agent/state/sessions/2026-08-03.jsonl");
+// Run 4-phase safety gate audit
+const audit = await gate({ base: "main" });
 ```
 
 ---

@@ -19,12 +19,12 @@ Implement sliding window rate limiting for public API routes.
 Process all queued tasks in batch:
 
 ```bash
-npm run jules:queue
-# or node scripts/jules-queue-runner.mjs
+agentctl queue
+# or npm run jules:queue
 ```
 
-Or dispatch a single queued task using `scripts/jules-dispatch.mjs`:
+Or dispatch a single task using `agentctl dispatch`:
 
 ```bash
-node scripts/jules-dispatch.mjs "TASK-001 Rate Limiting" .agent/jules-queue/TASK-001-rate-limiting.md
+agentctl dispatch --title "TASK-001 Rate Limiting" --prompt "$(cat .agent/jules-queue/TASK-001-rate-limiting.md)"
 ```
