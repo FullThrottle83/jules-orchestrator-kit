@@ -119,8 +119,9 @@ export function createProvider(spec = "jules", config = {}) {
 
         if (!res.ok) {
           const text = await res.text();
-          const cleanText = text.slice(0, 500).replace(rawToken, "[REDACTED]");
-          throw new Error(`Provider HTTP Error (${res.status}): ${cleanText}`);
+          const cleanText = text.slice(0, 500);
+          const sanitizedText = rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText;
+          throw new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
         }
 
         const json = await res.json();
@@ -135,7 +136,12 @@ export function createProvider(spec = "jules", config = {}) {
         const rawArgs = providerSpec.args || (providerSpec.command ? providerSpec.command.split(" ").slice(1) : []);
         const command = providerSpec.command ? providerSpec.command.split(" ")[0] : "claude";
 
-        const processedArgs = rawArgs.map((arg) => interpolateString(arg, data));
+        // CRITICAL H-a FIX: Filter out '{prompt}' argument if prompt is passed via stdin
+        const filteredArgs = providerSpec.promptViaStdin
+          ? rawArgs.filter((arg) => !arg.includes("{prompt}"))
+          : rawArgs;
+
+        const processedArgs = filteredArgs.map((arg) => interpolateString(arg, data));
 
         const res = spawnSync(command, processedArgs, {
           cwd: config._root || process.cwd(),

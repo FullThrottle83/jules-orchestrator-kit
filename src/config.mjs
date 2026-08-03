@@ -28,7 +28,7 @@ const DEFAULTS = {
   baseBranch: "main",
 };
 
-const BUILTIN_DENY = [
+export const BUILTIN_DENY = [
   ".git/**",
   "**/.env",
   "**/.env.*",
@@ -41,7 +41,7 @@ const BUILTIN_DENY = [
   ".github/**",
 ];
 
-const BUILTIN_PROTECT = [
+export const BUILTIN_PROTECT = [
   ".agent/rules/**",
   "package.json",
   "Cargo.toml",
@@ -74,6 +74,34 @@ export function resolveRoot(cwd = process.cwd()) {
   } catch (_) {
     return resolve(cwd);
   }
+}
+
+export function dedupe(arr) {
+  return Array.from(new Set((arr || []).filter(Boolean)));
+}
+
+/**
+ * Single authoritative scope normalizer. Always merges BUILTIN_DENY and BUILTIN_PROTECT.
+ * CRITICAL FIX FOR B1: User scope.deny will add to BUILTIN_DENY, never replace it.
+ */
+export function normalizeScope(parsed = {}) {
+  const forbiddenPaths = Array.isArray(parsed.forbidden_paths)
+    ? parsed.forbidden_paths
+    : Array.isArray(parsed.scope?.deny)
+    ? parsed.scope.deny
+    : [];
+  const allowPaths = Array.isArray(parsed.allow_paths)
+    ? parsed.allow_paths
+    : Array.isArray(parsed.scope?.allow)
+    ? parsed.scope.allow
+    : [];
+  const protectPaths = Array.isArray(parsed.scope?.protect) ? parsed.scope.protect : [];
+
+  return {
+    deny: dedupe([...BUILTIN_DENY, ...forbiddenPaths]),
+    allow: dedupe(allowPaths),
+    protect: dedupe([...BUILTIN_PROTECT, ...protectPaths]),
+  };
 }
 
 /**
@@ -250,10 +278,6 @@ export function resolveVerify(root = process.cwd()) {
   return { test: s.testCmd || "", build: s.buildCmd || "" };
 }
 
-function dedupe(arr) {
-  return Array.from(new Set((arr || []).filter(Boolean)));
-}
-
 /**
  * Loads and validates configuration from .agent/config.yml or .agent/jules.yml.
  */
@@ -275,17 +299,6 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
 
   const testCmd = parsed.test_cmd || parsed.verify?.test || "";
   const buildCmd = parsed.build_cmd || parsed.verify?.build || "";
-  const forbiddenPaths = Array.isArray(parsed.forbidden_paths)
-    ? parsed.forbidden_paths
-    : Array.isArray(parsed.scope?.deny)
-    ? parsed.scope.deny
-    : [];
-  const allowPaths = Array.isArray(parsed.allow_paths)
-    ? parsed.allow_paths
-    : Array.isArray(parsed.scope?.allow)
-    ? parsed.scope.allow
-    : [];
-
   const autoVerify = resolveVerify(root);
 
   const config = {
@@ -295,11 +308,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       test: testCmd || autoVerify.test,
       build: buildCmd || autoVerify.build,
     },
-    scope: {
-      deny: dedupe([...BUILTIN_DENY, ...forbiddenPaths]),
-      allow: dedupe(allowPaths),
-      protect: dedupe(BUILTIN_PROTECT),
-    },
+    scope: normalizeScope(parsed),
     limits: {
       ...DEFAULTS.limits,
       ...(parsed.limits || {}),

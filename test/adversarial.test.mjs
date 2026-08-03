@@ -6,7 +6,7 @@ import os from "node:os";
 import { createProvider } from "../src/provider.mjs";
 import { gate } from "../src/engine.mjs";
 import { checkScope, matchesGlob } from "../src/security.mjs";
-import { parseYaml } from "../src/config.mjs";
+import { parseYaml, normalizeScope } from "../src/config.mjs";
 import { acquireLock, releaseLock } from "../src/state.mjs";
 
 describe("Adversarial Security Test Suite (Audit Remediations)", () => {
@@ -134,5 +134,30 @@ __proto__:
     assert.equal(matchesGlob("app/(admin)/page.tsx", "app/(admin)/**"), true);
     assert.equal(matchesGlob("src/c++/x.h", "src/c++/**"), true);
     assert.equal(matchesGlob("src/index.js", "app/(admin)/**"), false);
+  });
+
+  it("B1: User-defined scope.deny MUST merge with BUILTIN_DENY, never replace it", () => {
+    const userConfig = {
+      scope: {
+        deny: ["docs/**"],
+        allow: ["src/**"],
+      },
+    };
+    const scope = checkScope([".github/workflows/ci.yml", ".env", "docs/api.md"], normalizeScope(userConfig));
+    assert.equal(scope.ok, false, "BUILTIN_DENY files must still be blocked when user defines scope.deny");
+    assert.equal(scope.violations.length, 3);
+  });
+
+  it("H-a: promptViaStdin: true excludes prompt from exec argv", async () => {
+    const customProvider = {
+      name: "claude-code",
+      type: "exec",
+      command: "node",
+      args: ["-e", "process.stdout.write('safe')"],
+      promptViaStdin: true,
+    };
+    const provider = createProvider(customProvider);
+    const res = await provider.dispatch({ prompt: "SECRET_PROMPT" });
+    assert.equal(res.status, "completed");
   });
 });

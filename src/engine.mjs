@@ -1,4 +1,4 @@
-import { loadConfig, parseYaml } from "./config.mjs";
+import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
 import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider } from "./provider.mjs";
@@ -29,7 +29,7 @@ export async function gate(opts = {}) {
     return { ok: false, code: 1, phases, error: err.message };
   }
 
-  // Phase 1: Scope Guard (Fetch trusted config strictly from origin/base)
+  // Phase 1: Scope Guard (Fetch trusted config strictly from origin/base using single normalizeScope)
   let trustedScope = config.scope;
   let trustedVerify = config.verify;
 
@@ -37,13 +37,8 @@ export async function gate(opts = {}) {
   if (trustedConfigRaw) {
     try {
       const parsed = parseYaml(trustedConfigRaw);
-      if (parsed.scope || parsed.forbidden_paths) {
-        trustedScope = {
-          deny: parsed.scope?.deny || parsed.forbidden_paths || config.scope.deny,
-          allow: parsed.scope?.allow || parsed.allow_paths || config.scope.allow,
-          protect: parsed.scope?.protect || config.scope.protect,
-        };
-      }
+      // CRITICAL B1 FIX: normalizeScope ensures BUILTIN_DENY is ALWAYS merged with user deny rules
+      trustedScope = normalizeScope(parsed);
       if (parsed.verify || parsed.test_cmd || parsed.build_cmd) {
         trustedVerify = {
           test: parsed.verify?.test || parsed.test_cmd || config.verify.test,
@@ -51,6 +46,9 @@ export async function gate(opts = {}) {
         };
       }
     } catch (_) {}
+  } else {
+    // CRITICAL H-c FIX: Fall back strictly to normalizeScope({}) (built-ins only), never HEAD config
+    trustedScope = normalizeScope({});
   }
 
   const scopeResult = checkScope(files, trustedScope, {

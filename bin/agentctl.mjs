@@ -197,14 +197,24 @@ async function main() {
         const agent = args[2] || "agent";
         const taskId = args[3] || "task-1";
         const filePaths = args.slice(4);
-        const res = acquireLock(agent, taskId, filePaths, { root });
-        console.log(res.acquired ? `✅ Acquired lock for ${taskId}` : `❌ Lock conflict detected`);
+        const res = acquireLock(agent, taskId, filePaths, root);
+        if (res.ok) {
+          console.log(`✅ Acquired lock for ${taskId}`);
+        } else {
+          console.log(`❌ Lock conflict detected: held by ${res.holder}`);
+          process.exit(1);
+        }
       } else if (action === "release") {
-        const taskId = args[2];
-        releaseLock("agent", taskId, { root });
-        console.log(`✅ Released lock for ${taskId}`);
+        const taskId = args[2] || "task-1";
+        const ok = releaseLock(taskId, root);
+        if (ok) {
+          console.log(`✅ Released lock for ${taskId}`);
+        } else {
+          console.log(`❌ Lock for ${taskId} not found or release failed`);
+          process.exit(1);
+        }
       } else {
-        const locks = lockStatus({ root });
+        const locks = lockStatus(root);
         console.log(`Active Locks (${locks.length}):`, locks);
       }
       process.exit(0);
