@@ -50,6 +50,7 @@
     "jules:merge-swarm": "node scripts/jules-merge-swarm.mjs",
     "jules:patch": "node scripts/jules-patch.mjs",
     "jules:nightly": "node scripts/jules-nightly.mjs",
+    "jules:webhook": "node scripts/jules-webhook-receiver.mjs",
     "lint": "eslint ."
   },
   "engines": {
