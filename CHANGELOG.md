@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-08-03
+## [0.9.2] - 2026-08-03
 ### Added & Modularized (Universal Architecture & Security Hardening)
 - **Modular Domain Architecture (`src/`)**: Completely refactored from vendored script prototype into native ESM modules (`src/config.mjs`, `src/security.mjs`, `src/git.mjs`, `src/provider.mjs`, `src/state.mjs`, `src/engine.mjs`).
 - **Unified Command-Line Interface (`agentctl`)**: Added single `bin/agentctl.mjs` CLI executable supporting `dispatch`, `gate`/`audit`, `queue`, `swarm`, `lock`, `doctor`, and `init` with `--json` output options.
