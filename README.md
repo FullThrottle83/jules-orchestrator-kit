@@ -118,6 +118,8 @@ sequenceDiagram
 
 > 💡 **Core Architectural Invariants**:
 > - **Zero-Trust Base-Branch Security**: Security rules (`forbidden_paths`) are fetched exclusively from `origin/main` (never untrusted PR branches).
+> - **Automatic PII & Secret Redaction**: Outbound task prompts are automatically sanitized to redact API secrets and mask sensitive PII (emails, IPs, phone numbers).
+> - **Ledger Hash-Chain Integrity**: Hashing over JSONL event streams detects unauthorized log tampering or record deletions.
 > - **Dynamic Command Resolution (`command-resolver.mjs`)**: Auto-detects workspace boundaries (Turborepo, pnpm, Nx, Cargo, pytest, npm).
 >
 > 🔍 For a deep dive into the execution protocol, see the [Architecture & Pipeline Flow](docs/architecture.md).
@@ -169,13 +171,16 @@ If no API key is configured, the kit seamlessly falls back to invoking your loca
 **3. Programmatic Node.js SDK (`index.mjs`)**
 Downstream Node.js tools, MCP servers, and LLM orchestrators can import kit functions directly:
 ```js
-import { runSelfAudit, scanCodebaseForTodos, resolveProjectCommands } from "jules-orchestrator-kit";
+import { runSelfAudit, dispatchTask, anonymizePii, verifyLedgerIntegrity, validateJulesConfig } from "jules-orchestrator-kit";
 
-// Run pre-flight sandbox check
-await runPreflightSandbox();
+// Anonymize sensitive PII (emails, IPs, phone numbers) before sending prompts
+const cleanPrompt = anonymizePii("Contact support at john@example.com");
 
-// Scan codebase for TODO/FIXME tasks
-const tasks = scanCodebaseForTodos(process.cwd());
+// Programmatically dispatch tasks
+await dispatchTask({ title: "Refactor Auth", prompt: cleanPrompt });
+
+// Verify cryptographic hash chain of event ledgers
+const integrity = verifyLedgerIntegrity(".agent/state/sessions/2026-08-03.jsonl");
 ```
 
 ---
