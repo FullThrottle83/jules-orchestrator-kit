@@ -1,9 +1,9 @@
 import { loadConfig, parseYaml } from "./config.mjs";
 import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd, GateError } from "./git.mjs";
+import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider } from "./provider.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir } from "./state.mjs";
-import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -147,7 +147,7 @@ export async function repair(failure, opts = {}) {
   return { ok: false, attempts, finalStatus: "OODA_EXHAUSTED" };
 }
 
-function buildRepairPrompt(failure, attempt, config) {
+function buildRepairPrompt(failure, attempt, _config) {
   const cleanStderr = redactSecrets(failure.stderr || failure.stdout || "Unknown Error");
   return `Auto-Repair Attempt #${attempt}\nCommand Failed: ${failure.command || "verify"}\nStderr:\n${cleanStderr}\n\nPlease fix the issue.`;
 }

@@ -82,7 +82,7 @@ export function getMultimodalAttachmentDirective(attachments = []) {
   return `### Multimodal Task Attachments (${attachments.length})\n` + attachments.map((a) => `- ${a.relPath}`).join("\n");
 }
 
-export function runPreflightStaticCheck(projectRoot = process.cwd()) {
+export function runPreflightStaticCheck(_projectRoot = process.cwd()) {
   return "PASSED";
 }
 

@@ -7,7 +7,6 @@ import { parseArgs } from "node:util";
 import readline from "node:readline/promises";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
-import { detectStack, resolveVerify } from "../src/config.mjs";
 import { resolveProjectCommands } from "../scripts/command-resolver.mjs";
 
 const __filename = fileURLToPath(import.meta.url);

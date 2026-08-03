@@ -1,6 +1,5 @@
 import {
   readFileSync,
-  writeFileSync,
   appendFileSync,
   existsSync,
   mkdirSync,
@@ -10,7 +9,7 @@ import {
   closeSync,
   unlinkSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { resolveRoot } from "./config.mjs";
 
 export function ensureDir(dirPath) {

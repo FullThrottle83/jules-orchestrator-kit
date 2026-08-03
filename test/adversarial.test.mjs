@@ -6,8 +6,8 @@ import os from "node:os";
 import { createProvider } from "../src/provider.mjs";
 import { gate } from "../src/engine.mjs";
 import { checkScope, matchesGlob } from "../src/security.mjs";
-import { parseYaml, loadConfig } from "../src/config.mjs";
-import { acquireLock, releaseLock, lockStatus } from "../src/state.mjs";
+import { parseYaml } from "../src/config.mjs";
+import { acquireLock, releaseLock } from "../src/state.mjs";
 
 describe("Adversarial Security Test Suite (Audit Remediations)", () => {
   it("C1: Prevents shell command injection in exec provider (CWE-77)", async () => {

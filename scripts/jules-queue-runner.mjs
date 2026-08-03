@@ -4,9 +4,8 @@
  * Backward compatibility shim for jules-queue-runner.mjs in v0.9.0.
  */
 
-import { run } from "../src/engine.mjs";
 import { getQueueDir, ensureDir } from "../src/state.mjs";
-import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
+import { readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
 export function classifyQueueFailure(err) {

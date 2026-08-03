@@ -2,7 +2,7 @@
 
 import { parseArgs } from "node:util";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { loadConfig, resolveRoot, detectStack } from "../src/config.mjs";
 import { gate, dispatch, run } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir, ensureDir } from "../src/state.mjs";

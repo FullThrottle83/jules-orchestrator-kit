@@ -31,7 +31,7 @@ export function loadAllowedPatterns(configContent = "") {
   return Array.isArray(parsed.allow_paths) ? parsed.allow_paths : [];
 }
 
-export function validateJulesConfig(configContent = "", jsonGuardrailsContent = "") {
+export function validateJulesConfig(_configContent = "", jsonGuardrailsContent = "") {
   const errors = [];
   if (jsonGuardrailsContent) {
     try {

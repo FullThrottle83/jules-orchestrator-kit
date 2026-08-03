@@ -3,7 +3,7 @@
  * Re-exports detectStack from src/config.mjs.
  */
 
-import { detectStack, resolveVerify } from "../src/config.mjs";
+import { detectStack } from "../src/config.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 

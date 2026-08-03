@@ -154,8 +154,8 @@ export function verifyLedgerIntegrity(filePath) {
   }
 }
 
-export function acquireBudgetLock(root) {
+export function acquireBudgetLock(_root) {
   return true;
 }
 
-export function releaseBudgetLock(root) {}
+export function releaseBudgetLock(_root) {}

@@ -4,7 +4,6 @@
  * Backward compatibility shim for jules-swarm.mjs in v0.9.0.
  */
 
-import { run } from "../src/engine.mjs";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 

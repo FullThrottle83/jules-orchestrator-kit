@@ -4,7 +4,7 @@
  * Backward compatibility shim for jules-patch.mjs in v0.9.0.
  */
 
-export async function fetchSessionPatch(sessionId, options = {}) {
+export async function fetchSessionPatch(sessionId, _options = {}) {
   if (!sessionId || typeof sessionId !== "string") {
     throw new Error("Session ID is required.");
   }

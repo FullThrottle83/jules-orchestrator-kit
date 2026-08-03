@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { resolve, sep } from "node:path";
+import { sep } from "node:path";
 
 export class GateError extends Error {
   constructor(message, opts = {}) {
@@ -95,7 +95,6 @@ export function diffBytes(root = process.cwd(), base = "main") {
   const resolvedRef = resolveBase(root, base);
   const raw = git(["diff", "--shortstat", `${resolvedRef}...HEAD`], { cwd: root });
   if (!raw) return 0;
-  const match = raw.match(/(\d+)\s+insertion/i) || raw.match(/(\d+)\s+deletion/i);
   const diffStr = git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
   return Buffer.byteLength(diffStr, "utf-8");
 }
