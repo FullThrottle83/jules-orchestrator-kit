@@ -23,9 +23,6 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Upgrade npm to latest
-        run: npm install -g npm@latest
-
       - name: Cache OODA state & ledgers
         uses: actions/cache@v4
         with:
