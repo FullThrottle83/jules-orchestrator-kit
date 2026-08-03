@@ -241,10 +241,11 @@ export function verifyLedgerIntegrity(filePath) {
     return { ok: false, count: 0, reason: "File not found" };
   }
   try {
-    const content = fs.readFileSync(filePath, "utf-8").trim();
+    const rawContent = fs.readFileSync(filePath, "utf-8");
+    const content = rawContent.replace(/\r\n/g, "\n").trim();
     if (!content) return { ok: true, count: 0 };
 
-    const lines = content.split("\n").filter(Boolean);
+    const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
     let previousHash = "";
 
     for (let i = 0; i < lines.length; i++) {
