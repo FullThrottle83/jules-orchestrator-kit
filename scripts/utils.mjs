@@ -170,7 +170,9 @@ export function hasHighConfidenceSecret(text) {
   if (!text) return false;
   return HIGH_CONFIDENCE_PATTERNS.some((pat) => {
     pat.lastIndex = 0;
-    return pat.test(text);
+    const res = pat.test(text);
+    pat.lastIndex = 0;
+    return res;
   });
 }
 
@@ -178,7 +180,9 @@ export function hasLowConfidenceSecret(text) {
   if (!text) return false;
   return LOW_CONFIDENCE_PATTERNS.some((pat) => {
     pat.lastIndex = 0;
-    return pat.test(text);
+    const res = pat.test(text);
+    pat.lastIndex = 0;
+    return res;
   });
 }
 
@@ -200,7 +204,9 @@ export function redactSecrets(text) {
 
   const allPatterns = [...HIGH_CONFIDENCE_PATTERNS, ...LOW_CONFIDENCE_PATTERNS];
   for (const pat of allPatterns) {
+    pat.lastIndex = 0;
     sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
+    pat.lastIndex = 0;
   }
   return sanitized;
 }
