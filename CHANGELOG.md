@@ -6,11 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.8.5] - 2026-08-03
-### Added & Hardened (Enterprise Governance Core)
-- **Automatic PII Anonymization**: Added `anonymizePii(text)` to `utils.mjs` and integrated into `jules-dispatch.mjs` to automatically mask emails (`[REDACTED_EMAIL]`), IPv4 addresses (`[REDACTED_IP]`), and phone numbers (`[REDACTED_PHONE]`) from outbound task prompts before sending to AI providers.
-- **Strict Fail-Closed Config Validator**: Added `validateJulesConfig(configContent, jsonContent)` in `jules-self-audit.mjs` to validate rules and RegExp triggers in `.agent/rules/dynamic-guardrails.json` and `.agent/jules.yml`. Invalid syntax or unparseable RegExp triggers fail closed with exit code 3 and explicit error logs.
-- **Ledger Hash-Chain Integrity Verification**: Added `verifyLedgerIntegrity(filePath)` to `utils.mjs` computing SHA-256 hash chains across JSONL ledger records to detect data corruption or unauthorized tampering.
-- **Expanded SDK Exports**: Re-exported `anonymizePii`, `verifyLedgerIntegrity`, and `validateJulesConfig` from `index.mjs` primary SDK entrypoint.
+### Added & Hardened (Enterprise Governance & Swarm Core)
+- **Disjoint Swarm PR Auto-Merge Engine**: Added `scripts/jules-merge-swarm.mjs` (`npm run jules:merge-swarm`) to automatically verify CI checks, evaluate disjoint file cluster modifications (zero file collisions), and squash-merge passing Jules PRs (`gh pr merge --squash --delete-branch`).
+- **`baseBranch` REST Payload Decoupling**: Updated `startingBranch` in `jules-dispatch.mjs` to strictly use `BASE_BRANCH || "main"` (the remote base ref), preventing HTTP 400 `sessionFailed` errors from unpushed local feature branches.
+- **Active Session Quota Backoff (`FAILED_PRECONDITION`)**: Added HTTP 400 `FAILED_PRECONDITION` detection (~30 concurrent max session limit) with exponential retry backoff in `jules-dispatch.mjs` and `concurrency_limit` classification in `jules-queue-runner.mjs`.
+- **OODA Repair Secret Masking**: Wrapped failure logs in `redactSecrets(anonymizePii(failureLog))` inside `jules-self-audit.mjs` before dispatching auto-repair prompts.
+- **Configurable Diff Payload Limit (`JULES_MAX_DIFF_KB`)**: Made maximum diff payload size configurable via `JULES_MAX_DIFF_KB` (default 50 KB).
+- **Automatic PII Anonymization**: Added `anonymizePii(text)` to `utils.mjs` and integrated into `jules-dispatch.mjs` to automatically mask emails (`[REDACTED_EMAIL]`), IPv4 addresses (`[REDACTED_IP]`), and multi-segment phone numbers (`[REDACTED_PHONE]`) from outbound task prompts.
+- **Strict Fail-Closed Config Validator**: Added `validateJulesConfig(configContent, jsonContent)` in `jules-self-audit.mjs` to validate rules and RegExp triggers in `.agent/rules/dynamic-guardrails.json` and `.agent/jules.yml`.
+- **Ledger Hash-Chain Integrity Verification**: Added `verifyLedgerIntegrity(filePath)` to `utils.mjs` computing SHA-256 hash chains across JSONL ledger records.
+- **Expanded SDK Exports**: Re-exported `anonymizePii`, `verifyLedgerIntegrity`, `validateJulesConfig`, and `classifyQueueFailure` from `index.mjs`.
 
 ## [0.8.4] - 2026-08-03
 ### Fixed & Hardened
