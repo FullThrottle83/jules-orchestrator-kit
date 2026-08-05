@@ -43,7 +43,6 @@ export function checkAssetIntegrity(searchDir) {
           checkedCount++;
           try {
             // Read first 64 bytes
-            const buf = Buffer.alloc(64);
             const fd = readFileSync(fullPath);
             const header = fd.subarray(0, 64).toString("utf-8").toLowerCase().trim();
 

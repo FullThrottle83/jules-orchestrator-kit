@@ -1,4 +1,3 @@
-import { checkScope } from "./security.mjs";
 import { normalizePath } from "./config.mjs";
 
 export const RISK_TIERS = {

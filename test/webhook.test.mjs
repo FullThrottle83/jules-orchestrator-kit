@@ -1,7 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import http from "node:http";
 import { verifySignature, parseWebhookPayload, routeWebhookEvent, createWebhookServer } from "../src/webhook.mjs";
 
 describe("src/webhook.mjs", () => {

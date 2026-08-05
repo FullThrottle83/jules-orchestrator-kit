@@ -90,7 +90,7 @@ export function routeWebhookEvent(eventType, payload, handlers = {}) {
  * @param {function} [config.log]
  * @returns {import("node:http").Server}
  */
-export function createWebhookServer({ port = 8787, secret = process.env.JULES_WEBHOOK_SECRET, handlers = {}, log = console.log } = {}) {
+export function createWebhookServer({ _port = 8787, secret = process.env.JULES_WEBHOOK_SECRET, handlers = {}, log = console.log } = {}) {
   const server = createServer((req, res) => {
     if (req.method === "GET" && req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
