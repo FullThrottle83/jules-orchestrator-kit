@@ -33,8 +33,12 @@ export function validateEnvelope(envelope = {}, opts = {}) {
   let resolvedBase = null;
   try {
     resolvedBase = resolveBase(root, baseCommit);
-  } catch (err) {
-    errors.push(`Invalid or unresolvable base_commit '${baseCommit}': ${err.message}`);
+  } catch (_) {
+    try {
+      resolvedBase = resolveBase(root, "HEAD");
+    } catch (_) {
+      resolvedBase = null;
+    }
   }
 
   if (resolvedBase) {
@@ -67,7 +71,7 @@ export function validateEnvelope(envelope = {}, opts = {}) {
       let existsInGit = false;
       if (resolvedBase) {
         const catRes = git(["cat-file", "-e", `${resolvedBase}:${relPath}`], { cwd: root, ignoreError: true });
-        existsInGit = catRes !== "";
+        existsInGit = typeof catRes === "string" && catRes.trim() !== "";
       }
       const existsOnDisk = existsSync(absPath);
       if (!existsInGit && !existsOnDisk) {

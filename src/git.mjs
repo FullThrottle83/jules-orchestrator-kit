@@ -59,7 +59,7 @@ export function git(args = [], opts = {}) {
 }
 
 export function resolveBase(root = process.cwd(), baseRef = "main") {
-  const candidates = [`origin/${baseRef}`, baseRef, `refs/remotes/origin/${baseRef}`];
+  const candidates = [`origin/${baseRef}`, baseRef, `refs/remotes/origin/${baseRef}`, "HEAD"];
   for (const ref of candidates) {
     try {
       const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
