@@ -58,6 +58,7 @@ sequenceDiagram
     
     box "Control Plane" #E8F4F8
         participant Orc as Orchestrator Core
+        participant Envelope as Task Envelope Validator
         participant Gate as Self-Audit Gatekeeper
     end
     
@@ -66,12 +67,19 @@ sequenceDiagram
         participant Git as Git Worktree Sandbox
     end
 
-    Trigger->>+Orc: Dispatch Task Payload
+    Trigger->>+Orc: Dispatch Task Payload / Envelope
     
-    note over Orc,Git: Phase 1: Security Redaction & Provisioning
-    Orc->>Orc: Redact Secrets (Entropy > 3.6) & Enforce Dynamic Guardrails
-    Orc->>+Git: Provision Isolation Sandbox (git worktree)
-    Git-->>-Orc: Sandbox Ready
+    note over Orc,Envelope: Phase 1: Pre-Flight Premise & Security Validation
+    Orc->>+Envelope: Validate Envelope (referenced_paths exist? base commit fresh?)
+    alt Premise Failure / Missing Referenced Paths / Stale Base
+        Envelope-->>Orc: Validation Failed (Premise Error)
+        Orc-->>Trigger: Abort Pre-Dispatch (Exit 1)
+    else Envelope Validated
+        Envelope-->>-Orc: Envelope Approved
+        Orc->>Orc: Redact Secrets (Entropy > 3.6) & Enforce Dynamic Guardrails
+        Orc->>+Git: Provision Isolation Sandbox (git worktree)
+        Git-->>-Orc: Sandbox Ready
+    end
     
     loop OODA Repair Cycle (Max 3 Retries)
         note over Orc,Git: Phase 2: Agent Execution & Dispatch
@@ -80,28 +88,29 @@ sequenceDiagram
         Git-->>-API: Changes Written
         API-->>-Orc: Execution Complete
         
-        note over Orc,Gate: Phase 3: Tiered Verification & Gatekeeping
+        note over Orc,Gate: Phase 3: Multi-Gate Verification & Risk Classification
         Orc->>+Gate: Trigger Self-Audit (trusted origin/main rules)
         
-        Gate->>+Git: Scope Audit (`git diff -z --name-only` vs forbidden_paths)
-        Git-->>-Gate: Diff Stats & File List
+        Gate->>+Git: Run Scope, Payload & Stale-Base Audit (`git diff`)
+        Git-->>-Gate: Diff Stats & Base Commit Age
         
-        alt Scope Breach (Forbidden Path OR Diff Payload > 75 KB)
-            Gate-->>Orc: Security / Scope Violation Detected
+        alt Scope Breach / Payload > 75 KB / Stale Base > 25 commits
+            Gate-->>Orc: Security / Scope / Stale-Base Violation
             Orc->>Orc: Record Telemetry (metrics.jsonl)
             Orc-->>Trigger: Abort Execution (Exit 3)
-            break Fatal Security Error
+            break Fatal Security or Base Error
                 Orc->>Git: Teardown Worktree Sandbox
             end
-        else Scope Verification Passed
-            Gate->>+Git: Run Dynamic Verification (`testCmd` & `buildCmd`)
-            Git-->>-Gate: stdout / stderr verification results
+        else Static Scope & Base Passed
+            Gate->>Gate: Classify Risk Tier (R0 Cosmetic, R1 Routine, R2 Consequential, R3 Restricted)
+            Gate->>+Git: Run Integrity Checks (Asset Magic-Bytes, Rules Budget, testCmd & buildCmd)
+            Git-->>-Gate: Execution & Integrity Proof (stdout/stderr)
         end
 
-        alt 100% Verification Suite Passed
-            Gate-->>-Orc: Verification Success
+        alt 100% Verification Suite & Integrity Passed
+            Gate-->>-Orc: Verification Success + Risk Tier Metadata
             Orc->>+Git: Commit & Push to Remote Branch / PR
-            Git-->>-Orc: PR Ready
+            Git-->>-Orc: PR Ready (Attached Execution Receipts)
             Orc->>Orc: Record Telemetry (metrics.jsonl)
             Orc-->>Trigger: Dispatch Succeeded (Exit 0)
             break Task Completed
@@ -122,10 +131,12 @@ sequenceDiagram
 ```
 
 > 💡 **Core Architectural Invariants**:
+> - **Task Envelope Premise Validation**: Pre-flight checks verify referenced paths and base freshness before dispatching tasks to prevent session burnout.
+> - **Risk Tier Classification Engine (R0–R3)**: Classifies changes by blast radius to route auto-merge vs mandatory human review.
 > - **Zero-Trust Base-Branch Security**: Security rules (`forbidden_paths`) are fetched exclusively from `origin/main` (never untrusted PR branches).
+> - **Asset & Rules Integrity**: Guards binary assets against HTML corruption and enforces character/line budgets on rule files.
 > - **Automatic PII & Secret Redaction**: Outbound task prompts are automatically sanitized to redact API secrets and mask sensitive PII (emails, IPs, phone numbers).
 > - **Ledger Hash-Chain Integrity**: Hashing over JSONL event streams detects unauthorized log tampering or record deletions.
-> - **Dynamic Command Resolution (`command-resolver.mjs`)**: Auto-detects workspace boundaries (Turborepo, pnpm, Nx, Cargo, pytest, npm).
 >
 > 🔍 For a deep dive into the execution protocol, see the [Architecture & Pipeline Flow](docs/architecture.md).
 
