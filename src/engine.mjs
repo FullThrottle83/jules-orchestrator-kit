@@ -147,7 +147,17 @@ export async function repair(failure, opts = {}) {
 
 function buildRepairPrompt(failure, attempt, _config) {
   const cleanStderr = redactSecrets(failure.stderr || failure.stdout || "Unknown Error");
-  return `Auto-Repair Attempt #${attempt}\nCommand Failed: ${failure.command || "verify"}\nStderr:\n${cleanStderr}\n\nPlease fix the issue.`;
+  return `Auto-Repair Attempt #${attempt}
+Command Failed: ${failure.command || "verify"}
+
+REPAIR DIRECTIVE & STRICT INVARIANTS:
+1. Ground your fix strictly in the error log below. Do NOT guess file contents or function signatures.
+2. NO WEAKENING: You are STRICTLY FORBIDDEN from deleting tests, commenting out assertions, or weakening expectations to achieve a passing test. Leave unmet requirements RED if the requirement is valid and feature code is missing.
+3. CARRY EVIDENCE: Address the root cause directly and verify the exact fix.
+4. RE-VERIFY: Execute full verification after patching to ensure zero new regressions.
+
+Stderr:
+${cleanStderr}`;
 }
 
 export async function dispatch(task, opts = {}) {

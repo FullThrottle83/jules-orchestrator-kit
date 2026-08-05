@@ -50,9 +50,12 @@ Jules automatically infers test and build verification commands via `scripts/com
 
 - **Read Before Write**: Always inspect target files and surrounding symbol signatures (via grep or view tools) before applying changes.
 - **Scope Locks**: Strictly adhere to designated file bounds. Do NOT modify files outside the explicit task scope or alter shared infrastructural components unless assigned.
+- **Falsifiable Criteria**: Never use unfalsifiable goals ("utterly perfect", "complete refactor"). Define tasks with binary scoreable criteria (e.g. passing test counts, 0 lint errors, explicit hard-fails).
+- **Carry Evidence with Claims**: "It works" means pasting terminal verification output. Exit code 0 alone proves only process survival; inspect outputs/artifacts to prove function.
+- **No Test Weakening Rule**: Never make a test pass by deleting assertions, commenting out checks, or weakening requirements. Leave unmet requirements RED with clear fix rationale.
+- **Explicit File Ownership**: Sequence parallel swarm agents with explicit non-overlapping file ownership to prevent concurrent drift.
 - **Rebase Before PR**: Fetch latest `main`, rebase onto `origin/main`, re-execute verification suite. If the resulting diff is empty, close/abort PR without pushing.
 - **Minimal Interference**: Preserve existing function signatures, comments, and style conventions.
-- **Falsifiable Claims**: Base all code changes on explicit error logs, file paths, line numbers, or test results.
 - **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
 
 ---
@@ -101,6 +104,8 @@ TASK: <description>
 HARD CONSTRAINTS:
 - Do NOT modify package.json, pnpm-lock.yaml, tsconfig.json, or .github/ files. Enforced in CI by Agent Scope Guard.
 - Diff Payload Governor: Keep total diff payload under 75 KB (`git diff | wc -c`) to prevent API truncation (~80 KB limit).
+- Falsifiable & Evidence-Based: Attach full terminal verification output to PR. Never weaken assertions or delete failing tests to force a pass.
+- Declare Scope Deviations: If modifying files outside task bounds, explicitly state rationale in PR.
 - Verify before finishing: Run full type-check, lint, and unit test suites.
 - BEFORE opening the PR: Run `git fetch origin main && git rebase origin/main`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.
 - Delete ALL temporary files (.py, .sh, .patch, debug logs) before submitting.

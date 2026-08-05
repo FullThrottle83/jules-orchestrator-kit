@@ -26,6 +26,10 @@ export {
   lockStatus,
 } from "./src/state.mjs";
 export { gate, dispatch, repair, run } from "./src/engine.mjs";
+export { validateEnvelope } from "./src/envelope.mjs";
+export { checkAssetIntegrity } from "./src/asset_integrity.mjs";
+export { classifyRiskTier, RISK_TIERS } from "./src/risk.mjs";
+export { checkRulesBudget } from "./src/rules_budget.mjs";
 
 // Legacy SDK shims for backward compatibility
 export { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "./scripts/command-resolver.mjs";

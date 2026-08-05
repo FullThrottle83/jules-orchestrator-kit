@@ -176,7 +176,7 @@ If no API key is configured, the kit seamlessly falls back to invoking your loca
 **3. Programmatic Node.js SDK (`index.mjs`)**
 Downstream Node.js tools, MCP servers, and LLM orchestrators can import kit functions directly:
 ```js
-import { gate, dispatch, anonymizePii, redactSecrets, acquireLock } from "jules-orchestrator-kit";
+import { gate, dispatch, validateEnvelope, classifyRiskTier, checkAssetIntegrity, checkRulesBudget, redactSecrets } from "jules-orchestrator-kit";
 
 // Anonymize sensitive PII (emails, IPs, phone numbers) before sending prompts
 const cleanPrompt = anonymizePii("Contact support at john@example.com");

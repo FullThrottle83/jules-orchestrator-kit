@@ -51,6 +51,11 @@
     "jules:patch": "node scripts/jules-patch.mjs",
     "jules:nightly": "node scripts/jules-nightly.mjs",
     "jules:webhook": "node scripts/jules-webhook-receiver.mjs",
+    "jules:validate-envelope": "node scripts/validate-envelope.mjs",
+    "jules:check-stale-base": "node scripts/stale-base-check.mjs",
+    "jules:check-asset-integrity": "node scripts/asset-integrity-check.mjs",
+    "jules:risk-tier": "node scripts/risk-tier.mjs",
+    "jules:rules-lint": "node scripts/rules-lint.mjs",
     "lint": "eslint ."
   },
   "engines": {

@@ -47,7 +47,10 @@ Jules automatically infers test and build verification commands via `scripts/com
 
 - **Read Before Write**: Inspect target files and surrounding symbol signatures before applying changes.
 - **Minimal Interference**: Preserve existing function signatures, comments, and zero-dependency architecture.
-- **Falsifiable Claims**: Base all code changes on explicit error logs, file paths, line numbers, or test results.
+- **Falsifiable Criteria**: Never use unfalsifiable goals ("utterly perfect", "complete refactor"). Define tasks with binary scoreable criteria (e.g. passing test counts, 0 lint errors, explicit hard-fails).
+- **Carry Evidence with Claims**: "It works" means pasting terminal verification output. Exit code 0 alone proves only process survival; inspect outputs/artifacts to prove function.
+- **No Test Weakening Rule**: Never make a test pass by deleting assertions, commenting out checks, or weakening requirements. Leave unmet requirements RED with clear fix rationale.
+- **Explicit File Ownership**: Sequence parallel swarm agents with explicit non-overlapping file ownership to prevent concurrent drift.
 - **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
 - **Rebase Before PR**: Fetch latest `main`, rebase onto `origin/main`, re-execute verification suite. If the resulting diff is empty, close/abort PR without pushing.
 - **Diff Payload Governor**: API forcefully truncates diff payloads > 80 KB. Keep total diff payload under 75 KB (`git diff | wc -c`).
@@ -58,14 +61,11 @@ Jules automatically infers test and build verification commands via `scripts/com
 
 To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhere to the rules defined in `.agent/rules/jules-protocol.md`.
 
-### Multi-Agent Coordination & Handover Architecture
+### Multi-Agent Coordination & Verification Gates
 
-- **Multi-Agent Mutex Lock Protocol**: Prevent concurrent file modification collisions. Check and acquire locks before modifying paths:
-  ```bash
-  agentctl lock acquire <agent_name> <task_id> <file_paths...>
-  # or node scripts/lock-manager.mjs acquire <agent_name> <task_id> <file_paths...> --unattended
-  ```
-- **The Baton Pass Protocol**: Write handover documents when a session pauses or hands off work (e.g. `.agent/history/YYYY-MM-DD-handover-[task_id].md`).
+- **Task Envelope Premise Validator**: Validates referenced paths, allowed scope, and base freshness before dispatching tasks (`node scripts/validate-envelope.mjs <envelope.json>`). Prevents session burnout on missing files.
+- **Stale-Base Gate Predicate**: Rejects PRs/branches whose merge-base is > 25 commits behind `origin/main` (`node scripts/stale-base-check.mjs`).
+- **Asset Integrity Gate**: Inspects binary and font assets (`.woff2`, `.png`, `.jpg`) to ensure saved HTML/text error pages never land silently (`node scripts/asset-integrity-check.mjs`).
 
 ### Standard Jules Guardrails Footer
 
@@ -80,6 +80,8 @@ TASK: <description>
 HARD CONSTRAINTS:
 - Do NOT modify package.json, pnpm-lock.yaml, tsconfig.json, or .github/ files. Enforced in CI by Agent Scope Guard.
 - Diff Payload Governor: Keep total diff payload under 75 KB (`git diff | wc -c`) to prevent API truncation (~80 KB limit).
+- Falsifiable & Evidence-Based: Attach full terminal verification output to PR. Never weaken assertions or delete failing tests to force a pass.
+- Declare Scope Deviations: If modifying files outside task bounds, explicitly state rationale in PR.
 - Verify before finishing: Run full type-check, lint, and unit test suites.
 - BEFORE opening the PR: Run `git fetch origin main && git rebase origin/main`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.
 - Delete ALL temporary files (.py, .sh, .patch, debug logs) before submitting.
