@@ -27,11 +27,12 @@ Initialize your repository:
 npx jules-orchestrator-kit init
 ```
 
-Dispatch a task or run the queue using `agentctl`:
+Dispatch a task, run the queue, audit safety gates, or start the MCP server using `agentctl`:
 ```bash
 agentctl dispatch --title "Refactor Auth" --prompt "Implement JWT verification in auth handler"
 agentctl queue
 agentctl gate
+agentctl mcp
 ```
 
 > 💡 **Unified Engine CLI (`agentctl`)**:
@@ -163,11 +164,34 @@ allow_paths: []
 
 ---
 
-## Expand with MCP
+## Model Context Protocol (MCP) Integration
 
-All task dispatches dynamically inject `<MCP_DIRECTIVE>` envelopes into task prompts. This forces Jules to adhere to strict read-before-write invariants.
+`jules-orchestrator-kit` provides dual-way MCP capabilities:
 
-You can supercharge Jules with external MCP servers by connecting them to your environment, granting Jules direct access to your infrastructure and real-time documentation. Examples:
+### 1. Native MCP Server for AI Clients (`npx jules-mcp`)
+You can connect `jules-orchestrator-kit` directly as a stdio Model Context Protocol (MCP) server to AI tools like **Antigravity**, **Claude Desktop**, and **Cursor**:
+
+```json
+{
+  "mcpServers": {
+    "jules-orchestrator": {
+      "command": "npx",
+      "args": ["-y", "jules-orchestrator-kit", "mcp"]
+    }
+  }
+}
+```
+
+Exposed MCP Tools:
+* `dispatch_jules_task`: Programmatically dispatch tasks to the Jules provider.
+* `audit_jules_gate`: Run 4-phase safety gatekeeper audit against the workspace.
+* `check_risk_tier`: Classify file changes into Risk Tiers (R0–R3).
+* `get_jules_status`: Retrieve daily task budget, active locks, and stack diagnostics.
+
+### 2. Outbound MCP Directives & Environment Extensions
+All task dispatches dynamically inject `<MCP_DIRECTIVE>` envelopes into task prompts to enforce strict read-before-write invariants.
+
+You can also connect external MCP servers to Jules's environment for infrastructure access:
 * **SaaS APIs & Tooling:** Context 7, Linear, and v0.
 * **Databases & Cloud:** Render, Neon, Supabase, Stitch.
 * **Framework Documentation:** Astro Docs, Cloudflare Docs, Next.js Docs.
@@ -240,6 +264,7 @@ All commands are registered in `package.json` and can be run via `npm run <comma
 | ------- | ----------- |
 | `npm run init` | Initializes the orchestrator and `.agent/` directory |
 | `npm run test` | Runs the orchestrator kit's own unit tests |
+| `agentctl mcp` / `npx jules-mcp` | Starts the stdio JSON-RPC 2.0 Model Context Protocol (MCP) server |
 | `npm run jules:dispatch` | Dispatches a single task directly to Jules |
 | `npm run jules:queue` | Runs the local queue processor (picks up tasks from `.agent/jules-queue`) |
 | `npm run jules:create` | Scaffolds a new boilerplate task markdown file |

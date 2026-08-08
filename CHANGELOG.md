@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-08-08
+### Added & Enhanced (Native MCP Server & Exit Code Registry Alignment)
+- **Zero-Dependency Stdio MCP Server (`src/mcp.mjs`, `bin/mcp-server.mjs`)**: Implemented native Model Context Protocol (MCP) server over stdio streams using Node.js `node:readline` and JSON-RPC 2.0. Exposes orchestrator tools (`dispatch_jules_task`, `audit_jules_gate`, `check_risk_tier`, `get_jules_status`) directly to AI environments like Antigravity, Claude, and Cursor.
+- **CLI & Package Expositions**: Added `agentctl mcp` command and exposed `jules-mcp` and `agentctl-mcp` binary targets in `package.json`.
+- **Exit Code 7 Alignment (`BudgetError`)**: Updated `withBudget` in `src/state.mjs` to throw `BudgetError` with explicit `code: 7` on daily session budget exhaustion (`dailyTasks: 300`).
+- **Documentation & Remediation Matrix**: Documented `Exit 7` in `AGENTS.md` and added a complete Exit Code Troubleshooting & Remediation Matrix for codes `0–7`.
+- **MCP Test Suite (`test/mcp.test.mjs`)**: Added automated unit tests verifying JSON-RPC 2.0 protocol handling, tool execution, and stdio stream parsing (120 total passing tests).
+
 ## [0.9.2] - 2026-08-03
 ### Added & Modularized (Universal Architecture & Security Hardening)
 - **Modular Domain Architecture (`src/`)**: Completely refactored from vendored script prototype into native ESM modules (`src/config.mjs`, `src/security.mjs`, `src/git.mjs`, `src/provider.mjs`, `src/state.mjs`, `src/engine.mjs`).
