@@ -98,10 +98,18 @@ export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300) {
   }
 }
 
+export class BudgetError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "BudgetError";
+    this.code = 7;
+  }
+}
+
 export async function withBudget(fn, root = resolveRoot(), limit = 300) {
   const budget = checkDailyBudget(root, limit);
   if (!budget.ok) {
-    throw new Error(`Daily budget exhausted (${budget.used}/${budget.budget} tasks executed)`);
+    throw new BudgetError(`Daily budget exhausted (${budget.used}/${budget.budget} tasks executed)`);
   }
   return fn();
 }

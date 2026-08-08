@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Orchestration kit for running Google Jules autonomous agents.",
   "repository": {
     "type": "git",
@@ -14,7 +14,9 @@
   "bin": {
     "agentctl": "bin/agentctl.mjs",
     "jules-init": "bin/init.js",
-    "jules-orchestrator-kit": "bin/agentctl.mjs"
+    "jules-orchestrator-kit": "bin/agentctl.mjs",
+    "jules-mcp": "bin/mcp-server.mjs",
+    "agentctl-mcp": "bin/mcp-server.mjs"
   },
   "main": "index.mjs",
   "exports": {

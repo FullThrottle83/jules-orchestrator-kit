@@ -102,4 +102,21 @@ The orchestrator enforces standardized exit codes across all automation scripts 
 | `4` | **OODA Exhausted** | Auto-repair loop reached maximum retries (3) without achieving clean verification. |
 | `5` | **Diff Payload Limit** | Post-change git diff exceeds payload budget (`JULES_MAX_DIFF_KB`, default 50 KB). |
 | `6` | **Secret Leak Prevented** | High-confidence secret or private key detected in patch diff. |
+| `7` | **Quota / Budget Exhausted** | Daily task session quota limit reached (`dailyTasks: 300`). |
+
+---
+
+## 7. Exit Code Troubleshooting & Remediation Matrix
+
+| Exit Code | Cause | Immediate Remediation Action |
+| :--- | :--- | :--- |
+| `0` | Clean run. | Proceed to merge PR or next queue task. |
+| `1` | Invalid prompt, missing arguments, or prompt > 50 KB. | Reduce prompt length below 50 KB or verify command line flags (`agentctl doctor`). |
+| `2` | Network failure, API rate limit (429), or worker concurrency limit. | Retry with exponential backoff or stagger swarm dispatches (`staggerMs: 1500`). |
+| `3` | Modified protected file (`.github/`, `package.json`, `.agent/rules/`). | Remove protected files from diff or run with `allowProtected: true` / label `allow-protected-paths`. |
+| `4` | Verification suite (`npm test`, build) failed after 3 OODA repair attempts. | Inspect error logs in `.agent/state/`, fix root cause manually or provide clearer repair prompt. |
+| `5` | Diff payload exceeded threshold (> 75 KB). | Split task into smaller scoped sub-tasks using task envelopes (`validate-envelope.mjs`). |
+| `6` | High-confidence secret detected in patch diff (e.g. AWS/Stripe key). | Scrub leaked credentials from source code, revoke leaked key immediately. |
+| `7` | Daily quota cap reached (`dailyTasks: 300`). | Wait until next day UTC cycle or adjust `dailyTasks` limit in `.agent/config.yml`. |
+
 

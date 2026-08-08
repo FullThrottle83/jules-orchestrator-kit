@@ -13,7 +13,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.9.0 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.9.4 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -22,6 +22,7 @@ Commands:
   gate | audit          Run CI security and verification gate against current branch
   queue                 Run pending task queue
   swarm                 Run parallel task swarm
+  mcp                   Start stdio Model Context Protocol (MCP) server
   clean                 Clean stale branches, worktrees, locks, and ledgers
   lock <action>         Manage mutex locks (acquire | release | status | cleanup)
   doctor                Run system diagnostics and stack resolution checks
@@ -42,7 +43,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.9.0");
+    console.log("agentctl v0.9.4");
     process.exit(0);
   }
 
@@ -258,6 +259,12 @@ base_branch: main
         console.log(`ℹ️ .agent/config.yml already exists.`);
       }
       process.exit(0);
+      break;
+    }
+
+    case "mcp": {
+      const { startMcpServer } = await import("../src/mcp.mjs");
+      startMcpServer();
       break;
     }
 
