@@ -43,7 +43,7 @@ agentctl gate
 
 ## 🔄 How It Works
 
-![Autonomous Orchestration Pipeline](docs/assets/hero-flow.svg?v=3)
+![Autonomous Orchestration Pipeline](docs/assets/hero-flow.svg?v=4)
 
 1. **Dispatch Task:** Define prompt, title, and target scope (`agentctl dispatch`).
 2. **Execution Sandbox:** Jules applies code in an isolated Git worktree.
@@ -57,7 +57,7 @@ agentctl gate
 
 ## 🛡️ Core Security & Reliability Invariants
 
-![Zero-Trust Security Guarantees](docs/assets/security-shield.svg?v=3)
+![Zero-Trust Security Guarantees](docs/assets/security-shield.svg?v=4)
 
 - **[Capability-Bounded Execution Envelope (CBEE)](file:///home/jonas/WebDev/jules-orchestrator-kit/src/execution_envelope.mjs):** Immutably binds `baseSha`, `configSha`, `scope`, and `verifyCmds` before dispatch to prevent runtime scope drift.
 - **[Zero-Trust Base Resolution](file:///home/jonas/WebDev/jules-orchestrator-kit/src/git.mjs#L60):** Security rules (`forbidden_paths`) are fetched strictly from `origin/main` (never untrusted PR branches).

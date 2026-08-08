@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 210" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 210" width="100%" height="100%">
   <defs>
     <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0b0f19" />
@@ -7,73 +7,73 @@
   </defs>
 
   <!-- Container Background -->
-  <rect width="940" height="210" rx="14" fill="url(#bg-grad)" stroke="#475569" stroke-width="2" />
+  <rect width="980" height="210" rx="14" fill="url(#bg-grad)" stroke="#475569" stroke-width="2" />
 
   <!-- Title Badge -->
   <text x="30" y="36" fill="#38bdf8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" letter-spacing="1.5">AUTONOMOUS ORCHESTRATION PIPELINE</text>
 
   <!-- Step 1: Dispatch -->
   <g transform="translate(30, 56)">
-    <rect width="148" height="125" rx="10" fill="#1e293b" stroke="#818cf8" stroke-width="2.5" />
-    <circle cx="26" cy="26" r="13" fill="#6366f1" />
-    <text x="26" y="31" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="900">1</text>
-    <text x="48" y="31" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="800">Dispatch</text>
+    <rect width="155" height="125" rx="10" fill="#1e293b" stroke="#818cf8" stroke-width="2.5" />
+    <circle cx="24" cy="25" r="12" fill="#6366f1" />
+    <text x="24" y="30" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="900">1</text>
+    <text x="44" y="30" fill="#ffffff" font-family="sans-serif" font-size="15" font-weight="800">Dispatch</text>
     <text x="16" y="68" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="700">agentctl / MCP</text>
     <text x="16" y="94" fill="#cbd5e1" font-family="sans-serif" font-size="13" font-weight="600">CLI / CI / SDK</text>
   </g>
 
   <!-- Arrow 1 -->
-  <path d="M 185 118 L 204 118" stroke="#f8fafc" stroke-width="3" />
-  <polygon points="204,112 213,118 204,124" fill="#f8fafc" />
+  <path d="M 191 118 L 200 118" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="200,112 209,118 200,124" fill="#f8fafc" />
 
   <!-- Step 2: CBEE Sandbox -->
-  <g transform="translate(215, 56)">
-    <rect width="152" height="125" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2.5" />
-    <circle cx="26" cy="26" r="13" fill="#0284c7" />
-    <text x="26" y="31" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="900">2</text>
-    <text x="48" y="31" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="800">CBEE Sandbox</text>
+  <g transform="translate(211, 56)">
+    <rect width="172" height="125" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2.5" />
+    <circle cx="24" cy="25" r="12" fill="#0284c7" />
+    <text x="24" y="30" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="900">2</text>
+    <text x="44" y="30" fill="#ffffff" font-family="sans-serif" font-size="15" font-weight="800">CBEE Sandbox</text>
     <text x="16" y="68" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="700">Immutable Scope</text>
     <text x="16" y="94" fill="#cbd5e1" font-family="sans-serif" font-size="13" font-weight="600">git worktree</text>
   </g>
 
   <!-- Arrow 2 -->
-  <path d="M 374 118 L 393 118" stroke="#f8fafc" stroke-width="3" />
-  <polygon points="393,112 402,118 393,124" fill="#f8fafc" />
+  <path d="M 389 118 L 398 118" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="398,112 407,118 398,124" fill="#f8fafc" />
 
   <!-- Step 3: Safety Gate -->
-  <g transform="translate(404, 56)">
-    <rect width="152" height="125" rx="10" fill="#1e293b" stroke="#60a5fa" stroke-width="2.5" />
-    <circle cx="26" cy="26" r="13" fill="#2563eb" />
-    <text x="26" y="31" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="900">3</text>
-    <text x="48" y="31" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="800">Safety Gate</text>
+  <g transform="translate(409, 56)">
+    <rect width="158" height="125" rx="10" fill="#1e293b" stroke="#60a5fa" stroke-width="2.5" />
+    <circle cx="24" cy="25" r="12" fill="#2563eb" />
+    <text x="24" y="30" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="900">3</text>
+    <text x="44" y="30" fill="#ffffff" font-family="sans-serif" font-size="15" font-weight="800">Safety Gate</text>
     <text x="16" y="68" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="700">4-Phase Audit</text>
     <text x="16" y="94" fill="#cbd5e1" font-family="sans-serif" font-size="13" font-weight="600">origin/main rules</text>
   </g>
 
   <!-- Arrow 3 -->
-  <path d="M 563 118 L 582 118" stroke="#f8fafc" stroke-width="3" />
+  <path d="M 573 118 L 582 118" stroke="#f8fafc" stroke-width="3" />
   <polygon points="582,112 591,118 582,124" fill="#f8fafc" />
 
   <!-- Step 4: OODA Repair -->
   <g transform="translate(593, 56)">
-    <rect width="158" height="125" rx="10" fill="#1e293b" stroke="#34d399" stroke-width="2.5" />
-    <circle cx="26" cy="26" r="13" fill="#059669" />
-    <text x="26" y="31" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="900">4</text>
-    <text x="48" y="31" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="800">OODA Repair</text>
+    <rect width="162" height="125" rx="10" fill="#1e293b" stroke="#34d399" stroke-width="2.5" />
+    <circle cx="24" cy="25" r="12" fill="#059669" />
+    <text x="24" y="30" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="900">4</text>
+    <text x="44" y="30" fill="#ffffff" font-family="sans-serif" font-size="15" font-weight="800">OODA Repair</text>
     <text x="16" y="68" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="700">Thrash Guard</text>
     <text x="16" y="94" fill="#cbd5e1" font-family="sans-serif" font-size="13" font-weight="600">SHA-256 fingerprint</text>
   </g>
 
   <!-- Arrow 4 -->
-  <path d="M 758 118 L 777 118" stroke="#f8fafc" stroke-width="3" />
-  <polygon points="777,112 786,118 777,124" fill="#f8fafc" />
+  <path d="M 761 118 L 770 118" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="770,112 779,118 770,124" fill="#f8fafc" />
 
   <!-- Step 5: Ready -->
-  <g transform="translate(788, 56)">
-    <rect width="120" height="125" rx="10" fill="#065f46" stroke="#4ade80" stroke-width="2.5" />
-    <circle cx="26" cy="26" r="13" fill="#16a34a" />
-    <text x="26" y="31" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="900">5</text>
-    <text x="48" y="31" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="800">Ready</text>
+  <g transform="translate(781, 56)">
+    <rect width="128" height="125" rx="10" fill="#065f46" stroke="#4ade80" stroke-width="2.5" />
+    <circle cx="24" cy="25" r="12" fill="#16a34a" />
+    <text x="24" y="30" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="900">5</text>
+    <text x="44" y="30" fill="#ffffff" font-family="sans-serif" font-size="15" font-weight="800">Ready</text>
     <text x="16" y="68" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="800">PR Verified</text>
     <text x="16" y="94" fill="#dcfce7" font-family="sans-serif" font-size="13" font-weight="700">Exit Code 0</text>
   </g>
