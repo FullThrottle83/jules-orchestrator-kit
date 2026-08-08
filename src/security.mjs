@@ -6,6 +6,7 @@ export const HIGH_CONFIDENCE_PATTERNS = [
   /\bghu_[A-Za-z0-9_]{36,255}\b/g,
   /\bghs_[A-Za-z0-9_]{36,255}\b/g,
   /\bghr_[A-Za-z0-9_]{36,255}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g,
 
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bASIA[0-9A-Z]{16}\b/g,
@@ -21,8 +22,11 @@ export const HIGH_CONFIDENCE_PATTERNS = [
   /\bGOCSPX-[0-9a-zA-Z_-]{28}\b/g,
 
   /\bAIzaSy[A-Za-z0-9_-]{33}\b/g,
+  /\bya29\.[A-Za-z0-9_-]+\b/g,
+  /\b(sk-ant-api03-|sk-proj-)[A-Za-z0-9_-]{32,}\b/g,
 
   /https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9_]+\/B[A-Za-z0-9_]+\/[A-Za-z0-9_]+/g,
+  /\bxox[baprs]-[0-9a-zA-Z-]{10,48}\b/g,
 
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
 ];

@@ -16,13 +16,28 @@ function normalizePath(p) {
 
 export function runCmd(command, opts = {}) {
   const cwd = opts.cwd || process.cwd();
-  const isWin = process.platform === "win32";
-  const shellCmd = isWin ? process.env.ComSpec || "cmd.exe" : "sh";
-  const shellArgs = isWin ? ["/d", "/s", "/c", command] : ["-c", command];
+  let binary = "";
+  let args = [];
+
+  if (Array.isArray(command)) {
+    binary = command[0];
+    args = command.slice(1);
+  } else if (typeof command === "string") {
+    const tokens = command.trim().split(/\s+/).filter(Boolean);
+    binary = tokens[0] || "";
+    args = tokens.slice(1);
+  }
+
+  if (!binary) {
+    if (opts.ignoreError) return { status: 0, stdout: "", stderr: "" };
+    throw new GateError("Empty command provided");
+  }
+
   try {
-    const stdout = execFileSync(shellCmd, shellArgs, {
+    const stdout = execFileSync(binary, args, {
       cwd,
       encoding: "utf-8",
+      shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
     return { status: 0, stdout: stdout.trim(), stderr: "" };

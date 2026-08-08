@@ -15,15 +15,21 @@ export function fingerprintFailureState(failure = {}, root = process.cwd()) {
   const normalizedStderr = String(rawStderr)
     .replace(/:\d+:\d+/g, ":?:?")
     .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z?\b/g, "<timestamp>")
+    .replace(/\b[0-9a-f]{7,40}\b/g, "<sha>")
+    .replace(/\/[\w\/-]+\//g, "/?/")
     .replace(/\s+/g, " ")
     .trim();
 
-  let diff = "";
+  let diffStat = "0:0";
   try {
-    diff = diffText(root) || "";
+    const rawDiff = diffText(root) || "";
+    const lines = rawDiff.split("\n");
+    const added = lines.filter((l) => l.startsWith("+")).length;
+    const removed = lines.filter((l) => l.startsWith("-")).length;
+    diffStat = `${added}:${removed}`;
   } catch (_) {}
 
-  const combined = `${normalizedStderr}::${diff}`;
+  const combined = `${normalizedStderr}::${diffStat}`;
   return createHash("sha256").update(combined).digest("hex").substring(0, 16);
 }
 

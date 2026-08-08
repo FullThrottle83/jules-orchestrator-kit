@@ -6,7 +6,7 @@ import { checkDailyBudget, lockStatus } from "./state.mjs";
 
 export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
-  version: "0.9.4",
+  version: "0.10.0",
 };
 
 export const MCP_TOOLS = [

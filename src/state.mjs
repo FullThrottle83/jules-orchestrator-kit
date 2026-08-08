@@ -1,16 +1,17 @@
 import {
   readFileSync,
-  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
   openSync,
   writeSync,
   closeSync,
+  fsyncSync,
   unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { hostname } from "node:os";
 import { resolveRoot } from "./config.mjs";
 
 export function ensureDir(dirPath) {
@@ -55,11 +56,14 @@ export function appendLedger(entry, rootOrOpts = resolveRoot()) {
     try {
       const raw = readFileSync(filePath, "utf-8");
       const lines = raw.split("\n").filter(Boolean);
-      if (lines.length > 0) {
-        const lastObj = JSON.parse(lines[lines.length - 1]);
-        if (lastObj.hash) {
-          prevHash = lastObj.hash;
-        }
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const lastObj = JSON.parse(lines[i]);
+          if (lastObj.hash) {
+            prevHash = lastObj.hash;
+            break;
+          }
+        } catch (_) {}
       }
     } catch (_) {}
   }
@@ -69,7 +73,14 @@ export function appendLedger(entry, rootOrOpts = resolveRoot()) {
   const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
   const payload = { ...rawPayload, hash };
 
-  appendFileSync(filePath, JSON.stringify(payload) + "\n", "utf-8");
+  const fd = openSync(filePath, "a");
+  try {
+    writeSync(fd, JSON.stringify(payload) + "\n", "utf-8");
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+
   return payload;
 }
 
@@ -84,9 +95,14 @@ export function verifyLedgerIntegrity(filePath) {
     let expectedPrevHash = "0".repeat(64);
 
     for (let i = 0; i < lines.length; i++) {
-      const obj = JSON.parse(lines[i]);
+      let obj;
+      try {
+        obj = JSON.parse(lines[i]);
+      } catch (err) {
+        return { ok: false, line: i + 1, error: "TORN_WRITE_CORRUPTION", detail: err.message };
+      }
       if (!obj.hash || !obj.prevHash) {
-        continue;
+        return { ok: false, line: i + 1, error: "MISSING_HASH_FIELDS" };
       }
       if (obj.prevHash !== expectedPrevHash) {
         return { ok: false, line: i + 1, error: "BROKEN_PREV_HASH", expected: expectedPrevHash, actual: obj.prevHash };
@@ -231,6 +247,7 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
     taskId,
     files,
     pid: process.pid,
+    hostname: hostname(),
     acquiredAt: new Date().toISOString(),
   };
 
@@ -238,6 +255,7 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   try {
     const fd = openSync(lockFile, "wx");
     writeSync(fd, JSON.stringify(payload, null, 2), "utf-8");
+    fsyncSync(fd);
     closeSync(fd);
     return { ok: true, lockFile };
   } catch (err) {

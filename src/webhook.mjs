@@ -9,7 +9,7 @@ import { createServer } from "node:http";
  * @returns {boolean} True if signature matches
  */
 export function verifySignature(payload, signatureHeader, secret) {
-  if (!secret) return true; // If no secret is configured, skip verification (development mode)
+  if (!secret) return false; // Fail closed if secret is not configured
   if (!signatureHeader || !signatureHeader.startsWith("sha256=")) return false;
 
   const hmac = createHmac("sha256", secret);
@@ -104,15 +104,29 @@ export function createWebhookServer({ _port = 8787, secret = process.env.JULES_W
       return;
     }
 
+    const MAX_BODY = 2 * 1024 * 1024; // 2MB payload cap
     const chunks = [];
-    req.on("data", (chunk) => chunks.push(chunk));
+    let totalSize = 0;
+
+    req.on("data", (chunk) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Payload Too Large" }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
     req.on("end", () => {
+      if (totalSize > MAX_BODY) return;
       const bodyBuf = Buffer.concat(chunks);
       const sigHeader = req.headers["x-hub-signature-256"];
       const eventType = req.headers["x-github-event"];
       const contentType = req.headers["content-type"] || "application/json";
 
-      if (secret && !verifySignature(bodyBuf, sigHeader, secret)) {
+      if (!verifySignature(bodyBuf, sigHeader, secret)) {
         log(`[Webhook] Invalid signature received from ${req.socket.remoteAddress}`);
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Invalid signature" }));

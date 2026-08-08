@@ -8,9 +8,10 @@ import { classifyRiskTier } from "./risk.mjs";
  */
 export function hashExecutionEnvelope(envelope) {
   if (!envelope || typeof envelope !== "object") return "";
-  const payload = {
+  const rawPayload = {
     id: envelope.id,
     taskId: envelope.taskId,
+    baseRef: envelope.baseRef,
     baseSha: envelope.baseSha,
     configSha: envelope.configSha,
     scope: envelope.scope,
@@ -18,8 +19,16 @@ export function hashExecutionEnvelope(envelope) {
     riskTier: envelope.riskTier,
     budgetReservationId: envelope.budgetReservationId,
     capabilities: envelope.capabilities,
+    createdAt: envelope.createdAt,
   };
-  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  const sortedKeys = Object.keys(rawPayload).sort();
+  const canonicalPayload = {};
+  for (const k of sortedKeys) {
+    if (rawPayload[k] !== undefined) {
+      canonicalPayload[k] = rawPayload[k];
+    }
+  }
+  return createHash("sha256").update(JSON.stringify(canonicalPayload)).digest("hex");
 }
 
 /**
