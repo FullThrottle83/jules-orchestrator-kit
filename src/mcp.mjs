@@ -1,4 +1,4 @@
-import { createInterface } from "node:readline";
+import { Transform } from "node:stream";
 import { loadConfig, resolveRoot, detectStack } from "./config.mjs";
 import { gate, dispatch } from "./engine.mjs";
 import { classifyRiskTier } from "./risk.mjs";
@@ -8,6 +8,83 @@ export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
   version: "0.10.0",
 };
+
+export const MAX_MCP_FRAME_SIZE = 4 * 1024 * 1024; // 4 MB memory safety ceiling
+
+/**
+ * Memory-bounded MCP Frame Decoder supporting both Content-Length headers and line-delimited JSON-RPC messages.
+ */
+export class McpFrameDecoder extends Transform {
+  constructor(options = {}) {
+    super({ ...options, readableObjectMode: true });
+    this.buffer = Buffer.alloc(0);
+    this.maxFrameSize = options.maxFrameSize || MAX_MCP_FRAME_SIZE;
+  }
+
+  _transform(chunk, encoding, callback) {
+    this.buffer = Buffer.concat([this.buffer, chunk]);
+
+    if (this.buffer.length > this.maxFrameSize * 2) {
+      this.emit("error", new Error(`MCP Stdio buffer exceeded max limit of ${this.maxFrameSize} bytes`));
+      this.buffer = Buffer.alloc(0);
+      return callback();
+    }
+
+    while (this.buffer.length > 0) {
+      const str = this.buffer.toString("utf-8");
+      const headerMatch = /Content-Length:\s*(\d+)\r?\n\r?\n/i.exec(str);
+
+      if (headerMatch) {
+        const contentLength = parseInt(headerMatch[1], 10);
+        if (contentLength > this.maxFrameSize) {
+          this.emit("error", new Error(`Frame Content-Length (${contentLength}) exceeds limit (${this.maxFrameSize})`));
+          this.buffer = Buffer.alloc(0);
+          return callback();
+        }
+
+        const headerLength = headerMatch.index + headerMatch[0].length;
+        const totalFrameLength = headerLength + contentLength;
+
+        if (this.buffer.length >= totalFrameLength) {
+          const payloadBuf = this.buffer.subarray(headerLength, totalFrameLength);
+          this.buffer = this.buffer.subarray(totalFrameLength);
+          try {
+            const parsed = JSON.parse(payloadBuf.toString("utf-8"));
+            this.push(parsed);
+          } catch (err) {
+            this.emit("error", new Error(`Malformed JSON payload in framed message: ${err.message}`));
+          }
+          continue;
+        } else {
+          break;
+        }
+      }
+
+      const newlineIndex = this.buffer.indexOf(0x0a);
+      if (newlineIndex !== -1) {
+        const lineBuf = this.buffer.subarray(0, newlineIndex);
+        this.buffer = this.buffer.subarray(newlineIndex + 1);
+
+        const lineStr = lineBuf.toString("utf-8").trim();
+        if (!lineStr) continue;
+
+        if (/^Content-Length:\s*\d+/i.test(lineStr)) continue;
+
+        try {
+          const parsed = JSON.parse(lineStr);
+          this.push(parsed);
+        } catch (err) {
+          this.emit("error", new Error(`Malformed JSON in line-delimited message: ${err.message}`));
+        }
+        continue;
+      }
+
+      break;
+    }
+
+    callback();
+  }
+}
 
 export const MCP_TOOLS = [
   {
@@ -82,7 +159,7 @@ export async function handleMcpRequest(request, opts = {}) {
   }
 
   if (method === "notifications/initialized") {
-    return null; // Notifications produce no response
+    return null;
   }
 
   if (method === "tools/list") {
@@ -186,26 +263,35 @@ export async function handleMcpRequest(request, opts = {}) {
 }
 
 export function startMcpServer(input = process.stdin, output = process.stdout, opts = {}) {
-  const rl = createInterface({ input, output: null, terminal: false });
+  const decoder = new McpFrameDecoder({ maxFrameSize: opts.maxFrameSize || MAX_MCP_FRAME_SIZE });
 
-  rl.on("line", async (line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-
+  decoder.on("data", async (request) => {
     try {
-      const request = JSON.parse(trimmed);
       const response = await handleMcpRequest(request, opts);
-      if (response !== null) {
+      if (response !== null && response !== undefined) {
         output.write(JSON.stringify(response) + "\n");
       }
     } catch (err) {
+      // Panic boundary: Catch unhandled async exceptions and send valid JSON-RPC error
       output.write(
         JSON.stringify({
           jsonrpc: "2.0",
-          id: null,
-          error: { code: -32700, message: `Parse error: ${err.message}` },
+          id: request?.id || null,
+          error: { code: -32603, message: `Internal server panic: ${err.message}` },
         }) + "\n"
       );
     }
   });
+
+  decoder.on("error", (err) => {
+    output.write(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32700, message: `MCP Stream framing error: ${err.message}` },
+      }) + "\n"
+    );
+  });
+
+  input.pipe(decoder);
 }

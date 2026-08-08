@@ -2,6 +2,7 @@ import {
   readFileSync,
   existsSync,
   mkdirSync,
+  rmdirSync,
   readdirSync,
   openSync,
   writeSync,
@@ -45,43 +46,75 @@ export function getDailyLedgerPath(rootOrOpts = resolveRoot()) {
 }
 
 /**
- * Appends a structured audit event to the daily session ledger with SHA-256 hash-chain.
+ * Executes a function inside a kernel-level VFS directory mutex for strict linearizability.
+ */
+export function withVfsMutex(mutexDir, fn, opts = {}) {
+  const maxRetries = opts.maxRetries || 50;
+  const retryDelayMs = opts.retryDelayMs || 10;
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      mkdirSync(mutexDir);
+      try {
+        return fn();
+      } finally {
+        try {
+          rmdirSync(mutexDir);
+        } catch (_) {}
+      }
+    } catch (err) {
+      if (err.code === "EEXIST") {
+        const deadline = Date.now() + retryDelayMs;
+        while (Date.now() < deadline) {}
+        continue;
+      }
+      throw err;
+    }
+  }
+  return fn();
+}
+
+/**
+ * Appends a structured audit event to the daily session ledger with SHA-256 hash-chain (VFS Mutex Linearized).
  */
 export function appendLedger(entry, rootOrOpts = resolveRoot()) {
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
   const filePath = getDailyLedgerPath(root);
+  const mutexDir = join(getStateDir(root), ".ledger.mutex");
 
-  let prevHash = "0".repeat(64);
-  if (existsSync(filePath)) {
+  return withVfsMutex(mutexDir, () => {
+    let prevHash = "0".repeat(64);
+    if (existsSync(filePath)) {
+      try {
+        const raw = readFileSync(filePath, "utf-8");
+        const lines = raw.split("\n").filter(Boolean);
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const lastObj = JSON.parse(lines[i]);
+            if (lastObj.hash) {
+              prevHash = lastObj.hash;
+              break;
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    const timestamp = new Date().toISOString();
+    const rawPayload = { timestamp, ...entry, prevHash };
+    const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
+    const payload = { ...rawPayload, hash };
+
+    const fd = openSync(filePath, "a");
     try {
-      const raw = readFileSync(filePath, "utf-8");
-      const lines = raw.split("\n").filter(Boolean);
-      for (let i = lines.length - 1; i >= 0; i--) {
-        try {
-          const lastObj = JSON.parse(lines[i]);
-          if (lastObj.hash) {
-            prevHash = lastObj.hash;
-            break;
-          }
-        } catch (_) {}
-      }
-    } catch (_) {}
-  }
+      writeSync(fd, JSON.stringify(payload) + "\n", "utf-8");
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
 
-  const timestamp = new Date().toISOString();
-  const rawPayload = { timestamp, ...entry, prevHash };
-  const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
-  const payload = { ...rawPayload, hash };
-
-  const fd = openSync(filePath, "a");
-  try {
-    writeSync(fd, JSON.stringify(payload) + "\n", "utf-8");
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-
-  return payload;
+    return payload;
+  });
 }
 
 /**
@@ -136,9 +169,6 @@ export function readLedger(filePath) {
   }
 }
 
-/**
- * Enforces a daily token budget.
- */
 export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300) {
   let root = typeof arg1 === "string" ? arg1 : resolveRoot();
   let limit = typeof arg1 === "number" ? arg1 : typeof arg2 === "number" ? arg2 : 300;
@@ -199,9 +229,6 @@ export async function withBudget(fn, root = resolveRoot(), limit = 300) {
   }
 }
 
-/**
- * Atomic Advisory Lock File Manager with PID Vitality Check & Stale Lock Reaper (CWE-367 Fix).
- */
 export function getLockDir(rootOrOpts = resolveRoot()) {
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
   const dir = join(getStateDir(root), "locks");
@@ -209,14 +236,39 @@ export function getLockDir(rootOrOpts = resolveRoot()) {
   return dir;
 }
 
-export function isPidAlive(pid) {
+/**
+ * Checks if a PID is alive with optional PID-recycling start time validation on Linux.
+ */
+export function isPidAlive(pid, expectedStartTime = null) {
   if (!pid || typeof pid !== "number") return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch (_) {
     return false;
   }
+
+  if (expectedStartTime && process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
+      const parts = stat.split(" ");
+      const startTime = parts[21];
+      if (startTime && String(startTime) !== String(expectedStartTime)) {
+        return false;
+      }
+    } catch (_) {}
+  }
+
+  return true;
+}
+
+function getProcessStartTime(pid) {
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
+      return stat.split(" ")[21] || null;
+    } catch (_) {}
+  }
+  return null;
 }
 
 export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveRoot()) {
@@ -224,15 +276,13 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   const lockDir = getLockDir(root);
   const lockFile = join(lockDir, `${taskId}.json`);
 
-  // Stale Lock Reaper Check
   if (existsSync(lockFile)) {
     try {
       const existing = JSON.parse(readFileSync(lockFile, "utf-8"));
-      const isAlive = isPidAlive(existing.pid);
+      const isAlive = isPidAlive(existing.pid, existing.processStartTime);
       const isExpired = existing.acquiredAt && Date.now() - new Date(existing.acquiredAt).getTime() > 7200000;
 
       if (!isAlive || isExpired) {
-        // Dead or expired holder; safely reap lock
         try { unlinkSync(lockFile); } catch (_) {}
       } else {
         return { ok: false, holder: existing.agent, taskId, pid: existing.pid };
@@ -247,11 +297,11 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
     taskId,
     files,
     pid: process.pid,
+    processStartTime: getProcessStartTime(process.pid),
     hostname: hostname(),
     acquiredAt: new Date().toISOString(),
   };
 
-  // Atomic file creation via 'wx' flag (Fixes TOCTOU Race Condition)
   try {
     const fd = openSync(lockFile, "wx");
     writeSync(fd, JSON.stringify(payload, null, 2), "utf-8");
@@ -278,7 +328,7 @@ export function releaseLock(taskId, rootOrOpts = resolveRoot()) {
 
   if (existsSync(lockFile)) {
     try {
-      unlinkSync(lockFile); // CRITICAL FIX: Fixed ESM unlinkSync (removed legacy require("node:fs"))
+      unlinkSync(lockFile);
       return true;
     } catch (_) {}
   }

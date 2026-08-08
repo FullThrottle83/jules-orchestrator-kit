@@ -1,3 +1,6 @@
+import { openSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, existsSync, lstatSync } from "node:fs";
+import { dirname, join, basename } from "node:path";
+import { randomBytes } from "node:crypto";
 import { normalizePath } from "./config.mjs";
 
 export const HIGH_CONFIDENCE_PATTERNS = [
@@ -6,37 +9,69 @@ export const HIGH_CONFIDENCE_PATTERNS = [
   /\bghu_[A-Za-z0-9_]{36,255}\b/g,
   /\bghs_[A-Za-z0-9_]{36,255}\b/g,
   /\bghr_[A-Za-z0-9_]{36,255}\b/g,
-  /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{22,255}\b/g,
 
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bASIA[0-9A-Z]{16}\b/g,
   /\baws_secret_access_key\s*=\s*['"]?[A-Za-z0-9\/+=]{40}['"]?/g,
 
-  /-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH|PRIVATE)\s+KEY-----[\s\S]*?-----END\s+(?:RSA|DSA|EC|OPENSSH|PRIVATE)\s+KEY-----/g,
+  /-----BEGIN (?:RSA|DSA|EC|OPENSSH|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|DSA|EC|OPENSSH|PRIVATE) KEY-----/g,
   /PuTTY-User-Key-File-[0-9]:[^\n]+/g,
 
   /\bsk_live_[0-9a-zA-Z]{24,99}\b/g,
   /\brk_live_[0-9a-zA-Z]{24,99}\b/g,
   /\bnpm_[0-9a-zA-Z]{36}\b/g,
-  /\bglpat-[0-9a-zA-Z_-]{20,}\b/g,
-  /\bGOCSPX-[0-9a-zA-Z_-]{28}\b/g,
+  /\bglpat-[0-9a-zA-Z_-]{20,99}\b/g,
+  /\bGOCSPX-[0-9a-zA-Z_-]{28,99}\b/g,
 
   /\bAIzaSy[A-Za-z0-9_-]{33}\b/g,
-  /\bya29\.[A-Za-z0-9_-]+\b/g,
-  /\b(sk-ant-api03-|sk-proj-)[A-Za-z0-9_-]{32,}\b/g,
+  /\bya29\.[A-Za-z0-9_-]{20,255}\b/g,
+  /\b(?:sk-ant-api03-|sk-proj-)[A-Za-z0-9_-]{32,255}\b/g,
 
-  /https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9_]+\/B[A-Za-z0-9_]+\/[A-Za-z0-9_]+/g,
+  /https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9_]{8,}\/B[A-Za-z0-9_]{8,}\/[A-Za-z0-9_]{24,}/g,
   /\bxox[baprs]-[0-9a-zA-Z-]{10,48}\b/g,
 
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
 ];
 
 export const LOW_CONFIDENCE_PATTERNS = [
-  /Bearer\s+[A-Za-z0-9._~+/-]{10,}/gi,
-  /Authorization:\s*Bearer\s+[A-Za-z0-9._~+/-]+=*/gi,
+  /Bearer\s+[A-Za-z0-9._~+/-]{10,255}/gi,
+  /Authorization:\s*Bearer\s+[A-Za-z0-9._~+/-]{10,255}/gi,
   /\bsk_test_[0-9a-zA-Z]{24,99}\b/g,
   /(?:api[_-]?key|secret|password|passwd|token|auth[_-]?token)\s*[:=]\s*['"]([^'"]{8,128})['"]/gi,
 ];
+
+/**
+ * TOCTOU-safe atomic file write using O_CREAT|O_EXCL|O_WRONLY temp file in target dir.
+ */
+export function safeAtomicWrite(filePath, content, options = {}) {
+  const mode = options.mode || 0o644;
+  const encoding = options.encoding || "utf-8";
+
+  if (existsSync(filePath)) {
+    const stat = lstatSync(filePath);
+    if (stat.isSymbolicLink()) {
+      const realPath = realpathSync(filePath);
+      if (options.rejectSymlinks) {
+        throw new Error(`TOCTOU Guard: Refusing to write to symlink ${filePath} -> ${realPath}`);
+      }
+    }
+  }
+
+  const dir = dirname(filePath);
+  const tempFile = join(dir, `.tmp-${basename(filePath)}-${randomBytes(6).toString("hex")}`);
+
+  const fd = openSync(tempFile, "wx", mode);
+  try {
+    writeSync(fd, content, null, encoding);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+
+  renameSync(tempFile, filePath);
+  return true;
+}
 
 export function shannonEntropy(str) {
   if (!str || typeof str !== "string") return 0;
