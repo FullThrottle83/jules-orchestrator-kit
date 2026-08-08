@@ -59,6 +59,8 @@ agentctl gate
 
 ![Zero-Trust Security Guarantees](docs/assets/security-shield.svg?v=5)
 
+![Control Plane Architecture Layers](docs/assets/architecture-layers.svg?v=1)
+
 - **[Capability-Bounded Execution Envelope (CBEE)](file:///home/jonas/WebDev/jules-orchestrator-kit/src/execution_envelope.mjs):** Immutably binds `baseSha`, `configSha`, `scope`, and `verifyCmds` before dispatch to prevent runtime scope drift.
 - **[Zero-Trust Base Resolution](file:///home/jonas/WebDev/jules-orchestrator-kit/src/git.mjs#L60):** Security rules (`forbidden_paths`) are fetched strictly from `origin/main` (never untrusted PR branches).
 - **[OODA Thrash & State Fingerprinting](file:///home/jonas/WebDev/jules-orchestrator-kit/src/engine.mjs#L14):** SHA-256 state fingerprinting over stderr and diffs halts repair loops early (`DETERMINISTIC_REGRESSION`, Exit Code 4) to save API tokens.
@@ -91,6 +93,8 @@ allow_paths: []
 
 <details>
 <summary><b>🔌 Model Context Protocol (MCP) & SDK Reference</b></summary>
+
+![Dual-Way MCP Integration](docs/assets/mcp-integration.svg?v=1)
 
 ### 1. Native MCP Server (`npx jules-mcp`)
 Connect `jules-orchestrator-kit` directly as a stdio Model Context Protocol (MCP) server to AI tools like **Antigravity**, **Claude Desktop**, and **Cursor**:

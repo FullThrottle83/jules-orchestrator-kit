@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 945 230" width="100%" height="100%">
+  <defs>
+    <linearGradient id="layer-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#161e2e" />
+    </linearGradient>
+  </defs>
+
+  <rect width="945" height="230" rx="14" fill="url(#layer-grad)" stroke="#475569" stroke-width="2" />
+
+  <text x="30" y="36" fill="#38bdf8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" letter-spacing="1.5">CONTROL PLANE ARCHITECTURE LAYERS</text>
+
+  <!-- Layer 1: Client Edge -->
+  <g transform="translate(30, 56)">
+    <rect width="200" height="145" rx="10" fill="#1e293b" stroke="#818cf8" stroke-width="2.5" />
+    <text x="18" y="30" fill="#a5b4fc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="800">Layer 1: Client Edge</text>
+    <rect x="16" y="44" width="168" height="26" rx="5" fill="#312e81" opacity="0.6" />
+    <text x="24" y="61" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">agentctl CLI</text>
+    <rect x="16" y="76" width="168" height="26" rx="5" fill="#312e81" opacity="0.6" />
+    <text x="24" y="93" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">npx jules-mcp Server</text>
+    <rect x="16" y="108" width="168" height="26" rx="5" fill="#312e81" opacity="0.6" />
+    <text x="24" y="125" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">Node.js SDK (index.mjs)</text>
+  </g>
+
+  <!-- Connection Arrow 1 -->
+  <path d="M 235 128 L 246 128" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="246,122 255,128 246,134" fill="#f8fafc" />
+
+  <!-- Layer 2: Control Plane Security -->
+  <g transform="translate(257, 56)">
+    <rect width="220" height="145" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2.5" />
+    <text x="18" y="30" fill="#38bdf8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="800">Layer 2: Core Security</text>
+    <rect x="16" y="44" width="188" height="26" rx="5" fill="#0369a1" opacity="0.5" />
+    <text x="24" y="61" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">execution_envelope.mjs</text>
+    <rect x="16" y="76" width="188" height="26" rx="5" fill="#0369a1" opacity="0.5" />
+    <text x="24" y="93" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">security.mjs &amp; git.mjs</text>
+    <rect x="16" y="108" width="188" height="26" rx="5" fill="#0369a1" opacity="0.5" />
+    <text x="24" y="125" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">state.mjs (Hash Ledger)</text>
+  </g>
+
+  <!-- Connection Arrow 2 -->
+  <path d="M 482 128 L 493 128" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="493,122 502,128 493,134" fill="#f8fafc" />
+
+  <!-- Layer 3: Risk Engine & Gatekeeper -->
+  <g transform="translate(504, 56)">
+    <rect width="210" height="145" rx="10" fill="#1e293b" stroke="#34d399" stroke-width="2.5" />
+    <text x="18" y="30" fill="#34d399" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="800">Layer 3: Risk Engine</text>
+    <rect x="16" y="44" width="178" height="26" rx="5" fill="#065f46" opacity="0.6" />
+    <text x="24" y="61" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">risk.mjs (R0–R3 Tiers)</text>
+    <rect x="16" y="76" width="178" height="26" rx="5" fill="#065f46" opacity="0.6" />
+    <text x="24" y="93" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">engine.mjs (Gatekeeper)</text>
+    <rect x="16" y="108" width="178" height="26" rx="5" fill="#065f46" opacity="0.6" />
+    <text x="24" y="125" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">OODA Thrash Guard</text>
+  </g>
+
+  <!-- Connection Arrow 3 -->
+  <path d="M 719 128 L 728 128" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="728,122 737,128 728,134" fill="#f8fafc" />
+
+  <!-- Layer 4: Execution Edge -->
+  <g transform="translate(739, 56)">
+    <rect width="176" height="145" rx="10" fill="#1e293b" stroke="#fb7185" stroke-width="2.5" />
+    <text x="18" y="30" fill="#fb7185" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="800">Layer 4: Execution</text>
+    <rect x="16" y="44" width="144" height="26" rx="5" fill="#881337" opacity="0.6" />
+    <text x="24" y="61" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">provider.mjs</text>
+    <rect x="16" y="76" width="144" height="26" rx="5" fill="#881337" opacity="0.6" />
+    <text x="24" y="93" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">Google Jules API</text>
+    <rect x="16" y="108" width="144" height="26" rx="5" fill="#881337" opacity="0.6" />
+    <text x="24" y="125" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">git worktree sandbox</text>
+  </g>
+</svg>
