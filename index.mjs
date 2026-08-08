@@ -5,7 +5,7 @@
  * security auditing, repo gating, and state operations.
  */
 
-export { loadConfig, detectStack, resolveVerify, resolveRoot, normalizePath } from "./src/config.mjs";
+export { loadConfig, detectStack, resolveVerify, resolveRoot, normalizePath, TIER_PRESETS } from "./src/config.mjs";
 export {
   shannonEntropy,
   redactSecrets,

@@ -278,6 +278,30 @@ export function resolveVerify(root = process.cwd()) {
   return { test: s.testCmd || "", build: s.buildCmd || "" };
 }
 
+export const TIER_PRESETS = {
+  free: {
+    dailyTasks: 15,
+    repairAttempts: 1,
+    concurrency: 1,
+    staggerMs: 3000,
+    diffKb: 50,
+  },
+  pro: {
+    dailyTasks: 100,
+    repairAttempts: 2,
+    concurrency: 2,
+    staggerMs: 1500,
+    diffKb: 75,
+  },
+  ultra: {
+    dailyTasks: 300,
+    repairAttempts: 3,
+    concurrency: 3,
+    staggerMs: 1000,
+    diffKb: 75,
+  },
+};
+
 /**
  * Loads and validates configuration from .agent/config.yml or .agent/jules.yml.
  */
@@ -301,9 +325,16 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
   const buildCmd = parsed.build_cmd || parsed.verify?.build || "";
   const autoVerify = resolveVerify(root);
 
+  const activeTier = String(process.env.JULES_TIER || parsed.tier || "ultra").toLowerCase();
+  const tierLimits = TIER_PRESETS[activeTier] || TIER_PRESETS.ultra;
+
+  const envDailyTasks = process.env.JULES_DAILY_BUDGET ? Number(process.env.JULES_DAILY_BUDGET) : null;
+  const envDiffKb = process.env.JULES_MAX_DIFF_KB ? Number(process.env.JULES_MAX_DIFF_KB) : null;
+
   const config = {
     version: parsed.version || DEFAULTS.version,
     provider: parsed.provider || DEFAULTS.provider,
+    tier: activeTier,
     verify: {
       test: testCmd || autoVerify.test,
       build: buildCmd || autoVerify.build,
@@ -311,7 +342,10 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     scope: normalizeScope(parsed),
     limits: {
       ...DEFAULTS.limits,
+      ...tierLimits,
       ...(parsed.limits || {}),
+      ...(envDailyTasks && !isNaN(envDailyTasks) ? { dailyTasks: envDailyTasks } : {}),
+      ...(envDiffKb && !isNaN(envDiffKb) ? { diffKb: envDiffKb } : {}),
     },
     isolation: parsed.isolation || DEFAULTS.isolation,
     runner: parsed.runner || DEFAULTS.runner,

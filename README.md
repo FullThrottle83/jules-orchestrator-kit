@@ -78,6 +78,7 @@ The orchestrator auto-detects your tech stack, but `.agent/jules.yml` provides f
 
 ```yaml
 version: 2
+tier: "pro" # Options: free, pro, ultra (default: ultra)
 test_cmd: "npm test"
 build_cmd: "npm run build"
 forbidden_paths:
@@ -89,6 +90,22 @@ forbidden_paths:
   - ".agent/jules.yml"
 allow_paths: []
 ```
+</details>
+
+<details>
+<summary><b>💳 Subscription Tier Presets (Free / Pro / Ultra)</b></summary>
+
+Tailor session limits and rate-limiting behavior to your Google Jules API subscription tier:
+
+| Tier | `dailyTasks` | `repairAttempts` | `concurrency` | `staggerMs` | Target Usage |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`free`** | `15` | `1` | `1` | `3000 ms` | **Hobby / Free Tier:** Conserves quota, prevents HTTP 429 rate limits. |
+| **`pro`** | `100` | `2` | `2` | `1500 ms` | **Developer Pro:** Balanced throughput for everyday work. |
+| **`ultra`** *(default)* | `300` | `3` | `3` | `1000 ms` | **Swarm / Enterprise:** Maximum parallel throughput & CI/CD. |
+
+**How to activate:**
+- **Environment Variable:** `export JULES_TIER=free` (or set in `.env`)
+- **Config File (`.agent/jules.yml`):** Set `tier: free`
 </details>
 
 <details>
