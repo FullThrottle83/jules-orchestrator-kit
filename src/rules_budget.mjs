@@ -1,8 +1,12 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 const DEFAULT_MAX_CHARS = 10000; // Safe threshold below Antigravity 12k & Claude 25k limits
 const DEFAULT_MAX_LINES = 250;
+
+export const SENTINEL_BEGIN = "JULES_RULES_SENTINEL BEGIN";
+export const SENTINEL_END = "JULES_RULES_SENTINEL END";
 
 /**
  * Audit character and line counts of compiled instruction files to prevent truncation.
@@ -68,6 +72,103 @@ export function checkRulesBudget(root = process.cwd(), opts = {}) {
   };
 }
 
+/**
+ * Compiles markdown/rules files into a single unified context block wrapped
+ * in SHA-256 and byte-length anti-truncation sentinels.
+ */
+export function compileRules(root = process.cwd(), _opts = {}) {
+  const candidateFiles = [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+    ".cursorrules",
+    "JULES_RULES_TEMPLATE.md",
+  ];
+
+  const rulesDir = join(root, ".agent", "rules");
+  try {
+    const files = readdirSync(rulesDir);
+    for (const f of files) {
+      if (f.endsWith(".md")) {
+        candidateFiles.push(join(".agent", "rules", f));
+      }
+    }
+  } catch (_) {}
+
+  const sources = [];
+  const sections = [];
+
+  for (const relPath of candidateFiles) {
+    const fullPath = join(root, relPath);
+    if (!existsSync(fullPath)) continue;
+    try {
+      const raw = readFileSync(fullPath, "utf-8");
+      const body = raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
+      if (!body) continue;
+      sections.push(`<!-- source: ${relPath} -->\n${body}`);
+      sources.push(relPath);
+    } catch (_) {}
+  }
+
+  const body = sections.join("\n\n---\n\n");
+  const bodyLen = Buffer.byteLength(body, "utf-8");
+  const sha256 = createHash("sha256").update(body).digest("hex");
+
+  const header = `<!-- ${SENTINEL_BEGIN} len=${bodyLen} sha256=${sha256} -->`;
+  const footer = `<!-- ${SENTINEL_END} len=${bodyLen} sha256=${sha256} -->`;
+  const compiled = `${header}\n${body}\n${footer}\n`;
+
+  return { compiled, body, bodyLen, sha256, sources };
+}
+
+/**
+ * Verifies that a compiled rule string has not been truncated or tampered with by downstream LLMs.
+ */
+export function verifyRulesSentinel(compiled) {
+  const errors = [];
+  if (typeof compiled !== "string" || compiled.length === 0) {
+    return { ok: false, errors: ["empty input"] };
+  }
+
+  const beginRe = new RegExp(`<!--\\s*${SENTINEL_BEGIN.replace(/ /g, "\\s+")}\\s+len=(\\d+)\\s+sha256=([0-9a-f]{64})\\s*-->`);
+  const endRe = new RegExp(`<!--\\s*${SENTINEL_END.replace(/ /g, "\\s+")}\\s+len=(\\d+)\\s+sha256=([0-9a-f]{64})\\s*-->`);
+
+  const beginMatch = beginRe.exec(compiled);
+  const endMatch = endRe.exec(compiled);
+
+  if (!beginMatch) { errors.push("missing or malformed BEGIN sentinel"); return { ok: false, errors }; }
+  if (!endMatch) { errors.push("missing or malformed END sentinel"); return { ok: false, errors }; }
+
+  const beginLen = Number(beginMatch[1]);
+  const beginSha = beginMatch[2];
+  const endLen = Number(endMatch[1]);
+  const endSha = endMatch[2];
+
+  if (beginLen !== endLen) errors.push(`length mismatch: BEGIN=${beginLen} END=${endLen}`);
+  if (beginSha !== endSha) errors.push("checksum mismatch between BEGIN and END sentinels");
+
+  const bodyStart = beginMatch.index + beginMatch[0].length;
+  const bodyEnd = endMatch.index;
+  const body = compiled.slice(bodyStart, bodyEnd).replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+  const actualLen = Buffer.byteLength(body, "utf-8");
+
+  if (actualLen !== beginLen) {
+    errors.push(`body length ${actualLen} != declared ${beginLen} (possible truncation or injection)`);
+  }
+
+  const recomputed = createHash("sha256").update(body).digest("hex");
+  if (recomputed !== beginSha) {
+    errors.push(`body checksum ${recomputed} != declared ${beginSha} (content tampered or truncated)`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    bodyLen: actualLen,
+    sha256: recomputed,
+  };
+}
+
 function existsSync(p) {
   try {
     return statSync(p).isFile();
@@ -75,3 +176,4 @@ function existsSync(p) {
     return false;
   }
 }
+

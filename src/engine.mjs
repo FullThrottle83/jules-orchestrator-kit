@@ -133,17 +133,76 @@ export async function gate(opts = {}) {
   return { ok: verifyOk, code: verifyOk ? 0 : 4, phases };
 }
 
+/**
+ * Sliding-window ring-buffer circuit breaker for non-convergent OODA loops.
+ */
+export class OODACircuitBreaker {
+  constructor({ windowSize = 6, threshold = 2, cooldownMs = 60000 } = {}) {
+    this.windowSize = windowSize;
+    this.threshold = threshold;
+    this.cooldownMs = cooldownMs;
+    this.ring = [];
+    this.openedAt = 0;
+    this.openedFingerprint = null;
+  }
+
+  observe(fingerprint) {
+    if (!fingerprint || typeof fingerprint !== "string") {
+      return { tripped: false };
+    }
+    if (this.isOpen()) {
+      return { tripped: true, reason: "OODA_CIRCUIT_OPEN", fingerprint: this.openedFingerprint };
+    }
+    const occurrences = this.ring.filter((f) => f === fingerprint).length + 1;
+    this.ring.push(fingerprint);
+    if (this.ring.length > this.windowSize) this.ring.shift();
+
+    if (occurrences >= this.threshold) {
+      this.openedAt = Date.now();
+      this.openedFingerprint = fingerprint;
+      return {
+        tripped: true,
+        reason: "OODA_THRASH_DETECTED",
+        fingerprint,
+        occurrences,
+      };
+    }
+    return { tripped: false, occurrences };
+  }
+
+  isOpen() {
+    if (this.openedAt === 0) return false;
+    if (Date.now() - this.openedAt >= this.cooldownMs) {
+      this.openedAt = 0;
+      this.openedFingerprint = null;
+      this.ring = [];
+      return false;
+    }
+    return true;
+  }
+
+  reset() {
+    this.ring = [];
+    this.openedAt = 0;
+    this.openedFingerprint = null;
+  }
+}
+
 export async function repair(failure, opts = {}) {
   const root = opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
   const maxRetries = config.limits.repairAttempts || 3;
   const provider = opts.provider || createProvider(config.provider, config);
   const attempts = [];
-  const seenFingerprints = new Set();
+  const breaker = opts.circuitBreaker || new OODACircuitBreaker({
+    windowSize: Math.max(maxRetries + 1, 6),
+    threshold: 2,
+    cooldownMs: 60000,
+  });
 
   let currentFailure = failure;
   const initialFingerprint = fingerprintFailureState(currentFailure, root);
-  seenFingerprints.add(initialFingerprint);
+  breaker.observe(initialFingerprint);
 
   for (let n = 1; n <= maxRetries; n++) {
     const repairPrompt = buildRepairPrompt(currentFailure, n, config);
@@ -168,22 +227,23 @@ export async function repair(failure, opts = {}) {
     // Re-verify after repair attempt
     const gateRes = await gate({ root, config, fix: false });
     if (gateRes.ok) {
+      breaker.reset();
       return { ok: true, attempts, finalStatus: "PASSED" };
     }
 
     currentFailure = gateRes.phases.find((p) => p.phase === "verify")?.testResult || failure;
     const currentFingerprint = fingerprintFailureState(currentFailure, root);
 
-    if (seenFingerprints.has(currentFingerprint)) {
-      // Deterministic regression / thrash detected! Stop OODA repair early to save budget.
+    const check = breaker.observe(currentFingerprint);
+    if (check.tripped) {
       return {
         ok: false,
         attempts,
         finalStatus: "DETERMINISTIC_REGRESSION",
         reason: `Identical failure state fingerprint (${currentFingerprint}) observed during attempt #${n}`,
+        fingerprint: currentFingerprint,
       };
     }
-    seenFingerprints.add(currentFingerprint);
   }
 
   return { ok: false, attempts, finalStatus: "OODA_EXHAUSTED" };

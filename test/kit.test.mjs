@@ -728,6 +728,20 @@ describe("Swarm Concurrency & Merge Engine Hardening", () => {
       if (fs.existsSync(lockFile)) fs.rmSync(lockFile);
     }
   });
+
+  test("deepMerge3Way merges nested objects and arrays deterministically without wiping sibling keys", async () => {
+    const { deepMerge3Way } = await import("../scripts/jules-merge-swarm.mjs");
+    const base = { config: { timeout: 300, port: 8080 }, items: [1, 2] };
+    const ours = { config: { timeout: 600, port: 8080, verbose: true }, items: [1, 2, 3] };
+    const theirs = { config: { timeout: 300, port: 9090, retries: 3 }, items: [1, 2] };
+
+    const { merged, conflicts } = deepMerge3Way(base, ours, theirs);
+    assert.equal(conflicts.length, 0);
+    assert.deepEqual(merged, {
+      config: { timeout: 600, port: 9090, verbose: true, retries: 3 },
+      items: [1, 2, 3],
+    });
+  });
 });
 
 describe("Specialist Agent Prompt Presets", () => {
