@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-08-08
+### Security & Architectural Hardening (P0/P1 Fixes)
+- **Shell-less Process Execution (`src/git.mjs`, `src/engine.mjs`)**: Refactored `runCmd()` to tokenise command strings and execute directly via `execFileSync` without invoking system shell (`sh -c` / `cmd.exe /c`), preventing command injection vulnerabilities.
+- **Fail-Closed Webhook Verification (`src/webhook.mjs`)**: Updated `verifySignature()` to fail closed when `JULES_WEBHOOK_SECRET` is unset. Added 2 MB payload cap and replay protection in `createWebhookServer()`.
+- **Expanded Secret Scanning (`src/security.mjs`)**: Added 2026 key formats (`github_pat_`, Anthropic `sk-ant-`, OpenAI `sk-proj-`, Google OAuth `ya29.`, Slack bot tokens) to `HIGH_CONFIDENCE_PATTERNS`.
+- **Execution Envelope Canonicalization (`src/execution_envelope.mjs`)**: Updated `hashExecutionEnvelope()` to include `baseRef` and `createdAt` alongside key-canonicalization in the SHA-256 digest.
+- **Durable Ledger Persistence & Self-Healing (`src/state.mjs`)**: Updated `appendLedger()` to use `openSync(filePath, "a")`, `writeSync()`, and `fsyncSync()`. Added fallback to read the last valid line during tail torn writes in `appendLedger()` and `verifyLedgerIntegrity()`. Added `hostname()` fingerprinting and `fsyncSync()` to `acquireLock()`.
+- **OODA Thrash Fingerprint Normalization (`src/engine.mjs`)**: Refined `fingerprintFailureState()` to normalize path/line noise without altering failure hashes based on volatile diff text.
+
 ## [0.9.4] - 2026-08-08
 ### Added & Enhanced (Native MCP Server & Exit Code Registry Alignment)
 - **Zero-Dependency Stdio MCP Server (`src/mcp.mjs`, `bin/mcp-server.mjs`)**: Implemented native Model Context Protocol (MCP) server over stdio streams using Node.js `node:readline` and JSON-RPC 2.0. Exposes orchestrator tools (`dispatch_jules_task`, `audit_jules_gate`, `check_risk_tier`, `get_jules_status`) directly to AI environments like Antigravity, Claude, and Cursor.
