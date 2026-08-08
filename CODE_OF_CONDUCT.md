@@ -1,75 +1,53 @@
-# Contributor Covenant Code of Conduct
+# Code of Conduct & Autonomous Agent Governance Pledge
 
-## Our Pledge
+## 🛡️ Core Statement & Scope
 
-We as members, contributors, and leaders pledge to make participation in our
-community a harassment-free experience for everyone, regardless of age, body
-size, visible or invisible disability, ethnicity, sex characteristics, gender
-identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, caste, color, religion, or sexual
-identity and orientation.
+As maintainers, human contributors, and users of the **Jules Orchestrator Kit**, we pledge to maintain an inclusive, respectful, and safe community for human collaborators while enforcing strict safety and security standards for autonomous AI agents operated within this framework.
 
-We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive, and healthy community.
+This policy applies across all community channels, GitHub repositories, and automated agent execution sessions driven by `jules-orchestrator-kit`.
 
-## Our Standards
+---
 
-Examples of behavior that contributes to a positive environment for our
-community include:
+## 👥 Human Community Standards
 
-* Demonstrating empathy and kindness toward other people
-* Being respectful of differing opinions, viewpoints, and experiences
-* Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes,
-  and learning from the experience
-* Focusing on what is best not just for us as individuals, but for the overall
-  community
+We enforce standard professional community standards to ensure a welcoming environment for everyone regardless of background, identity, or experience level.
 
-Examples of unacceptable behavior include:
+### Positive Community Behaviors
+- **Respect & Constructive Feedback:** Offer clear, technical, and actionable feedback on code and architecture PRs.
+- **Inclusivity:** Welcome developers of all skill levels, from junior engineers to principal architects.
+- **Accountability:** Take responsibility for code issues or regressions, and work collaboratively to resolve them.
 
-* The use of sexualized language or imagery, and sexual attention or advances of
-  any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or email address,
-  without their explicit permission
-* Other conduct which could reasonably be considered inappropriate in a
-  professional setting
+### Unacceptable Behaviors
+- Personal attacks, trolling, or derogatory comments.
+- Publishing private information (PII, credentials, IP addresses) without consent.
+- Harassment in public or private forums.
 
-## Enforcement Responsibilities
+---
 
-Community leaders are responsible for clarifying and enforcing our standards of
-acceptable behavior and will take appropriate and fair corrective action in
-response to any behavior that they deem inappropriate, threatening, offensive,
-or harmful.
+## 🤖 Autonomous Agent Operating Standards
 
-Community leaders have the right and responsibility to remove, edit, or reject
-comments, commits, code, wiki edits, issues, and other contributions that are
-not aligned to this Code of Conduct, and will communicate reasons for moderation
-decisions when appropriate.
+Because this framework delegates code execution to autonomous AI agents (such as Google Jules), all contributors—whether human developers or AI agent operators—must adhere to the following **Agent Governance Standards**:
 
-## Scope
+### 1. Responsible Autonomous Operation
+- **Scope Compliance:** Agents and prompt dispatches must operate strictly within declared `allow_paths`. Attempts to manipulate prompts to breach `forbidden_paths` or modify security rule files (`.agent/rules/`, `.github/`) are strictly forbidden.
+- **CBEE Envelope Integrity:** Never attempt to bypass or disable Capability-Bounded Execution Envelopes (`execution_envelope.mjs`). All session dispatches must remain immutably bound to their base SHA and verified config.
 
-This Code of Conduct applies within all community spaces, and also applies when
-an individual is officially representing the community in public spaces.
-Examples of representing our community include using an official e-mail address,
-posting via an official social media account, or acting as an appointed
-representative at an online or offline event.
+### 2. Evidence-Based & Falsifiable Engineering
+- **No Assertion Weakening:** Never attempt to make unit tests or CI pipelines pass by deleting test assertions, commenting out checks, or swallowing runtime errors.
+- **Mandatory Verification Receipts:** All pull requests submitted by automated agents must include full, untruncated terminal verification output proving `npm test` exit code 0.
 
-## Enforcement
+### 3. Supply-Chain & Architecture Integrity
+- **Zero Runtime Dependencies:** Contributors must strictly maintain the zero-dependency invariant. Do not introduce third-party npm packages. Use native Node.js built-in ESM modules (`node:fs`, `node:path`, `node:crypto`, `node:child_process`).
+- **Resource & Token Efficiency:** Respect API rate limits and daily task budgets. Use Tier Presets (`free`, `pro`, `ultra`) appropriately to prevent quota exhaustion and API thrashing.
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement.
-All complaints will be reviewed and investigated promptly and fairly.
+---
 
-All community leaders are obligated to respect the privacy and security of the
-reporter of any incident.
+## ⚖️ Enforcement & Reporting
 
-## Attribution
+Violations of human community standards or intentional security bypass attempts may be reported privately via **GitHub Security Advisories**. Community maintainers will review reports promptly and take appropriate corrective action, including PR rejection or repository access restriction.
 
-This Code of Conduct is adapted from the [Contributor Covenant][homepage],
-version 2.1, available at
-[https://www.contributor-covenant.org/version/2/1/code_of_conduct.html][v2.1].
+---
 
-[homepage]: https://www.contributor-covenant.org
-[v2.1]: https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
+## 🔗 Attribution
+
+This Code of Conduct builds upon the principles of the [Contributor Covenant](https://www.contributor-covenant.org) (v2.1) and extends them with the **Google Jules Autonomous Worker Directives**.
