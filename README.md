@@ -116,6 +116,49 @@ npx agentctl mcp
 </details>
 
 <details>
+<summary><b>🤖 Specialist Agent Prompt Presets (.agent/prompts/)</b></summary>
+
+<br/>
+
+Specialized prompt presets enforcement payload limits (< 75 KB) and domain guardrails out of the box:
+
+| Preset | Role & Domain | Primary Focus |
+| :--- | :--- | :--- |
+| **`Overseer.md`** | **Architect & Supervisor** | System-wide refactoring, linearizable state, and structural integrity. |
+| **`Bolt.md`** | **Performance Engineer** | Bottleneck elimination, streaming optimization, and low-latency execution. |
+| **`Sentinel.md`** | **Security Auditor** | Vulnerability patching, secret sanitization, and TOCTOU defense. |
+| **`Janitor.md`** | **Technical Debt & Cleanup** | Dead code elimination, unused import pruning, and zero-dependency compliance. |
+
+```bash
+# Example: Dispatch a cleanup task using the Janitor preset
+npx agentctl dispatch \
+  --prompt "$(cat .agent/prompts/Janitor.md) Prune unused helper methods in src/utils.mjs"
+```
+
+</details>
+
+<details>
+<summary><b>⚡ GitHub Actions Composite Action (.github/actions/setup-jules)</b></summary>
+
+<br/>
+
+Integrate `jules-orchestrator-kit` into any GitHub Actions workflow with 3 lines of YAML:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: FullThrottle83/jules-orchestrator-kit/.github/actions/setup-jules@main
+    with:
+      action: 'gate'
+      base_branch: 'main'
+      tier: 'ultra'
+    env:
+      JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+```
+
+</details>
+
+<details>
 <summary><b>🛠️ CLI Command Reference (`agentctl`)</b></summary>
 
 <br/>
