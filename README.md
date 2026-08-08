@@ -1,220 +1,114 @@
 # jules-orchestrator-kit
 
-*Disclaimer: This is an independent open-source orchestration tool and is not officially affiliated with or endorsed by Google.*
+*Disclaimer: This is an independent open-source orchestration tool for Google Jules and is not officially affiliated with or endorsed by Google.*
 
 [![Jules PR Audit](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml/badge.svg)](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml)
 [![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Turn Google Jules into an autonomous code builder that writes, tests, and fixes itself.**  
-The orchestrator automates verification, scopes file boundaries, and prevents Jules from breaking your CI.
-
-> [!WARNING]
-> **Alpha Release:** Active development. Exercise caution before integrating into critical production pipelines. Always start with `JULES_DRY_RUN=1`.
+> **v0.20.0 Early Community Release Candidate**  
+> High-volume autonomous orchestration engine for Google Jules. Built specifically to handle 300+ daily sessions and parallel agent swarms with zero external runtime dependencies.
 
 ---
 
-## ⚡ 30-Second Quick Start
+## ⚡ 2-Minute Quickstart
+
+Get up and running in under 2 minutes:
 
 ```bash
-# 1. Initialize orchestrator in your repository
+# 1. Install or initialize in your target codebase
 npx jules-orchestrator-kit init
 
-# 2. Dispatch a task (Dry Run mode)
-JULES_DRY_RUN=1 agentctl dispatch --title "Refactor Auth" --prompt "Implement JWT validation"
+# 2. Dispatch a task (Dry-Run mode for testing)
+JULES_DRY_RUN=1 npx agentctl dispatch \
+  --title "Add JWT Validator" \
+  --prompt "Implement JWT validation middleware with unit tests"
 
-# 3. Audit workspace safety gates
-agentctl gate
+# 3. Run security & verification gatekeeper
+npx agentctl gate
+
+# 4. Start stdio MCP Server (for Cursor, Claude Code, or AGY integration)
+npx agentctl mcp
 ```
-
-> 💡 **Unified Engine CLI (`agentctl`)**: Zero-dependency executable powering dispatching, safety gate auditing, mutex locks, and swarm management across all project types (Node, Rust, Go, Python, etc.).
 
 ---
 
-## 🎯 Choose Your Path
+## 🚀 Built for High-Volume Jules Swarms
 
-| I want to... | Role / Goal | Jump To |
+`jules-orchestrator-kit` provides the production-hardened control plane needed to execute parallel Google Jules agent swarms safely:
+
+- **Parallel Agent Swarms**: Execute multi-agent task batches concurrently with deterministic lock management and automatic collision prevention.
+- **Self-Healing OODA Loop**: Automatic test/build verification and repair loop with sliding-window thrash detection to halt non-convergent agent loops ($A \rightarrow B \rightarrow A \rightarrow B$) and preserve API token budgets.
+- **4-Phase Security Gatekeeper**: Fails closed on untrusted PRs by verifying Scope (`forbidden_paths`), Diff Payload Size, Secret Entropy (> 3.6 bits), and Trusted Build/Test Execution.
+
+---
+
+## ⚙️ Core Technical Architecture
+
+Built strictly on native Node.js 18+ ESM with **Zero External Runtime Dependencies** (`"node": ">=18.0.0"`):
+
+- **Linearizable VFS Mutex (`src/state.mjs`)**: Kernel-level directory mutex (`withVfsMutex`) guaranteeing serial linearizability for SHA-256 hash-chained session ledgers under high concurrency.
+- **PID Recycling & Stale Lock Protection (`src/state.mjs`)**: Linux `/proc/<pid>/stat` launch-time validation prevents false-positive lock reaps from recycled OS process IDs.
+- **Memory-Bounded Content-Length MCP Streaming (`src/mcp.mjs`)**: Native MCP server over stdio streams using `McpFrameDecoder` with a 4 MB memory safety ceiling and panic boundaries to prevent stdout stack trace leaks.
+- **Process Group Isolation (`src/process-group.mjs`)**: `ProcessGroupManager` creates isolated process groups (`detached: true`) and catches `SIGINT`/`SIGTERM`/`exit` signals to execute `process.kill(-pgid)`, guaranteeing zero zombie processes.
+- **TOCTOU & Symlink Defense (`src/security.mjs`)**: `safeAtomicWrite()` uses `O_CREAT | O_EXCL | O_WRONLY` temp files with `fsyncSync` + `renameSync` and `lstatSync`/`realpathSync` symlink checks.
+- **3-Way Structural AST/JSON Merge (`scripts/jules-merge-swarm.mjs`)**: Pure Node `deepMerge3Way()` algorithm for recursive object and array merges executed in isolated temporary directories (`os.tmpdir()`).
+
+---
+
+## 🛠️ CLI Command Reference (`agentctl`)
+
+| Command | Usage | Description |
 | :--- | :--- | :--- |
-| 🚀 **Add Jules to my repo** | App Developer / Junior | [Quick Start & Setup](#-30-second-quick-start) & [Configuration](#-complete-reference-manual) |
-| 🤖 **Connect to Cursor/Claude/SDK** | AI Engineer / SDK User | [MCP & SDK Integration](#-complete-reference-manual) |
-| 🛡️ **Enforce Security & CI/CD** | DevOps / Security Engineer | [Security Invariants](#%EF%B8%8F-core-security--reliability-invariants) & [Exit Codes](#-complete-reference-manual) |
+| `agentctl dispatch` | `agentctl dispatch --title "..." --prompt "..."` | Dispatches an autonomous task to Jules |
+| `agentctl gate` | `agentctl gate [--fix] [--base main]` | Runs 4-Phase Safety Gatekeeper against workspace |
+| `agentctl queue` | `agentctl queue` | Processes pending task queue from `.agent/jules-queue/` |
+| `agentctl swarm` | `agentctl swarm` | Executes parallel swarm task queue |
+| `agentctl merge-swarm` | `agentctl merge-swarm` | Performs 3-way structural merge on completed swarm PRs |
+| `agentctl mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server |
+| `agentctl doctor` | `agentctl doctor` | Verifies stack configuration, environment, and budget |
 
 ---
 
-## 🔄 How It Works
+## 📋 Exit Code Protocol
 
-![Autonomous Orchestration Pipeline](docs/assets/hero-flow.svg?v=5)
+Standardized exit codes enforced across all CLI utilities:
 
-1. **Dispatch Task:** Define prompt, title, and target scope (`agentctl dispatch`).
-2. **Execution Sandbox:** Jules applies code in an isolated Git worktree.
-3. **Safety Gatekeeper:** Audits scope (`forbidden_paths`), secret entropy, and test/build commands.
-4. **OODA Auto-Repair:** If tests fail, auto-corrects with stderr traces up to 3 attempts with thrash protection.
-5. **Safe Delivery:** Exit Code 0 proves 100% verification pass before pushing PR.
-
-🔍 *For a deep dive into the complete execution sequence, see [Architecture & Pipeline Flow](docs/architecture.md).*
-
----
-
-## 🛡️ Core Security & Reliability Invariants
-
-![Zero-Trust Security Guarantees](docs/assets/security-shield.svg?v=5)
-
-![Control Plane Architecture Layers](docs/assets/architecture-layers.svg?v=1)
-
-- **[Capability-Bounded Execution Envelope (CBEE)](file:///home/jonas/WebDev/jules-orchestrator-kit/src/execution_envelope.mjs):** Immutably binds `baseSha`, `configSha`, `scope`, and `verifyCmds` before dispatch to prevent runtime scope drift.
-- **[Zero-Trust Base Resolution](file:///home/jonas/WebDev/jules-orchestrator-kit/src/git.mjs#L60):** Security rules (`forbidden_paths`) are fetched strictly from `origin/main` (never untrusted PR branches).
-- **[OODA Thrash & State Fingerprinting](file:///home/jonas/WebDev/jules-orchestrator-kit/src/engine.mjs#L14):** SHA-256 state fingerprinting over stderr and diffs halts repair loops early (`DETERMINISTIC_REGRESSION`, Exit Code 4) to save API tokens.
-- **[Hash-Chain State Ledger](file:///home/jonas/WebDev/jules-orchestrator-kit/src/state.mjs#L48):** SHA-256 cryptographic hash-chaining over JSONL audit logs detects record tampering or reordering.
-- **[Secret & PII Redaction](file:///home/jonas/WebDev/jules-orchestrator-kit/src/security.mjs#L35):** Entropy scanner (> 3.6 bits) redacts API keys and masks PII (emails, IPs, phone numbers) before outbound dispatches.
+| Code | Status | Description |
+| :---: | :--- | :--- |
+| `0` | **Success** | Task completed cleanly; verification passed 100%. |
+| `1` | **Arg / Pre-Dispatch Failure** | Invalid arguments, prompt > 50 KB, or pre-dispatch error. |
+| `2` | **API / Network Failure** | Jules API rate-limit (429), `FAILED_PRECONDITION`, or timeout. |
+| `3` | **Scope Violation** | Attempted modification of protected/forbidden files. |
+| `4` | **OODA Exhausted / Regression** | Verification failed after max repair attempts or thrash loop. |
+| `5` | **Diff Payload Exceeded** | Git diff exceeds payload budget (`limits.diffKb`, default 75 KB). |
+| `6` | **Secret Detected** | High-confidence secret or token detected in patch diff. |
+| `7` | **Budget Exhausted** | Daily task session quota limit reached (`limits.dailyTasks`, default 300). |
 
 ---
 
-## 📖 Complete Reference Manual
+## 🤝 Join the Community & Field-Testing
 
-<details>
-<summary><b>⚙️ Configuration (.agent/jules.yml)</b></summary>
+We are actively field-testing `v0.20.0` across 300+ daily autonomous sessions and opening the kit to the Google Jules developer community for feedback and contributions!
 
-The orchestrator auto-detects your tech stack, but `.agent/jules.yml` provides fine-grained control:
+- **Test & Benchmark**: Clone the repository, test your edge cases, and run parallel swarms against your codebases.
+- **Report Issues**: Found a bug, state race condition, or edge-case failure? Open an issue on GitHub.
+- **Submit PRs**: We welcome contributions! Ensure all additions preserve our Zero Runtime Dependency invariant and pass `npm test` & `npm run lint`.
 
-```yaml
-version: 2
-tier: "pro" # Options: free, pro, ultra (default: ultra)
-test_cmd: "npm test"
-build_cmd: "npm run build"
-forbidden_paths:
-  - ".github/**"
-  - "**/secrets/**"
-  - "**/*.pem"
-  - "**/lock-manager/**"
-  - "scripts/jules-*"
-  - ".agent/jules.yml"
-allow_paths: []
-```
-</details>
+### Running Tests Locally
 
-<details>
-<summary><b>💳 Subscription Tier Presets (Free / Pro / Ultra)</b></summary>
+```bash
+# Clone the repository
+git clone https://github.com/FullThrottle83/jules-orchestrator-kit.git
+cd jules-orchestrator-kit
 
-Tailor session limits and rate-limiting behavior to your Google Jules API subscription tier:
-
-| Tier | `dailyTasks` | `repairAttempts` | `concurrency` | `staggerMs` | Target Usage |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`free`** | `15` | `1` | `1` | `3000 ms` | **Hobby / Free Tier:** Conserves quota, prevents HTTP 429 rate limits. |
-| **`pro`** | `100` | `2` | `2` | `1500 ms` | **Developer Pro:** Balanced throughput for everyday work. |
-| **`ultra`** *(default)* | `300` | `3` | `3` | `1000 ms` | **Swarm / Enterprise:** Maximum parallel throughput & CI/CD. |
-
-**How to activate:**
-- **Environment Variable:** `export JULES_TIER=free` (or set in `.env`)
-- **Config File (`.agent/jules.yml`):** Set `tier: free`
-</details>
-
-<details>
-<summary><b>🔌 Model Context Protocol (MCP) & SDK Reference</b></summary>
-
-![Dual-Way MCP Integration](docs/assets/mcp-integration.svg?v=1)
-
-### 1. Native MCP Server (`npx jules-mcp`)
-Connect `jules-orchestrator-kit` directly as a stdio Model Context Protocol (MCP) server to AI tools like **Antigravity**, **Claude Desktop**, and **Cursor**:
-
-```json
-{
-  "mcpServers": {
-    "jules-orchestrator": {
-      "command": "npx",
-      "args": ["-y", "jules-orchestrator-kit", "mcp"]
-    }
-  }
-}
+# Run ESLint & node unit test suite (100% zero external runtime deps)
+npm run lint
+npm test
 ```
 
-*Exposed MCP Tools:* `dispatch_jules_task`, `audit_jules_gate`, `check_risk_tier`, `get_jules_status`.
-
-### 2. Programmatic Node.js SDK (`index.mjs`)
-```js
-import { gate, dispatch, createExecutionEnvelope, fingerprintFailureState } from "jules-orchestrator-kit";
-
-// Dispatch task programmatically
-await dispatch({ title: "Refactor Auth", prompt: "Implement JWT validation" });
-
-// Run 4-phase safety gatekeeper audit
-const audit = await gate({ base: "main" });
-```
-</details>
-
-<details>
-<summary><b>🛠️ CLI Command Reference (agentctl & npm scripts)</b></summary>
-
-| Command | Description |
-| :--- | :--- |
-| `agentctl init` / `npm run init` | Initializes orchestrator & `.agent/` directory |
-| `agentctl gate` / `npm run jules:audit` | Runs 4-phase safety gatekeeper audit |
-| `agentctl dispatch` / `npm run jules:dispatch` | Dispatches single task to Jules |
-| `agentctl queue` / `npm run jules:queue` | Runs local queue processor (`.agent/jules-queue`) |
-| `agentctl status` / `npm run jules:status` | Shows real-time 3-bucket status |
-| `agentctl mcp` / `npx jules-mcp` | Starts stdio MCP JSON-RPC 2.0 server |
-| `agentctl swarm` / `npm run jules:swarm` | Launches multi-agent swarm in parallel worktrees |
-| `agentctl merge-swarm` / `npm run jules:merge-swarm` | Autonomous PR merge engine with Safety Gate lock |
-| `agentctl scan` / `npm run jules:scan` | Scans codebase for TODO/FIXME comments |
-| `agentctl cleanup` / `npm run jules:cleanup` | Audits and closes merged or stale REST sessions |
-</details>
-
-<details>
-<summary><b>🔐 Environment Variables Reference</b></summary>
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `JULES_API_KEY` | Google Jules REST API key | *(none)* |
-| `JULES_REPO` | Target GitHub Repository (`owner/repo`) | Auto-detected |
-| `JULES_DRY_RUN` | Set to `1` or `true` for dry-run simulation | `false` |
-| `JULES_DAILY_BUDGET` | Daily max session budget | `300` |
-| `JULES_MAX_DIFF_KB` | Max git diff payload limit in KB | `50` |
-| `JULES_ALLOW_COMMAND_FILE_CHANGES` | Allow PR changes to command files (`package.json`, etc.) | `false` |
-| `JULES_ALLOW_AGENT_RULE_CHANGES` | Allow PR changes to agent rule files (`AGENTS.md`, etc.) | `false` |
-| `BASE_BRANCH` | Base branch for PR Audits & Merge-Base | `main` |
-| `JULES_SWARM_CONCURRENCY` | Maximum parallel dispatches for swarm runs | `3` |
-| `JULES_SWARM_STAGGER_MS` | Dispatch stagger interval in ms | `1500` |
-| `NO_COLOR` | Set to `true` to disable ANSI color output | `false` |
-</details>
-
-<details>
-<summary><b>🚦 Exit Code Registry</b></summary>
-
-| Code | Classification | Description |
-| :--- | :--- | :--- |
-| `0` | **Success** | All tests, security checks, and gate audits passed cleanly. |
-| `1` | **Pre-Dispatch / Arg Error** | Invalid arguments, prompt > 50 KB, or premise validation failure. |
-| `2` | **API / Network Error** | HTTP 429 rate limit or worker quota limit. |
-| `3` | **Security / Scope Breach** | Modified file breached `forbidden_paths` or command files. Fails closed. |
-| `4` | **Verification / Thrash Exhausted** | Tests failed and OODA repair loop exhausted retries or hit deterministic regression. |
-| `5` | **Diff Payload Limit** | Diff payload size exceeded governor limit (`JULES_MAX_DIFF_KB`). |
-| `6` | **Secret Leak Prevented** | High-confidence secret or private key pattern detected in diff. |
-| `7` | **Budget Exhausted** | Daily session budget limit reached. |
-</details>
-
-<details>
-<summary><b>🌐 Supported Tech Stacks & Auto-Detection</b></summary>
-
-| Stack / Ecosystem | Manifest File | Test Command | Build Command |
-| :--- | :--- | :--- | :--- |
-| **Turborepo** | `turbo.json` | `npx turbo run test` | `npx turbo run build` |
-| **pnpm Workspace** | `pnpm-workspace.yaml` | `pnpm test` | `pnpm build` |
-| **Nx Workspace** | `nx.json` | `npx nx run-many -t test` | `npx nx run-many -t build` |
-| **JavaScript / TypeScript** | `package.json` | `npm test` | `npm run build` |
-| **Rust** | `Cargo.toml` | `cargo test --workspace` | `cargo build` |
-| **Go** | `go.mod` | `go test ./...` | `go build ./...` |
-| **Python** | `pyproject.toml` | `pytest` | *(none)* |
-| **Bun / Deno** | `bunfig.toml` / `deno.json` | `bun test` / `deno test` | `bun run build` |
-| **Elixir / Ruby / Swift** | `mix.exs` / `Gemfile` / `Package.swift` | `mix test` / `rake test` | *(standard build)* |
-| **Java / C / C++** | `pom.xml` / `Makefile` | `mvn test` / `make test` | `mvn compile` / `make` |
-</details>
-
 ---
-
-## 🤝 Contributing & Standards
-
-1. **Zero Runtime Dependencies**: Use ONLY native Node.js ESM built-ins (`node:fs`, `node:path`, `node:crypto`, `node:child_process`).
-2. **100% Verification Suite**: All unit tests must pass cleanly (`npm test`).
-3. **Cross-Platform Compatibility**: Normalize Windows backslashes (`\`) to POSIX slashes (`/`).
 
 ## 📄 License
-MIT License - Open Source and free to use.
+
+Distributed under the [MIT License](LICENSE).

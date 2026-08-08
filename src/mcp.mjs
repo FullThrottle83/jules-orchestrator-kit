@@ -6,7 +6,7 @@ import { checkDailyBudget, lockStatus } from "./state.mjs";
 
 export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
-  version: "0.10.0",
+  version: "0.20.0",
 };
 
 export const MAX_MCP_FRAME_SIZE = 4 * 1024 * 1024; // 4 MB memory safety ceiling

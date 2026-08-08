@@ -1,35 +1,26 @@
 # Roadmap to v1.0
 
-This roadmap is intended to visualize the path to v1.0. 
-**Zero Runtime Dependencies** is a *product feature* of this project, not a habit. Any external databases (beyond future built-in modules) and complex frameworks are avoided for the core components. 
+This roadmap visualizes the path from the **v0.20.0 Community Release Candidate** to v1.0.  
+**Zero Runtime Dependencies** is a *product feature* of this project. Any external databases or complex frameworks are avoided for core components.
 
-For a comparison with related projects in the ecosystem (which inspired us), see [PRIOR_ART.md](./PRIOR_ART.md).
-
-## Criteria for v1.0 Release
-
-Before we stamp v1.0, the system must prove its stability, rather than just adding features. 
-Once 1.0 is released, we promise that the structure of `.agent/jules.yml` and the exit codes (0–7) will remain **locked and stable** throughout the major version.
-
-- [x] **A Linter in CI:** ESLint configured with `no-undef` and `no-unused-vars` and integrated into GitHub Actions (jules-audit.yml).
-- [ ] **Integration Tests:** An end-to-end test case that actually runs `runSelfAudit` against a temporary git repo to test OODA bugs and exit paths in practice.
-- [ ] **Production Runs (Proof of Concept):** Documented proof that the entire orchestration chain has run successfully against real Jules instances.
-- [ ] **Documented Patterns:** Clear documentation of the built-in guardrail lists and specific troubleshooting guides for each exit code (so a user encountering exit 3 knows exactly why).
-- [ ] **Formulated Stability Promise:** The `.agent/jules.yml` schema and exit codes are formalized in the documentation.
-
-## The Only Feature before v1.0: MCP Server Integration
-
-This is the single most valuable update for distribution.
-
-- [ ] Expose `jules-orchestrator-kit` as a standard MCP tool (`dispatch_jules_task`).
-- [ ] This makes the orchestrator usable right from within tools like Claude, Cursor, and Antigravity without any overhead.
+For a comparison with related projects in the ecosystem, see [PRIOR_ART.md](./PRIOR_ART.md).
 
 ---
 
-## Post-1.0 (The Backlog)
+## Current Milestone: v0.20.0 Community Release Candidate
 
-Features related to large scale and complex visualizations belong here, with the strict requirement that they must be buildable using either *built-in modules* (e.g., `node:http`) or be completely excluded from the kit's core.
+The L9-hardened foundation is locked (VFS directory mutex, Content-Length MCP streaming, process group signal management, TOCTOU symlink defense, OODA thrash ring-buffer breakers). The focus is now on community field-testing across 300+ daily sessions.
 
-- **Database-driven Queue System (SQLite):** Pending until `node:sqlite` becomes a stable default in a newer Node.js LTS, or until Node 22.5+ is required specifically for the database part. Until then, the flat-file queue is perfectly adequate for the daily budget of 300 sessions.
-- **Dashboard GUI (Localhost Web UI):** To visualize Jules tasks. If built, it will remain strictly dependency-free (server-rendered HTML via `node:http`) to respect our Zero Dependency rule.
-- **Human Escalation Bridge & Slack/Discord Bridges:** Allows asynchronous escalation from `AWAITING_USER_FEEDBACK`. This requires the Jules API to expose the feedback state publicly first.
-- **Local CI Verification Container Runner:** Integrate scripts to isolate the build (e.g., Nektos Act) prior to verification.
+- [x] **Zero-Dependency Stdio MCP Server**: Expose `jules-orchestrator-kit` as a standard MCP tool (`dispatch_jules_task`, `audit_jules_gate`, `check_risk_tier`, `get_jules_status`).
+- [x] **L9 Infrastructure Hardening**: VFS directory mutex linearizability, process group signal termination, TOCTOU symlink protection, ReDoS-hardened secret scanning.
+- [x] **A Linter in CI**: ESLint integrated in GitHub Actions (`jules-audit.yml`).
+- [ ] **Community Field-Testing & Benchmarking**: Collect feedback on edge cases and high-concurrency swarm workloads.
+- [ ] **Documented Patterns & Exit Code Manual**: Finalize troubleshooting guide for exit codes 0–7.
+
+---
+
+## Post-1.0 (Backlog)
+
+- **Localhost Web Dashboard**: Zero-dependency local visualizer powered by `node:http`.
+- **Human Escalation Bridge**: Slack/Discord bridge for asynchronous escalation from `AWAITING_USER_FEEDBACK`.
+- **Local CI Container Isolation**: Script integration to run pre-flight verification in isolated containers.

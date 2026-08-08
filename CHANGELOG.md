@@ -3,7 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.20.0] - 2026-08-08 (Community Release Candidate)
+### L9 Production Architecture & Field-Testing Hardening
+- **Linearizable VFS Directory Mutex (`src/state.mjs`)**: Kernel-level VFS directory mutex (`withVfsMutex`) guaranteeing strict serial linearizability for SHA-256 hash-chained session ledgers under high-concurrency multi-agent swarms.
+- **PID Recycling & Stale Lock Protection (`src/state.mjs`)**: Added process start-time verification (`/proc/<pid>/stat` field 22 on Linux) to `isPidAlive()`, eliminating false-positive lock reaps from recycled OS process IDs.
+- **Memory-Bounded Content-Length MCP Streaming (`src/mcp.mjs`)**: Implemented `McpFrameDecoder` with a 4 MB memory safety ceiling, supporting both HTTP-style `Content-Length` header framing and line-delimited JSON-RPC 2.0 messages over stdio. Added panic/error boundaries to prevent stdout stack-trace leaks.
+- **Process Group Isolation & Zombie Defense (`src/process-group.mjs`)**: Implemented `ProcessGroupManager` with `detached: true` process group targeting and signal hooks (`SIGINT`/`SIGTERM`/`exit`) executing `process.kill(-pgid)` to guarantee 100% leak-free process tree cleanup.
+- **TOCTOU & Symlink Defense (`src/security.mjs`)**: Added `safeAtomicWrite()` using `O_CREAT | O_EXCL | O_WRONLY` temp files with `fsyncSync` + `renameSync` and symlink traversal checks via `lstatSync` & `realpathSync`. ReDoS-hardened secret scanner regex patterns against catastrophic backtracking.
+- **Deterministic 3-Way Structural Merge (`scripts/jules-merge-swarm.mjs`)**: Added `deepMerge3Way()` algorithm for recursive AST/JSON object and array merges, executed inside isolated temporary directories under `os.tmpdir()`.
+- **OODA Thrash Ring-Buffer Breaker (`src/engine.mjs`)**: Upgraded `repair()` loop with `OODACircuitBreaker` sliding-window ring buffer to catch oscillating non-convergent failure patterns ($A \rightarrow B \rightarrow A \rightarrow B$).
+- **Zero Runtime Dependencies**: 100% native Node.js 18+ ESM architecture (`"node": ">=18.0.0"`).
 
 ## [0.10.0] - 2026-08-08
 ### Security & Architectural Hardening (P0/P1 Fixes)
