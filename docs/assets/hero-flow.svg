@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 180" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="box-cbee" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="box-ooda" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Container Background -->
+  <rect width="920" height="180" rx="14" fill="url(#bg-grad)" stroke="#334155" stroke-width="1.5" />
+
+  <!-- Title Badge -->
+  <text x="30" y="32" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" letter-spacing="1">AUTONOMOUS ORCHESTRATION PIPELINE</text>
+
+  <!-- Step 1: Dispatch -->
+  <g transform="translate(30, 52)" filter="url(#shadow)">
+    <rect width="145" height="95" rx="10" fill="#1e293b" stroke="#6366f1" stroke-width="1.5" />
+    <circle cx="25" cy="25" r="10" fill="#6366f1" opacity="0.2" />
+    <text x="25" y="29" text-anchor="middle" fill="#818cf8" font-family="sans-serif" font-size="11" font-weight="700">1</text>
+    <text x="45" y="29" fill="#f8fafc" font-family="sans-serif" font-size="13" font-weight="700">Dispatch</text>
+    <text x="15" y="55" fill="#94a3b8" font-family="sans-serif" font-size="11">agentctl / MCP</text>
+    <text x="15" y="72" fill="#64748b" font-family="sans-serif" font-size="10">CLI / CI / SDK</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <path d="M 183 100 L 202 100" stroke="#475569" stroke-width="2" stroke-dasharray="4,4" />
+  <polygon points="202,96 210,100 202,104" fill="#475569" />
+
+  <!-- Step 2: CBEE Envelope -->
+  <g transform="translate(212, 52)" filter="url(#shadow)">
+    <rect width="150" height="95" rx="10" fill="#1e293b" stroke="#06b6d4" stroke-width="1.5" />
+    <circle cx="25" cy="25" r="10" fill="#06b6d4" opacity="0.2" />
+    <text x="25" y="29" text-anchor="middle" fill="#22d3ee" font-family="sans-serif" font-size="11" font-weight="700">2</text>
+    <text x="45" y="29" fill="#f8fafc" font-family="sans-serif" font-size="13" font-weight="700">CBEE Sandbox</text>
+    <text x="15" y="55" fill="#94a3b8" font-family="sans-serif" font-size="11">Immutable Scope</text>
+    <text x="15" y="72" fill="#64748b" font-family="sans-serif" font-size="10">git worktree</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <path d="M 370 100 L 389 100" stroke="#475569" stroke-width="2" stroke-dasharray="4,4" />
+  <polygon points="389,96 397,100 389,104" fill="#475569" />
+
+  <!-- Step 3: Safety Gate -->
+  <g transform="translate(399, 52)" filter="url(#shadow)">
+    <rect width="150" height="95" rx="10" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5" />
+    <circle cx="25" cy="25" r="10" fill="#3b82f6" opacity="0.2" />
+    <text x="25" y="29" text-anchor="middle" fill="#60a5fa" font-family="sans-serif" font-size="11" font-weight="700">3</text>
+    <text x="45" y="29" fill="#f8fafc" font-family="sans-serif" font-size="13" font-weight="700">Safety Gate</text>
+    <text x="15" y="55" fill="#94a3b8" font-family="sans-serif" font-size="11">4-Phase Audit</text>
+    <text x="15" y="72" fill="#64748b" font-family="sans-serif" font-size="10">origin/main rules</text>
+  </g>
+
+  <!-- Arrow 3 -->
+  <path d="M 557 100 L 576 100" stroke="#475569" stroke-width="2" stroke-dasharray="4,4" />
+  <polygon points="576,96 584,100 576,104" fill="#475569" />
+
+  <!-- Step 4: OODA Repair -->
+  <g transform="translate(586, 52)" filter="url(#shadow)">
+    <rect width="155" height="95" rx="10" fill="#1e293b" stroke="#10b981" stroke-width="1.5" />
+    <circle cx="25" cy="25" r="10" fill="#10b981" opacity="0.2" />
+    <text x="25" y="29" text-anchor="middle" fill="#34d399" font-family="sans-serif" font-size="11" font-weight="700">4</text>
+    <text x="45" y="29" fill="#f8fafc" font-family="sans-serif" font-size="13" font-weight="700">OODA Repair</text>
+    <text x="15" y="55" fill="#94a3b8" font-family="sans-serif" font-size="11">Thrash Guard</text>
+    <text x="15" y="72" fill="#64748b" font-family="sans-serif" font-size="10">SHA-256 fingerprint</text>
+  </g>
+
+  <!-- Arrow 4 -->
+  <path d="M 749 100 L 768 100" stroke="#475569" stroke-width="2" stroke-dasharray="4,4" />
+  <polygon points="768,96 776,100 768,104" fill="#475569" />
+
+  <!-- Step 5: Verified PR -->
+  <g transform="translate(778, 52)" filter="url(#shadow)">
+    <rect width="112" height="95" rx="10" fill="#065f46" stroke="#22c55e" stroke-width="1.5" />
+    <circle cx="25" cy="25" r="10" fill="#22c55e" opacity="0.3" />
+    <text x="25" y="29" text-anchor="middle" fill="#4ade80" font-family="sans-serif" font-size="11" font-weight="700">5</text>
+    <text x="45" y="29" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="700">Ready</text>
+    <text x="15" y="55" fill="#a7f3d0" font-family="sans-serif" font-size="11">PR Verified</text>
+    <text x="15" y="72" fill="#6ee7b7" font-family="sans-serif" font-size="10">Exit Code 0</text>
+  </g>
+</svg>
