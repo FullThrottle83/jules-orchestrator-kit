@@ -36,6 +36,9 @@ npx agentctl gate
 npx agentctl mcp
 ```
 
+> 📖 **Looking for production deployment patterns?**  
+> Check out [**EXAMPLES.md**](./EXAMPLES.md) for 6 real-world recipes (Nightly TODO Scanner, Composite CI Action, Multi-Worktree Swarms, OODA Auto-Fix, MCP IDE setup, and Specialist Rosters).
+
 ---
 
 ## 🎯 Why jules-orchestrator-kit?

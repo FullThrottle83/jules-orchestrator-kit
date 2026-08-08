@@ -745,11 +745,12 @@ describe("Swarm Concurrency & Merge Engine Hardening", () => {
 });
 
 describe("Specialist Agent Prompt Presets", () => {
-  test("loads Overseer, Bolt, and Sentinel prompt presets", () => {
+  test("loads Overseer, Bolt, Sentinel, and Janitor prompt presets", () => {
     const promptsDir = path.resolve(process.cwd(), ".agent/prompts");
     assert.ok(fs.existsSync(path.join(promptsDir, "Overseer.md")));
     assert.ok(fs.existsSync(path.join(promptsDir, "Bolt.md")));
     assert.ok(fs.existsSync(path.join(promptsDir, "Sentinel.md")));
+    assert.ok(fs.existsSync(path.join(promptsDir, "Janitor.md")));
 
     const overseer = fs.readFileSync(path.join(promptsDir, "Overseer.md"), "utf-8");
     assert.ok(overseer.includes("Overseer Protocol"));
@@ -759,6 +760,9 @@ describe("Specialist Agent Prompt Presets", () => {
 
     const sentinel = fs.readFileSync(path.join(promptsDir, "Sentinel.md"), "utf-8");
     assert.ok(sentinel.includes("Vulnerability Mitigation"));
+
+    const janitor = fs.readFileSync(path.join(promptsDir, "Janitor.md"), "utf-8");
+    assert.ok(janitor.includes("Janitor Protocol"));
 
     assert.ok(fs.existsSync(path.join(promptsDir, "Task_Template.md")));
     const template = fs.readFileSync(path.join(promptsDir, "Task_Template.md"), "utf-8");

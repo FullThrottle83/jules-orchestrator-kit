@@ -145,10 +145,25 @@ const rulesDir = path.join(agentDir, "rules");
 const queueDir = path.join(agentDir, "jules-queue");
 const completedQueueDir = path.join(queueDir, "completed");
 const workflowsDir = path.join(agentDir, "workflows");
+const promptsDir = path.join(agentDir, "prompts");
 
-[agentDir, rulesDir, queueDir, completedQueueDir, workflowsDir].forEach((d) => {
+[agentDir, rulesDir, queueDir, completedQueueDir, workflowsDir, promptsDir].forEach((d) => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
+
+// Scaffold .agent/prompts files
+const sourcePromptsDir = path.join(kitRoot, ".agent/prompts");
+if (fs.existsSync(sourcePromptsDir)) {
+  const promptFiles = fs.readdirSync(sourcePromptsDir);
+  promptFiles.forEach((file) => {
+    const srcPrompt = path.join(sourcePromptsDir, file);
+    const destPrompt = path.join(promptsDir, file);
+    if (!fs.existsSync(destPrompt) || isForce) {
+      fs.copyFileSync(srcPrompt, destPrompt);
+    }
+  });
+  console.log("✅ Created: .agent/prompts presets (Overseer, Bolt, Sentinel, Janitor, Task_Template)");
+}
 
 // Scaffold .agent/jules.yml
 const yamlConfigPath = path.join(agentDir, "jules.yml");

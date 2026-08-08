@@ -1,0 +1,60 @@
+name: 'Setup Jules Orchestrator Kit'
+description: 'Zero-dependency autonomous control plane for Google Jules'
+author: 'FullThrottle83'
+
+inputs:
+  action:
+    description: 'CLI command to execute (gate | dispatch | queue | scan | doctor | mcp)'
+    required: false
+    default: 'gate'
+  title:
+    description: 'Task title for dispatch action'
+    required: false
+    default: ''
+  prompt:
+    description: 'Task prompt for dispatch action'
+    required: false
+    default: ''
+  base_branch:
+    description: 'Base branch for PR Audits & Merge-Base checks'
+    required: false
+    default: 'main'
+  tier:
+    description: 'Subscription tier preset (free | pro | ultra)'
+    required: false
+    default: 'ultra'
+  dry_run:
+    description: 'Set to 1 for dry-run simulation mode'
+    required: false
+    default: '0'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js Environment
+      uses: actions/setup-node@v4
+      with:
+        node-version: '>=18.0.0'
+
+    - name: Execute Jules Orchestrator Action
+      shell: bash
+      env:
+        JULES_API_KEY: ${{ env.JULES_API_KEY }}
+        JULES_REPO: ${{ github.repository }}
+        JULES_TIER: ${{ inputs.tier }}
+        JULES_DRY_RUN: ${{ inputs.dry_run }}
+        BASE_BRANCH: ${{ inputs.base_branch }}
+      run: |
+        if [ "${{ inputs.action }}" = "dispatch" ]; then
+          npx jules-orchestrator-kit dispatch --title "${{ inputs.title }}" --prompt "${{ inputs.prompt }}"
+        elif [ "${{ inputs.action }}" = "gate" ]; then
+          npx jules-orchestrator-kit gate --base "${{ inputs.base_branch }}"
+        elif [ "${{ inputs.action }}" = "scan" ]; then
+          npx jules-orchestrator-kit scan
+        elif [ "${{ inputs.action }}" = "queue" ]; then
+          npx jules-orchestrator-kit queue
+        elif [ "${{ inputs.action }}" = "doctor" ]; then
+          npx jules-orchestrator-kit doctor
+        else
+          npx jules-orchestrator-kit ${{ inputs.action }}
+        fi
