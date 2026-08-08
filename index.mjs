@@ -19,14 +19,23 @@ export { createProvider, JULES_PRESET, CLAUDE_PRESET, CODEX_PRESET } from "./src
 export {
   appendLedger,
   readLedger,
+  verifyLedgerIntegrity,
+  reserveBudget,
+  commitBudgetReservation,
   withBudget,
   checkDailyBudget,
   acquireLock,
   releaseLock,
   lockStatus,
 } from "./src/state.mjs";
-export { gate, dispatch, repair, run } from "./src/engine.mjs";
+export { gate, dispatch, repair, run, fingerprintFailureState } from "./src/engine.mjs";
 export { validateEnvelope } from "./src/envelope.mjs";
+export {
+  createExecutionEnvelope,
+  verifyExecutionEnvelope,
+  freezeExecutionEnvelope,
+  hashExecutionEnvelope,
+} from "./src/execution_envelope.mjs";
 export { checkAssetIntegrity } from "./src/asset_integrity.mjs";
 export { classifyRiskTier, RISK_TIERS } from "./src/risk.mjs";
 export { checkRulesBudget } from "./src/rules_budget.mjs";

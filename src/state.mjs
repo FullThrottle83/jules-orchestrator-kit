@@ -10,6 +10,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { resolveRoot } from "./config.mjs";
 
 export function ensureDir(dirPath) {
@@ -43,17 +44,64 @@ export function getDailyLedgerPath(rootOrOpts = resolveRoot()) {
 }
 
 /**
- * Appends a structured audit event to the daily session ledger.
+ * Appends a structured audit event to the daily session ledger with SHA-256 hash-chain.
  */
 export function appendLedger(entry, rootOrOpts = resolveRoot()) {
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
   const filePath = getDailyLedgerPath(root);
-  const payload = {
-    timestamp: new Date().toISOString(),
-    ...entry,
-  };
+
+  let prevHash = "0".repeat(64);
+  if (existsSync(filePath)) {
+    try {
+      const raw = readFileSync(filePath, "utf-8");
+      const lines = raw.split("\n").filter(Boolean);
+      if (lines.length > 0) {
+        const lastObj = JSON.parse(lines[lines.length - 1]);
+        if (lastObj.hash) {
+          prevHash = lastObj.hash;
+        }
+      }
+    } catch (_) {}
+  }
+
+  const timestamp = new Date().toISOString();
+  const rawPayload = { timestamp, ...entry, prevHash };
+  const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
+  const payload = { ...rawPayload, hash };
+
   appendFileSync(filePath, JSON.stringify(payload) + "\n", "utf-8");
   return payload;
+}
+
+/**
+ * Verifies the SHA-256 cryptographic hash-chain integrity of a ledger file.
+ */
+export function verifyLedgerIntegrity(filePath) {
+  if (!filePath || !existsSync(filePath)) return { ok: false, count: 0, error: "FILE_NOT_FOUND" };
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const lines = raw.split("\n").filter(Boolean);
+    let expectedPrevHash = "0".repeat(64);
+
+    for (let i = 0; i < lines.length; i++) {
+      const obj = JSON.parse(lines[i]);
+      if (!obj.hash || !obj.prevHash) {
+        continue;
+      }
+      if (obj.prevHash !== expectedPrevHash) {
+        return { ok: false, line: i + 1, error: "BROKEN_PREV_HASH", expected: expectedPrevHash, actual: obj.prevHash };
+      }
+      const { hash, ...rest } = obj;
+      const recomputed = createHash("sha256").update(JSON.stringify(rest)).digest("hex");
+      if (recomputed !== hash) {
+        return { ok: false, line: i + 1, error: "CORRUPTED_ENTRY_HASH", expected: recomputed, actual: hash };
+      }
+      expectedPrevHash = hash;
+    }
+    return { ok: true, count: lines.length, lastHash: expectedPrevHash };
+  } catch (err) {
+    return { ok: false, count: 0, error: err.message };
+  }
 }
 
 export function readLedger(filePath) {
@@ -106,12 +154,33 @@ export class BudgetError extends Error {
   }
 }
 
-export async function withBudget(fn, root = resolveRoot(), limit = 300) {
+export function reserveBudget(rootOrOpts = resolveRoot(), limit = 300) {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
   const budget = checkDailyBudget(root, limit);
   if (!budget.ok) {
     throw new BudgetError(`Daily budget exhausted (${budget.used}/${budget.budget} tasks executed)`);
   }
-  return fn();
+
+  const reservationId = `res-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  appendLedger({ event: "budget_reserved", reservationId, budget: limit }, root);
+  return { ok: true, reservationId, remaining: Math.max(0, budget.remaining - 1) };
+}
+
+export function commitBudgetReservation(rootOrOpts = resolveRoot(), reservationId = "") {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
+  return appendLedger({ event: "budget_committed", reservationId }, root);
+}
+
+export async function withBudget(fn, root = resolveRoot(), limit = 300) {
+  const reservation = reserveBudget(root, limit);
+  try {
+    const result = await fn();
+    commitBudgetReservation(root, reservation.reservationId);
+    return result;
+  } catch (err) {
+    appendLedger({ event: "budget_reservation_failed", reservationId: reservation.reservationId, error: err.message }, root);
+    throw err;
+  }
 }
 
 /**

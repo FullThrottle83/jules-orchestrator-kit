@@ -5,6 +5,27 @@ import { createProvider } from "./provider.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir } from "./state.mjs";
 import { readdirSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
+
+/**
+ * Computes a SHA-256 fingerprint for a failure state (normalized stderr + diff text).
+ */
+export function fingerprintFailureState(failure = {}, root = process.cwd()) {
+  const rawStderr = failure.stderr || failure.stdout || failure.message || "Unknown Error";
+  const normalizedStderr = String(rawStderr)
+    .replace(/:\d+:\d+/g, ":?:?")
+    .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z?\b/g, "<timestamp>")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  let diff = "";
+  try {
+    diff = diffText(root) || "";
+  } catch (_) {}
+
+  const combined = `${normalizedStderr}::${diff}`;
+  return createHash("sha256").update(combined).digest("hex").substring(0, 16);
+}
 
 /**
  * Gatekeeper verification engine (Phase 1: Scope, Phase 2: Payload, Phase 3: Secrets, Phase 4: Verify Commands).
@@ -110,10 +131,14 @@ export async function repair(failure, opts = {}) {
   const root = opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
   const maxRetries = config.limits.repairAttempts || 3;
-  const provider = createProvider(config.provider, config);
+  const provider = opts.provider || createProvider(config.provider, config);
   const attempts = [];
+  const seenFingerprints = new Set();
 
   let currentFailure = failure;
+  const initialFingerprint = fingerprintFailureState(currentFailure, root);
+  seenFingerprints.add(initialFingerprint);
+
   for (let n = 1; n <= maxRetries; n++) {
     const repairPrompt = buildRepairPrompt(currentFailure, n, config);
     let session;
@@ -139,7 +164,20 @@ export async function repair(failure, opts = {}) {
     if (gateRes.ok) {
       return { ok: true, attempts, finalStatus: "PASSED" };
     }
+
     currentFailure = gateRes.phases.find((p) => p.phase === "verify")?.testResult || failure;
+    const currentFingerprint = fingerprintFailureState(currentFailure, root);
+
+    if (seenFingerprints.has(currentFingerprint)) {
+      // Deterministic regression / thrash detected! Stop OODA repair early to save budget.
+      return {
+        ok: false,
+        attempts,
+        finalStatus: "DETERMINISTIC_REGRESSION",
+        reason: `Identical failure state fingerprint (${currentFingerprint}) observed during attempt #${n}`,
+      };
+    }
+    seenFingerprints.add(currentFingerprint);
   }
 
   return { ok: false, attempts, finalStatus: "OODA_EXHAUSTED" };
@@ -147,11 +185,23 @@ export async function repair(failure, opts = {}) {
 
 function buildRepairPrompt(failure, attempt, _config) {
   const cleanStderr = redactSecrets(failure.stderr || failure.stdout || "Unknown Error");
-  return `Auto-Repair Attempt #${attempt}
+
+  let escalationStrategy = "DIRECT_REPAIR";
+  let escalationDirective = "1. Ground your fix strictly in the error log below. Do NOT guess file contents or function signatures.";
+
+  if (attempt === 2) {
+    escalationStrategy = "DIAGNOSTIC_ANALYSIS";
+    escalationDirective = "1. DIAGNOSE FIRST: Two attempts have failed. Analyze if the root cause is in a different file or component than where the previous patch was applied.";
+  } else if (attempt >= 3) {
+    escalationStrategy = "MINIMAL_SIMPLIFICATION";
+    escalationDirective = "1. SIMPLIFY: Multiple repair attempts have failed. Revert complex refactors and implement the minimal patch that satisfies the failing assertion.";
+  }
+
+  return `Auto-Repair Attempt #${attempt} [Strategy: ${escalationStrategy}]
 Command Failed: ${failure.command || "verify"}
 
 REPAIR DIRECTIVE & STRICT INVARIANTS:
-1. Ground your fix strictly in the error log below. Do NOT guess file contents or function signatures.
+${escalationDirective}
 2. NO WEAKENING: You are STRICTLY FORBIDDEN from deleting tests, commenting out assertions, or weakening expectations to achieve a passing test. Leave unmet requirements RED if the requirement is valid and feature code is missing.
 3. CARRY EVIDENCE: Address the root cause directly and verify the exact fix.
 4. RE-VERIFY: Execute full verification after patching to ensure zero new regressions.

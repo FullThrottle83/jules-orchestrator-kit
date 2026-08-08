@@ -1,4 +1,5 @@
 import { normalizePath } from "./config.mjs";
+import { matchesGlob } from "./security.mjs";
 
 export const RISK_TIERS = {
   R0: "R0_COSMETIC",     // Docs, markdown, comments, safe devDep patches
@@ -54,7 +55,7 @@ export function classifyRiskTier(files = [], opts = {}) {
   for (const rawFile of files) {
     const file = normalizePath(rawFile);
     for (const pat of RESTRICTED_PATH_PATTERNS) {
-      if (file.includes(pat.replace(/\*/g, "")) || file.endsWith(pat)) {
+      if (matchesGlob(file, pat) || file.endsWith(pat)) {
         return {
           tier: RISK_TIERS.R3,
           reason: `Matches restricted security/financial path pattern '${pat}'`,
@@ -78,7 +79,7 @@ export function classifyRiskTier(files = [], opts = {}) {
   for (const rawFile of files) {
     const file = normalizePath(rawFile);
     for (const pat of CONSEQUENTIAL_PATH_PATTERNS) {
-      if (file.includes(pat.replace(/\*/g, ""))) {
+      if (matchesGlob(file, pat)) {
         return {
           tier: RISK_TIERS.R2,
           reason: `Matches consequential component/DB path pattern '${pat}'`,

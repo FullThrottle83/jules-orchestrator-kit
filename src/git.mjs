@@ -16,8 +16,11 @@ function normalizePath(p) {
 
 export function runCmd(command, opts = {}) {
   const cwd = opts.cwd || process.cwd();
+  const isWin = process.platform === "win32";
+  const shellCmd = isWin ? process.env.ComSpec || "cmd.exe" : "sh";
+  const shellArgs = isWin ? ["/d", "/s", "/c", command] : ["-c", command];
   try {
-    const stdout = execFileSync("sh", ["-c", command], {
+    const stdout = execFileSync(shellCmd, shellArgs, {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -59,7 +62,7 @@ export function git(args = [], opts = {}) {
 }
 
 export function resolveBase(root = process.cwd(), baseRef = "main") {
-  const candidates = [`origin/${baseRef}`, baseRef, `refs/remotes/origin/${baseRef}`, "HEAD"];
+  const candidates = [`origin/${baseRef}`, `refs/remotes/origin/${baseRef}`, baseRef];
   for (const ref of candidates) {
     try {
       const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
