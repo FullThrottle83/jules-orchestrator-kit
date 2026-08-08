@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 945 220" width="100%" height="100%">
+  <defs>
+    <linearGradient id="ooda-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#064e3b" />
+    </linearGradient>
+  </defs>
+
+  <!-- Container Background -->
+  <rect width="945" height="220" rx="14" fill="url(#ooda-grad)" stroke="#059669" stroke-width="2" />
+
+  <!-- Title Badge -->
+  <text x="30" y="36" fill="#34d399" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" letter-spacing="1.5">SELF-HEALING OODA REPAIR LOOP &amp; THRASH BREAKER</text>
+
+  <!-- Step 1: Dispatch -->
+  <g transform="translate(30, 56)">
+    <rect width="155" height="135" rx="10" fill="#1e293b" stroke="#34d399" stroke-width="2.5" />
+    <text x="16" y="32" fill="#6ee7b7" font-family="sans-serif" font-size="14" font-weight="800">1. Dispatch</text>
+    <text x="16" y="60" fill="#ffffff" font-family="sans-serif" font-size="12.5" font-weight="700">Task Prompt</text>
+    <text x="16" y="82" fill="#cbd5e1" font-family="sans-serif" font-size="11.5" font-weight="600">Jules generates patch</text>
+    <text x="16" y="104" fill="#94a3b8" font-family="sans-serif" font-size="11" font-weight="600">CBEE Env Scoped</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <path d="M 190 123 L 205 123" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="205,117 214,123 205,129" fill="#f8fafc" />
+
+  <!-- Step 2: Test Suite -->
+  <g transform="translate(215, 56)">
+    <rect width="175" height="135" rx="10" fill="#1e293b" stroke="#60a5fa" stroke-width="2.5" />
+    <text x="16" y="32" fill="#93c5fd" font-family="sans-serif" font-size="14" font-weight="800">2. Test Execution</text>
+    <text x="16" y="60" fill="#ffffff" font-family="sans-serif" font-size="12.5" font-weight="700">npm test / npm lint</text>
+    <text x="16" y="82" fill="#cbd5e1" font-family="sans-serif" font-size="11.5" font-weight="600">Extract Stderr Tail</text>
+    <text x="16" y="104" fill="#93c5fd" font-family="sans-serif" font-size="11" font-weight="600">ANSI Code Stripper</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <path d="M 395 123 L 410 123" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="410,117 419,123 410,129" fill="#f8fafc" />
+
+  <!-- Step 3: Fingerprint & Thrash Guard -->
+  <g transform="translate(420, 56)">
+    <rect width="215" height="135" rx="10" fill="#1e1b4b" stroke="#a855f7" stroke-width="2.5" />
+    <text x="16" y="32" fill="#e9d5ff" font-family="sans-serif" font-size="14" font-weight="800">3. Thrash Detector</text>
+    <text x="16" y="60" fill="#ffffff" font-family="sans-serif" font-size="12.5" font-weight="700">SHA-256 State Hash</text>
+    <text x="16" y="82" fill="#e9d5ff" font-family="sans-serif" font-size="11.5" font-weight="600">A → B → A → B Ring Buffer</text>
+    <text x="16" y="104" fill="#f0abfc" font-family="sans-serif" font-size="11" font-weight="700">Circuit Breaker (Max 3)</text>
+  </g>
+
+  <!-- Arrow 3 -->
+  <path d="M 640 123 L 655 123" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="655,117 664,123 655,129" fill="#f8fafc" />
+
+  <!-- Step 4: Outcome -->
+  <g transform="translate(665, 56)">
+    <rect width="250" height="135" rx="10" fill="#0f172a" stroke="#f43f5e" stroke-width="2.5" />
+    <text x="16" y="28" fill="#fda4af" font-family="sans-serif" font-size="14" font-weight="800">4. Convergence Outcome</text>
+    
+    <!-- Success Badge -->
+    <rect x="14" y="38" width="222" height="38" rx="5" fill="#065f46" stroke="#4ade80" stroke-width="1.5" />
+    <text x="24" y="62" fill="#dcfce7" font-family="sans-serif" font-size="12" font-weight="800">PASS: Exit Code 0 (PR Ready)</text>
+
+    <!-- Circuit Breaker Abort -->
+    <rect x="14" y="84" width="222" height="38" rx="5" fill="#881337" stroke="#fb7185" stroke-width="1.5" />
+    <text x="24" y="108" fill="#ffe4e6" font-family="sans-serif" font-size="12" font-weight="800">REJECT: Exit Code 4 (Thrash Halt)</text>
+  </g>
+</svg>

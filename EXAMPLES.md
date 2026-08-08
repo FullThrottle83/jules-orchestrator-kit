@@ -77,6 +77,8 @@ jobs:
 
 ## Pattern 3: Multi-Agent Parallel Swarm Refactoring
 
+![Multi-Agent Parallel Swarm Topology](docs/assets/swarm-topology.svg)
+
 Execute multi-task refactoring batches concurrently across isolated git worktrees with zero branch collision:
 
 ### CLI Swarm Command
@@ -108,6 +110,8 @@ npx agentctl merge-swarm
 ---
 
 ## Pattern 4: Self-Healing OODA Loop with Auto-Fix
+
+![Self-Healing OODA Loop](docs/assets/ooda-loop-cycle.svg)
 
 Execute autonomous repair loops with sliding-window thrash detection ($A \rightarrow B \rightarrow A \rightarrow B$) to preserve API token budgets:
 

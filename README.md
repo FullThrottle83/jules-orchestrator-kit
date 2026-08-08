@@ -62,6 +62,10 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 ![Control Plane Architecture Layers](docs/assets/architecture-layers.svg)
 
+<br/>
+
+![Self-Healing OODA Loop](docs/assets/ooda-loop-cycle.svg)
+
 ### Engine System Highlights
 
 - **Linearizable VFS Mutex (`src/state.mjs`)**: Kernel-level directory mutex (`withVfsMutex`) guaranteeing serial linearizability for SHA-256 hash-chained session ledgers under high concurrency.
@@ -180,6 +184,10 @@ steps:
 
 <details>
 <summary><b>💳 Subscription Tier Presets (Free / Pro / Ultra)</b></summary>
+
+<br/>
+
+![Subscription Tier Presets Matrix](docs/assets/tier-presets.svg)
 
 <br/>
 

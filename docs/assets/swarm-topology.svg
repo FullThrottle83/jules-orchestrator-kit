@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 945 220" width="100%" height="100%">
+  <defs>
+    <linearGradient id="swarm-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#0f2942" />
+    </linearGradient>
+  </defs>
+
+  <!-- Container Background -->
+  <rect width="945" height="220" rx="14" fill="url(#swarm-grad)" stroke="#0284c7" stroke-width="2" />
+
+  <!-- Title Badge -->
+  <text x="30" y="36" fill="#38bdf8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" letter-spacing="1.5">MULTI-AGENT PARALLEL SWARM TOPOLOGY</text>
+
+  <!-- Step 1: Queue -->
+  <g transform="translate(30, 56)">
+    <rect width="145" height="135" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2.5" />
+    <text x="16" y="32" fill="#7dd3fc" font-family="sans-serif" font-size="14" font-weight="800">📋 Task Queue</text>
+    <text x="16" y="60" fill="#ffffff" font-family="sans-serif" font-size="12.5" font-weight="700">agentctl queue</text>
+    <text x="16" y="82" fill="#cbd5e1" font-family="sans-serif" font-size="11.5" font-weight="600">Batch partitioning</text>
+    <text x="16" y="104" fill="#94a3b8" font-family="sans-serif" font-size="11" font-weight="600">JSONL Queue</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <path d="M 180 123 L 195 123" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="195,117 204,123 195,129" fill="#f8fafc" />
+
+  <!-- Step 2: Parallel Worktrees -->
+  <g transform="translate(205, 56)">
+    <rect width="260" height="135" rx="10" fill="#0f172a" stroke="#818cf8" stroke-width="2.5" />
+    <text x="16" y="28" fill="#c7d2fe" font-family="sans-serif" font-size="14" font-weight="800">🔀 Concurrent Worktrees</text>
+    
+    <!-- Worker A -->
+    <rect x="14" y="38" width="232" height="26" rx="5" fill="#1e1b4b" stroke="#6366f1" stroke-width="1.5" />
+    <text x="24" y="55" fill="#a5b4fc" font-family="sans-serif" font-size="11.5" font-weight="700">Slot A: git worktree /slot-1 (TASK-101)</text>
+
+    <!-- Worker B -->
+    <rect x="14" y="68" width="232" height="26" rx="5" fill="#1e1b4b" stroke="#6366f1" stroke-width="1.5" />
+    <text x="24" y="85" fill="#a5b4fc" font-family="sans-serif" font-size="11.5" font-weight="700">Slot B: git worktree /slot-2 (TASK-102)</text>
+
+    <!-- Worker C -->
+    <rect x="14" y="98" width="232" height="26" rx="5" fill="#1e1b4b" stroke="#6366f1" stroke-width="1.5" />
+    <text x="24" y="115" fill="#a5b4fc" font-family="sans-serif" font-size="11.5" font-weight="700">Slot C: git worktree /slot-3 (TASK-103)</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <path d="M 470 123 L 485 123" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="485,117 494,123 485,129" fill="#f8fafc" />
+
+  <!-- Step 3: 3-Way Merge Engine -->
+  <g transform="translate(495, 56)">
+    <rect width="215" height="135" rx="10" fill="#1e293b" stroke="#34d399" stroke-width="2.5" />
+    <text x="16" y="32" fill="#6ee7b7" font-family="sans-serif" font-size="14" font-weight="800">🔀 3-Way Merge Engine</text>
+    <text x="16" y="60" fill="#ffffff" font-family="sans-serif" font-size="12.5" font-weight="700">deepMerge3Way()</text>
+    <text x="16" y="82" fill="#cbd5e1" font-family="sans-serif" font-size="11.5" font-weight="600">Pure Node AST/JSON merge</text>
+    <text x="16" y="104" fill="#a7f3d0" font-family="sans-serif" font-size="11" font-weight="700">Safety Gate Worker Lock</text>
+  </g>
+
+  <!-- Arrow 3 -->
+  <path d="M 715 123 L 730 123" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="730,117 739,123 730,129" fill="#f8fafc" />
+
+  <!-- Step 4: Verified Target -->
+  <g transform="translate(740, 56)">
+    <rect width="175" height="135" rx="10" fill="#065f46" stroke="#4ade80" stroke-width="2.5" />
+    <text x="16" y="32" fill="#dcfce7" font-family="sans-serif" font-size="14" font-weight="800">✅ Verified Main</text>
+    <text x="16" y="60" fill="#ffffff" font-family="sans-serif" font-size="12.5" font-weight="700">0 Collisions</text>
+    <text x="16" y="82" fill="#dcfce7" font-family="sans-serif" font-size="11.5" font-weight="600">Rebased onto origin/main</text>
+    <text x="16" y="104" fill="#86efac" font-family="sans-serif" font-size="11" font-weight="700">PR Ready for Merge</text>
+  </g>
+</svg>
