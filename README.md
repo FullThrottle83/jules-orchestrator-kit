@@ -12,7 +12,7 @@
 
 ---
 
-![Autonomous Orchestration Pipeline](docs/assets/hero-flow.svg)
+![Autonomous Orchestration Pipeline](docs/assets/hero-flow.svg?v=3)
 
 ---
 
@@ -60,11 +60,11 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 <br/>
 
-![Control Plane Architecture Layers](docs/assets/architecture-layers.svg)
+![Control Plane Architecture Layers](docs/assets/architecture-layers.svg?v=3)
 
 <br/>
 
-![Self-Healing OODA Loop](docs/assets/ooda-loop-cycle.svg)
+![Self-Healing OODA Loop](docs/assets/ooda-loop-cycle.svg?v=3)
 
 ### Engine System Highlights
 
@@ -82,7 +82,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 <br/>
 
-![Zero-Trust Security Guarantees](docs/assets/security-shield.svg)
+![Zero-Trust Security Guarantees](docs/assets/security-shield.svg?v=3)
 
 ### The 4-Phase Safety Audit (`agentctl gate`)
 
@@ -101,7 +101,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 <br/>
 
-![Dual-Way MCP Integration](docs/assets/mcp-integration.svg)
+![Dual-Way MCP Integration](docs/assets/mcp-integration.svg?v=3)
 
 ### Connecting to Claude Desktop, Cursor, or Antigravity
 
@@ -187,7 +187,7 @@ steps:
 
 <br/>
 
-![Subscription Tier Presets Matrix](docs/assets/tier-presets.svg)
+![Subscription Tier Presets Matrix](docs/assets/tier-presets.svg?v=3)
 
 <br/>
 
