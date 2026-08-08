@@ -3,11 +3,10 @@
 *Disclaimer: This is an independent open-source orchestration tool for Google Jules and is not officially affiliated with or endorsed by Google.*
 
 [![Jules PR Audit](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml/badge.svg)](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml)
-[![GitHub Release](https://img.shields.io/github/v/tag/FullThrottle83/jules-orchestrator-kit)](https://github.com/FullThrottle83/jules-orchestrator-kit/tags)
 [![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **v0.20.0 Early Community Release Candidate**  
+> **Early Community Release Candidate**  
 > High-volume autonomous orchestration engine for Google Jules. Built specifically to handle 300+ daily sessions and parallel agent swarms with zero external runtime dependencies.
 
 ---
