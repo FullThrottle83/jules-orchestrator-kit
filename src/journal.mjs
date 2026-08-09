@@ -1,8 +1,53 @@
-import { openSync, writeSync, fsyncSync, closeSync, existsSync, readFileSync, unlinkSync, readdirSync } from "node:fs";
+import { openSync, writeSync, fsyncSync, closeSync, existsSync, readFileSync, unlinkSync, readdirSync, statSync, renameSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getStateDir, getProcessStartTime, isPidAlive, getLockDir } from "./state.mjs";
 import { worktreeRemove, worktreePrune } from "./git.mjs";
+
+/**
+ * Scans .agent/state/ for .mutex directories.
+ * If empty AND older than ttlMs, renames to a temporary .grave-<pid> path and rmdirSyncs it (atomic CAS pattern).
+ * @param {string} root - Project root directory
+ * @param {Object} [opts] - Options object
+ * @param {number} [opts.ttlMs=30000] - Time to live in milliseconds
+ * @returns {{ reapedCount: number, reaped: Array<string> }}
+ */
+export function reapStaleMutexDirs(root, { ttlMs = 30000 } = {}) {
+  const stateDir = getStateDir(root);
+  if (!existsSync(stateDir)) {
+    return { reapedCount: 0, reaped: [] };
+  }
+
+  const reaped = [];
+  try {
+    const entries = readdirSync(stateDir, { withFileTypes: true });
+    const now = Date.now();
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name.endsWith(".mutex")) {
+        const mutexPath = join(stateDir, entry.name);
+        try {
+          const contents = readdirSync(mutexPath);
+          if (contents.length === 0) {
+            const stat = statSync(mutexPath);
+            const age = now - stat.mtimeMs;
+            if (age >= ttlMs) {
+              const gravePath = join(stateDir, `.grave-${process.pid}-${randomUUID()}`);
+              try {
+                renameSync(mutexPath, gravePath);
+                try {
+                  rmdirSync(gravePath);
+                  reaped.push(entry.name);
+                } catch (_) {}
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+
+  return { reapedCount: reaped.length, reaped };
+}
 
 /**
  * Appends an intent record to .agent/state/journal.jsonl before a mutating operation.
@@ -138,6 +183,14 @@ export function reapOrphanedIntents(root) {
               const lockPath = join(lockDir, file);
               try {
                 const lockContent = JSON.parse(readFileSync(lockPath, "utf-8"));
+                const lockPid = lockContent.pid;
+                const lockStartTime = lockContent.processStartTime ?? lockContent.starttime ?? null;
+
+                // Do NOT unlink if the PID exists AND its start time matches a live process
+                if (lockPid && isPidAlive(lockPid, lockStartTime)) {
+                  continue;
+                }
+
                 if (
                   lockContent.pid === intent.pid ||
                   (intent.targetPath && Array.isArray(lockContent.files) && lockContent.files.includes(intent.targetPath))
@@ -174,3 +227,4 @@ export function reapOrphanedIntents(root) {
 
   return { reapedCount: reaped.length, reaped };
 }
+

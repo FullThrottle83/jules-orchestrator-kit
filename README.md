@@ -68,8 +68,11 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 ### Engine System Highlights
 
-- **Linearizable VFS Mutex (`src/state.mjs`)**: Kernel-level directory mutex (`withVfsMutex`) guaranteeing serial linearizability for SHA-256 hash-chained session ledgers under high concurrency.
-- **PID Recycling & Stale Lock Protection (`src/state.mjs`)**: Linux `/proc/<pid>/stat` launch-time validation prevents false-positive lock reaps from recycled OS process IDs.
+- **Native Task DAG Executor (`src/dag-engine.mjs`)**: Zero-dependency `DagExecutor` with Kahn's topological sort algorithm, SHA-256 interface fingerprinting post-task execution, and pre-execution cycle detection (`DagCycleError`).
+- **Intent Journaling & Zombie Worktree Reaper (`src/journal.mjs`)**: Automatic boot-time scan (`reapOrphanedIntents`) in `agentctl` and MCP server that tracks git operations in `.agent/state/journal.jsonl` and prunes orphaned worktrees left by crashed/recycled processes.
+- **Hermetic Network Egress Guard (`src/preload-net-guard.mjs`)**: Intercepts and blocks unmocked outbound HTTP/HTTPS egress during test execution (`NODE_OPTIONS="--import ./src/preload-net-guard.mjs"`), enforcing hermetic testing while allowing local loopback (`localhost`, `127.0.0.1`).
+- **Linearizable VFS Mutex (`src/state.mjs`)**: Kernel-level directory mutex (`withVfsMutex`) guaranteeing serial linearizability for SHA-256 hash-chained session ledgers with atomic budget reservation (`reserveBudgetAtomic`).
+- **PID Recycling & Stale Lock Protection (`src/state.mjs`)**: Linux `/proc/<pid>/stat` launch-time validation and random UUID nonces prevent false-positive lock reaps from recycled OS process IDs.
 - **Memory-Bounded Content-Length MCP Streaming (`src/mcp.mjs`)**: Native MCP server over stdio streams using `McpFrameDecoder` with a 4 MB memory safety ceiling and panic boundaries to prevent stdout stack trace leaks.
 - **Process Group Isolation (`src/process-group.mjs`)**: `ProcessGroupManager` creates isolated process groups (`detached: true`) and catches `SIGINT`/`SIGTERM`/`exit` signals to execute `process.kill(-pgid)`, guaranteeing zero zombie processes.
 - **TOCTOU & Symlink Defense (`src/security.mjs`)**: `safeAtomicWrite()` uses `O_CREAT | O_EXCL | O_WRONLY` temp files with `fsyncSync` + `renameSync` and `lstatSync`/`realpathSync` symlink checks.
@@ -84,12 +87,14 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 ![Zero-Trust Security Guarantees](docs/assets/security-shield.svg?v=3)
 
-### The 4-Phase Safety Audit (`agentctl gate`)
+### The 4-Phase Safety Audit & Security Boundary (`agentctl gate`)
 
 1. **Scope Fencing (`forbidden_paths`)**: Ensures agents cannot modify protected files (`package.json`, `.github/`, deployment keys) without explicit overrides.
 2. **Diff Payload Governor**: Rejects oversized diffs (> 75 KB) to prevent truncation and hidden payload injections.
 3. **Secret Entropy Scanner**: Scans diffs for high-confidence secrets (AWS keys, Stripe keys, GitHub tokens, SSH private keys) using Shannon Entropy analysis (> 3.6 bits).
-4. **Trusted Verification Suite**: Executes auto-detected unit tests and linters (`npm test`) to guarantee zero regressions before merging.
+4. **Trusted Verification Suite**: Executes auto-detected unit tests and linters (`npm test`) inside a hermetic network sandbox to guarantee zero regressions before merging.
+5. **Prompt Guard Boundary (`src/prompt-guard.mjs`)**: `sanitizeUntrustedData` strips bidi control characters, ANSI escape sequences, zero-width unicode, and neutralizes prompt injection tags (`<|im_start|>`, `[INST]`).
+6. **MCP Stream Isolation (`src/mcp.mjs`)**: Seals `process.stdout.write` framing stream to prevent log output from corrupting JSON-RPC stdio frames.
 
 > [!NOTE]
 > All security rules are fetched strictly from `origin/main` (never untrusted PR branches) to prevent prompt-injection attacks from altering security rules.
@@ -178,7 +183,7 @@ steps:
 | **`mcp`** | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) JSON-RPC 2.0 server |
 | **`doctor`** | `agentctl doctor` | Verifies stack configuration, environment keys, and daily token budget |
 | **`scan`** | `agentctl scan` | Scans codebase for `TODO` and `FIXME` comments and generates task queue |
-| **`cleanup`** | `agentctl cleanup` | Audits and cleans up stale git worktrees and temporary state files |
+| **`clean`** | `agentctl clean` | Audits and cleans up stale git worktrees, orphaned intents, locks, and temporary state files |
 
 </details>
 

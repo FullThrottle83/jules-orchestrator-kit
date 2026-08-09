@@ -78,8 +78,12 @@ export function buildAgentEnvelope(systemPolicy = "", taskInstructions = "", unt
   if (Array.isArray(untrustedDataArray)) {
     for (const item of untrustedDataArray) {
       if (typeof item === "string") {
-        if (item.trim().startsWith("<<<UNTRUSTED-DATA-BEGIN")) {
-          sanitizedBlocks.push(item);
+        const trimmed = item.trim();
+        const match = /^<<<UNTRUSTED-DATA-BEGIN(?:\s+source="([^"]+)")?>\n?([\s\S]*?)\n?<<<UNTRUSTED-DATA-END>>>$/.exec(trimmed);
+        if (match) {
+          const src = match[1] || "untrusted";
+          const body = match[2];
+          sanitizedBlocks.push(sanitizeUntrustedData(body, src));
         } else {
           sanitizedBlocks.push(sanitizeUntrustedData(item, "untrusted"));
         }

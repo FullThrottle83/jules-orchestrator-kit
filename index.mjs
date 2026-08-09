@@ -50,7 +50,7 @@ export { checkAssetIntegrity } from "./src/asset_integrity.mjs";
 export { classifyRiskTier, RISK_TIERS } from "./src/risk.mjs";
 export { checkRulesBudget } from "./src/rules_budget.mjs";
 export { DagExecutor, DagCycleError } from "./src/dag-engine.mjs";
-export { journalIntent, journalDone, reapOrphanedIntents } from "./src/journal.mjs";
+export { journalIntent, journalDone, reapOrphanedIntents, reapStaleMutexDirs } from "./src/journal.mjs";
 
 // Legacy SDK shims for backward compatibility
 export { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "./scripts/command-resolver.mjs";

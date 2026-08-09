@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+
+## [0.22.7] - 2026-08-09
+### Integration Safety & Lock/Reaper Edge-Case Hardening
+- **Stale Mutex Directory Reaper (`src/journal.mjs`)**: Added `reapStaleMutexDirs` scanning `.agent/state/` for `.mutex` directories older than `ttlMs` (30s) and using atomic grave paths (`.grave-<pid>`) with `rmdirSync` for CAS deletion. Wired into CLI boot in `bin/agentctl.mjs` and MCP server startup in `src/mcp.mjs`.
+- **PID Starttime Verification (`src/journal.mjs`)**: Updated `reapOrphanedIntents` lock cleanup to verify process start time via `isPidAlive(lockPid, lockStartTime)`, preventing lock deletion when process IDs are reused.
+- **Absolute File URL Net-Guard Flag (`src/engine.mjs`, `src/git.mjs`)**: Updated net-guard `--import` flag to construct absolute file URLs (`new URL("./preload-net-guard.mjs", import.meta.url).href`), preventing `ERR_MODULE_NOT_FOUND` in downstream consumer repositories.
+- **Prompt Guard Envelope Neutralization (`src/prompt-guard.mjs`, `src/engine.mjs`)**: Forced full re-sanitization in `buildAgentEnvelope` even if input strings contain `<<<UNTRUSTED-DATA-BEGIN` to close pre-trust bypass vectors. Wired prompt guard sanitization and envelope creation into `dispatch()`.
+- **Budget Accounting Event Filter (`src/state.mjs`)**: Refactored `checkDailyBudget` and `reserveBudgetAtomic` to filter and count exclusively `budget_reserved` events rather than total ledger lines.
+- **Integration Test Suite (`test/kernel-integration-fix.test.mjs`)**: Added unit tests covering mutex reaping, live PID lock protection, net-guard URL resolution, and budget event filtering (182 total passing tests).
+
 ## [0.22.6] - 2026-08-09
 ### Intent Journaling & Boot-Time Zombie Worktree Reaper
 - **Intent Journaling (`src/journal.mjs`)**: Implemented `journalIntent` and `journalDone` appending intent records to `.agent/state/journal.jsonl` with PID, `processStartTime`, operation type, target path, and timestamp.

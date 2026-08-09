@@ -188,7 +188,15 @@ export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300) {
   try {
     const content = readFileSync(filePath, "utf-8");
     const lines = content.split("\n").filter(Boolean);
-    const count = lines.length;
+    let count = 0;
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry && entry.event === "budget_reserved") {
+          count++;
+        }
+      } catch (_) {}
+    }
     return {
       ok: count < limit,
       used: count,
@@ -224,13 +232,14 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
       try {
         const raw = readFileSync(filePath, "utf-8");
         const lines = raw.split("\n").filter(Boolean);
-        count = lines.length;
-        for (let i = lines.length - 1; i >= 0; i--) {
+        for (const line of lines) {
           try {
-            const lastObj = JSON.parse(lines[i]);
-            if (lastObj.hash) {
-              prevHash = lastObj.hash;
-              break;
+            const entry = JSON.parse(line);
+            if (entry && entry.event === "budget_reserved") {
+              count++;
+            }
+            if (entry && entry.hash) {
+              prevHash = entry.hash;
             }
           } catch (_) {}
         }

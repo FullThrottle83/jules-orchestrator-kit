@@ -3,6 +3,7 @@ import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider } from "./provider.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir } from "./state.mjs";
+import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -164,8 +165,9 @@ export async function gate(opts = {}) {
   let buildResult = { ok: true, status: 0 };
 
   const existingNodeOptions = process.env.NODE_OPTIONS || "";
-  const netGuardFlag = "--import ./src/preload-net-guard.mjs";
-  const guardNodeOptions = existingNodeOptions && !existingNodeOptions.includes(netGuardFlag)
+  const netGuardUrl = new URL("./preload-net-guard.mjs", import.meta.url).href;
+  const netGuardFlag = `--import ${netGuardUrl}`;
+  const guardNodeOptions = existingNodeOptions && !existingNodeOptions.includes(netGuardFlag) && !existingNodeOptions.includes("preload-net-guard.mjs")
     ? `${existingNodeOptions} ${netGuardFlag}`
     : existingNodeOptions ? existingNodeOptions : netGuardFlag;
 
@@ -354,8 +356,15 @@ export async function dispatch(task, opts = {}) {
   }
 
   // Redact secrets in prompt before dispatching
-  const cleanPrompt = redactSecrets(task.prompt);
-  const cleanTask = { ...task, prompt: cleanPrompt };
+  const cleanPrompt = redactSecrets(task.prompt || "");
+
+  // Wire Prompt Guard & Envelope to wrap raw task arguments
+  const untrustedData = task.untrustedData || [cleanPrompt];
+  const systemPolicy = task.systemPolicy || config.systemPolicy || "";
+  const taskInstructions = task.taskInstructions || task.title || "Autonomous Task Execution";
+  const envelopedPrompt = buildAgentEnvelope(systemPolicy, taskInstructions, untrustedData);
+
+  const cleanTask = { ...task, prompt: envelopedPrompt };
 
   return withBudget(
     () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun }),

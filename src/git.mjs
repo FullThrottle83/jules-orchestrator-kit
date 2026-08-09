@@ -2,6 +2,9 @@ import { execFileSync } from "node:child_process";
 import { sep } from "node:path";
 import { journalIntent, journalDone } from "./journal.mjs";
 
+export const NET_GUARD_PRELOAD_URL = new URL("./preload-net-guard.mjs", import.meta.url).href;
+export const NET_GUARD_FLAG = `--import ${NET_GUARD_PRELOAD_URL}`;
+
 export class GateError extends Error {
   constructor(message, opts = {}) {
     super(message);
