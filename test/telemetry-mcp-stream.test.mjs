@@ -13,7 +13,7 @@ import {
 import { ProgressBus } from "../src/mcp-progress.mjs";
 import { handleMcpRequest } from "../src/mcp.mjs";
 
-test("O(1) Telemetry Spine & MCP Event/Progress Streaming (v1.0.1)", async (t) => {
+test("O(1) Telemetry Spine & MCP Event/Progress Streaming (v0.25.0)", async (t) => {
   let tmpRoot;
 
   t.beforeEach(() => {

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.1] - 2026-08-09
+## [0.25.0] - 2026-08-09
 ### Provider Failure Domain Taxonomy, Socket Timeouts, and Budget Rollback
 - **Provider Error Taxonomy (`src/provider.mjs`)**: Added typed error classes `ProviderRateLimitError` (HTTP 429), `ProviderUnavailableError` (5xx errors and socket timeouts), and `ProviderSchemaError` (invalid payload format). Added `parseRetryAfter()` supporting numeric seconds and HTTP-date header formats.
 - **Socket Timeout Support (`src/provider.mjs`)**: Configured 120s default socket timeout via `AbortSignal.timeout(timeoutMs)` for all HTTP provider dispatch requests.
