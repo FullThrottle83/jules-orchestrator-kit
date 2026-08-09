@@ -11,7 +11,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { resolveRoot } from "./config.mjs";
 
@@ -34,7 +34,7 @@ export function getQueueDir(rootOrOpts = resolveRoot()) {
 
 export function getStateDir(rootOrOpts = resolveRoot()) {
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
-  const dir = join(root, ".agent/state");
+  const dir = root.endsWith(".agent/state") ? root : join(root, ".agent/state");
   ensureDir(dir);
   return dir;
 }
@@ -45,11 +45,19 @@ export function getDailyLedgerPath(rootOrOpts = resolveRoot()) {
   return join(getStateDir(root), `ledger-${dateStr}.jsonl`);
 }
 
+export class MutexTimeoutError extends Error {
+  constructor(message = "Failed to acquire VFS mutex lock within timeout") {
+    super(message);
+    this.name = "MutexTimeoutError";
+  }
+}
+
 /**
  * Executes a function inside a kernel-level VFS directory mutex for strict linearizability.
+ * Fail-closed: Throws MutexTimeoutError if lock acquisition times out.
  */
 export function withVfsMutex(mutexDir, fn, opts = {}) {
-  const maxRetries = opts.maxRetries || 50;
+  const maxRetries = opts.maxRetries || 200;
   const retryDelayMs = opts.retryDelayMs || 10;
 
   for (let i = 0; i < maxRetries; i++) {
@@ -71,7 +79,7 @@ export function withVfsMutex(mutexDir, fn, opts = {}) {
       throw err;
     }
   }
-  return fn();
+  throw new MutexTimeoutError(`Failed to acquire VFS mutex lock at ${mutexDir} after ${maxRetries} retries`);
 }
 
 /**
@@ -80,7 +88,7 @@ export function withVfsMutex(mutexDir, fn, opts = {}) {
 export function appendLedger(entry, rootOrOpts = resolveRoot()) {
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
   const filePath = getDailyLedgerPath(root);
-  const mutexDir = join(getStateDir(root), ".ledger.mutex");
+  const mutexDir = join(getStateDir(root), ".budget.mutex");
 
   return withVfsMutex(mutexDir, () => {
     let prevHash = "0".repeat(64);
@@ -200,16 +208,64 @@ export class BudgetError extends Error {
   }
 }
 
-export function reserveBudget(rootOrOpts = resolveRoot(), limit = 300) {
-  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
-  const budget = checkDailyBudget(root, limit);
-  if (!budget.ok) {
-    throw new BudgetError(`Daily budget exhausted (${budget.used}/${budget.budget} tasks executed)`);
-  }
+export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300, opts = {}) {
+  const root = typeof stateDirOrRoot === "string" ? stateDirOrRoot : resolveRoot();
+  const stateDir = getStateDir(root);
+  const mutexDir = join(stateDir, ".budget.mutex");
 
-  const reservationId = `res-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-  appendLedger({ event: "budget_reserved", reservationId, budget: limit }, root);
-  return { ok: true, reservationId, remaining: Math.max(0, budget.remaining - 1) };
+  return withVfsMutex(mutexDir, () => {
+    const dateStr = new Date().toISOString().split("T")[0];
+    const filePath = join(stateDir, `ledger-${dateStr}.jsonl`);
+
+    let count = 0;
+    let prevHash = "0".repeat(64);
+
+    if (existsSync(filePath)) {
+      try {
+        const raw = readFileSync(filePath, "utf-8");
+        const lines = raw.split("\n").filter(Boolean);
+        count = lines.length;
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const lastObj = JSON.parse(lines[i]);
+            if (lastObj.hash) {
+              prevHash = lastObj.hash;
+              break;
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    if (count >= limit) {
+      throw new BudgetError(`Daily budget exhausted (${count}/${limit} tasks executed)`);
+    }
+
+    const timestamp = new Date().toISOString();
+    const reservationId = `res-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const rawPayload = { timestamp, event: "budget_reserved", reservationId, budget: limit, prevHash };
+    const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
+    const payload = { ...rawPayload, hash };
+
+    const fd = openSync(filePath, "a");
+    try {
+      writeSync(fd, JSON.stringify(payload) + "\n", "utf-8");
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+
+    return {
+      ok: true,
+      reservationId,
+      remaining: Math.max(0, limit - (count + 1)),
+      used: count + 1,
+    };
+  }, opts);
+}
+
+export function reserveBudget(rootOrOpts = resolveRoot(), limit = 300) {
+  return reserveBudgetAtomic(rootOrOpts, limit);
 }
 
 export function commitBudgetReservation(rootOrOpts = resolveRoot(), reservationId = "") {
@@ -236,8 +292,25 @@ export function getLockDir(rootOrOpts = resolveRoot()) {
   return dir;
 }
 
+export function getProcessStartTime(pid) {
+  if (!pid || typeof pid !== "number") return null;
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
+      const rpar = stat.lastIndexOf(")");
+      if (rpar !== -1) {
+        const rest = stat.slice(rpar + 1).trim().split(/\s+/);
+        return rest[19] || null;
+      }
+      const parts = stat.trim().split(/\s+/);
+      return parts[21] || null;
+    } catch (_) {}
+  }
+  return null;
+}
+
 /**
- * Checks if a PID is alive with optional PID-recycling start time validation on Linux.
+ * Checks if a PID is alive with PID-recycling start time validation on Linux.
  */
 export function isPidAlive(pid, expectedStartTime = null) {
   if (!pid || typeof pid !== "number") return false;
@@ -247,28 +320,18 @@ export function isPidAlive(pid, expectedStartTime = null) {
     return false;
   }
 
-  if (expectedStartTime && process.platform === "linux") {
+  if (expectedStartTime !== null && expectedStartTime !== undefined && process.platform === "linux") {
     try {
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
-      const parts = stat.split(" ");
-      const startTime = parts[21];
-      if (startTime && String(startTime) !== String(expectedStartTime)) {
+      const actualStartTime = getProcessStartTime(pid);
+      if (!actualStartTime || String(actualStartTime) !== String(expectedStartTime)) {
         return false;
       }
-    } catch (_) {}
+    } catch (_) {
+      return false;
+    }
   }
 
   return true;
-}
-
-function getProcessStartTime(pid) {
-  if (process.platform === "linux") {
-    try {
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
-      return stat.split(" ")[21] || null;
-    } catch (_) {}
-  }
-  return null;
 }
 
 export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveRoot()) {
@@ -279,7 +342,8 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   if (existsSync(lockFile)) {
     try {
       const existing = JSON.parse(readFileSync(lockFile, "utf-8"));
-      const isAlive = isPidAlive(existing.pid, existing.processStartTime);
+      const recordedStartTime = existing.processStartTime ?? existing.starttime ?? null;
+      const isAlive = isPidAlive(existing.pid, recordedStartTime);
       const isExpired = existing.acquiredAt && Date.now() - new Date(existing.acquiredAt).getTime() > 7200000;
 
       if (!isAlive || isExpired) {
@@ -292,12 +356,15 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
     }
   }
 
+  const startTime = getProcessStartTime(process.pid);
   const payload = {
     agent: agentName,
     taskId,
     files,
     pid: process.pid,
-    processStartTime: getProcessStartTime(process.pid),
+    processStartTime: startTime,
+    starttime: startTime,
+    nonce: randomUUID(),
     hostname: hostname(),
     acquiredAt: new Date().toISOString(),
   };
@@ -352,3 +419,4 @@ export function lockStatus(rootOrOpts = resolveRoot()) {
   } catch (_) {}
   return locks;
 }
+

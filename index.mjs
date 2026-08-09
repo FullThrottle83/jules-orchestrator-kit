@@ -21,12 +21,19 @@ export {
   readLedger,
   verifyLedgerIntegrity,
   reserveBudget,
+  reserveBudgetAtomic,
   commitBudgetReservation,
   withBudget,
   checkDailyBudget,
   acquireLock,
   releaseLock,
   lockStatus,
+  getLockDir,
+  withVfsMutex,
+  MutexTimeoutError,
+  BudgetError,
+  isPidAlive,
+  getProcessStartTime,
 } from "./src/state.mjs";
 export { gate, dispatch, repair, run, fingerprintFailureState } from "./src/engine.mjs";
 export { validateEnvelope } from "./src/envelope.mjs";

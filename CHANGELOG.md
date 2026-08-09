@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [0.22.1] - 2026-08-09
+### Kernel Hardening & Concurrency Safety
+- **Mutex Fail-Closed Enforcement (`src/state.mjs`)**: Updated `withVfsMutex` to strictly throw `MutexTimeoutError` on lock acquisition timeout instead of executing the critical section without a valid lock.
+- **Robust PID Recycling Validation (`src/state.mjs`)**: Enhanced `isPidAlive()` to read field 22 (`starttime`) from `/proc/<pid>/stat` on Linux. Stored process starttime and a random UUID `nonce` in lock payloads to prevent stale lock reaps from recycled PIDs.
+- **Atomic Budget Reservation (`src/state.mjs`)**: Added `reserveBudgetAtomic()` protecting budget checking, reservation writing, and `fsyncSync` under `.budget.mutex`. Refactored `reserveBudget` and `appendLedger` to serialize under the dedicated budget mutex.
+- **Kernel Hardening Unit Test Suite (`test/kernel-hardening.test.mjs`)**: Added automated unit tests verifying fail-closed mutex behavior, PID recycling starttime validation, and atomic budget reservation under 20 concurrent tasks.
+
 ## [0.22.0] - 2026-08-09
 ### Engine Baseline & Runtime Upgrade
 - **Node.js LTS Engine Bump (`package.json`, `README.md`, `action.yml`)**: Raised Node.js engine requirement from `>=18.0.0` to `>=20.0.0` (Active LTS baseline). Unlocks stabilized `node:test` APIs, optimized V8 JIT compilation, and improved native `fetch` streaming performance.
