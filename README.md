@@ -22,14 +22,14 @@
 <br/>
 
 <p align="center">
-  <a href="#-2-sentence-mental-model">💡&nbsp;What&nbsp;is&nbsp;Kit?</a> &nbsp;•&nbsp;
-  <a href="#-universal-30-second-quickstart-zero-to-verified-pr">⚡&nbsp;Quickstart</a> &nbsp;•&nbsp;
-  <a href="#-triage-guidelines-when-to-use-vs-when-not-to-use">🎯&nbsp;Triage&nbsp;Guidelines</a> &nbsp;•&nbsp;
-  <a href="#-feature-comparison-matrix">📊&nbsp;Matrix</a>
+  <a href="#what-is-kit">💡&nbsp;What&nbsp;is&nbsp;Kit?</a> &nbsp;•&nbsp;
+  <a href="#quickstart">⚡&nbsp;Quickstart</a> &nbsp;•&nbsp;
+  <a href="#triage-guidelines">🎯&nbsp;Triage&nbsp;Guidelines</a> &nbsp;•&nbsp;
+  <a href="#matrix">📊&nbsp;Matrix</a>
   <br/>
-  <a href="#-system-architecture--visual-diagrams">🏛️&nbsp;Architecture</a> &nbsp;•&nbsp;
-  <a href="#-cli-command-reference-agentctl">🛠️&nbsp;CLI&nbsp;Docs</a> &nbsp;•&nbsp;
-  <a href="#-v027-next-gen-feature-roadmap">🗺️&nbsp;Roadmap</a>
+  <a href="#architecture">🏛️&nbsp;Architecture</a> &nbsp;•&nbsp;
+  <a href="#cli-docs">🛠️&nbsp;CLI&nbsp;Docs</a> &nbsp;•&nbsp;
+  <a href="#roadmap">🗺️&nbsp;Roadmap</a>
 </p>
 
 </div>
@@ -40,6 +40,7 @@
 
 <br/>
 
+<a id="what-is-kit"></a>
 ## 💡 2-Sentence Mental Model
 
 > **Think of `jules-orchestrator-kit` as an automated Engineering Manager for AI coding agents.**  
@@ -77,6 +78,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 <br/>
 
+<a id="triage-guidelines"></a>
 ## 🎯 Triage Guidelines: When to Use vs. When NOT to Use
 
 To ensure maximum merge success, dispatch tasks according to our deterministic triage boundaries:
@@ -106,6 +108,7 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 
 <br/>
 
+<a id="matrix"></a>
 ## 📊 Feature Comparison Matrix
 
 | Dimension | Raw Agent Execution (No Orchestrator) | Standard CI/CD Pipelines | `jules-orchestrator-kit` (v0.27+) |
@@ -125,6 +128,7 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 
 <br/>
 
+<a id="quickstart"></a>
 ## ⚡ Universal 30-Second Quickstart (Zero to Verified PR)
 
 Get from zero to an autonomously verified GitHub Pull Request across any software ecosystem in 30 seconds.
@@ -219,6 +223,7 @@ Ecosystems Natively Supported by src/stack-detector.mjs:
 
 <br/>
 
+<a id="architecture"></a>
 ## 🏛️ System Architecture & Visual Diagrams
 
 <br/>
@@ -291,6 +296,7 @@ In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFil
 
 <br/>
 
+<a id="cli-docs"></a>
 ## 🛠️ CLI Command Reference (`agentctl`)
 
 `agentctl` is the unified command-line interface for `jules-orchestrator-kit`, available via `bin/agentctl.mjs` or `npx jules-orchestrator-kit <command>`.
@@ -319,6 +325,7 @@ In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFil
 
 <br/>
 
+<a id="roadmap"></a>
 ## 🗺️ v0.27+ Next-Gen Feature Roadmap
 
 | Feature | Module / Command | Architectural Blueprint | Target Release |
