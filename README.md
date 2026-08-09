@@ -340,13 +340,13 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `dashboard` | `agentctl dashboard [port]` | Starts zero-dependency local HTTP telemetry and audit visualizer dashboard. | `0` (Running) |
 | `gate` / `audit`| `agentctl gate --mode working-tree --json` | Runs security, secret scanning, and verification gate against working tree or branch. | `0` (Approved), `3` (Scope violation), `5` (Diff limit), `6` (Secret leak) |
 | `bootstrap` | `agentctl bootstrap [--force] [--json]` | Inspects an untested repository and synthesizes `.agent/config.yml` with a zero-test verification oracle (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`). | `0` (Bootstrapped / Existing) |
-| `queue` | `agentctl queue` | Consumes and executes pending markdown task envelopes in `.agent/queue/`. | `0` (Complete) |
+| `queue` | `agentctl queue` | Consumes and executes pending markdown task envelopes in `.agent/jules-queue/`. | `0` (Complete) |
 | `swarm` | `agentctl swarm` | Runs parallel multi-agent swarm across queued tasks with token-bucket concurrency. | `0` (Complete) |
 | `doctor` | `agentctl doctor` | Diagnostic inspect: displays detected stack, container wrapper, test command, and daily session budget. | `0` (Healthy) |
 | `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
-| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.29.0`). | `0` |
+| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.29.1`). | `0` |
 
 <br/>
 
@@ -361,6 +361,7 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | :--- | :--- | :--- | :---: |
 | **Onboarding & Stack Oracle Wizard** | `agentctl init --interactive` (`src/wizard-init.mjs`) | Zero-dependency interactive CLI wizard auto-detecting verification oracles, quota tiers, and preset workflows. | **v0.29.0** *(Shipped)* |
 | **Guided Task Authoring Subsystem** | `agentctl task create` (`src/wizard-task.mjs`) | Guided task authoring with TODO candidate harvesting, Shannon entropy secret scrubbing, and guardrail footer synthesis. | **v0.29.0** *(Shipped)* |
+| **P0 Remediation & Safety Alignment** | Queue, Task Envelope & Secrets (`src/wizard-task.mjs`) | Canonical queue path alignment (`.agent/jules-queue/`), path traversal guards, atomic writes, multiline secret scans, and JSON headers. | **v0.29.1** *(Shipped)* |
 | **PR Review Auto-Remediation Loop** | `agentctl review-repair` (`src/review-repair.mjs`) | Ingests GitHub PR review comments (`CHANGES_REQUESTED`), extracts line/file context, and dispatches automated OODA repair turns until reviewer comments are resolved. | **v0.27.0** *(Shipped)* |
 | **Multi-Provider Failover Router** | `createFailoverProvider` (`src/provider.mjs`) | Ordered router (`["jules", "claude-code", "local-mcp"]`) that seamlessly falls back to secondary LLMs on HTTP 429 rate limits or 5xx service unavailability. | **v0.27.0** *(Shipped)* |
 | **Telemetry & Audit Web Dashboard**| `agentctl dashboard` (`src/dashboard.mjs`) | Zero-dependency local HTTP server displaying real-time DAG execution graphs, Wilson-Score flaky test ledgers, and SHA-256 telemetry chains. | **v0.27.0** *(Shipped)* |
@@ -374,6 +375,7 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 ## 📖 Recipes, Documentation & Prior Art
 
 - [**Google Jules Official Documentation**](https://jules.google) — Official platform overview and API specifications for Google Jules.
+- [**v0.29.0 Implementation Audit Report**](./docs/V0.29.0_IMPLEMENTATION_AUDIT.md) — Comprehensive implementation audit and acceptance review.
 - [**Onboarding & Task Wizard Specification**](./docs/ONBOARDING_AND_TASK_WIZARD_SPEC.md) — Normative architecture specification for zero-dependency TUI, stack oracle, and guided task authoring.
 - [**Universal Polyglot Architecture & Zero-Test Specification**](./docs/UNIVERSAL_POLYGLOT_ARCHITECTURE.md) — Comprehensive technical report on boundary resolution, OODA math, and B2B workflows.
 - [**v0.27.0 Architectural Audit & Platform Evolution**](./docs/V0.27_ARCHITECTURAL_AUDIT_AND_EVOLUTION.md) — PR review remediation, failover router, and local dashboard specs.
