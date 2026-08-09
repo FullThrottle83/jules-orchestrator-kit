@@ -119,4 +119,12 @@ The orchestrator enforces standardized exit codes across all automation scripts 
 | `6` | High-confidence secret detected in patch diff (e.g. AWS/Stripe key). | Scrub leaked credentials from source code, revoke leaked key immediately. |
 | `7` | Daily quota cap reached (`dailyTasks: 300`). | Wait until next day UTC cycle or adjust `dailyTasks` limit in `.agent/config.yml`. |
 
+---
+
+## 8. Release Protocol & Automated Versioning
+
+Whenever bumping the package version in `package.json`:
+1. Document changes under `CHANGELOG.md`.
+2. Update version strings in `package.json` and `bin/agentctl.mjs`.
+3. Execute `npm run release` (or `node scripts/release.mjs`) to automate running unit tests, tagging git (`v<version>`), pushing to `origin`, and creating the official GitHub Release via `gh release create`.
 

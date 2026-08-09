@@ -58,6 +58,7 @@
     "jules:check-asset-integrity": "node scripts/asset-integrity-check.mjs",
     "jules:risk-tier": "node scripts/risk-tier.mjs",
     "jules:rules-lint": "node scripts/rules-lint.mjs",
+    "release": "node scripts/release.mjs",
     "lint": "eslint ."
   },
   "engines": {

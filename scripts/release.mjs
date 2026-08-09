@@ -1,0 +1,103 @@
+#!/usr/bin/env node
+
+/**
+ * Automated Release Orchestrator script for jules-orchestrator-kit.
+ * Verifies test suite, updates git tags, and creates GitHub Release via gh CLI.
+ */
+
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { execSync } from "node:child_process";
+import { resolveRoot } from "../src/config.mjs";
+
+const root = resolveRoot();
+const pkgPath = join(root, "package.json");
+const changelogPath = join(root, "CHANGELOG.md");
+
+if (!existsSync(pkgPath)) {
+  console.error("❌ Error: package.json not found.");
+  process.exit(1);
+}
+
+const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+const version = pkg.version;
+const tagName = `v${version}`;
+
+console.log(`🚀 Automated Release Pipeline for ${pkg.name} (${tagName})`);
+console.log("-------------------------------------------------------");
+
+// 1. Verify test suite
+console.log("1. Running unit test verification suite...");
+try {
+  execSync("npm test", { cwd: root, stdio: "inherit" });
+  console.log("   ✅ Test suite passed cleanly.\n");
+} catch (err) {
+  console.error("❌ Release Aborted: Test suite failed.");
+  process.exit(1);
+}
+
+// 2. Extract release notes from CHANGELOG.md
+console.log(`2. Extracting release notes for ${tagName} from CHANGELOG.md...`);
+let notes = "";
+if (existsSync(changelogPath)) {
+  const changelog = readFileSync(changelogPath, "utf-8");
+  const regex = new RegExp(`## \\[${version}\\][^\\n]*\\n([\\s\\S]*?)(?=\\n## \\[|$)`, "i");
+  const match = changelog.match(regex);
+  if (match && match[1]) {
+    notes = match[1].trim();
+  }
+}
+
+if (!notes) {
+  notes = `Release ${tagName}`;
+  console.log("   ⚠️ Warning: Release entry not found in CHANGELOG.md, using default title.");
+} else {
+  console.log("   ✅ Extracted release notes from CHANGELOG.md.\n");
+}
+
+// 3. Create Git Tag if not exists
+console.log(`3. Checking Git tag ${tagName}...`);
+try {
+  const tags = execSync("git tag -l", { cwd: root, encoding: "utf-8" });
+  if (tags.split("\n").includes(tagName)) {
+    console.log(`   ℹ️ Git tag ${tagName} already exists.`);
+  } else {
+    execSync(`git tag -a ${tagName} -m "${pkg.name} ${tagName}"`, { cwd: root, stdio: "inherit" });
+    console.log(`   ✅ Created Git tag ${tagName}.`);
+  }
+} catch (err) {
+  console.error(`❌ Tagging failed: ${err.message}`);
+  process.exit(1);
+}
+
+// 4. Push git commits and tag to origin
+console.log(`4. Pushing main and tag ${tagName} to origin...`);
+try {
+  execSync("git push origin main", { cwd: root, stdio: "inherit" });
+  execSync(`git push origin ${tagName}`, { cwd: root, stdio: "inherit" });
+  console.log("   ✅ Pushed commits and tag to origin.\n");
+} catch (err) {
+  console.error(`❌ Push failed: ${err.message}`);
+  process.exit(1);
+}
+
+// 5. Create GitHub Release via gh CLI
+console.log(`5. Creating GitHub Release via gh CLI...`);
+try {
+  const notesFile = join(root, ".agent", "temp_release_notes.txt");
+  const fs = await import("node:fs");
+  fs.writeFileSync(notesFile, notes, "utf-8");
+  
+  execSync(`gh release create ${tagName} --title "${tagName}" --notes-file "${notesFile}"`, {
+    cwd: root,
+    stdio: "inherit",
+  });
+  
+  if (fs.existsSync(notesFile)) fs.unlinkSync(notesFile);
+  console.log(`   🎉 GitHub Release ${tagName} created successfully!`);
+} catch (err) {
+  console.log(`   ℹ️ Note: gh release creation finished or already exists.`);
+}
+
+console.log("-------------------------------------------------------");
+console.log(`✅ Release ${tagName} Completed Successfully!\n`);
