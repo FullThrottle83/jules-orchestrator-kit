@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.1] - 2026-08-09
+### CI Linter Repair & Executive README Polish
+- **ESLint Fix (`src/merge-blocks.mjs`)**: Renamed unused `schemaType` parameter to `_schemaType` in `hashCrossLanguageInterface` signature, resolving ESLint `no-unused-vars` failure in CI.
+- **Executive README Polish (`README.md`)**: Updated README with intuitive 2-sentence mental model, universal quickstarts across 5 stack archetypes, feature comparison matrix, architecture diagrams, and v0.27+ roadmap in an authoritative enterprise tone.
+
 ## [0.26.0] - 2026-08-09
 ### Universal Polyglot Coverage, Zero-Test Bootstrapping & Container Execution Wrappers
 - **Universal Polyglot Stack Detector (`src/stack-detector.mjs`)**: Auto-detects 24+ tech ecosystems (PHP/Laravel/WP, .NET/C#/F#, Mobile Flutter/Swift/Dart/React-Native, Systems CMake/Cargo/Go/Make, Python, Node, Deno, Bun, Mix, Maven, Gradle, Bundler).

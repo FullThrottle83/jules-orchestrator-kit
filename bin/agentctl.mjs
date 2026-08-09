@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.26.0 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.26.1 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -45,7 +45,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.26.0");
+    console.log("agentctl v0.26.1");
     process.exit(0);
   }
 
