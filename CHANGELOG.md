@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [0.22.4] - 2026-08-09
+### Task DAG Executor with Cycle Detection & Interface Fingerprinting
+- **Task DAG Engine (`src/dag-engine.mjs`)**: Implemented native zero-dependency `DagExecutor` and `DagCycleError`. Resolves dependencies via Kahn's Topological Sort algorithm, computes SHA-256 output hashes (`node:crypto` + `node:fs`) post-task execution, enforces interface fingerprint matching on dependent task gates, and schedules ready tasks lexicographically for deterministic parallel execution.
+- **SDK Export (`index.mjs`)**: Exported `DagExecutor` and `DagCycleError` for SDK consumption.
+- **Unit Test Suite (`test/dag-engine.test.mjs`)**: Added test coverage asserting linear DAG execution order, diamond DAG concurrent dispatch, circular graph pre-execution cycle errors, interface fingerprinting gate validation, and lexicographical tie-breaking determinism.
+
 ## [0.22.3] - 2026-08-09
 ### Hermetic Network Egress Guard
 - **Hermetic Preload Guard (`src/preload-net-guard.mjs`)**: Intercepts and blocks unmocked network egress in test sub-processes without external npm dependencies by monkey-patching `globalThis.fetch`, `node:http.request`, `node:http.get`, `node:https.request`, and `node:https.get`.
