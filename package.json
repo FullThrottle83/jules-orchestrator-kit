@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.24.0",
+  "version": "1.0.0",
   "description": "Orchestration kit for running Google Jules autonomous agents.",
   "repository": {
     "type": "git",
@@ -23,20 +23,16 @@
     ".": "./index.mjs"
   },
   "files": [
-    "index.mjs",
-    "src/",
     "bin/",
+    "src/",
     "scripts/",
-    ".agent/jules.yml",
+    "index.mjs",
+    "LICENSE",
+    "README.md",
+    "JULES_RULES_TEMPLATE.md",
     ".agent/rules/",
     ".agent/prompts/",
-    ".agent/workflows/",
-    ".agent/jules-queue/README.md",
-    ".github/workflows/jules-audit.yml",
-    ".env.example",
-    "JULES_RULES_TEMPLATE.md",
-    "README.md",
-    "LICENSE"
+    ".agent/workflows/"
   ],
   "scripts": {
     "init": "node bin/init.js",

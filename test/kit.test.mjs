@@ -266,9 +266,10 @@ describe("Package Manifest Verification", () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), "package.json"), "utf-8"));
     assert.ok(Array.isArray(pkg.files));
     assert.equal(pkg.files.includes(".agent/"), false, ".agent/ wildcard MUST NOT be present to prevent publishing prompt logs");
-    assert.ok(pkg.files.includes(".agent/jules.yml"));
     assert.ok(pkg.files.includes(".agent/rules/"));
+    assert.ok(pkg.files.includes(".agent/prompts/"));
     assert.ok(pkg.files.includes(".agent/workflows/"));
+    assert.ok(pkg.files.includes("JULES_RULES_TEMPLATE.md"));
   });
 });
 

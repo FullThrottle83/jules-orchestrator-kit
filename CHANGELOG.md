@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
+## [1.0.0] - 2026-08-09
+### Official v1.0.0 Production Release & README Overhaul
+- **Official v1.0.0 Production Release**: Tagged official production release of `jules-orchestrator-kit` safety kernel for autonomous AI agent swarms.
+- **README.md Overhaul**: Complete rewrite featuring 3-plane ASCII architecture diagram (Governance, Execution, Kernel), quickstart CLI (`agentctl init`, `dispatch`, `gate`, `swarm`) and MCP client configurations (`agentctl-mcp`), configuration reference (`.agent/config.yml`), complete exit code reference table (Codes 0, 1, 2, 3, 4, 5, 6, 7, 8, 124, 188), and zero-trust security model.
+- **NPM Package Clean-up**: Updated `package.json` `files` field to publish only core binaries (`bin/`), runtime source (`src/`), orchestration scripts (`scripts/`), `index.mjs`, `LICENSE`, `README.md`, and core rules templates (`JULES_RULES_TEMPLATE.md`, `.agent/rules/`, `.agent/prompts/`, `.agent/workflows/`).
+
 ## [0.24.0] - 2026-08-09
 ### Mandatory v1.0.0 Bugfixes, Telemetry Resilience & Code Pruning
 - **Fixed Queue Runner Dispatch (`scripts/jules-queue-runner.mjs`, `src/engine.mjs`)**: Refactored queue runner and `run()` engine to actually dispatch tasks via `dispatch()` before relocating them to `completed/`. Supported dual invocation signatures `run(tasks, opts)` and `run(opts)`.
