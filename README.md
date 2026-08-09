@@ -36,6 +36,12 @@
 
 <br/>
 
+<p align="center">
+  <img src="docs/assets/hero-flow.svg" alt="Autonomous Orchestration Pipeline" width="100%" />
+</p>
+
+<br/>
+
 ---
 
 <br/>
@@ -72,6 +78,12 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
 * **📈 Proven Scale & Reliability:** Empirically tested with **224 unit tests across 55 suites passing in < 1.2s**, supporting 300+ daily agent sessions per repository.
+
+<br/>
+
+<p align="center">
+  <img src="docs/assets/security-shield.svg" alt="Zero-Trust Security & Reliability Guarantees" width="100%" />
+</p>
 
 <br/>
 
@@ -122,6 +134,12 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 | **Zero-Test Bootstrapping**| ❌ Halts without verification oracle | ❌ Fails build if no tests exist | ✅ **Instant Oracle Synthesis** (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`) |
 | **Secret Leak Prevention**| ❌ Prone to leaking tokens in diffs | 🟡 Post-push secret scanning alerts | ✅ **Pre-Dispatch & Pre-Commit Diff Scanner** (Blocks CVEs/keys before PR creation) |
 | **Dependency Footprint** | ❌ Requires heavy SDKs & parsers | 🟡 Many external actions & plugins | ✅ **0 Native Dependencies** (100% Node.js 20+ ESM built-ins) |
+
+<br/>
+
+<p align="center">
+  <img src="docs/assets/tier-presets.svg" alt="Subscription Tier Allocation Matrix" width="100%" />
+</p>
 
 <br/>
 
@@ -229,8 +247,22 @@ Ecosystems Natively Supported by src/stack-detector.mjs:
 
 <br/>
 
+<p align="center">
+  <img src="docs/assets/architecture-layers.svg" alt="Control Plane Architecture Layers" width="100%" />
+</p>
+
+<br/>
+
 ### 1. The Autonomous OODA Verification Loop
 Every task dispatched to `jules-orchestrator-kit` executes within an immutable, fail-closed verification loop:
+
+<br/>
+
+<p align="center">
+  <img src="docs/assets/ooda-loop-cycle.svg" alt="Self-Healing OODA Repair Loop & Thrash Breaker" width="100%" />
+</p>
+
+<br/>
 
 ```mermaid
 flowchart TD
@@ -262,6 +294,28 @@ flowchart TD
     D1 --> E["Synthesize POSIX Subshell Verification Plan<br/><code>(cd backend && pytest) && (cd cli && cargo test)</code>"]
     D2 --> E
 ```
+
+<br/>
+
+### 3. Multi-Agent Parallel Swarm Topology
+Run concurrent agents across parallel worktree slots with AST/JSON 3-way merging:
+
+<br/>
+
+<p align="center">
+  <img src="docs/assets/swarm-topology.svg" alt="Multi-Agent Parallel Swarm Topology" width="100%" />
+</p>
+
+<br/>
+
+### 4. Model Context Protocol (MCP) Integration
+Native stdio server exposing task dispatch, gate verification, and risk auditing to client tools (Antigravity, Claude, Cursor):
+
+<br/>
+
+<p align="center">
+  <img src="docs/assets/mcp-integration.svg" alt="Model Context Protocol (MCP) Integration" width="100%" />
+</p>
 
 <br/>
 
