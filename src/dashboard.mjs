@@ -32,7 +32,7 @@ export function getDashboardHtml(root = process.cwd()) {
   </style>
 </head>
 <body>
-  <h1>🚀 jules-orchestrator-kit Dashboard (v0.29.0)</h1>
+  <h1>🚀 jules-orchestrator-kit Dashboard (v0.29.1)</h1>
   <div class="subtitle">Repository: <code>${root}</code></div>
 
   <div class="grid">
@@ -87,7 +87,7 @@ export function createDashboardServer({ root = process.cwd(), port: _port = 4100
 
     if (url.pathname === "/api/status") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      return res.end(JSON.stringify({ ok: true, version: "0.29.0", root, ts: new Date().toISOString() }));
+      return res.end(JSON.stringify({ ok: true, version: "0.29.1", root, ts: new Date().toISOString() }));
     }
 
     if (url.pathname === "/api/telemetry") {

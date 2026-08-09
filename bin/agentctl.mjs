@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.29.0 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.29.1 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -54,7 +54,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.29.0");
+    console.log("agentctl v0.29.1");
     process.exit(0);
   }
 
@@ -265,7 +265,7 @@ async function main() {
     }
 
     case "doctor": {
-      console.log(`\n🔍 agentctl System Diagnostics (v0.29.0)`);
+      console.log(`\n🔍 agentctl System Diagnostics (v0.29.1)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);
@@ -401,7 +401,7 @@ async function main() {
     case "status": {
       const queueDir = getQueueDir(root);
       const files = existsSync(queueDir) ? readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir)) : [];
-      console.log(`\n📊 agentctl Status Summary (v0.29.0)`);
+      console.log(`\n📊 agentctl Status Summary (v0.29.1)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Pending Tasks    : ${files.length}`);

@@ -1,8 +1,25 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseYaml } from "./config.mjs";
 import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
+
+/**
+ * Write a file atomically using a temporary file and atomic rename.
+ * @param {string} filePath
+ * @param {string} content
+ */
+function writeAtomic(filePath, content) {
+  const tmpPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  const fd = openSync(tmpPath, "w");
+  try {
+    writeFileSync(fd, content, "utf-8");
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmpPath, filePath);
+}
 
 export const TIER_PROFILES = {
   free: {
@@ -71,21 +88,30 @@ export function planInit(root = process.cwd(), options = {}) {
   const tierName = options.tier || "pro";
   const limits = TIER_PROFILES[tierName] || TIER_PROFILES.pro;
 
+  // Preserve existing config if present
+  let existingConfig = {};
+  const existingConfigPath = join(root, ".agent", "config.yml");
+  if (existsSync(existingConfigPath)) {
+    try {
+      existingConfig = parseYaml(readFileSync(existingConfigPath, "utf-8")) || {};
+    } catch (_) {}
+  }
+
   const verify = {
-    test: options.testCmd || oracle.candidates.testCmd || "",
-    build: options.buildCmd || oracle.candidates.buildCmd || "",
-    lint: options.lintCmd || oracle.candidates.lintCmd || "",
-    typecheck: options.typecheckCmd || oracle.candidates.typecheckCmd || "",
+    test: options.testCmd || existingConfig.verify?.test || oracle.candidates.testCmd || "",
+    build: options.buildCmd || existingConfig.verify?.build || oracle.candidates.buildCmd || "",
+    lint: options.lintCmd || existingConfig.verify?.lint || oracle.candidates.lintCmd || "",
+    typecheck: options.typecheckCmd || existingConfig.verify?.typecheck || oracle.candidates.typecheckCmd || "",
   };
 
-  const selectedPresets = options.presets || ["nightly-security-audit", "flaky-test-quarantine"];
+  const selectedPresets = options.presets || existingConfig.presets || ["nightly-security-audit", "flaky-test-quarantine"];
 
   const configYaml = `# Google Jules Orchestrator Kit Config (v0.29.0)
 version: 1
-provider: jules
+provider: ${existingConfig.provider || "jules"}
 tier: ${tierName}
-base_branch: ${options.baseBranch || "main"}
-branch_prefix: agent/
+base_branch: ${options.baseBranch || existingConfig.base_branch || "main"}
+branch_prefix: ${existingConfig.branch_prefix || "agent/"}
 
 limits:
   concurrency: ${limits.concurrency}
@@ -161,6 +187,10 @@ export function loadPresets(root = process.cwd()) {
 export async function runInitWizard(root = process.cwd(), options = {}) {
   const interactive = options.interactive !== false && isTTY(options.stdin || process.stdin);
 
+  if (!interactive && !options.allowDefaults && !options.tier) {
+    throw new Error("Non-interactive init requires explicit options or allowDefaults: true");
+  }
+
   let selectedTier = options.tier || "pro";
   let testCmd = options.testCmd;
   let buildCmd = options.buildCmd;
@@ -232,8 +262,8 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
   const configPath = join(agentDir, "config.yml");
   const julesPath = join(agentDir, "jules.yml");
 
-  writeFileSync(configPath, plan.configYaml, "utf-8");
-  writeFileSync(julesPath, plan.julesYaml, "utf-8");
+  writeAtomic(configPath, plan.configYaml);
+  writeAtomic(julesPath, plan.julesYaml);
 
   return {
     ok: true,

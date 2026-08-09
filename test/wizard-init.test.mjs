@@ -65,4 +65,45 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("planInit preserves existing config fields upon re-initialization", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-preserve-"));
+    try {
+      const agentDir = join(tmpDir, ".agent");
+      mkdirSync(agentDir, { recursive: true });
+      writeFileSync(
+        join(agentDir, "config.yml"),
+        "version: 1\nprovider: custom-jules\nbranch_prefix: custom-agent/\nbase_branch: develop\n"
+      );
+
+      const plan = planInit(tmpDir, { tier: "enterprise", testCmd: "npm test" });
+      assert.equal(plan.tier, "enterprise");
+      assert.ok(plan.configYaml.includes("provider: custom-jules"));
+      assert.ok(plan.configYaml.includes("branch_prefix: custom-agent/"));
+      assert.ok(plan.configYaml.includes("base_branch: develop"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("runInitWizard in non-TTY mode throws error if required parameters are missing and allowDefaults is false", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-nontty-fail-"));
+    const mockStdin = new PassThrough();
+    const mockStdout = new PassThrough();
+
+    try {
+      await assert.rejects(
+        async () => {
+          await runInitWizard(tmpDir, {
+            interactive: false,
+            stdin: mockStdin,
+            stdout: mockStdout,
+          });
+        },
+        /Non-interactive init requires explicit options/
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

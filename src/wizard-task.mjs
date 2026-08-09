@@ -1,8 +1,9 @@
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { resolve } from "node:path";
 import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
 import { scanDiff, shannonEntropy } from "./security.mjs";
+import { getQueueDir } from "./state.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
 import { select, input, confirm, spinner, isTTY } from "./tui.mjs";
 
@@ -15,6 +16,8 @@ HARD CONSTRAINTS:
 - Read-Before-Write: Inspect existing symbol signatures, definitions, and call sites before making edits.
 - BEFORE opening the PR: Run \`git fetch origin main && git rebase origin/main\`, then re-verify.
 `;
+
+const TRIVIAL_ORACLES = new Set(["true", "echo", ":", "false", "exit 0", "exit 1", "echo ok"]);
 
 /**
  * Pure planning core for task creation & envelope synthesis.
@@ -29,7 +32,6 @@ HARD CONSTRAINTS:
  *   verifyCmd: string,
  *   flags: { autoPr: boolean, requirePlanApproval: boolean, repoless: boolean, startingBranch: string },
  *   secretFindings: Array<any>,
- *   gateResult: object,
  *   taskFileContent: string
  * }}
  */
@@ -38,28 +40,37 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
 
   const title = inputObj.title || "Agent Task";
   const rawPrompt = inputObj.prompt || "";
-  const verifyCmd = inputObj.verifyCmd || config.verify.test || config.verify.build || "";
+  const verifyCmd = (inputObj.verifyCmd || config.verify.test || config.verify.build || "").trim();
 
   // 1. Falsifiability check
   if (!rawPrompt.trim()) {
     throw new Error("Task prompt cannot be empty.");
   }
-  if (!verifyCmd && !inputObj.allowUnverifiable) {
+  const cleanCmd = verifyCmd.toLowerCase().replace(/['"]/g, "").trim();
+  if ((!verifyCmd || TRIVIAL_ORACLES.has(cleanCmd)) && !inputObj.allowUnverifiable) {
     throw new Error(
-      "Unfalsifiable Task Rejected: Task must include a concrete verification test/build command. Configure verify.test in .agent/config.yml or pass --verify-cmd."
+      "Unfalsifiable Task Rejected: Task must include a non-trivial verification test/build command. Configure verify.test in .agent/config.yml or pass --verify-cmd."
     );
   }
 
-  // 2. Secret Scrubbing Preflight
+  // 2. Secret Scrubbing Preflight (multiline diff formatting)
   const secretFindings = [];
-  const secretScan = scanDiff(`+${rawPrompt}`);
+  const multilineDiff = rawPrompt.split("\n").map((line) => `+${line}`).join("\n");
+  const secretScan = scanDiff(multilineDiff);
   if (!secretScan.ok) {
-    secretScan.findings.forEach((f) => secretFindings.push(f));
+    secretScan.findings.forEach((f) => secretFindings.push({ id: f.type || f.id || "SECRET_LEAK", ...f }));
   }
   if (shannonEntropy(rawPrompt) > 4.5 && !inputObj.allowHighEntropy) {
     secretFindings.push({ id: "HIGH_ENTROPY_PROMPT", line: 1 });
   }
 
+  // High-confidence secrets cannot be bypassed
+  const highConfidenceFindings = secretFindings.filter((f) => f.id !== "HIGH_ENTROPY_PROMPT");
+  if (highConfidenceFindings.length > 0) {
+    throw new Error(
+      `Pre-Dispatch Secret Leak Blocked: Prompt contains ${highConfidenceFindings.length} high-confidence secret finding(s). High-confidence credentials cannot be bypassed.`
+    );
+  }
   if (secretFindings.length > 0 && !inputObj.allowSecrets) {
     throw new Error(
       `Pre-Dispatch Secret Leak Blocked: Prompt contains potential secrets or credentials (${secretFindings.length} finding(s)). Scrub keys before dispatching.`
@@ -74,7 +85,11 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
     startingBranch: inputObj.startingBranch || config.baseBranch || "main",
   };
 
-  // 4. Prompt Envelope & Guardrail Footer Synthesis
+  // 4. Task ID Sanitization (Path Traversal Guard)
+  const rawId = inputObj.id || `TASK-${Date.now().toString(36).toUpperCase()}`;
+  const taskId = String(rawId).replace(/[^a-zA-Z0-9_-]/g, "_");
+
+  // 5. Prompt Envelope & Guardrail Footer Synthesis
   const fullPrompt = `[TASK INSTRUCTIONS]
 ${rawPrompt}
 
@@ -83,9 +98,16 @@ Test/Verification Command: ${verifyCmd || "(None)"}
 
 ${GUARDRAIL_FOOTER}`;
 
-  const taskId = inputObj.id || `TASK-${Date.now().toString(36).toUpperCase()}`;
+  const envelopeMetadata = {
+    version: 1,
+    id: taskId,
+    title,
+    flags,
+    verifyCmd,
+  };
 
-  const taskFileContent = `# ${title}
+  const taskFileContent = `<!-- JULES_TASK_ENVELOPE: ${JSON.stringify(envelopeMetadata)} -->
+# ${title}
 # Task ID: ${taskId}
 # Auto-PR: ${flags.autoPr} | Plan Approval: ${flags.requirePlanApproval} | Repoless: ${flags.repoless}
 
@@ -173,16 +195,24 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
   // Perform Gate Preflight
   const gateRes = await gate({ root, mode: "working-tree" });
   if (!gateRes.ok && (gateRes.code === 3 || gateRes.code === 6) && !options.allowGateFailure) {
-    throw new Error(`Gate Preflight Rejected Task: Repository contains scope or secret violations (Exit ${gateRes.code}).`);
+    // Filter out uncommitted .agent/ config scope warnings if user initialized locally
+    const realViolations = gateRes.phases[0]?.violations?.filter((v) => !v.file.startsWith(".agent/")) || [];
+    if (realViolations.length > 0 || gateRes.code === 6) {
+      throw new Error(`Gate Preflight Rejected Task: Repository contains scope or secret violations (Exit ${gateRes.code}).`);
+    }
   }
 
-  // Write Task File to .agent/queue/
-  const queueDir = join(root, ".agent", "queue");
+  // Write Task File to canonical queue directory (getQueueDir)
+  const queueDir = getQueueDir(root);
   if (!existsSync(queueDir)) {
     mkdirSync(queueDir, { recursive: true });
   }
 
-  const taskFile = join(queueDir, `${plan.taskId}.md`);
+  const taskFile = resolve(queueDir, `${plan.taskId}.md`);
+  if (!taskFile.startsWith(resolve(queueDir))) {
+    throw new Error("Task ID path traversal blocked.");
+  }
+
   writeFileSync(taskFile, plan.taskFileContent, "utf-8");
 
   return {

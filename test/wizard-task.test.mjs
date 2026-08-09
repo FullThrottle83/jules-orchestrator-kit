@@ -68,7 +68,57 @@ test("Guided Task Authoring Subsystem", async (t) => {
     }
   });
 
-  await t.test("runTaskCreateWizard in non-TTY mode generates .agent/queue/TASK-xxx.md", async () => {
+  await t.test("planTaskCreate detects multiline secrets and blocks high-confidence credentials unconditionally", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-task-multiline-secret-"));
+    try {
+      // Secret on line 2
+      const multilinePrompt = "Line 1: Normal instruction text\nLine 2: AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+      assert.throws(
+        () => {
+          planTaskCreate(tmpDir, { title: "Multiline Secret Task", prompt: multilinePrompt, verifyCmd: "npm test" });
+        },
+        /Pre-Dispatch Secret Leak Blocked/
+      );
+
+      // High confidence secret cannot be bypassed with allowSecrets: true
+      assert.throws(
+        () => {
+          planTaskCreate(tmpDir, {
+            title: "Bypass Secret Task",
+            prompt: multilinePrompt,
+            verifyCmd: "npm test",
+            allowSecrets: true,
+          });
+        },
+        /High-confidence credentials cannot be bypassed/
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("planTaskCreate rejects trivial verification oracles", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-task-trivial-"));
+    try {
+      assert.throws(
+        () => {
+          planTaskCreate(tmpDir, { title: "Trivial Task", prompt: "Do something", verifyCmd: "true" });
+        },
+        /Unfalsifiable Task Rejected/
+      );
+
+      assert.throws(
+        () => {
+          planTaskCreate(tmpDir, { title: "Trivial Task 2", prompt: "Do something", verifyCmd: "echo ok" });
+        },
+        /Unfalsifiable Task Rejected/
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("runTaskCreateWizard generates task in canonical jules-queue directory with path traversal guard and JSON envelope", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "jules-task-wizard-"));
     const mockStdin = new PassThrough();
     const mockStdout = new PassThrough();
@@ -85,15 +135,19 @@ test("Guided Task Authoring Subsystem", async (t) => {
         interactive: false,
         title: "Test Queue Task",
         prompt: "Verify task queue creation",
-        verifyCmd: "node -v",
+        verifyCmd: "npm test",
+        id: "../../traversal-task",
         stdin: mockStdin,
         stdout: mockStdout,
       });
 
       assert.equal(res.ok, true);
+      assert.ok(res.taskFile.includes(".agent/jules-queue"));
       assert.ok(existsSync(res.taskFile));
+
       const content = readFileSync(res.taskFile, "utf-8");
-      assert.ok(content.includes("Test Queue Task"));
+      assert.ok(content.includes("JULES_TASK_ENVELOPE"));
+      assert.ok(content.includes("traversal-task"));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

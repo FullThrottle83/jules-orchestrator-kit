@@ -41,6 +41,13 @@ export function styleText(text, style) {
   return `${style}${text}${ANSI.reset}`;
 }
 
+export class WizardCancelledError extends Error {
+  constructor(message = "Wizard cancelled by user") {
+    super(message);
+    this.name = "WizardCancelledError";
+  }
+}
+
 /**
  * Read keypress in raw mode from TTY input stream.
  * @param {import("node:stream").Readable} stream
@@ -60,7 +67,7 @@ async function* readKeypresses(stream = process.stdin) {
       if (str === "\u0003") {
         // Ctrl+C SIGINT
         process.stdout.write(ANSI.showCursor + "\n");
-        process.exit(130);
+        throw new WizardCancelledError("Wizard operation cancelled by user (SIGINT).");
       }
       yield str;
     }

@@ -13,7 +13,7 @@ export const HIGH_CONFIDENCE_PATTERNS = [
 
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bASIA[0-9A-Z]{16}\b/g,
-  /\baws_secret_access_key\s*=\s*['"]?[A-Za-z0-9\/+=]{40}['"]?/g,
+  /\baws_secret_access_key\s*=\s*['"]?[A-Za-z0-9\/+=]{40}['"]?/gi,
 
   /-----BEGIN (?:RSA|DSA|EC|OPENSSH|PRIVATE)(?:\s+PRIVATE)? KEY-----[\s\S]*?-----END (?:RSA|DSA|EC|OPENSSH|PRIVATE)(?:\s+PRIVATE)? KEY-----/g,
   /PuTTY-User-Key-File-[0-9]:[^\n]+/g,

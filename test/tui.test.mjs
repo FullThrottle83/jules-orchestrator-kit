@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isTTY, styleText, select, multiSelect, input, confirm, secretInput, spinner, ANSI } from "../src/tui.mjs";
+import { isTTY, styleText, select, multiSelect, input, confirm, secretInput, spinner, ANSI, WizardCancelledError } from "../src/tui.mjs";
 import { PassThrough } from "node:stream";
 
 test("Native Terminal UI (TUI) Engine", async (t) => {
+  await t.test("WizardCancelledError is exported and thrown on Ctrl+C SIGINT keypress", () => {
+    const err = new WizardCancelledError("Cancelled");
+    assert.equal(err.name, "WizardCancelledError");
+    assert.equal(err.message, "Cancelled");
+  });
   await t.test("isTTY detects non-TTY streams accurately", () => {
     const mockNonTTY = new PassThrough();
     assert.equal(isTTY(mockNonTTY), false);

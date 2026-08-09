@@ -46,14 +46,8 @@ export function isTaskFile(fileName, queueDirOrContent = null) {
       }
       if (typeof content === "string") {
         const trimmed = content.trimStart();
-        if (trimmed.startsWith("---")) {
-          const endFm = trimmed.indexOf("\n---", 3);
-          if (endFm !== -1) {
-            const frontMatter = trimmed.slice(3, endFm);
-            if (/(?:taskId|envelopeId|baseRef|baseSha|task|title|id|version|capabilities|scope|verify):/i.test(frontMatter)) {
-              return true;
-            }
-          }
+        if (trimmed.includes("JULES_TASK_ENVELOPE") || trimmed.includes("# Task ID:") || trimmed.startsWith("---")) {
+          return true;
         }
       }
     } catch (_) {}

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.1] - 2026-08-10
+### P0 Remediation & Queue Architecture Alignment
+- **Canonical Queue Alignment (`src/wizard-task.mjs`)**: Updated `runTaskCreateWizard()` to write generated task files to canonical `getQueueDir(root)` (`.agent/jules-queue/`) rather than unread `.agent/queue/` directory.
+- **Task ID Path Traversal Guard (`src/wizard-task.mjs`)**: Enforced strict task ID sanitization (`/[^a-zA-Z0-9_-]/g`) and path containment verification preventing directory traversal attacks via custom task IDs.
+- **Atomic Writes & Config Preservation (`src/wizard-init.mjs`)**: Implemented atomic write operations (`tmp` file + `fsync` + `renameSync`) for `.agent/config.yml` and `.agent/jules.yml`. Merges and preserves pre-existing custom config fields upon re-initialization.
+- **Non-TTY Headless Guard (`src/wizard-init.mjs`)**: Enforced explicit error when running `runInitWizard()` in non-TTY mode without explicit parameters or `allowDefaults: true`.
+- **Multiline Secret Scanning & Unconditional Block (`src/wizard-task.mjs`)**: Prepend `+` to all prompt lines when calling `scanDiff()` to prevent multiline credential bypasses. Removed bypass parameter for high-confidence secrets.
+- **Strict Falsifiability Verification (`src/wizard-task.mjs`)**: Rejected trivial verification commands (`true`, `echo`, `:`, `false`) to enforce non-trivial evaluable verification predicates.
+- **JSON Envelope Header (`src/wizard-task.mjs`, `src/engine.mjs`)**: Appended `<!-- JULES_TASK_ENVELOPE: ... -->` header to synthesized Markdown task files and updated `isTaskFile()` to parse queue metadata.
+- **TUI Exception Safety (`src/tui.mjs`)**: Replaced direct `process.exit(130)` calls with `WizardCancelledError` exception throwing to allow proper cleanup by SDK host processes.
+
 ## [0.29.0] - 2026-08-10
 ### Onboarding, Stack Oracle & Guided Task Authoring Subsystem
 - **Native Terminal UI (TUI) Engine (`src/tui.mjs`)**: Added zero-third-party-dependency TUI primitives built on `node:readline/promises`, `node:tty` (`setRawMode(true)`), and ANSI escape sequences, including single-select menus, multi-select checkboxes, validated text inputs, secret inputs, confirmation prompts, spinners, and non-TTY headless fallbacks.
