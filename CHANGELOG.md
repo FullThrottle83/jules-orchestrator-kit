@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.2] - 2026-08-09
+### Triage Guidelines & Playwright Quickstart Addition
+- **Triage Guidelines (`README.md`)**: Added explicit "When to Use vs. When NOT to Use" section detailing ideal tasks (unit-tested fixes, type migrations, CVE bumps, refactoring) and out-of-scope tasks (unverifiable visual UI tweaks, closed proprietary platforms, unmocked live cloud APIs).
+- **Playwright Frontend Quickstart (`README.md`)**: Added Playwright E2E testing quickstart recipe demonstrating how visual/UI tasks can be made falsifiable via headless browser snapshot tests.
+
 ## [0.26.1] - 2026-08-09
 ### CI Linter Repair & Executive README Polish
 - **ESLint Fix (`src/merge-blocks.mjs`)**: Renamed unused `schemaType` parameter to `_schemaType` in `hashCrossLanguageInterface` signature, resolving ESLint `no-unused-vars` failure in CI.

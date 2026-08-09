@@ -19,11 +19,11 @@
 <p align="center">
   <a href="#-2-sentence-mental-model">💡 What is Kit?</a> •
   <a href="#-universal-30-second-quickstart-zero-to-verified-pr">⚡ 30s Quickstart</a> •
+  <a href="#-triage-guidelines-when-to-use-vs-when-not-to-use">🎯 Triage Guidelines</a> •
   <a href="#-feature-comparison-matrix">📊 Comparison Matrix</a> •
   <a href="#-system-architecture--visual-diagrams">🏛️ Architecture</a> •
   <a href="#-cli-command-reference-agentctl">🛠️ CLI Reference</a> •
-  <a href="#-v027-next-gen-feature-roadmap">🗺️ Roadmap</a> •
-  <a href="./docs/UNIVERSAL_POLYGLOT_ARCHITECTURE.md">📖 Polyglot Spec</a>
+  <a href="#-v027-next-gen-feature-roadmap">🗺️ Roadmap</a>
 </p>
 
 </div>
@@ -49,6 +49,25 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 - **📂 Scoped Monorepo Boundary Resolver:** Statically maps changed files up directory ancestry to invoke isolated subshell test suites (`(cd backend && pytest) && (cd cli && cargo test)`), eliminating global test thrashing.
 - **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 - **📈 Proven Scale & Reliability:** Empirically tested with **221 unit tests across 54 suites passing in < 1.2s**, supporting 300+ daily agent sessions per repository.
+
+---
+
+## 🎯 Triage Guidelines: When to Use vs. When NOT to Use
+
+To ensure maximum merge success, dispatch tasks according to our deterministic triage boundaries:
+
+### 🟢 Ideal Tasks for Autonomous Swarms
+- ✅ **Scoped Code Changes & Bug Fixes:** Well-defined objectives mechanically verifiable via unit tests (`npm test`, `pytest`, `cargo test`, `dotnet test`).
+- ✅ **Type & Linter Migrations:** TypeScript strict mode fixes, PHP 8.3 type hint additions, or Python MyPy type annotation passes.
+- ✅ **Dependency Bumps & Security Audits:** Remediating CVEs in lockfiles (`package.json`, `Cargo.toml`, `composer.json`) with hermetic test verification.
+- ✅ **Refactoring Legacy Codebases:** Modularizing backend routes, API controllers, or database query layers.
+- ✅ **Visual & E2E Testing (via Playwright):** UI changes paired with automated headless Playwright snapshot tests (`npx playwright test`).
+
+### 🔴 When NOT to Use (Out of Scope)
+- ❌ **Unverifiable Visual UI Tweaks:** Pixel-perfect CSS/Tailwind adjustments lacking automated visual regression tests (agents cannot "see" raw browser output without Playwright).
+- ❌ **Closed Proprietary Platforms Without CLI:** Systems lacking local CLI tools or git repositories (e.g., Salesforce, Webflow, closed SAP backends).
+- ❌ **Unmocked Live Cloud Systems:** Code requiring live connections to 10+ external cloud APIs without local emulators or mocks.
+- ❌ **Protected Infrastructure Paths:** Direct edits to `.github/workflows/`, production deployment keys, or agent security gate rules (enforced fail-closed by `Agent Scope Guard`).
 
 ---
 
@@ -100,7 +119,14 @@ npx jules-orchestrator-kit dispatch --title "Implement OrderService caching" \
   --prompt "Add IMemoryCache caching to OrderService.cs with xUnit coverage."
 ```
 
-### 5️⃣ Polyglot Monorepo (FastAPI + React + Rust CLI)
+### 5️⃣ UI / Frontend E2E (Playwright)
+```bash
+# Dispatch frontend task verified via headless Playwright E2E tests
+npx jules-orchestrator-kit dispatch --title "Add Dark Mode Toggle Component" \
+  --prompt "Create ThemeToggle component in src/components/ThemeToggle.tsx and verify via npx playwright test."
+```
+
+### 6️⃣ Polyglot Monorepo (FastAPI + React + Rust CLI)
 ```bash
 # Run a parallel worktree swarm; changed files automatically route to scoped subproject tests
 npx jules-orchestrator-kit swarm
@@ -189,7 +215,7 @@ In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFil
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
 | `init` | `agentctl init` | Scaffolds `.agent/` directory structure and default `.agent/config.yml`. | `0` (Created) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
-| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.26.0`). | `0` |
+| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.26.1`). | `0` |
 
 ---
 
