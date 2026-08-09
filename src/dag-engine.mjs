@@ -14,23 +14,50 @@ export class DagCycleError extends Error {
 }
 
 /**
- * Zero-Dependency Task DAG Executor with cycle detection and interface fingerprinting.
+ * Wraps an async runner function with a timeout (default 15 minutes = 900,000 ms).
+ * @param {Function} runner
+ * @param {number} [timeoutMs=900000]
+ * @returns {Promise<any>}
+ */
+export async function withTaskTimeout(runner, timeoutMs = 15 * 60 * 1000) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Task execution timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([runner(), timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Zero-Dependency Task DAG Executor with cycle detection, interface fingerprinting, and execution freezing.
  */
 export class DagExecutor {
-  constructor({ concurrency = 4 } = {}) {
+  constructor({ concurrency = 4, taskTimeout = 15 * 60 * 1000 } = {}) {
     this.concurrency = concurrency;
+    this.taskTimeout = taskTimeout;
     this.tasks = new Map();
+    this.isExecuting = false;
   }
 
   /**
-   * Registers a task into the DAG.
+   * Registers a task into the DAG. Throws if called after execution has started.
    * @param {Object} task
    * @param {string} task.id
    * @param {string[]} [task.dependsOn=[]]
    * @param {string[]} [task.outputs=[]]
    * @param {Function} [task.runner]
+   * @param {number} [task.timeout]
    */
-  addTask({ id, dependsOn = [], outputs = [], runner }) {
+  addTask({ id, dependsOn = [], outputs = [], runner, timeout }) {
+    if (this.isExecuting) {
+      throw new Error("Cannot add task after execution has started");
+    }
     if (!id || typeof id !== "string") {
       throw new Error("Task id must be a non-empty string");
     }
@@ -42,6 +69,7 @@ export class DagExecutor {
       dependsOn: Array.isArray(dependsOn) ? [...dependsOn] : [],
       outputs: Array.isArray(outputs) ? [...outputs] : [],
       runner: runner || (async () => {}),
+      timeout,
     });
   }
 
@@ -171,8 +199,10 @@ export class DagExecutor {
    * Executes tasks in topological order with parallel concurrency and interface fingerprinting.
    * @param {Object} [options]
    * @param {number} [options.concurrency]
+   * @param {number} [options.taskTimeout]
    */
-  async execute({ concurrency = this.concurrency } = {}) {
+  async execute({ concurrency = this.concurrency, taskTimeout = this.taskTimeout } = {}) {
+    this.isExecuting = true;
     const { dependents } = this.validateDag();
 
     const completed = new Set();
@@ -221,7 +251,7 @@ export class DagExecutor {
             for (const depId of task.dependsOn) {
               const depTask = this.tasks.get(depId);
               for (const outputFile of depTask.outputs) {
-                const expectedHash = fingerprints.get(outputFile);
+                const expectedHash = fingerprints.get(`${depId}:${outputFile}`) ?? fingerprints.get(outputFile);
                 const actualHash = this._computeFileHash(outputFile);
                 if (expectedHash !== actualHash) {
                   throw new Error(
@@ -239,16 +269,22 @@ export class DagExecutor {
           (async () => {
             try {
               executionHistory.push(taskId);
-              await task.runner({
-                id: task.id,
-                dependsOn: task.dependsOn,
-                outputs: task.outputs,
-                fingerprints,
-              });
+              const timeoutMs = task.timeout || taskTimeout;
+              await withTaskTimeout(
+                () =>
+                  task.runner({
+                    id: task.id,
+                    dependsOn: task.dependsOn,
+                    outputs: task.outputs,
+                    fingerprints,
+                  }),
+                timeoutMs
+              );
 
-              // Post-task Interface Fingerprinting
+              // Post-task Interface Fingerprinting (keyed by taskId:filePath and filePath alias)
               for (const outputFile of task.outputs) {
                 const hash = this._computeFileHash(outputFile);
+                fingerprints.set(`${taskId}:${outputFile}`, hash);
                 fingerprints.set(outputFile, hash);
               }
 

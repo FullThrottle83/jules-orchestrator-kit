@@ -40,11 +40,13 @@ test("Integration Safety & Lock/Reaper Edge Cases (Kernel Integration Fixes)", a
   });
 
   await t.test("b) Live PID with matching start time is NOT reaped by reapOrphanedIntents", () => {
+    // eslint-disable-next-line no-unused-vars
     const stateDir = getStateDir(tmpRoot);
     const lockDir = getLockDir(tmpRoot);
     const pid = process.pid;
     const startTime = getProcessStartTime(pid);
 
+    // eslint-disable-next-line no-unused-vars
     const opId = journalIntent(tmpRoot, { type: "test_op", path: "some/path" });
 
     const lockFile = join(lockDir, "test-task.json");

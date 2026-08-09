@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
+## [0.22.9] - 2026-08-09
+### Non-JSON Indentation-Block Structural Merger & Verification Chain
+- **Block Chunker & Merger (`src/merge-blocks.mjs`)**: Implemented `chunkBlocks` parsing column-0 declaration boundaries (`export`, `function`, `class`, `const`, `def`, etc.) with SHA-1 hashing, and `mergeBlocks3Way` performing 3-way block classification (`IDENTICAL`, `ONLY_OURS`, `ONLY_THEIRS`, `ADDED_OURS`, `ADDED_THEIRS`, `DELETED`, `CONFLICT_EDIT_EDIT`) with standard conflict markers.
+- **Syntax Verification Chain (`src/merge-verify.mjs`)**: Implemented `mergeVerifyChain` validating merged outputs via `node --check`, `tsc --noEmit` (if `tsconfig.json` exists), and `python3 -m py_compile`.
+- **DAG Engine Hardening (`src/dag-engine.mjs`)**: Added registration freezing on `execute()`, `withTaskTimeout` per-task execution limits, and keyed output fingerprints (`${taskId}:${filePath}`).
+- **Unit Test Suite (`test/merge-blocks.test.mjs`)**: Added tests asserting disjoint JS function additions, overlapping edit conflict generation, and post-execution `addTask()` rejection.
+
 ## [0.22.8] - 2026-08-09
 ### Statistical Flaky Test Quarantine & Ledger (Exit Code 8)
 - **Flaky Test Ledger (`src/flaky-ledger.mjs`)**: Added `recordVerifyRun` appending run records to `.agent/state/flaky.jsonl` and `readVerifyRuns` / `getVerifyRuns` for reading stored run records. Implemented `flakyVerdict` evaluating sliding window of last $n \le 10$ runs to categorize tests (`HEALTHY`, `REPAIRABLE_REGRESSION`, `INSUFFICIENT_DATA`, or `QUARANTINED`).

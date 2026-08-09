@@ -9,7 +9,7 @@ import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 
-export { recordVerifyRun, readVerifyRuns, flakyVerdict };
+export { recordVerifyRun, readVerifyRuns, flakyVerdict, sanitizeUntrustedData };
 
 /**
  * Validates whether a file in .agent/jules-queue/ is a task file.

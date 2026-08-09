@@ -8,7 +8,9 @@ import {
   flakyVerdict,
   recordVerifyRun,
   readVerifyRuns,
+  // eslint-disable-next-line no-unused-vars
   wilsonScoreInterval,
+  // eslint-disable-next-line no-unused-vars
   computeOscillation,
 } from "../src/flaky-ledger.mjs";
 import { gate } from "../src/engine.mjs";
