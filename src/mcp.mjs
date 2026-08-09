@@ -283,18 +283,92 @@ export async function handleMcpRequest(request, opts = {}) {
   };
 }
 
+const ORIGINAL_WRITE_SYMBOL = Symbol("ORIGINAL_WRITE_SYMBOL");
+let isAuthorizedMcpWrite = false;
+
+/**
+ * Seals process.stdout.write (or targetOutput.write) to isolate stdout from generic writes (like console.log).
+ * Generic writes are redirected to process.stderr (or throw an error if configured).
+ *
+ * @param {import("node:stream").Writable} [targetOutput=process.stdout]
+ * @param {Object} [opts={}]
+ * @returns {Function} Bound original write function
+ */
+export function isolateMcpStdout(targetOutput = process.stdout, opts = {}) {
+  if (!targetOutput) return null;
+  if (targetOutput[ORIGINAL_WRITE_SYMBOL]) {
+    return targetOutput[ORIGINAL_WRITE_SYMBOL];
+  }
+
+  const originalWrite = targetOutput.write.bind(targetOutput);
+  Object.defineProperty(targetOutput, ORIGINAL_WRITE_SYMBOL, {
+    value: originalWrite,
+    writable: false,
+    configurable: false,
+  });
+
+  const patchedWrite = function (chunk, encoding, cb) {
+    if (isAuthorizedMcpWrite) {
+      return originalWrite(chunk, encoding, cb);
+    }
+
+    if (opts.onUnauthorizedWrite === "throw") {
+      throw new Error("Unauthorized write to stdout during MCP session");
+    }
+
+    if (process.stderr && typeof process.stderr.write === "function") {
+      return process.stderr.write(chunk, encoding, cb);
+    }
+  };
+
+  try {
+    Object.defineProperty(targetOutput, "write", {
+      value: patchedWrite,
+      writable: false,
+      configurable: false,
+    });
+  } catch (_) {
+    targetOutput.write = patchedWrite;
+  }
+
+  return originalWrite;
+}
+
+/**
+ * Writes authorized framed data directly to the underlying isolated stream.
+ *
+ * @param {import("node:stream").Writable} targetOutput
+ * @param {string|Buffer} data
+ * @returns {boolean}
+ */
+export function writeMcpFrame(targetOutput, data) {
+  isAuthorizedMcpWrite = true;
+  try {
+    const originalWrite = targetOutput[ORIGINAL_WRITE_SYMBOL] || targetOutput.write.bind(targetOutput);
+    return originalWrite(data);
+  } finally {
+    isAuthorizedMcpWrite = false;
+  }
+}
+
 export function startMcpServer(input = process.stdin, output = process.stdout, opts = {}) {
+  isolateMcpStdout(process.stdout, opts);
+  if (output && output !== process.stdout) {
+    isolateMcpStdout(output, opts);
+  }
+
   const decoder = new McpFrameDecoder({ maxFrameSize: opts.maxFrameSize || MAX_MCP_FRAME_SIZE });
 
   decoder.on("data", async (request) => {
     try {
       const response = await handleMcpRequest(request, opts);
       if (response !== null && response !== undefined) {
-        output.write(JSON.stringify(response) + "\n");
+        writeMcpFrame(output, JSON.stringify(response) + "\n");
       }
     } catch (err) {
       // Panic boundary: Catch unhandled async exceptions and send valid JSON-RPC error
-      output.write(
+      writeMcpFrame(
+        output,
         JSON.stringify({
           jsonrpc: "2.0",
           id: request?.id || null,
@@ -305,7 +379,8 @@ export function startMcpServer(input = process.stdin, output = process.stdout, o
   });
 
   decoder.on("error", (err) => {
-    output.write(
+    writeMcpFrame(
+      output,
       JSON.stringify({
         jsonrpc: "2.0",
         id: null,
@@ -316,3 +391,4 @@ export function startMcpServer(input = process.stdin, output = process.stdout, o
 
   input.pipe(decoder);
 }
+

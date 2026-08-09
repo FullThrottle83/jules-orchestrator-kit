@@ -14,6 +14,8 @@ export {
   checkScope,
   scanDiff,
 } from "./src/security.mjs";
+export { sanitizeUntrustedData, buildAgentEnvelope } from "./src/prompt-guard.mjs";
+export { isolateMcpStdout, writeMcpFrame } from "./src/mcp.mjs";
 export { git, runCmd, changedFiles, diffBytes, diffText } from "./src/git.mjs";
 export { createProvider, JULES_PRESET, CLAUDE_PRESET, CODEX_PRESET } from "./src/provider.mjs";
 export {

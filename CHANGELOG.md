@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [0.22.2] - 2026-08-09
+### Security Boundary & MCP Stdout Isolation
+- **Input Sanitization Boundary (`src/prompt-guard.mjs`)**: Added `sanitizeUntrustedData` and `buildAgentEnvelope`. Strips zero-width unicode, bidi control characters, ANSI sequences, and normalizes UTF-8. Neutralizes LLM control tags (`<|im_start|>`, `[INST]`), role markers (`system:`, `assistant:`), tag breakout attempts, and prompt injection patterns (`ignore previous instructions`). Prepends strict systemic data-only warning.
+- **MCP Stdout Stream Isolation (`src/mcp.mjs`)**: Sealed `process.stdout.write` and isolated stdout stream from generic writes (like `console.log`), redirecting unauthorized writes to `process.stderr` to prevent JSON-RPC framing stream corruption.
+- **Prompt Guard Unit Test Suite (`test/prompt-guard.test.mjs`)**: Added test suite asserting injection neutralization, bidi/ANSI stripping, and stdout stream isolation during MCP execution.
+
 ## [0.22.1] - 2026-08-09
 ### Kernel Hardening & Concurrency Safety
 - **Mutex Fail-Closed Enforcement (`src/state.mjs`)**: Updated `withVfsMutex` to strictly throw `MutexTimeoutError` on lock acquisition timeout instead of executing the critical section without a valid lock.
