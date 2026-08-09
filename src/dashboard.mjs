@@ -32,7 +32,7 @@ export function getDashboardHtml(root = process.cwd()) {
   </style>
 </head>
 <body>
-  <h1>🚀 jules-orchestrator-kit Dashboard (v0.27.0)</h1>
+  <h1>🚀 jules-orchestrator-kit Dashboard (v0.28.1)</h1>
   <div class="subtitle">Repository: <code>${root}</code></div>
 
   <div class="grid">
@@ -59,11 +59,11 @@ export function getDashboardHtml(root = process.cwd()) {
           fetch('/api/locks').then(r => r.json())
         ]);
 
-        document.getElementById('telemetry-status').innerHTML = telRes.integrity?.valid
+        document.getElementById('telemetry-status').innerHTML = (telRes.integrity?.ok || telRes.integrity?.valid)
           ? '<span class="badge badge-success">✓ SHA-256 Hash Chain Valid</span> <p>Events logged: ' + telRes.events.length + '</p>'
           : '<span class="badge badge-warn">⚠ Check Telemetry Logs</span>';
 
-        document.getElementById('flaky-status').innerHTML = '<p>Verdict: <code>' + (flakyRes.verdict?.action || 'CLEAN') + '</code></p><p>Tracked test runs: ' + flakyRes.count + '</p>';
+        document.getElementById('flaky-status').innerHTML = '<p>Verdict: <code>' + (flakyRes.verdict?.verdict || flakyRes.verdict?.action || 'CLEAN') + '</code></p><p>Tracked test runs: ' + flakyRes.count + '</p>';
         document.getElementById('locks-status').innerHTML = '<p>Active VFS Locks: <code>' + locksRes.count + '</code></p>';
       } catch (err) {
         console.error("Dashboard update failed:", err);
@@ -79,13 +79,6 @@ export function getDashboardHtml(root = process.cwd()) {
 export function createDashboardServer({ root = process.cwd(), port: _port = 4100 } = {}) {
   return http.createServer((req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-
-    if (req.method === "OPTIONS") {
-      res.writeHead(204);
-      return res.end();
-    }
 
     if (url.pathname === "/" || url.pathname === "/index.html") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -94,7 +87,7 @@ export function createDashboardServer({ root = process.cwd(), port: _port = 4100
 
     if (url.pathname === "/api/status") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      return res.end(JSON.stringify({ ok: true, version: "0.27.0", root, ts: new Date().toISOString() }));
+      return res.end(JSON.stringify({ ok: true, version: "0.28.1", root, ts: new Date().toISOString() }));
     }
 
     if (url.pathname === "/api/telemetry") {
@@ -127,10 +120,10 @@ export function createDashboardServer({ root = process.cwd(), port: _port = 4100
   });
 }
 
-export function startDashboardServer(port = 4100, root = process.cwd()) {
+export function startDashboardServer(port = 4100, root = process.cwd(), host = "127.0.0.1") {
   const server = createDashboardServer({ root, port });
-  server.listen(port, "0.0.0.0", () => {
-    console.log(`🚀 jules-orchestrator-kit Dashboard running at http://localhost:${port}`);
+  server.listen(port, host, () => {
+    console.log(`🚀 jules-orchestrator-kit Dashboard running at http://${host}:${port}`);
   });
   return server;
 }

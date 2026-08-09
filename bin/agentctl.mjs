@@ -14,12 +14,12 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.28.0 — Universal Agent Orchestrator & Safety Gatekeeper
- 
+🚀 agentctl v0.28.1 — Universal Agent Orchestrator & Safety Gatekeeper
+
 Usage: agentctl <command> [options]
 
 Commands:
-  dispatch              Dispatch a single task to an AI agent
+  dispatch | create     Dispatch a single task to an AI agent
   gate | audit          Run CI security and verification gate against current branch
   queue                 Run pending task queue
   swarm                 Run parallel task swarm
@@ -31,10 +31,16 @@ Commands:
   review-repair         Parse PR review comments and synthesize OODA repair tasks
   dashboard             Start local HTTP telemetry and audit dashboard
   init                  Scaffold .agent/ directory and config.yml
+  status                Display queue and system status summary
+  scan                  Scan codebase for TODO/FIXME task candidates
   version               Output agentctl version
 
 Options:
   --dry-run, -d         Simulate action without making API calls or modifying git
+  --mode, -m            Gate evaluation mode (working-tree | committed | staged)
+  --repoless            Dispatch task in repoless execution mode
+  --source, -s          Specify Jules repository source name
+  --branch, -b          Specify target starting branch
   --json, -j            Emit machine-readable JSON output
   --help, -h            Show command help
 `);
@@ -47,7 +53,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.28.0");
+    console.log("agentctl v0.28.1");
     process.exit(0);
   }
 
@@ -57,13 +63,19 @@ async function main() {
   const config = loadConfig(root);
 
   switch (command) {
-    case "dispatch": {
+    case "dispatch":
+    case "create": {
       const { values } = parseArgs({
         args: args.slice(1),
         options: {
           title: { type: "string", short: "t" },
           prompt: { type: "string", short: "p" },
           "prompt-file": { type: "string", short: "f" },
+          source: { type: "string", short: "s" },
+          branch: { type: "string", short: "b" },
+          repoless: { type: "boolean" },
+          "auto-pr": { type: "boolean" },
+          "require-plan-approval": { type: "boolean" },
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
         },
@@ -87,10 +99,22 @@ async function main() {
       const task = {
         title: values.title || "CLI Dispatch Task",
         prompt: promptContent,
+        source: values.source,
+        branch: values.branch,
+        repoless: values.repoless,
+        autoPr: values["auto-pr"],
+        requirePlanApproval: values["require-plan-approval"],
       };
 
       try {
-        const session = await dispatch(task, { root, config, dryRun: values["dry-run"] });
+        const session = await dispatch(task, {
+          root,
+          config,
+          dryRun: values["dry-run"],
+          repoless: values.repoless,
+          source: values.source,
+          branch: values.branch,
+        });
         if (values.json) {
           console.log(JSON.stringify({ ok: true, session }, null, 2));
         } else {
@@ -100,12 +124,13 @@ async function main() {
         }
         process.exit(0);
       } catch (err) {
+        const exitCode = typeof err.code === "number" ? err.code : 1;
         if (values.json) {
-          console.log(JSON.stringify({ ok: false, error: err.message, code: err.code || 1 }, null, 2));
+          console.log(JSON.stringify({ ok: false, error: err.message, code: exitCode }, null, 2));
         } else {
           console.error(`❌ Dispatch Failed: ${err.message}`);
         }
-        process.exit(err.code || 1);
+        process.exit(exitCode);
       }
       break;
     }
@@ -116,6 +141,10 @@ async function main() {
         args: args.slice(1),
         options: {
           base: { type: "string", short: "b", default: config.baseBranch || "main" },
+          mode: { type: "string", short: "m", default: "working-tree" },
+          "working-tree": { type: "boolean" },
+          staged: { type: "boolean" },
+          committed: { type: "boolean" },
           fix: { type: "boolean" },
           "allow-protected": { type: "boolean" },
           json: { type: "boolean", short: "j" },
@@ -123,10 +152,16 @@ async function main() {
         allowPositionals: true,
       });
 
+      let selectedMode = values.mode || "working-tree";
+      if (values.staged) selectedMode = "staged";
+      if (values.committed) selectedMode = "committed";
+      if (values["working-tree"]) selectedMode = "working-tree";
+
       const res = await gate({
         root,
         config,
         base: values.base,
+        mode: selectedMode,
         fix: values.fix,
         allowProtected: values["allow-protected"],
       });
@@ -134,7 +169,7 @@ async function main() {
       if (values.json) {
         console.log(JSON.stringify(res, null, 2));
       } else {
-        console.log(`\n🛡️ agentctl Safety Gate Audit Results (Base: ${values.base})`);
+        console.log(`\n🛡️ agentctl Safety Gate Audit Results (Base: ${values.base}, Mode: ${selectedMode})`);
         console.log(`-----------------------------------------------------`);
         for (const p of res.phases) {
           const status = p.ok ? "✅ PASS" : "❌ FAIL";
@@ -150,14 +185,14 @@ async function main() {
         console.log(`Overall Result: ${res.ok ? "APPROVED (Exit 0)" : `REJECTED (Exit ${res.code})`}\n`);
       }
 
-      process.exit(res.code);
+      process.exit(typeof res.code === "number" ? res.code : 0);
       break;
     }
 
     case "queue": {
       const queueDir = getQueueDir(root);
       const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
-      console.log(` Found ${files.length} queued task(s) in .agent/queue/`);
+      console.log(`Found ${files.length} queued task(s) in .agent/queue/`);
       if (files.length > 0) {
         const tasks = files.map((f) => ({
           id: f,
@@ -229,7 +264,7 @@ async function main() {
     }
 
     case "doctor": {
-      console.log(`\n🔍 agentctl System Diagnostics (v0.25.1)`);
+      console.log(`\n🔍 agentctl System Diagnostics (v0.28.1)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);
@@ -315,6 +350,35 @@ base_branch: main
       break;
     }
 
+    case "status": {
+      const queueDir = getQueueDir(root);
+      const files = existsSync(queueDir) ? readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir)) : [];
+      console.log(`\n📊 agentctl Status Summary (v0.28.1)`);
+      console.log(`--------------------------------------------------`);
+      console.log(`  Project Root     : ${root}`);
+      console.log(`  Pending Tasks    : ${files.length}`);
+      console.log(`  Active VFS Locks : ${lockStatus(root).length}`);
+      const budget = checkDailyBudget(root, config.limits.dailyTasks);
+      console.log(`  Daily Budget     : ${budget.used} / ${budget.budget} used`);
+      console.log(`--------------------------------------------------\n`);
+      process.exit(0);
+      break;
+    }
+
+    case "scan": {
+      const { scanCodebaseForTodos } = await import("../scripts/jules-scan-todos.mjs");
+      const todos = scanCodebaseForTodos(root);
+      console.log(`\n🔍 Scanned ${todos.length} TODO/FIXME annotation(s).`);
+      for (const t of todos.slice(0, 10)) {
+        console.log(`   - ${t.file}:${t.line} [${t.type}] ${t.text}`);
+      }
+      if (todos.length > 10) {
+        console.log(`   ... and ${todos.length - 10} more.`);
+      }
+      process.exit(0);
+      break;
+    }
+
     case "mcp": {
       const { startMcpServer } = await import("../src/mcp.mjs");
       startMcpServer();
@@ -330,5 +394,6 @@ base_branch: main
 
 main().catch((err) => {
   console.error(`[FATAL ERROR] ${err.message}`);
-  process.exit(err.code || 1);
+  const exitCode = typeof err.code === "number" ? err.code : 1;
+  process.exit(exitCode);
 });

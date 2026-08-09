@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.1] - 2026-08-10
+### Release Recovery, Gate Mode Wiring & Jules Starting Branch Fix
+- **Node 22 Test Lifecycle Fix (`test/p0-remediation.test.mjs`)**: Made parent test callbacks `async` and awaited nested `t.test()` promises, resolving test cancellation failure on Node 22/20 CI runners.
+- **Jules v1alpha Starting Branch Fix (`src/provider.mjs`)**: Updated `startingBranch` payload field to default to `config.baseBranch` (or `main`) rather than task target branch prefix (`agent/task`), conforming with Google Jules REST API spec. Throws explicit error if repository source is missing on non-repoless live calls.
+- **Gate Working-Tree Mode Wiring (`src/engine.mjs`, `bin/agentctl.mjs`)**: Wired `opts.mode` into `gate()` (defaulting to `working-tree` for local runs) and added `--mode` (`working-tree`, `staged`, `committed`) options to `agentctl gate`.
+- **CLI Options & Missing Commands (`bin/agentctl.mjs`)**: Added CLI options `--source`, `--branch`, `--repoless`, `--auto-pr`, `--require-plan-approval` to `agentctl dispatch`, added CLI command handlers for `create`, `status`, and `scan`, and normalized process exit code types.
+- **Version Centralization & Lockfile Alignment (`package.json`, `package-lock.json`, `src/mcp.mjs`, `src/dashboard.mjs`, `bin/agentctl.mjs`)**: Centralized version string to `0.28.1` across all CLI, MCP, doctor, and dashboard components, and updated `package-lock.json` root version.
+- **Dashboard HTML Schema & Loopback Binding (`src/dashboard.mjs`)**: Fixed schema field mismatches (`integrity.ok`, `verdict.verdict`) in dashboard HTML visualizer and bound default HTTP listener to `127.0.0.1`.
+
 ## [0.28.0] - 2026-08-09
 ### Core P0 Remediation & Google Jules REST v1alpha Alignment
 - **Google Jules REST v1alpha Provider Alignment (`src/provider.mjs`)**: Conformed default provider endpoint to `https://jules.googleapis.com/v1alpha/sessions` using `X-Goog-Api-Key` authentication header and structured `sourceContext` (`source` and `githubRepoContext.startingBranch`). Throws explicit `MissingApiKeyError` (401) when `JULES_API_KEY` is missing on live dispatches. Added support for `--repoless` session payloads.

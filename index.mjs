@@ -1,5 +1,5 @@
 /**
- * Google Jules Orchestrator Kit - Node.js SDK (v0.28.0)
+ * Google Jules Orchestrator Kit - Node.js SDK (v0.28.1)
  *
  * Exposes core orchestrator functions for programmatically driving agent tasks,
  * security auditing, repo gating, and state operations.
