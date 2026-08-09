@@ -1,6 +1,7 @@
 import {
   openSync,
   writeSync,
+  readSync,
   closeSync,
   readFileSync,
   existsSync,
@@ -15,6 +16,37 @@ import { safeAtomicWrite } from "./security.mjs";
 
 export const MAX_TELEMETRY_SEGMENT_BYTES = 8 * 1024 * 1024; // 8 MB log segment ceiling
 export const TELEMETRY_GENESIS_HASH = "0".repeat(64);
+
+/**
+ * Reads up to 64 KB from EOF of target log segment to extract true tail hash.
+ */
+function readTailHash(filePath, bufferSize = 64 * 1024) {
+  if (!existsSync(filePath)) return null;
+  try {
+    const stat = statSync(filePath);
+    if (stat.size === 0) return null;
+    const readSize = Math.min(stat.size, bufferSize);
+    const position = stat.size - readSize;
+    const fd = openSync(filePath, "r");
+    const buf = Buffer.alloc(readSize);
+    try {
+      readSync(fd, buf, 0, readSize, position);
+    } finally {
+      closeSync(fd);
+    }
+    const content = buf.toString("utf-8");
+    const lines = content.split("\n").filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const obj = JSON.parse(lines[i]);
+        if (obj && typeof obj.hash === "string") {
+          return obj.hash;
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return null;
+}
 
 /**
  * Returns telemetry file paths for a given date string sorted by segment index.
@@ -50,18 +82,10 @@ function coldScanTelemetry(stateDir, dateStr) {
   for (let i = segments.length - 1; i >= 0; i--) {
     const seg = segments[i];
     if (existsSync(seg.path)) {
-      try {
-        const content = readFileSync(seg.path, "utf-8");
-        const lines = content.split("\n").filter(Boolean);
-        for (let j = lines.length - 1; j >= 0; j--) {
-          try {
-            const entry = JSON.parse(lines[j]);
-            if (entry && typeof entry.hash === "string") {
-              return { hash: entry.hash, segment: seg.index };
-            }
-          } catch (_) {}
-        }
-      } catch (_) {}
+      const tailHash = readTailHash(seg.path);
+      if (tailHash) {
+        return { hash: tailHash, segment: seg.index };
+      }
     }
   }
 
@@ -70,7 +94,7 @@ function coldScanTelemetry(stateDir, dateStr) {
 
 /**
  * Appends a structured telemetry event to .agent/state/telemetry-<date>.jsonl with SHA-256 hash chaining.
- * Uses .head atomic cache for O(1) constant-time appends.
+ * Uses .head atomic cache with true tail reconciliation for O(1) constant-time appends.
  *
  * @param {string} [rootOrOpts]
  * @param {string} kind
@@ -102,17 +126,29 @@ export function appendTelemetry(rootOrOpts = resolveRoot(), kind = "event", fiel
       } catch (_) {}
     }
 
-    if (!headValid) {
-      const recovered = coldScanTelemetry(stateDir, dateStr);
-      prevHash = recovered.hash;
-      activeSegmentIndex = recovered.segment;
-    }
-
     let activeFileName =
       activeSegmentIndex === 0
         ? `telemetry-${dateStr}.jsonl`
         : `telemetry-${dateStr}-${activeSegmentIndex}.jsonl`;
     let activeFilePath = join(stateDir, activeFileName);
+
+    // Reconcile .head hash against true log tail (reading last 64 KB from EOF)
+    const tailHash = readTailHash(activeFilePath);
+    if (tailHash) {
+      if (tailHash !== prevHash) {
+        prevHash = tailHash;
+      }
+      headValid = true;
+    } else if (!headValid) {
+      const recovered = coldScanTelemetry(stateDir, dateStr);
+      prevHash = recovered.hash;
+      activeSegmentIndex = recovered.segment;
+      activeFileName =
+        activeSegmentIndex === 0
+          ? `telemetry-${dateStr}.jsonl`
+          : `telemetry-${dateStr}-${activeSegmentIndex}.jsonl`;
+      activeFilePath = join(stateDir, activeFileName);
+    }
 
     if (existsSync(activeFilePath)) {
       try {

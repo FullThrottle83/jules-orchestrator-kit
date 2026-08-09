@@ -349,8 +349,9 @@ export function isPidAlive(pid, expectedStartTime = null) {
   return true;
 }
 
-export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveRoot()) {
-  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
+export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveRoot(), opts = {}) {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : (rootOrOpts?.root || resolveRoot());
+  const branch = (typeof rootOrOpts === "object" && rootOrOpts?.branch) || opts?.branch || process.env.JULES_BRANCH || process.env.BRANCH_NAME || "";
   const lockDir = getLockDir(root);
   const lockFile = join(lockDir, `${taskId}.json`);
 
@@ -375,6 +376,7 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   const payload = {
     agent: agentName,
     taskId,
+    branch,
     files,
     pid: process.pid,
     processStartTime: startTime,

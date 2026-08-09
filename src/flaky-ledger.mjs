@@ -83,8 +83,6 @@ export function readVerifyRuns(root, testCmd = null) {
   }
 }
 
-export const getVerifyRuns = readVerifyRuns;
-
 /**
  * Evaluates flaky test verdict using a sliding window of the last n <= 10 runs.
  */

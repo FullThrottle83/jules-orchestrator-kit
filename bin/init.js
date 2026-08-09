@@ -248,13 +248,12 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
     let updated = false;
     const julesScripts = {
       "jules:dispatch": "node scripts/jules-dispatch.mjs",
-      "jules:queue": "node scripts/jules-queue-runner.mjs",
+      "jules:queue": "node bin/agentctl.mjs queue",
       "jules:create": "node scripts/jules-create.mjs",
       "jules:status": "node scripts/jules-status.mjs",
       "jules:audit": "node scripts/jules-self-audit.mjs",
-      "jules:cleanup": "node scripts/jules-cleanup.mjs",
       "jules:scan": "node scripts/jules-scan-todos.mjs",
-      "jules:swarm": "node scripts/jules-swarm.mjs",
+      "jules:swarm": "node bin/agentctl.mjs swarm",
       "jules:nightly": "node scripts/jules-nightly.mjs"
     };
 

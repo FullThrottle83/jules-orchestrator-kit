@@ -1,5 +1,5 @@
 /**
- * Google Jules Orchestrator Kit - Node.js SDK (v0.9.0)
+ * Google Jules Orchestrator Kit - Node.js SDK (v0.24.0)
  *
  * Exposes core orchestrator functions for programmatically driving agent tasks,
  * security auditing, repo gating, and state operations.
@@ -58,3 +58,5 @@ export { runSelfAudit, runPreflightSandbox } from "./scripts/jules-self-audit.mj
 export { scanCodebaseForTodos, runScanner } from "./scripts/jules-scan-todos.mjs";
 export { getDynamicGuardrails, dispatchTask } from "./scripts/jules-dispatch.mjs";
 export { classifyQueueFailure } from "./scripts/jules-queue-runner.mjs";
+export { extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "./scripts/utils.mjs";
+

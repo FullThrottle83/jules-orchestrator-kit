@@ -1,4 +1,4 @@
-import { git, resolveBase } from "./git.mjs";
+import { git, runCmd, resolveBase } from "./git.mjs";
 import { checkScope } from "./security.mjs";
 import { normalizeScope } from "./config.mjs";
 import { existsSync } from "node:fs";
@@ -70,8 +70,8 @@ export function validateEnvelope(envelope = {}, opts = {}) {
       const absPath = join(root, relPath);
       let existsInGit = false;
       if (resolvedBase) {
-        const catRes = git(["cat-file", "-e", `${resolvedBase}:${relPath}`], { cwd: root, ignoreError: true });
-        existsInGit = typeof catRes === "string" && catRes.trim() !== "";
+        const catRes = runCmd(["git", "cat-file", "-e", `${resolvedBase}:${relPath}`], { cwd: root, ignoreError: true });
+        existsInGit = catRes.status === 0;
       }
       const existsOnDisk = existsSync(absPath);
       if (!existsInGit && !existsOnDisk) {

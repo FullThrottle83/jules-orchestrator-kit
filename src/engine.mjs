@@ -354,6 +354,16 @@ export async function repair(failure, opts = {}) {
     attempts.push({ n, session, ok: true });
     appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: true });
 
+    // Poll async provider for terminal session state before executing re-verification gates
+    if (provider && session) {
+      await pollSessionState(provider, session, {
+        root,
+        dryRun: opts.dryRun,
+        pollIntervalMs: opts.pollIntervalMs,
+        maxPollAttempts: opts.maxPollAttempts,
+      });
+    }
+
     // Re-verify after repair attempt
     const gateRes = await gate({ root, config, fix: false, progressBus, progressToken });
     if (gateRes.ok) {
@@ -377,6 +387,50 @@ export async function repair(failure, opts = {}) {
   }
 
   return { ok: false, attempts, finalStatus: "OODA_EXHAUSTED" };
+}
+
+/**
+ * Polls an async provider for terminal session state (COMPLETED / FAILED) before re-verification.
+ */
+export async function pollSessionState(provider, session, opts = {}) {
+  if (!session || !session.id) return { status: "COMPLETED" };
+  const initialStatus = String(session.status || session.state || "").toUpperCase();
+  if (initialStatus === "COMPLETED" || initialStatus === "FAILED" || opts.dryRun || session.id === "dry-run-session-id") {
+    return { status: initialStatus || "COMPLETED" };
+  }
+
+  const maxAttempts = opts.maxPollAttempts || 30;
+  const pollIntervalMs = opts.pollIntervalMs || 1000;
+  const timeoutMs = opts.pollTimeoutMs || 300000;
+  const startTime = Date.now();
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (Date.now() - startTime > timeoutMs) break;
+
+    let currentSession = null;
+    if (provider && typeof provider.getSession === "function") {
+      try {
+        currentSession = await provider.getSession(session.id, opts);
+      } catch (_) {}
+    } else if (typeof opts.pollFn === "function") {
+      try {
+        currentSession = await opts.pollFn(session.id);
+      } catch (_) {}
+    }
+
+    if (currentSession) {
+      const status = String(currentSession.status || currentSession.state || "").toUpperCase();
+      if (status === "COMPLETED" || status === "FAILED") {
+        return { ...currentSession, status };
+      }
+    } else {
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  return { ...session, status: String(session.status || "COMPLETED").toUpperCase() };
 }
 
 function buildRepairPrompt(failure, attempt, _config) {
@@ -435,32 +489,54 @@ export async function dispatch(task, opts = {}) {
   );
 }
 
-export async function run(opts = {}) {
-  const root = opts.root || process.cwd();
-  const config = opts.config || loadConfig(root);
-  const concurrency = opts.concurrency || config.limits.concurrency || 1;
+export async function run(tasksOrOpts = {}, opts = {}) {
+  let tasks = null;
+  let options = opts;
+  if (Array.isArray(tasksOrOpts)) {
+    tasks = tasksOrOpts;
+    options = opts || {};
+  } else if (tasksOrOpts && typeof tasksOrOpts === "object") {
+    options = tasksOrOpts;
+  }
+
+  const root = options.root || process.cwd();
+  const config = options.config || loadConfig(root);
+  const concurrency = options.concurrency || config.limits.concurrency || 1;
+  const isDry = options.dryRun !== undefined ? options.dryRun : (process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1");
   const queueDir = getQueueDir(root);
   const completedDir = join(queueDir, "completed");
   ensureDir(completedDir);
 
-  const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
+  let filesToProcess = [];
+  if (Array.isArray(tasks)) {
+    filesToProcess = tasks.map((t) => (typeof t === "string" ? t : t.id || t.file || t.title));
+  } else {
+    filesToProcess = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
+  }
+
   const results = [];
 
-  for (let i = 0; i < files.length; i += concurrency) {
-    const batch = files.slice(i, i + concurrency);
+  for (let i = 0; i < filesToProcess.length; i += concurrency) {
+    const batch = filesToProcess.slice(i, i + concurrency);
     await Promise.all(
-      batch.map(async (file) => {
-        const srcPath = join(queueDir, file);
+      batch.map(async (fileOrItem) => {
+        const fileName = typeof fileOrItem === "string" ? fileOrItem : fileOrItem.id || fileOrItem.file;
+        const srcPath = join(queueDir, fileName);
         try {
-          const content = readFileSync(srcPath, "utf-8");
-          const task = { title: file, prompt: content };
-          const session = await dispatch(task, { root, config, dryRun: opts.dryRun });
-          const dstPath = join(completedDir, file);
-          renameSync(srcPath, dstPath);
-          appendLedger({ event: "task_completed", file, session }, root);
-          results.push({ file, ok: true, session });
+          let prompt = typeof fileOrItem === "object" && fileOrItem.prompt ? fileOrItem.prompt : "";
+          if (!prompt && existsSync(srcPath)) {
+            prompt = readFileSync(srcPath, "utf-8");
+          }
+          const task = { title: fileName, prompt };
+          const session = await dispatch(task, { root, config, dryRun: isDry });
+          const dstPath = join(completedDir, fileName);
+          if (existsSync(srcPath)) {
+            renameSync(srcPath, dstPath);
+          }
+          appendLedger({ event: "task_completed", file: fileName, session }, root);
+          results.push({ file: fileName, ok: true, session });
         } catch (err) {
-          results.push({ file, ok: false, error: err.message });
+          results.push({ file: fileName, ok: false, error: err.message });
         }
       })
     );

@@ -6,12 +6,10 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets, anonymizePii, verifyLedgerIntegrity, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation } from "../scripts/utils.mjs";
+import { resolveMarkdownConflict, redactSecrets, anonymizePii, verifyLedgerIntegrity, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation, extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective, extractImageAttachments, getMultimodalAttachmentDirective } from "../scripts/jules-dispatch.mjs";
-import { extractPrUrls, auditSessions } from "../scripts/jules-cleanup.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
 import { fetchSessionPatch } from "../scripts/jules-patch.mjs";
-import { buildSyncManifest, pushReservationManifest } from "../scripts/jules-swarm.mjs";
 
 describe("Dynamic Command Resolver", () => {
   test("detects package manager correctly based on lockfiles", () => {
@@ -499,7 +497,7 @@ describe("CLI Initializer (bin/init.js)", () => {
       execFileSync("node", [initScript], { cwd: tmpDir, stdio: "pipe" });
 
       const pkg = JSON.parse(fs.readFileSync(path.join(tmpDir, "package.json"), "utf-8"));
-      assert.ok(pkg.scripts["jules:cleanup"]);
+      assert.ok(pkg.scripts["jules:queue"]);
       assert.ok(pkg.scripts["jules:scan"]);
       assert.ok(pkg.scripts["jules:dispatch"]);
 

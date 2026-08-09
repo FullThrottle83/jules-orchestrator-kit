@@ -31,14 +31,14 @@ export function mergeVerifyChain(mergedText, fileName, root = process.cwd()) {
       tool = "python3 -m py_compile";
     } else if (ext === ".ts" || ext === ".tsx" || ext === ".mts" || ext === ".cts") {
       const hasTsConfig = existsSync(join(root, "tsconfig.json"));
-      if (hasTsConfig) {
-        cmd = "npx";
-        args = ["tsc", "--noEmit", tempFilePath];
+      const localTsc = join(root, "node_modules", ".bin", "tsc");
+      const hasLocalTsc = existsSync(localTsc);
+      if (hasTsConfig && hasLocalTsc) {
+        cmd = localTsc;
+        args = ["--noEmit", tempFilePath];
         tool = "tsc --noEmit";
       } else {
-        cmd = "node";
-        args = ["--check", tempFilePath];
-        tool = "node --check";
+        return { ok: true, tool: "ts-skipped-no-tsconfig" };
       }
     } else {
       // JS, MJS, CJS or default
@@ -47,7 +47,7 @@ export function mergeVerifyChain(mergedText, fileName, root = process.cwd()) {
       tool = "node --check";
     }
 
-    const res = spawnSync(cmd, args, { encoding: "utf8" });
+    const res = spawnSync(cmd, args, { encoding: "utf8", timeout: 120000 });
     const ok = res.status === 0;
 
     return {

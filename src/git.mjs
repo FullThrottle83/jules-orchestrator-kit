@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { sep } from "node:path";
+import { normalizePath } from "./config.mjs";
 import { journalIntent, journalDone } from "./journal.mjs";
 
 export const NET_GUARD_PRELOAD_URL = new URL("./preload-net-guard.mjs", import.meta.url).href;
@@ -11,11 +11,6 @@ export class GateError extends Error {
     this.name = "GateError";
     this.code = opts.code || 1;
   }
-}
-
-function normalizePath(p) {
-  if (!p || typeof p !== "string") return "";
-  return p.split(sep).join("/").replace(/\\/g, "/");
 }
 
 const DEFAULT_TIMEOUT = 10 * 60 * 1000; // 10 minutes
