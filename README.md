@@ -15,20 +15,21 @@
 <br/>
 
 <p align="center">
-  <b>The zero-dependency safety gatekeeper and self-healing engineering kernel for autonomous coding agent swarms.</b><br/>
+  <b>The zero-dependency safety gatekeeper and self-healing engineering kernel for autonomous coding agent swarms.</b>
   Transforms single-turn AI chat assistants into production-grade engineering swarms running 300+ daily sessions across any language or monorepo.
 </p>
 
 <br/>
 
 <p align="center">
-  <a href="#-2-sentence-mental-model">💡 What is Kit?</a> &nbsp;•&nbsp;
-  <a href="#-universal-30-second-quickstart-zero-to-verified-pr">⚡ Quickstart</a> &nbsp;•&nbsp;
-  <a href="#-triage-guidelines-when-to-use-vs-when-not-to-use">🎯 Triage Guidelines</a> &nbsp;•&nbsp;
-  <a href="#-feature-comparison-matrix">📊 Matrix</a> &nbsp;•&nbsp;
-  <a href="#-system-architecture--visual-diagrams">🏛️ Architecture</a> &nbsp;•&nbsp;
-  <a href="#-cli-command-reference-agentctl">🛠️ CLI Docs</a> &nbsp;•&nbsp;
-  <a href="#-v027-next-gen-feature-roadmap">🗺️ Roadmap</a>
+  <a href="#-2-sentence-mental-model">💡&nbsp;What&nbsp;is&nbsp;Kit?</a> &nbsp;•&nbsp;
+  <a href="#-universal-30-second-quickstart-zero-to-verified-pr">⚡&nbsp;Quickstart</a> &nbsp;•&nbsp;
+  <a href="#-triage-guidelines-when-to-use-vs-when-not-to-use">🎯&nbsp;Triage&nbsp;Guidelines</a> &nbsp;•&nbsp;
+  <a href="#-feature-comparison-matrix">📊&nbsp;Matrix</a>
+  <br/>
+  <a href="#-system-architecture--visual-diagrams">🏛️&nbsp;Architecture</a> &nbsp;•&nbsp;
+  <a href="#-cli-command-reference-agentctl">🛠️&nbsp;CLI&nbsp;Docs</a> &nbsp;•&nbsp;
+  <a href="#-v027-next-gen-feature-roadmap">🗺️&nbsp;Roadmap</a>
 </p>
 
 </div>
