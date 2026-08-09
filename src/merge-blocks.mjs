@@ -30,7 +30,7 @@ function sortKeysRecursive(obj) {
 /**
  * Computes canonical SHA-256 fingerprint for cross-language API contracts (OpenAPI/JSON/YAML).
  */
-export function hashCrossLanguageInterface(taskId, outputFile, content = "", schemaType = "json") {
+export function hashCrossLanguageInterface(taskId, outputFile, content = "", _schemaType = "json") {
   let cleaned = content;
   // Strip single-line comments
   cleaned = cleaned.replace(/^\s*\/\/.*$/gm, "").replace(/^\s*#.*$/gm, "");

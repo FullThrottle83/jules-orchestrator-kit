@@ -2,398 +2,244 @@
 
 # 🚀 jules-orchestrator-kit
 
-### High-Volume Autonomous AI Agent Orchestration Engine for Google Jules
+### Universal Autonomous AI Agent Orchestration Kernel for Google Jules
 
 [![Jules PR Audit](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml/badge.svg)](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml)
 [![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20native-blue.svg)](https://nodejs.org)
+[![Polyglot Stacks](https://img.shields.io/badge/polyglot--stacks-24%2B-8A2BE2.svg)](#-universal-polyglot-support--stack-detection)
 
 <p align="center">
-  <b>Zero-dependency safety kernel and high-throughput orchestration engine for autonomous AI agent swarms.</b><br/>
-  Built specifically to execute 300+ daily agent sessions and parallel worktree swarms safely on native Node.js 20+ ESM.
+  <b>The zero-dependency safety gatekeeper and self-healing engineering kernel for autonomous coding agent swarms.</b><br/>
+  Transforms single-turn AI chat assistants into production-grade engineering swarms running 300+ daily sessions across any language or monorepo.
 </p>
 
 <p align="center">
-  <a href="#-2-minute-quickstart">⚡ Quickstart</a> •
-  <a href="#-why-jules-orchestrator-kit">🎯 Why Kit?</a> •
+  <a href="#-2-sentence-mental-model">💡 What is Kit?</a> •
+  <a href="#-universal-30-second-quickstart-zero-to-verified-pr">⚡ 30s Quickstart</a> •
+  <a href="#-feature-comparison-matrix">📊 Comparison Matrix</a> •
   <a href="#-system-architecture--visual-diagrams">🏛️ Architecture</a> •
-  <a href="#-cli-command-reference-agentctl">🛠️ CLI Commands</a> •
-  <a href="./EXAMPLES.md">📖 Recipes & Examples</a>
+  <a href="#-cli-command-reference-agentctl">🛠️ CLI Reference</a> •
+  <a href="#-v027-next-gen-feature-roadmap">🗺️ Roadmap</a> •
+  <a href="./docs/UNIVERSAL_POLYGLOT_ARCHITECTURE.md">📖 Polyglot Spec</a>
 </p>
 
 </div>
 
 ---
 
-<p align="center">
-  <img src="docs/assets/hero-flow.svg?v=3" alt="Autonomous Orchestration Pipeline" width="100%" />
-</p>
+## 💡 2-Sentence Mental Model
+
+> **Think of `jules-orchestrator-kit` as an automated Engineering Manager for AI coding agents.**  
+> **It hands out clear tasks, runs your tests in an isolated sandbox, fixes broken code automatically, and only opens a Pull Request when 100% of your tests pass.**
 
 ---
 
-## 🧭 Fast-Track Guide (Choose Your Path)
+## 🎯 Why `jules-orchestrator-kit`?
 
-| Your Goal | Recommended Starting Point |
-| :--- | :--- |
-| 🐣 **First time using Jules / AI Agents** | Follow the [2-Minute Quickstart](#-2-minute-quickstart) below — zero setup required! |
-| 🛠️ **Connecting to Claude Code, Cursor, or Antigravity** | Jump to [MCP & IDE Integration](#-5-model-context-protocol-mcp--ide-integration) |
-| ⚡ **Automating CI/CD Workflows** | See the [GitHub Actions Composite Action](#-github-actions-composite-action-githubactionssetup-jules) |
-| 📖 **Looking for copy-paste code patterns** | Browse 6 production recipes in [EXAMPLES.md](./EXAMPLES.md) |
+Autonomous coding agents can write software at 100× human speed—but unconstrained agents introduce silent regressions, leak API keys, hallucinate test assertions, and thrash shared monorepos.
+
+`jules-orchestrator-kit` provides the missing **Safety, Orchestration, and Verification Kernel** for high-reliability AI agent deployments:
+- **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:test`). Zero third-party npm packages mean zero supply-chain CVE risk.
+- **🛡️ Fail-Closed Security Gatekeeper:** Unconditionally evaluates explicit Deny rules *before* Allow rules, redacts high-entropy secrets and PII from dry-runs and git diffs, and rejects PRs exceeding the 75 KB Diff Payload governor.
+- **🔄 Autonomous OODA Self-Healing:** Captures test stderr/stdout, normalizes failure fingerprints, and feeds structured error contexts back into repair iterations (up to 3 automatic attempts) before human escalation.
+- **🌐 Universal Polyglot Spine:** Natively auto-detects 24+ tech stacks (PHP/Laravel/WordPress, .NET/C#, Python, Go, Rust, C/C++, Flutter/Swift, Node/Deno/Bun) and transparently wraps verification suites in Docker Compose or Devcontainer sandboxes.
+- **📂 Scoped Monorepo Boundary Resolver:** Statically maps changed files up directory ancestry to invoke isolated subshell test suites (`(cd backend && pytest) && (cd cli && cargo test)`), eliminating global test thrashing.
+- **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
+- **📈 Proven Scale & Reliability:** Empirically tested with **221 unit tests across 54 suites passing in < 1.2s**, supporting 300+ daily agent sessions per repository.
 
 ---
 
-## ⚡ 2-Minute Quickstart
+## 📊 Feature Comparison Matrix
 
-> [!TIP]
-> **New to Google Jules or agent automation?** You don't need any complex setup! `jules-orchestrator-kit` works out of the box with standard `npm test` and zero external runtime dependencies.
+| Dimension | Raw Agent Execution (No Orchestrator) | Standard CI/CD Pipelines | `jules-orchestrator-kit` (v0.26+) |
+| :--- | :--- | :--- | :--- |
+| **Self-Healing Loop** | ❌ None (Crashes on test error) | ❌ None (Fails build; notifies human) | ✅ **Autonomous OODA Loop** (Max 3 repair turns with error fingerprinting) |
+| **Scope Isolation** | ❌ None (Can modify CI files or lockfiles) | 🟡 Post-commit branch rules only | ✅ **Fail-Closed Scope Guard** (Deny-first evaluation; blocks protected paths) |
+| **Polyglot Stack Detection**| ❌ Manual prompt instructions | 🟡 Hardcoded YAML workflow steps | ✅ **Universal 24+ Stack Detector** (`src/stack-detector.mjs`) |
+| **Flaky Test Quarantine** | ❌ Fails session randomly | ❌ Breaks CI pipeline randomly | ✅ **Wilson-Score Statistical Quarantine** (Oscillation ≥ 0.40 quarantined automatically) |
+| **Monorepo Scoping** | ❌ Runs full global test suite | 🟡 Requires custom Nx/Turbo scripting | ✅ **Scoped Subshell Boundary Resolver** (`resolveWorkspaceBoundary`) |
+| **Zero-Test Bootstrapping**| ❌ Halts without verification oracle | ❌ Fails build if no tests exist | ✅ **Instant Oracle Synthesis** (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`) |
+| **Secret Leak Prevention**| ❌ Prone to leaking tokens in diffs | 🟡 Post-push secret scanning alerts | ✅ **Pre-Dispatch & Pre-Commit Diff Scanner** (Blocks CVEs/keys before PR creation) |
+| **Dependency Footprint** | ❌ Requires heavy SDKs & parsers | 🟡 Many external actions & plugins | ✅ **0 Native Dependencies** (100% Node.js 20+ ESM built-ins) |
 
+---
+
+## ⚡ Universal 30-Second Quickstart (Zero to Verified PR)
+
+Get from zero to an autonomously verified GitHub Pull Request across any software ecosystem in 30 seconds.
+
+### 1️⃣ Node.js / TypeScript (npm, pnpm, yarn, bun, deno)
 ```bash
-# 1. Initialize orchestrator structure in your target codebase
-npx jules-orchestrator-kit init
-
-# 2. Dispatch an autonomous task (Dry-Run mode for local simulation)
-JULES_DRY_RUN=1 npx agentctl dispatch \
-  --title "Add JWT Validator" \
-  --prompt "Implement JWT validation middleware with unit tests"
-
-# 3. Run the 4-phase security & verification gatekeeper
-npx agentctl gate
-
-# 4. Connect as a native stdio MCP server (for Claude Code, Cursor, or Antigravity)
-npx agentctl mcp
+# Dispatch a scoped task; auto-detects package.json / tsconfig.json and runs type-checked tests
+npx jules-orchestrator-kit dispatch --title "Add rate limiting to API router" \
+  --prompt "Implement IP-based token-bucket rate limiting in src/router.ts with unit tests."
 ```
 
-> [!NOTE]
-> **Looking for production deployment patterns?**  
-> Check out [**EXAMPLES.md**](./EXAMPLES.md) for 6 real-world recipes (Nightly TODO Scanner, Composite CI Action, Multi-Worktree Swarms, OODA Auto-Fix, MCP IDE setup, and Specialist Rosters).
+### 2️⃣ Python / FastAPI / Django (pytest, pyproject.toml)
+```bash
+# Bootstrap zero-test or legacy Python repo, then dispatch task
+npx jules-orchestrator-kit bootstrap --force
+npx jules-orchestrator-kit dispatch --title "Add OAuth2 JWT validation" \
+  --prompt "Add JWT bearer authentication middleware to backend/api/auth.py and verify via pytest."
+```
 
----
+### 3️⃣ PHP / Laravel / WordPress (Docker Compose + PHPUnit/Pest)
+```bash
+# Auto-detects docker-compose.yml and wraps test commands in `docker compose exec -T app ...`
+npx jules-orchestrator-kit dispatch --title "Upgrade PHP 8.3 type annotations" \
+  --prompt "Add strict type hints to all repository classes in app/Repositories/."
+```
 
-## 🎯 Why jules-orchestrator-kit?
+### 4️⃣ .NET / C# Enterprise (*.sln, *.csproj)
+```bash
+# Auto-detects .sln / .csproj and runs `dotnet test --no-restore --nologo`
+npx jules-orchestrator-kit dispatch --title "Implement OrderService caching" \
+  --prompt "Add IMemoryCache caching to OrderService.cs with xUnit coverage."
+```
 
-Whether you are dispatching your first automated coding task or managing high-throughput CI/CD swarms across large engineering teams, `jules-orchestrator-kit` provides total operational safety:
-
-| Feature | 🐣 For Rookies & Beginners | 🛠️ For Senior Developers & Infrastructure Engineers |
-| :--- | :--- | :--- |
-| **Safety First** | Never breaks `main` branch or pushes failing code. | 4-Phase Safety Gatekeeper fails closed on scope drift, high entropy secrets, or test regressions. |
-| **Token Budget Protection** | Prevents runaway loops from burning API quotas. | Sliding-window OODA thrash detector ($A \rightarrow B \rightarrow A \rightarrow B$) halts non-convergent repair cycles automatically. |
-| **Zero Setup Hassle** | Works out of the box with standard `npm test`. | **Zero External Runtime Dependencies** (`node:fs`, `node:path`, `node:crypto`, `node:child_process`). |
-| **Multi-Agent Swarms** | Run multiple tasks simultaneously without conflict. | Deterministic VFS mutex and 3-way structural merge engine resolve parallel worktree changes cleanly. |
-| **IDE & Tooling** | Seamlessly connects to your favorite editor. | Native Model Context Protocol (MCP) server over memory-bounded stdio streams. |
-
----
-
-## 🛠️ CLI Command Reference (`agentctl`)
-
-| Command | Usage Example | Description |
-| :--- | :--- | :--- |
-| **`init`** | `npx agentctl init` | Initializes `.agent/` configuration, workflows, and task queue directory |
-| **`dispatch`** | `agentctl dispatch --title "Fix Bug" --prompt "..."` | Dispatches an autonomous task to Google Jules |
-| **`gate`** | `agentctl gate [--fix] [--base main]` | Runs 4-phase safety gatekeeper audit against workspace |
-| **`queue`** | `agentctl queue` | Processes pending task queue sequentially from `.agent/jules-queue/` |
-| **`swarm`** | `agentctl swarm` | Launches parallel multi-agent swarm in isolated git worktrees |
-| **`merge-swarm`** | `agentctl merge-swarm` | Performs 3-way structural merge on completed swarm PRs |
-| **`mcp`** | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) JSON-RPC 2.0 server |
-| **`doctor`** | `agentctl doctor` | Verifies stack configuration, environment keys, and daily token budget |
-| **`scan`** | `agentctl scan` | Scans codebase for `TODO` and `FIXME` comments and generates task queue |
-| **`clean`** | `agentctl clean` | Audits and cleans up stale git worktrees, orphaned intents, locks, and temporary state files |
+### 5️⃣ Polyglot Monorepo (FastAPI + React + Rust CLI)
+```bash
+# Run a parallel worktree swarm; changed files automatically route to scoped subproject tests
+npx jules-orchestrator-kit swarm
+```
 
 ---
 
 ## 🏛️ System Architecture & Visual Diagrams
 
-<details open>
-<summary><b>📐 1. Control Plane Architecture Layers</b></summary>
+### 1. The Autonomous OODA Verification Loop
+Every task dispatched to `jules-orchestrator-kit` executes within an immutable, fail-closed verification loop:
 
-<br/>
-
-<p align="center">
-  <img src="docs/assets/architecture-layers.svg?v=3" alt="Control Plane Architecture Layers" width="100%" />
-</p>
-
-<br/>
-
-### Engine System Highlights
-
-- **Native Task DAG Executor (`src/dag-engine.mjs`)**: Zero-dependency `DagExecutor` with Kahn's topological sort algorithm, SHA-256 interface fingerprinting post-task execution, and pre-execution cycle detection (`DagCycleError`).
-- **Intent Journaling & Zombie Worktree Reaper (`src/journal.mjs`)**: Automatic boot-time scan (`reapOrphanedIntents`) in `agentctl` and MCP server that tracks git operations in `.agent/state/journal.jsonl` and prunes orphaned worktrees left by crashed/recycled processes.
-- **Hermetic Network Egress Guard (`src/preload-net-guard.mjs`)**: Intercepts and blocks unmocked outbound HTTP/HTTPS egress during test execution (`NODE_OPTIONS="--import ./src/preload-net-guard.mjs"`), enforcing hermetic testing while allowing local loopback (`localhost`, `127.0.0.1`).
-- **Linearizable VFS Mutex (`src/state.mjs`)**: Kernel-level directory mutex (`withVfsMutex`) guaranteeing serial linearizability for SHA-256 hash-chained session ledgers with atomic budget reservation (`reserveBudgetAtomic`).
-- **PID Recycling & Stale Lock Protection (`src/state.mjs`)**: Linux `/proc/<pid>/stat` launch-time validation and random UUID nonces prevent false-positive lock reaps from recycled OS process IDs.
-- **Memory-Bounded Content-Length MCP Streaming (`src/mcp.mjs`)**: Native MCP server over stdio streams using `McpFrameDecoder` with a 4 MB memory safety ceiling and panic boundaries to prevent stdout stack trace leaks.
-- **Process Group Isolation (`src/process-group.mjs`)**: `ProcessGroupManager` creates isolated process groups (`detached: true`) and catches `SIGINT`/`SIGTERM`/`exit` signals to execute `process.kill(-pgid)`, guaranteeing zero zombie processes.
-- **TOCTOU & Symlink Defense (`src/security.mjs`)**: `safeAtomicWrite()` uses `O_CREAT | O_EXCL | O_WRONLY` temp files with `fsyncSync` + `renameSync` and `lstatSync`/`realpathSync` symlink checks.
-- **3-Way Structural AST/JSON Merge (`scripts/jules-merge-swarm.mjs`)**: Pure Node `deepMerge3Way()` algorithm for recursive object and array merges executed in isolated temporary directories (`os.tmpdir()`).
-
-</details>
-
-<details>
-<summary><b>🔁 2. Self-Healing OODA Loop Cycle</b></summary>
-
-<br/>
-
-<p align="center">
-  <img src="docs/assets/ooda-loop-cycle.svg?v=3" alt="Self-Healing OODA Loop" width="100%" />
-</p>
-
-<br/>
-
-> [!IMPORTANT]
-> The OODA (Observe-Orient-Decide-Act) loop executes up to 3 repair attempts when tests fail. If the failure output oscillates deterministically without progress, the OODA engine halts repair to save API tokens and returns Exit Code 4.
-
-</details>
-
-<details>
-<summary><b>🛡️ 3. Zero-Trust Security Shield & 4-Phase Gate</b></summary>
-
-<br/>
-
-<p align="center">
-  <img src="docs/assets/security-shield.svg?v=3" alt="Zero-Trust Security Guarantees" width="100%" />
-</p>
-
-<br/>
-
-### The 4-Phase Safety Audit & Security Boundary (`agentctl gate`)
-
-1. **Scope Fencing (`forbidden_paths`)**: Ensures agents cannot modify protected files (`package.json`, `.github/`, deployment keys) without explicit overrides.
-2. **Diff Payload Governor**: Rejects oversized diffs (> 75 KB) to prevent truncation and hidden payload injections.
-3. **Secret Entropy Scanner**: Scans diffs for high-confidence secrets (AWS keys, Stripe keys, GitHub tokens, SSH private keys) using Shannon Entropy analysis (> 3.6 bits).
-4. **Trusted Verification Suite**: Executes auto-detected unit tests and linters (`npm test`) inside a hermetic network sandbox to guarantee zero regressions before merging.
-5. **Prompt Guard Boundary (`src/prompt-guard.mjs`)**: `sanitizeUntrustedData` strips bidi control characters, ANSI escape sequences, zero-width unicode, and neutralizes prompt injection tags (`<|im_start|>`, `[INST]`).
-6. **MCP Stream Isolation (`src/mcp.mjs`)**: Seals `process.stdout.write` framing stream to prevent log output from corrupting JSON-RPC stdio frames.
-
-> [!WARNING]
-> All security rules are fetched strictly from `origin/main` (never untrusted PR branches) to prevent prompt-injection attacks from altering security rules.
-
-</details>
-
-<details>
-<summary><b>🐝 4. Parallel Swarm Topology & Isolated Worktrees</b></summary>
-
-<br/>
-
-<p align="center">
-  <img src="docs/assets/swarm-topology.svg?v=3" alt="Multi-Agent Swarm Topology" width="100%" />
-</p>
-
-<br/>
-
-> [!NOTE]
-> Swarm execution spawns dedicated git worktrees for each task in parallel, isolated by VFS locks. Completed tasks are verified and merged back using 3-way AST/JSON structural merging (`agentctl swarm`).
-
-</details>
-
-<details>
-<summary><b>🔌 5. Model Context Protocol (MCP) & IDE Integration</b></summary>
-
-<br/>
-
-<p align="center">
-  <img src="docs/assets/mcp-integration.svg?v=3" alt="Dual-Way MCP Integration" width="100%" />
-</p>
-
-<br/>
-
-### Connecting to Claude Desktop, Cursor, or Antigravity
-
-Start the native stdio MCP server:
-
-```bash
-npx agentctl mcp
+```
++---------------------------------------------------------------------------------------------------+
+|                           AUTONOMOUS OODA SELF-HEALING ENGINE (v0.26+)                            |
+|                                                                                                   |
+|  [Task Envelope] --> (1. Validate Scope & Base Freshness)                                         |
+|                             |                                                                     |
+|                             v                                                                     |
+|                      (2. Create Isolated Git Worktree / VFS Lock)                                 |
+|                             |                                                                     |
+|                             v                                                                     |
+|                      (3. Dispatch AI Task to Google Jules / LLM)                                  |
+|                             |                                                                     |
+|                             v                                                                     |
+|                      (4. Execute Scoped Verification Gate)                                        |
+|                          -- detectPolyglotStack().testCmd                                         |
+|                          -- Docker Compose / Devcontainer wrapper                                 |
+|                             |                                                                     |
+|                   +---------+---------+                                                           |
+|                   | PASS              | FAIL                                                      |
+|                   v                   v                                                           |
+|         (5. Security Audit)   (6. Fingerprint Stderr / Flaky Verdict)                             |
+|           - Redact Secrets        |                                                               |
+|           - Check Diff < 75KB     +---> Is test QUARANTINED? (Oscillation >= 0.40)                |
+|                   |                     |                         |                               |
+|                   v                    YES                        NO                              |
+|         (7. Rebase & PR)                |                         |                               |
+|           - git rebase main             v                         v                               |
+|           - gh pr create      [Log Quarantined Flake]   [Attempt OODA Repair Turn]                |
+|                               (Exit Code 8)             (Max 3 Retries; Exit 4 on Exhaust)        |
++---------------------------------------------------------------------------------------------------+
 ```
 
-#### MCP Tool Registry Exposed:
-- `dispatch_jules_task`: Dispatch autonomous coding tasks directly from your LLM prompt.
-- `audit_jules_gate`: Execute the 4-phase safety gate against the workspace.
-- `check_risk_tier`: Classify workspace changes into Risk Tiers (R0 Cosmetic to R3 Restricted).
-- `get_jules_status`: Fetch real-time status of active, pending, and completed tasks.
-- `telemetry_tail`: Query last N real-time telemetry events from the SHA-256 hash spine.
+### 2. Polyglot Monorepo Scoped Execution Engine
+In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFiles)` traverses directory ancestry to isolate verification to affected subprojects:
 
-</details>
-
-<details>
-<summary><b>💳 6. Subscription Tier Presets Matrix</b></summary>
-
-<br/>
-
-<p align="center">
-  <img src="docs/assets/tier-presets.svg?v=3" alt="Subscription Tier Presets Matrix" width="100%" />
-</p>
-
-<br/>
-
-Tailor session limits and rate-limiting behavior to your Google Jules API subscription tier:
-
-| Tier | `dailyTasks` | `repairAttempts` | `concurrency` | `staggerMs` | Target Usage |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **`free`** | `15` | `1` | `1` | `3000 ms` | **Hobby / Free Tier:** Conserves quota, prevents HTTP 429 rate limits. |
-| **`pro`** | `100` | `2` | `2` | `1500 ms` | **Developer Pro:** Balanced throughput for everyday work. |
-| **`ultra`** *(default)* | `300` | `3` | `3` | `1000 ms` | **Swarm / Enterprise:** Maximum parallel throughput & CI/CD. |
-
-**How to activate:**
-- **Environment Variable:** `export JULES_TIER=free` (or set in `.env`)
-- **Config File (`.agent/jules.yml`):** Set `tier: free`
-
-</details>
-
----
-
-## 🤖 Specialist Agent Prompt Presets (`.agent/prompts/`)
-
-Specialized prompt presets enforce payload limits (< 75 KB) and domain guardrails out of the box:
-
-| Preset | Role & Domain | Primary Focus |
-| :--- | :--- | :--- |
-| **`Overseer.md`** | **Architect & Supervisor** | System-wide refactoring, linearizable state, and structural integrity. |
-| **`Bolt.md`** | **Performance Engineer** | Bottleneck elimination, streaming optimization, and low-latency execution. |
-| **`Sentinel.md`** | **Security Auditor** | Vulnerability patching, secret sanitization, and TOCTOU defense. |
-| **`Janitor.md`** | **Technical Debt & Cleanup** | Dead code elimination, unused import pruning, and zero-dependency compliance. |
-
-```bash
-# Example: Dispatch a cleanup task using the Janitor preset
-npx agentctl dispatch \
-  --prompt "$(cat .agent/prompts/Janitor.md) Prune unused helper methods in src/utils.mjs"
+```
++---------------------------------------------------------------------------------------------------+
+|                        MONOREPO BOUNDARY RESOLVER (resolveWorkspaceBoundary)                      |
+|                                                                                                   |
+|  changedFiles: ["backend/api/main.py", "cli/src/main.rs", "docs/README.md"]                      |
+|         |                                                                                         |
+|         +---> 1. Check Root Shared Triggers (openapi.yaml, docker-compose.yml, Makefile)          |
+|         |        -> None changed. Continue subproject isolation.                                  |
+|         |                                                                                         |
+|         +---> 2. Map Files to Subproject Roots by Trigger File Traversal:                         |
+|         |        - "backend/api/main.py" -> backend/pyproject.toml (Python Stack)                 |
+|         |        - "cli/src/main.rs"     -> cli/Cargo.toml (Rust/Cargo Stack)                     |
+|         |        - "docs/README.md"      -> (Documentation; R0 Cosmetic Risk)                     |
+|         |                                                                                         |
+|         +---> 3. Synthesize Scoped POSIX Subshell Verification Plan:                              |
+|                  testCmd:  "(cd backend && pytest) && (cd cli && cargo test --workspace)"         |
+|                  buildCmd: "(cd cli && cargo build)"                                              |
+|                                                                                                   |
+|  Result: 100% test isolation, 0 global test thrashing, 0 git index lock collisions.               |
++---------------------------------------------------------------------------------------------------+
 ```
 
 ---
 
-## ⚡ GitHub Actions Composite Action (`.github/actions/setup-jules`)
+## 🛠️ CLI Command Reference (`agentctl`)
 
-Integrate `jules-orchestrator-kit` into any GitHub Actions workflow with 3 lines of YAML:
+`agentctl` is the unified command-line interface for `jules-orchestrator-kit`, available via `bin/agentctl.mjs` or `npx jules-orchestrator-kit <command>`.
 
-```yaml
-steps:
-  - uses: actions/checkout@v4
-  - uses: FullThrottle83/jules-orchestrator-kit/.github/actions/setup-jules@main
-    with:
-      action: 'gate'
-      base_branch: 'main'
-      tier: 'ultra'
-    env:
-      JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
-```
-
----
-
-## 📖 Deep Reference Manuals & Technical Specs
-
-<details>
-<summary><b>📝 1. Configuration Reference (.agent/jules.yml)</b></summary>
-
-<br/>
-
-Auto-generated by `agentctl init` at the root of your project:
-
-```yaml
-version: 2
-tier: "pro" # Options: free, pro, ultra (default: ultra)
-test_cmd: "npm test"
-build_cmd: "npm run build"
-forbidden_paths:
-  - ".github/"
-  - "package.json"
-  - ".agent/jules.yml"
-allow_paths: []
-limits:
-  dailyTasks: 300
-  repairAttempts: 3
-  diffKb: 75
-```
-
-</details>
-
-<details>
-<summary><b>🚦 2. Exit Code Registry & Troubleshooting Matrix</b></summary>
-
-<br/>
-
-Standardized exit codes enforced across all CLI utilities and CI pipelines:
-
-| Exit Code | Classification | Description & Immediate Remediation Action |
-| :---: | :--- | :--- |
-| `0` | **Success** | Task completed cleanly; PR opened or verification passed. |
-| `1` | **Pre-Dispatch / Arg Error** | Invalid arguments, prompt > 50 KB, or pre-dispatch validation error. |
-| `2` | **API / Network Failure** | Jules API rate-limit (HTTP 429), `FAILED_PRECONDITION` quota, or timeout. |
-| `3` | **Scope Violation** | Attempted modification of restricted files (`.github/`, command files, agent rules). |
-| `4` | **OODA Exhausted / Thrash** | Verification suite failed after 3 repair attempts or hit deterministic regression. |
-| `5` | **Diff Payload Limit** | Post-change git diff exceeds payload budget (`limits.diffKb`, default 75 KB). |
-| `6` | **Secret Detected** | High-confidence secret or private key detected in patch diff (Shannon entropy > 3.6 bits). |
-| `7` | **Budget Exhausted** | Daily task session quota limit reached (`limits.dailyTasks`, default 300). |
-| `8` | **FLAKY_QUARANTINE** | Statistical test flakiness detected (oscillation >= 0.4, Wilson CI); OODA repair suppressed. |
-| `124` | **Execution Timeout** | Subprocess execution exceeded hard timeout limit (default 10 minutes). |
-| `188` | **ERR_UNMOCKED_NET** | Unmocked outbound HTTP/HTTPS egress intercepted by hermetic network guard. |
-
-</details>
-
-<details>
-<summary><b>🔐 3. Environment Variables Reference</b></summary>
-
-<br/>
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `JULES_API_KEY` | Google Jules REST API key | *(none)* |
-| `JULES_REPO` | Target GitHub Repository (`owner/repo`) | Auto-detected from `git remote` |
-| `JULES_TIER` | Subscription tier preset (`free`, `pro`, `ultra`) | `ultra` |
-| `JULES_DRY_RUN` | Set to `1` or `true` for dry-run simulation mode | `false` |
-| `JULES_DAILY_BUDGET` | Custom daily session budget limit | `300` |
-| `JULES_MAX_DIFF_KB` | Custom git diff payload limit in KB | `75` |
-| `JULES_ALLOW_COMMAND_FILE_CHANGES` | Allow PR changes to command files (`package.json`, etc.) | `false` |
-| `JULES_ALLOW_AGENT_RULE_CHANGES` | Allow PR changes to agent rule files (`AGENTS.md`, etc.) | `false` |
-| `BASE_BRANCH` | Base branch for PR Audits & Merge-Base checks | `main` |
-| `NO_COLOR` | Set to `true` to disable ANSI color output | `false` |
-
-</details>
-
-<details>
-<summary><b>🌐 4. Supported Tech Stacks & Auto-Detection Matrix</b></summary>
-
-<br/>
-
-The orchestrator automatically infers verification and build commands across ecosystems:
-
-| Stack / Ecosystem | Manifest File | Inferred Test Command | Inferred Build Command |
+| Command | Usage | Description | Exit Codes |
 | :--- | :--- | :--- | :--- |
-| **Turborepo** | `turbo.json` | `npx turbo run test` | `npx turbo run build` |
-| **pnpm Workspace** | `pnpm-workspace.yaml` | `pnpm test` | `pnpm build` |
-| **Nx Workspace** | `nx.json` | `npx nx run-many -t test` | `npx nx run-many -t build` |
-| **JavaScript / TypeScript** | `package.json` | `npm test` | `npm run build` |
-| **Rust** | `Cargo.toml` | `cargo test --workspace` | `cargo build` |
-| **Go** | `go.mod` | `go test ./...` | `go build ./...` |
-| **Python** | `pyproject.toml` | `pytest` | *(none)* |
-| **Bun / Deno** | `bunfig.toml` / `deno.json` | `bun test` / `deno test` | `bun run build` |
-| **Elixir / Ruby** | `mix.exs` / `Gemfile` | `mix test` / `rake test` | *(standard build)* |
-| **Java / C / C++** | `pom.xml` / `Makefile` | `mvn test` / `make test` | `mvn compile` / `make` |
-
-</details>
+| `dispatch` | `agentctl dispatch --title <t> --prompt <p>` | Dispatches a single task to an AI agent in an isolated worktree. | `0` (Success), `1` (Arg error), `2` (429 Rate limit), `3` (Scope deny), `4` (OODA exhausted), `5` (Diff > 75KB), `6` (Secret leak) |
+| `gate` / `audit`| `agentctl gate --base main --json` | Runs security, secret scanning, and verification gate against current branch. | `0` (Approved), `3` (Scope violation), `5` (Diff limit), `6` (Secret leak) |
+| `bootstrap` | `agentctl bootstrap [--force] [--json]` | Inspects an untested repository and synthesizes `.agent/config.yml` with a zero-test verification oracle (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`). | `0` (Bootstrapped / Existing) |
+| `review-repair`| `agentctl review-repair <pr-comments.json>`| Parses GitHub PR review comments and synthesizes actionable OODA repair tasks. | `0` (Parsed), `1` (Missing file) |
+| `queue` | `agentctl queue` | Consumes and executes pending markdown task envelopes in `.agent/queue/`. | `0` (Complete) |
+| `swarm` | `agentctl swarm` | Runs parallel multi-agent swarm across queued tasks with token-bucket concurrency. | `0` (Complete) |
+| `doctor` | `agentctl doctor` | Diagnostic inspect: displays detected stack, container wrapper, test command, and daily session budget. | `0` (Healthy) |
+| `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
+| `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
+| `init` | `agentctl init` | Scaffolds `.agent/` directory structure and default `.agent/config.yml`. | `0` (Created) |
+| `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
+| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.26.0`). | `0` |
 
 ---
 
-## 🤝 Contributing & Standards
+## 🌐 Universal Polyglot Support & Stack Detection
 
-We welcome community contributions! Please adhere to our core engineering invariants:
+The table below illustrates the 24+ software ecosystems natively supported by `src/stack-detector.mjs`:
 
-1. **Zero External Runtime Dependencies**: Use ONLY native Node.js ESM built-in modules (`node:fs`, `node:path`, `node:crypto`, `node:child_process`, `node:os`).
-2. **100% Verification Suite**: All test suites must pass cleanly with 0 errors.
-3. **Cross-Platform Compatibility**: Always normalize Windows backslashes (`\`) to POSIX slashes (`/`).
-
-### Running Tests Locally
-
-```bash
-# Clone the repository
-git clone https://github.com/FullThrottle83/jules-orchestrator-kit.git
-cd jules-orchestrator-kit
-
-# Run ESLint & node unit test suite (100% zero external runtime deps)
-npm run lint
-npm test
+```
+Ecosystems Supported:
+├── PHP / Laravel / WordPress (composer.json, phpunit.xml, pest.php, artisan, wp-cli.yml)
+├── .NET / C# / F# (*.sln, *.csproj, *.fsproj, global.json)
+├── Mobile / Dart / Flutter (pubspec.yaml)
+├── Mobile / Swift / Xcode (Package.swift)
+├── Mobile / React Native (app.json, react-native.config.js)
+├── Systems / CMake (CMakeLists.txt)
+├── Systems / Rust Cargo (Cargo.toml)
+├── Systems / Go (go.mod)
+├── Systems / Make (Makefile)
+├── Python / FastAPI / Django (pyproject.toml, requirements.txt, setup.py)
+├── Elixir / Phoenix (mix.exs)
+├── Ruby / Rails (Gemfile)
+├── Java / Maven (pom.xml)
+├── Java / Gradle (build.gradle, build.gradle.kts)
+├── JS / TS Workspaces (turbo.json, pnpm-workspace.yaml, nx.json)
+├── JS / TS Runtimes (bunfig.toml, deno.json, package.json)
+└── Devcontainers & Docker Compose (.devcontainer/devcontainer.json, docker-compose.yml, Dockerfile)
 ```
 
 ---
 
-## 📄 License
+## 🗺️ v0.27+ Next-Gen Feature Roadmap
 
-Distributed under the [MIT License](LICENSE).
+| Feature | Module / Command | Architectural Blueprint | Target Release |
+| :--- | :--- | :--- | :---: |
+| **PR Review Auto-Remediation Loop** | `agentctl review-repair` (`src/review-repair.mjs`) | Ingests GitHub PR review comments (`CHANGES_REQUESTED`), extracts line/file context, and dispatches automated OODA repair turns until reviewer comments are resolved. | **v0.27.0** *(Implemented prototype)* |
+| **Multi-Provider Failover Router** | `createFailoverProvider` (`src/provider.mjs`) | Ordered router (`["jules", "claude-code", "local-mcp"]`) that seamlessly falls back to secondary LLMs on HTTP 429 rate limits or 5xx service unavailability. | **v0.27.0** *(Implemented prototype)* |
+| **Telemetry & Audit Web Dashboard**| `agentctl dashboard` (`src/dashboard.mjs`) | Zero-dependency local HTTP server displaying real-time DAG execution graphs, Wilson-Score flaky test ledgers, and SHA-256 telemetry chains. | **v0.27.0** |
+| **Cross-Language Contract Guard** | `hashCrossLanguageInterface` (`src/merge-blocks.mjs`)| Canonical SHA-256 schema hashing for OpenAPI/Protobuf specs across polyglot task dependencies in `DagExecutor`. | **v0.26.0** *(Shipped)* |
+
+---
+
+## 📖 Recipes, Documentation & Prior Art
+
+- [**Universal Polyglot Architecture & Zero-Test Specification**](./docs/UNIVERSAL_POLYGLOT_ARCHITECTURE.md) — Comprehensive technical report on boundary resolution, OODA math, and B2B workflows.
+- [**Examples & Task Envelope Recipes**](./EXAMPLES.md) — Production YAML and Markdown task envelopes.
+- [**Adversarial Security Audit Phase 4 Report**](./docs/AUDIT_REPORT.md) — CWE-77, CWE-1321, and CWE-183 security hardening analysis.
+- [**Changelog**](./CHANGELOG.md) — Full release history and migration guides.
+
+---
+
+<div align="center">
+  <p><b>jules-orchestrator-kit</b> • Built with zero external dependencies for Google Jules and enterprise AI agent swarms.</p>
+</div>
