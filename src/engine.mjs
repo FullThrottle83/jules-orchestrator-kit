@@ -8,6 +8,7 @@ import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mj
 import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { appendTelemetry } from "./telemetry.mjs";
 
 export { recordVerifyRun, readVerifyRuns, flakyVerdict, sanitizeUntrustedData };
 
@@ -100,7 +101,11 @@ export async function gate(opts = {}) {
   const root = opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
   const base = opts.base || config.baseBranch || "main";
+  const progressBus = opts.progressBus;
+  const progressToken = opts.progressToken;
   const phases = [];
+
+  appendTelemetry(root, "gate_started", { base });
 
   let files = [];
   let bytes = 0;
@@ -112,6 +117,7 @@ export async function gate(opts = {}) {
     diffStr = diffText(root, base);
   } catch (err) {
     phases.push({ phase: "git_resolution", ok: false, error: err.message });
+    appendTelemetry(root, "gate_finished", { ok: false, code: 1, error: err.message });
     return { ok: false, code: 1, phases, error: err.message };
   }
 
@@ -142,7 +148,13 @@ export async function gate(opts = {}) {
   });
 
   phases.push({ phase: "scope", ok: scopeResult.ok, violations: scopeResult.violations });
+  appendTelemetry(root, "gate_phase", { phase: "scope", ok: scopeResult.ok });
+  if (progressBus && progressToken) {
+    progressBus.reportProgress(progressToken, 25, 100, "Phase 1/4: Scope Guard verification complete");
+  }
+
   if (!scopeResult.ok) {
+    appendTelemetry(root, "gate_finished", { ok: false, code: 3 });
     return { ok: false, code: 3, phases };
   }
 
@@ -150,14 +162,26 @@ export async function gate(opts = {}) {
   const limitBytes = (config.limits.diffKb || 75) * 1024;
   const payloadOk = bytes <= limitBytes;
   phases.push({ phase: "payload", ok: payloadOk, bytes, limitBytes });
+  appendTelemetry(root, "gate_phase", { phase: "payload", ok: payloadOk });
+  if (progressBus && progressToken) {
+    progressBus.reportProgress(progressToken, 50, 100, "Phase 2/4: Diff Payload Governor check complete");
+  }
+
   if (!payloadOk) {
+    appendTelemetry(root, "gate_finished", { ok: false, code: 5 });
     return { ok: false, code: 5, phases };
   }
 
   // Phase 3: Diff Secret Scanner
   const secretResult = scanDiff(diffStr);
   phases.push({ phase: "secrets", ok: secretResult.ok, findings: secretResult.findings });
+  appendTelemetry(root, "gate_phase", { phase: "secrets", ok: secretResult.ok });
+  if (progressBus && progressToken) {
+    progressBus.reportProgress(progressToken, 75, 100, "Phase 3/4: Diff Secret Scanner check complete");
+  }
+
   if (!secretResult.ok) {
+    appendTelemetry(root, "gate_finished", { ok: false, code: 6 });
     return { ok: false, code: 6, phases };
   }
 
@@ -195,6 +219,8 @@ export async function gate(opts = {}) {
       flakyVerdictResult = flakyVerdict(runs);
       if (flakyVerdictResult.verdict === "QUARANTINED") {
         phases.push({ phase: "verify", ok: false, testResult, buildResult, flakyVerdict: flakyVerdictResult });
+        appendTelemetry(root, "gate_phase", { phase: "verify", ok: false, quarantined: true });
+        appendTelemetry(root, "gate_finished", { ok: false, code: 8 });
         return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult };
       }
     }
@@ -208,16 +234,25 @@ export async function gate(opts = {}) {
   const verifyOk = testResult.ok && buildResult.ok;
   const failingCmd = !testResult.ok ? testResult : !buildResult.ok ? buildResult : null;
   phases.push({ phase: "verify", ok: verifyOk, testResult, buildResult });
+  appendTelemetry(root, "gate_phase", { phase: "verify", ok: verifyOk });
+  if (progressBus && progressToken) {
+    progressBus.reportProgress(progressToken, 100, 100, "Phase 4/4: Automated Test & Build Verification complete");
+  }
 
   if (!verifyOk && opts.fix) {
-    const repairs = await repair(failingCmd, { config, root, signal: opts.signal });
+    const repairs = await repair(failingCmd, { config, root, signal: opts.signal, progressBus, progressToken });
+    const finalOk = repairs.ok;
+    const finalCode = repairs.ok ? 0 : 4;
+    appendTelemetry(root, "gate_finished", { ok: finalOk, code: finalCode, repaired: true });
     if (repairs.ok) {
       return { ok: true, code: 0, phases, repairs };
     }
     return { ok: false, code: 4, phases, repairs };
   }
 
-  return { ok: verifyOk, code: verifyOk ? 0 : 4, phases };
+  const code = verifyOk ? 0 : 4;
+  appendTelemetry(root, "gate_finished", { ok: verifyOk, code });
+  return { ok: verifyOk, code, phases };
 }
 
 /**
@@ -280,6 +315,8 @@ export async function repair(failure, opts = {}) {
   const config = opts.config || loadConfig(root);
   const maxRetries = config.limits.repairAttempts || 3;
   const provider = opts.provider || createProvider(config.provider, config);
+  const progressBus = opts.progressBus;
+  const progressToken = opts.progressToken;
   const attempts = [];
   const breaker = opts.circuitBreaker || new OODACircuitBreaker({
     windowSize: Math.max(maxRetries + 1, 6),
@@ -292,6 +329,10 @@ export async function repair(failure, opts = {}) {
   breaker.observe(initialFingerprint);
 
   for (let n = 1; n <= maxRetries; n++) {
+    if (progressBus && progressToken) {
+      progressBus.reportProgress(progressToken, Math.round((n / maxRetries) * 100), 100, `OODA Repair attempt ${n}/${maxRetries}`);
+    }
+
     const repairPrompt = buildRepairPrompt(currentFailure, n, config);
     let session;
     try {
@@ -306,13 +347,15 @@ export async function repair(failure, opts = {}) {
       );
     } catch (err) {
       attempts.push({ n, ok: false, error: err.message });
+      appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: false, error: err.message });
       break;
     }
 
     attempts.push({ n, session, ok: true });
+    appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: true });
 
     // Re-verify after repair attempt
-    const gateRes = await gate({ root, config, fix: false });
+    const gateRes = await gate({ root, config, fix: false, progressBus, progressToken });
     if (gateRes.ok) {
       breaker.reset();
       return { ok: true, attempts, finalStatus: "PASSED" };

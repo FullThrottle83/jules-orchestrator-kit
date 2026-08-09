@@ -64,7 +64,9 @@ export function safeAtomicWrite(filePath, content, options = {}) {
   const fd = openSync(tempFile, "wx", mode);
   try {
     writeSync(fd, content, null, encoding);
-    fsyncSync(fd);
+    if (options.sync !== false) {
+      fsyncSync(fd);
+    }
   } finally {
     closeSync(fd);
   }

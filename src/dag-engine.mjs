@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
+import { appendTelemetry } from "./telemetry.mjs";
 
 /**
  * Custom error thrown when a circular dependency is detected in the DAG.
@@ -200,8 +201,17 @@ export class DagExecutor {
    * @param {Object} [options]
    * @param {number} [options.concurrency]
    * @param {number} [options.taskTimeout]
+   * @param {string} [options.root]
+   * @param {Object} [options.progressBus]
+   * @param {string} [options.progressToken]
    */
-  async execute({ concurrency = this.concurrency, taskTimeout = this.taskTimeout } = {}) {
+  async execute({
+    concurrency = this.concurrency,
+    taskTimeout = this.taskTimeout,
+    root,
+    progressBus,
+    progressToken,
+  } = {}) {
     this.isExecuting = true;
     const { dependents } = this.validateDag();
 
@@ -265,6 +275,7 @@ export class DagExecutor {
           }
 
           running.add(taskId);
+          if (root) appendTelemetry(root, "dag_task_started", { taskId });
 
           (async () => {
             try {
@@ -290,6 +301,17 @@ export class DagExecutor {
 
               running.delete(taskId);
               completed.add(taskId);
+
+              if (root) appendTelemetry(root, "dag_task_completed", { taskId });
+              if (progressBus && progressToken) {
+                const pct = Math.round((completed.size / this.tasks.size) * 100);
+                progressBus.reportProgress(
+                  progressToken,
+                  pct,
+                  100,
+                  `Task ${taskId} completed (${completed.size}/${this.tasks.size})`
+                );
+              }
 
               for (const depNode of dependents.get(taskId)) {
                 inDegree.set(depNode, inDegree.get(depNode) - 1);

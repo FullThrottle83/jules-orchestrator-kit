@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.22.9 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.23.0 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 

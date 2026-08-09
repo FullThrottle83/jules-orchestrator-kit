@@ -24,10 +24,10 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 3);
     assert.equal(Array.isArray(res.result.tools), true);
-    assert.equal(res.result.tools.length, 4);
+    assert.equal(res.result.tools.length, 5);
     assert.deepEqual(res.result.tools, MCP_TOOLS);
     const names = res.result.tools.map((t) => t.name);
-    assert.deepEqual(names, ["dispatch_jules_task", "audit_jules_gate", "check_risk_tier", "get_jules_status"]);
+    assert.deepEqual(names, ["dispatch_jules_task", "audit_jules_gate", "check_risk_tier", "get_jules_status", "telemetry_tail"]);
   });
 
   await t.test("executes check_risk_tier tool call", async () => {
@@ -57,7 +57,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 5);
     const parsed = JSON.parse(res.result.content[0].text);
-    assert.equal(parsed.version, "0.22.9");
+    assert.equal(parsed.version, "0.23.0");
     assert.equal(typeof parsed.budget.used, "number");
   });
 

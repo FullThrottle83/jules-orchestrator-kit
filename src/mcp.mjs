@@ -4,10 +4,12 @@ import { gate, dispatch } from "./engine.mjs";
 import { classifyRiskTier } from "./risk.mjs";
 import { checkDailyBudget, lockStatus } from "./state.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "./journal.mjs";
+import { readTelemetry } from "./telemetry.mjs";
+import { ProgressBus } from "./mcp-progress.mjs";
 
 export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
-  version: "0.22.9",
+  version: "0.23.0",
 };
 
 export const MAX_MCP_FRAME_SIZE = 4 * 1024 * 1024; // 4 MB memory safety ceiling
@@ -136,6 +138,16 @@ export const MCP_TOOLS = [
       properties: {},
     },
   },
+  {
+    name: "telemetry_tail",
+    description: "Query the last N telemetry events from the orchestrator telemetry spine.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Number of telemetry events to retrieve (default 50, max 500)" },
+      },
+    },
+  },
 ];
 
 export async function handleMcpRequest(request, opts = {}) {
@@ -260,6 +272,25 @@ export async function handleMcpRequest(request, opts = {}) {
         };
       }
 
+      if (toolName === "telemetry_tail") {
+        if (args.limit !== undefined && (typeof args.limit !== "number" || args.limit < 1)) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Invalid parameters: 'limit' must be a positive number" },
+          };
+        }
+        const limit = Math.min(args.limit || 50, 500);
+        const events = readTelemetry(root, limit);
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(events, null, 2) }],
+          },
+        };
+      }
+
       return {
         jsonrpc: "2.0",
         id,
@@ -361,11 +392,14 @@ export function startMcpServer(input = process.stdin, output = process.stdout, o
     isolateMcpStdout(output, opts);
   }
 
+  const progressBus = opts.progressBus || new ProgressBus(output, opts);
   const decoder = new McpFrameDecoder({ maxFrameSize: opts.maxFrameSize || MAX_MCP_FRAME_SIZE });
 
   decoder.on("data", async (request) => {
     try {
-      const response = await handleMcpRequest(request, opts);
+      const progressToken = request?.params?._meta?.progressToken || request?.params?.progressToken;
+      const requestOpts = { ...opts, progressBus, progressToken };
+      const response = await handleMcpRequest(request, requestOpts);
       if (response !== null && response !== undefined) {
         writeMcpFrame(output, JSON.stringify(response) + "\n");
       }

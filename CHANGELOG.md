@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
+## [0.23.0] - 2026-08-09
+### O(1) Telemetry Spine & MCP Real-Time Event/Progress Streaming
+- **O(1) Telemetry Engine (`src/telemetry.mjs`)**: Implemented `appendTelemetry` with SHA-256 hash chaining, O(1) `.head` atomic cache file (`safeAtomicWrite` with `{ sync: false }`), cold scan fallback recovery, and 8 MB log segment rotation. Added `readTelemetry` and `verifyTelemetryIntegrity`.
+- **MCP Progress Streaming Bus (`src/mcp-progress.mjs`)**: Implemented `ProgressBus` with 150ms window coalescing (latest-wins intermediate state), stream backpressure safety (awaiting `"drain"`), 240-character progress message string capping, and `notifications/message` log streaming.
+- **MCP Tooling & System Integration (`src/mcp.mjs`, `src/engine.mjs`, `src/dag-engine.mjs`)**: Registered `telemetry_tail` MCP tool to query recent telemetry events. Wired `appendTelemetry` and `ProgressBus` into `gate()`, `repair()`, and `DagExecutor.execute()`.
+- **Unit Test Suite (`test/telemetry-mcp-stream.test.mjs`)**: Added test suite verifying 1000 sequential O(1) appends (543ms), SHA-256 hash chain integrity, cold scan recovery, progress coalescing, message capping, backpressure safety, and tool execution.
+
 ## [0.22.9] - 2026-08-09
 ### Non-JSON Indentation-Block Structural Merger & Verification Chain
 - **Block Chunker & Merger (`src/merge-blocks.mjs`)**: Implemented `chunkBlocks` parsing column-0 declaration boundaries (`export`, `function`, `class`, `const`, `def`, etc.) with SHA-1 hashing, and `mergeBlocks3Way` performing 3-way block classification (`IDENTICAL`, `ONLY_OURS`, `ONLY_THEIRS`, `ADDED_OURS`, `ADDED_THEIRS`, `DELETED`, `CONFLICT_EDIT_EDIT`) with standard conflict markers.
