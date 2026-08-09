@@ -103,3 +103,20 @@ export function validateEnvelope(envelope = {}, opts = {}) {
     warnings,
   };
 }
+
+/**
+ * Parse JSON metadata payload embedded in HTML comment JULES_TASK_ENVELOPE.
+ * @param {string} content
+ * @returns {Record<string, any> | null}
+ */
+export function parseEnvelopeHeader(content) {
+  if (!content) return null;
+  const match = String(content).match(/<!--\s*JULES_TASK_ENVELOPE:\s*({[\s\S]*?})\s*-->/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+

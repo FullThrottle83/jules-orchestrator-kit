@@ -41,12 +41,8 @@ export function styleText(text, style) {
   return `${style}${text}${ANSI.reset}`;
 }
 
-export class WizardCancelledError extends Error {
-  constructor(message = "Wizard cancelled by user") {
-    super(message);
-    this.name = "WizardCancelledError";
-  }
-}
+import { WizardCancelledError } from "./ux/terminal-session.mjs";
+export { WizardCancelledError };
 
 /**
  * Read keypress in raw mode from TTY input stream.

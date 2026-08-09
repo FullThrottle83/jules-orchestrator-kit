@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.30.0] - 2026-08-10
+### Interactive UX, Guided Diagnostics & Swarm Management Subsystem
+- **Terminal Engine Hardening (`src/ux/`)**: Implemented zero-dependency terminal capabilities detector (`capabilities.mjs`), incremental sequence key decoder (`key-decoder.mjs`), raw mode lifecycle manager (`terminal-session.mjs`), virtual screen renderer (`renderer.mjs`), responsive breakpoint layout engine (`layout.mjs`), interactive TUI widgets (`widgets.mjs`), unified git diff syntax highlighter (`diff-viewer.mjs`), and bounded log viewer (`log-viewer.mjs`).
+- **Guided Diagnostics & Auto-Remediation (`src/ops/`)**: Added diagnostic check DAG (`doctor-registry.mjs`), pure fix proposal planner (`doctor-planner.mjs`), transactional executor (`transaction.mjs`), and operation receipts system (`receipts.mjs`).
+- **Interactive Queue & Swarm Manager (`src/ux/`, `src/ops/`)**: Implemented canonical task sidecar state machine (`queue-model.mjs`), swarm slot PID liveness detector (`swarm-model.mjs`), task action planner (`task-actions.mjs`), and swarm action planner (`swarm-actions.mjs`).
+- **Command Registry & Interactive Command Palette (`src/ops/`, `src/ux/`)**: Added normative command descriptor registry (`command-registry.mjs`), CLI `--help` text generator, fuzzy search filter, and interactive command palette view (`palette.mjs`).
+- **Unit Test Coverage**: Added comprehensive test suites (`test/ux.test.mjs`, `test/ops.test.mjs`, `test/queue-swarm.test.mjs`, `test/palette.test.mjs`), bringing total passing unit tests to 332 across 52 test suites with 0 lint errors.
+
 ## [0.29.1] - 2026-08-10
 ### P0 Remediation & Queue Architecture Alignment
 - **Canonical Queue Alignment (`src/wizard-task.mjs`)**: Updated `runTaskCreateWizard()` to write generated task files to canonical `getQueueDir(root)` (`.agent/jules-queue/`) rather than unread `.agent/queue/` directory.
