@@ -91,7 +91,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 </details>
 
-<details open>
+<details>
 <summary><b>🔁 2. Self-Healing OODA Loop Cycle</b></summary>
 
 <br/>
@@ -106,7 +106,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 </details>
 
-<details open>
+<details>
 <summary><b>🛡️ 3. Zero-Trust Security Shield & 4-Phase Gate</b></summary>
 
 <br/>
@@ -130,7 +130,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 </details>
 
-<details open>
+<details>
 <summary><b>🐝 4. Parallel Swarm Topology & Isolated Worktrees</b></summary>
 
 <br/>
@@ -145,7 +145,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 </details>
 
-<details open>
+<details>
 <summary><b>🔌 5. Model Context Protocol (MCP) & IDE Integration</b></summary>
 
 <br/>
@@ -173,7 +173,7 @@ npx agentctl mcp
 
 </details>
 
-<details open>
+<details>
 <summary><b>💳 6. Subscription Tier Presets Matrix</b></summary>
 
 <br/>
