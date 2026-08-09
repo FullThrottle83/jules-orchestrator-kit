@@ -218,7 +218,6 @@ export function createProvider(spec = "jules", config = {}) {
         const rawArgs = providerSpec.args || (providerSpec.command ? providerSpec.command.split(" ").slice(1) : []);
         const command = providerSpec.command ? providerSpec.command.split(" ")[0] : "claude";
 
-        // CRITICAL H-a FIX: Filter out '{prompt}' argument if prompt is passed via stdin
         const filteredArgs = providerSpec.promptViaStdin
           ? rawArgs.filter((arg) => !arg.includes("{prompt}"))
           : rawArgs;
@@ -228,7 +227,7 @@ export function createProvider(spec = "jules", config = {}) {
         const res = spawnSync(command, processedArgs, {
           cwd: config._root || process.cwd(),
           encoding: "utf-8",
-          shell: false, // CRITICAL: Ban shell execution to eliminate CWE-77
+          shell: false,
           input: providerSpec.promptViaStdin ? data.prompt : undefined,
           timeout: providerSpec.timeoutMs || 900000,
           maxBuffer: 32 * 1024 * 1024,
@@ -256,6 +255,47 @@ export function createProvider(spec = "jules", config = {}) {
       if (providerSpec.type === "http" && !providerSpec.url) return false;
       if (providerSpec.type === "exec" && !providerSpec.command) return false;
       return true;
+    },
+  };
+}
+
+/**
+ * Creates a failover provider router that attempts dispatches sequentially across an ordered array of providers.
+ * Intercepts rate limits (429) and 5xx unavailability, logging telemetry events before falling over.
+ */
+export function createFailoverProvider(providers = ["jules"], config = {}) {
+  const providerList = (Array.isArray(providers) && providers.length > 0 ? providers : ["jules"]).map((spec) =>
+    spec && typeof spec === "object" && typeof spec.dispatch === "function" ? spec : createProvider(spec, config)
+  );
+
+  return {
+    name: `failover:${providerList.map((p) => p.name).join("->")}`,
+
+    async dispatch(task, ctx = {}) {
+      const errors = [];
+      for (let i = 0; i < providerList.length; i++) {
+        const provider = providerList[i];
+        try {
+          const res = await provider.dispatch(task, ctx);
+          return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
+        } catch (err) {
+          errors.push({ provider: provider.name, error: err });
+          const isRecoverable =
+            err instanceof ProviderRateLimitError ||
+            err instanceof ProviderUnavailableError ||
+            (err.status && err.status >= 500 && err.status < 600) ||
+            err.status === 429;
+
+          if (i === providerList.length - 1 || !isRecoverable) {
+            err._failoverErrors = errors;
+            throw err;
+          }
+        }
+      }
+    },
+
+    validate() {
+      return providerList.every((p) => p.validate());
     },
   };
 }

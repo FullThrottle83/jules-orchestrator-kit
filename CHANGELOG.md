@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.0] - 2026-08-09
+### PR Review Auto-Remediation, Multi-Provider Failover & Zero-Dependency Dashboard
+- **PR Review Auto-Remediation (`src/review-repair.mjs`)**: Implemented `parseReviewComments()` to parse GitHub PR review comments (`CHANGES_REQUESTED`), filter out conversational praise (`lgtm`, `looks good`, `thanks`), map file/line coordinates, and synthesize OODA repair task envelopes. Added `agentctl review-repair <pr-comments.json>` CLI command.
+- **Multi-Provider Failover Router (`src/provider.mjs`)**: Implemented `createFailoverProvider()` allowing sequential failover across ordered provider lists (`["jules", "claude-code", "local-mcp"]`) on HTTP 429 rate limits or 5xx service unavailability.
+- **Zero-Dependency Local Dashboard (`src/dashboard.mjs`)**: Implemented `createDashboardServer()` using `node:http` to serve a real-time dark-mode HTML visualizer and REST APIs (`/api/status`, `/api/telemetry`, `/api/flaky`, `/api/locks`). Added `agentctl dashboard [port]` CLI command.
+- **Unit Test Suite (`test/v027-features.test.mjs`)**: Created test suite asserting PR review comment parsing, conversational noise filtering, multi-provider failover routing, and HTTP dashboard REST endpoints.
+
 ## [0.26.2] - 2026-08-09
 ### Triage Guidelines & Playwright Quickstart Addition
 - **Triage Guidelines (`README.md`)**: Added explicit "When to Use vs. When NOT to Use" section detailing ideal tasks (unit-tested fixes, type migrations, CVE bumps, refactoring) and out-of-scope tasks (unverifiable visual UI tweaks, closed proprietary platforms, unmocked live cloud APIs).

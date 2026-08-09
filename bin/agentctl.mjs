@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.26.2 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.27.0 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -28,6 +28,8 @@ Commands:
   lock <action>         Manage mutex locks (acquire | release | status | cleanup)
   doctor                Run system diagnostics and stack resolution checks
   bootstrap             Bootstrap zero-test repository with verification oracle
+  review-repair         Parse PR review comments and synthesize OODA repair tasks
+  dashboard             Start local HTTP telemetry and audit dashboard
   init                  Scaffold .agent/ directory and config.yml
   version               Output agentctl version
 
@@ -45,7 +47,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.26.2");
+    console.log("agentctl v0.27.0");
     process.exit(0);
   }
 
@@ -260,6 +262,31 @@ async function main() {
         console.log(`ℹ️ Repository already has a verification oracle (${res.testCmd}). Use --force to overwrite.`);
       }
       process.exit(0);
+      break;
+    }
+
+    case "review-repair": {
+      const fileArg = args[1];
+      if (!fileArg || !existsSync(fileArg)) {
+        console.error("Error: Please provide a valid JSON file containing PR review comments.");
+        process.exit(1);
+      }
+      const { parseReviewComments, createReviewRepairTask } = await import("../src/review-repair.mjs");
+      const raw = readFileSync(fileArg, "utf-8");
+      const comments = parseReviewComments(raw);
+      console.log(`✅ Parsed ${comments.length} actionable review comment(s).`);
+      for (const c of comments) {
+        const task = createReviewRepairTask(c);
+        console.log(`   Task: ${task.title} (Author: @${c.author}, Line: ${c.line || "N/A"})`);
+      }
+      process.exit(0);
+      break;
+    }
+
+    case "dashboard": {
+      const port = Number(args[1] || 4100);
+      const { startDashboardServer } = await import("../src/dashboard.mjs");
+      startDashboardServer(port, root);
       break;
     }
 
