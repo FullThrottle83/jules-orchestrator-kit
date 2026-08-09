@@ -121,16 +121,23 @@ export function createProvider(spec = "jules", config = {}) {
         throw new MissingApiKeyError();
       }
 
+      const isRepoless = Boolean(task.repoless || ctx.repoless);
       const rawRepo = task.source || ctx.source || process.env.JULES_REPO || "";
+      if (!rawRepo && !ctx.dryRun && providerSpec.name === "jules" && !isRepoless) {
+        throw new Error("Missing connected Jules repository source. Set JULES_REPO or pass source/repoless option.");
+      }
+
       const sourceName = rawRepo
         ? (rawRepo.startsWith("sources/") ? rawRepo : `sources/github/${rawRepo}`)
-        : "sources/github/default/repo";
+        : undefined;
+
+      const startingBranch = task.branch || ctx.branch || config.baseBranch || process.env.BASE_BRANCH || "main";
 
       const data = {
         prompt: task.prompt || "",
         title: task.title || "Agent Task",
-        branch: task.branch || (config.branchPrefix ? config.branchPrefix + "task" : "agent/task"),
-        source: sourceName,
+        branch: startingBranch,
+        source: sourceName || "",
         project: process.env.JULES_PROJECT_ID || "default",
         ...ctx,
       };
@@ -176,8 +183,14 @@ export function createProvider(spec = "jules", config = {}) {
         }
 
         if (bodyObj && typeof bodyObj === "object") {
-          if (data.repoless || ctx.repoless || task.repoless) {
+          if (isRepoless || !sourceName) {
             delete bodyObj.sourceContext;
+          }
+          if (task.autoPr || ctx.autoPr) {
+            bodyObj.automationMode = "AUTO_CREATE_PR";
+          }
+          if (task.requirePlanApproval || ctx.requirePlanApproval) {
+            bodyObj.requirePlanApproval = true;
           }
           body = JSON.stringify(bodyObj);
         }

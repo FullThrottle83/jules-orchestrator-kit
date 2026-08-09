@@ -9,6 +9,7 @@ import {
   MissingApiKeyError,
   buildAgentEnvelope,
   run,
+  gate,
   changedFiles,
   diffText,
   runCmd,
@@ -104,6 +105,76 @@ test("P0-01: Jules REST v1alpha Provider Alignment", async (t) => {
     }
   });
 
+  await t.test("defaults startingBranch to config.baseBranch or main and attaches autoPr / requirePlanApproval", async () => {
+    let capturedBody = null;
+    let server;
+
+    try {
+      server = createServer((req, res) => {
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => {
+          capturedBody = JSON.parse(data);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ name: "sessions/test-defaults" }));
+        });
+      });
+
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+
+      const provider = createProvider({
+        name: "jules",
+        type: "http",
+        url: `http://127.0.0.1:${port}/v1alpha/sessions`,
+        headers: { "X-Goog-Api-Key": "{token}" },
+        bodyTemplate: {
+          title: "{title}",
+          prompt: "{prompt}",
+          sourceContext: {
+            source: "{source}",
+            githubRepoContext: { startingBranch: "{branch}" },
+          },
+        },
+      });
+
+      process.env.JULES_API_KEY = "test-key";
+      await provider.dispatch(
+        { prompt: "Test default branch", source: "owner/repo", autoPr: true, requirePlanApproval: true },
+        { dryRun: false, baseBranch: "main" }
+      );
+
+      assert.equal(capturedBody.sourceContext.githubRepoContext.startingBranch, "main");
+      assert.equal(capturedBody.automationMode, "AUTO_CREATE_PR");
+      assert.equal(capturedBody.requirePlanApproval, true);
+    } finally {
+      if (server) server.close();
+    }
+  });
+
+  await t.test("throws error when repository source is missing for live non-repoless dispatch", async () => {
+    const oldKey = process.env.JULES_API_KEY;
+    const oldRepo = process.env.JULES_REPO;
+    process.env.JULES_API_KEY = "test-key";
+    delete process.env.JULES_REPO;
+
+    try {
+      const provider = createProvider("jules");
+      await assert.rejects(
+        async () => {
+          await provider.dispatch({ prompt: "missing source" }, { dryRun: false });
+        },
+        (err) => {
+          assert.match(err.message, /Missing connected Jules repository source/);
+          return true;
+        }
+      );
+    } finally {
+      if (oldKey) process.env.JULES_API_KEY = oldKey;
+      if (oldRepo) process.env.JULES_REPO = oldRepo;
+    }
+  });
+
   await t.test("omits sourceContext when repoless mode is true", async () => {
     let capturedBody = null;
     let server;
@@ -188,6 +259,31 @@ test("P0-05: Working Tree & Untracked File Gate Mode", async (t) => {
 
       const workingDiff = diffText(tmpDir, "HEAD", "working-tree");
       assert.ok(workingDiff.includes("AWS_SECRET_ACCESS_KEY"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("gate() in working-tree mode detects untracked secret files", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-gate-e2e-"));
+    try {
+      runCmd("git init", { cwd: tmpDir });
+      runCmd("git config user.name 'Test'", { cwd: tmpDir });
+      runCmd("git config user.email 'test@example.com'", { cwd: tmpDir });
+
+      writeFileSync(join(tmpDir, "README.md"), "# Initial\n");
+      runCmd("git add README.md", { cwd: tmpDir });
+      runCmd("git commit -m 'Initial commit'", { cwd: tmpDir });
+
+      // Create untracked file containing secret pattern
+      writeFileSync(join(tmpDir, ".env"), "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n");
+
+      const res = await gate({ root: tmpDir, base: "HEAD", mode: "working-tree" });
+      assert.equal(res.ok, false);
+      assert.ok(res.code > 0);
+      assert.equal(res.phases[0].phase, "scope");
+      assert.equal(res.phases[0].ok, false);
+      assert.ok(res.phases[0].violations.some((v) => v.file.includes(".env")));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

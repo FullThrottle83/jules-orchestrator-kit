@@ -101,20 +101,21 @@ export async function gate(opts = {}) {
   const root = opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
   const base = opts.base || config.baseBranch || "main";
+  const mode = opts.mode || (opts.workingTree ? "working-tree" : (process.env.JULES_GATE_MODE || "working-tree"));
   const progressBus = opts.progressBus;
   const progressToken = opts.progressToken;
   const phases = [];
 
-  appendTelemetry(root, "gate_started", { base });
+  appendTelemetry(root, "gate_started", { base, mode });
 
   let files = [];
   let bytes = 0;
   let diffStr = "";
 
   try {
-    files = changedFiles(root, base);
-    bytes = diffBytes(root, base);
-    diffStr = diffText(root, base);
+    files = changedFiles(root, base, mode);
+    bytes = diffBytes(root, base, mode);
+    diffStr = diffText(root, base, mode);
   } catch (err) {
     phases.push({ phase: "git_resolution", ok: false, error: err.message });
     appendTelemetry(root, "gate_finished", { ok: false, code: 1, error: err.message });

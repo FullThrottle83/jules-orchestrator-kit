@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.2] - 2026-08-10
+### Phase 1 P0 Closure: Jules Provider & Gate Engine Remediation
+- **Jules Provider `startingBranch` & Source Validation (`src/provider.mjs`)**: Updated `startingBranch` to default to `config.baseBranch` (or `main`) rather than a target branch prefix (`agent/task`). Added validation throwing an explicit error when repository source is missing on non-repoless live dispatches.
+- **Automation & Plan Approval Body Mapping (`src/provider.mjs`)**: Mapped `task.autoPr` / `ctx.autoPr` to `automationMode: "AUTO_CREATE_PR"` and `task.requirePlanApproval` to `requirePlanApproval: true` in Google Jules REST API payloads.
+- **Gate Mode Engine Wiring (`src/engine.mjs`)**: Wired `opts.mode` directly into `gate()`, passing `mode` down to `changedFiles()`, `diffBytes()`, and `diffText()`. Ensures local CLI audits evaluate working-tree, staged, or committed diffs as requested.
+- **P0 Test Suite & E2E Verification (`test/p0-remediation.test.mjs`)**: Added end-to-end unit tests asserting `startingBranch` defaults, missing source validation, `automationMode` / `requirePlanApproval` body mapping, and `gate({ mode: "working-tree" })` untracked file secret blocking.
+
 ## [0.28.1] - 2026-08-10
 ### Release Recovery, Gate Mode Wiring & Jules Starting Branch Fix
 - **Node 22 Test Lifecycle Fix (`test/p0-remediation.test.mjs`)**: Made parent test callbacks `async` and awaited nested `t.test()` promises, resolving test cancellation failure on Node 22/20 CI runners.

@@ -9,7 +9,7 @@ import { ProgressBus } from "./mcp-progress.mjs";
 
 export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
-  version: "0.28.1",
+  version: "0.28.2",
 };
 
 export const MAX_MCP_FRAME_SIZE = 4 * 1024 * 1024; // 4 MB memory safety ceiling
