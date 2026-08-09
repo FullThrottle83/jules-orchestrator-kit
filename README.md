@@ -27,8 +27,7 @@
 
 ## ⚡ 2-Minute Quickstart
 
-> [!TIP]
-> **New to Google Jules or agent automation?** You don't need any complex setup! `jules-orchestrator-kit` works out of the box with standard `npm test` and zero external dependencies.
+> 💡 **TIP**: **New to Google Jules or agent automation?** You don't need any complex setup! `jules-orchestrator-kit` works out of the box with standard `npm test` and zero external dependencies.
 
 ```bash
 # 1. Initialize orchestrator structure in your target codebase
@@ -46,8 +45,7 @@ npx agentctl gate
 npx agentctl mcp
 ```
 
-> [!NOTE]
-> 📖 **Looking for production deployment patterns?**  
+> 📖 **NOTE**: **Looking for production deployment patterns?**  
 > Check out [**EXAMPLES.md**](./EXAMPLES.md) for 6 real-world recipes (Nightly TODO Scanner, Composite CI Action, Multi-Worktree Swarms, OODA Auto-Fix, MCP IDE setup, and Specialist Rosters).
 
 ---
@@ -104,8 +102,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 <br/>
 
-> [!IMPORTANT]
-> The OODA (Observe-Orient-Decide-Act) loop executes up to 3 repair attempts when tests fail. If the failure output oscillates deterministically without progress, the OODA engine halts repair to save API tokens and returns Exit Code 4.
+> 🚨 **IMPORTANT**: The OODA (Observe-Orient-Decide-Act) loop executes up to 3 repair attempts when tests fail. If the failure output oscillates deterministically without progress, the OODA engine halts repair to save API tokens and returns Exit Code 4.
 
 </details>
 
@@ -129,8 +126,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 5. **Prompt Guard Boundary (`src/prompt-guard.mjs`)**: `sanitizeUntrustedData` strips bidi control characters, ANSI escape sequences, zero-width unicode, and neutralizes prompt injection tags (`<|im_start|>`, `[INST]`).
 6. **MCP Stream Isolation (`src/mcp.mjs`)**: Seals `process.stdout.write` framing stream to prevent log output from corrupting JSON-RPC stdio frames.
 
-> [!WARNING]
-> All security rules are fetched strictly from `origin/main` (never untrusted PR branches) to prevent prompt-injection attacks from altering security rules.
+> ⚠️ **WARNING**: All security rules are fetched strictly from `origin/main` (never untrusted PR branches) to prevent prompt-injection attacks from altering security rules.
 
 </details>
 
@@ -145,8 +141,7 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 <br/>
 
-> [!NOTE]
-> Swarm execution spawns dedicated git worktrees for each task in parallel, isolated by VFS locks. Completed tasks are verified and merged back using 3-way AST/JSON structural merging (`agentctl swarm`).
+> 📌 **NOTE**: Swarm execution spawns dedicated git worktrees for each task in parallel, isolated by VFS locks. Completed tasks are verified and merged back using 3-way AST/JSON structural merging (`agentctl swarm`).
 
 </details>
 
