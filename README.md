@@ -5,10 +5,10 @@
 [![Jules PR Audit](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml/badge.svg)](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml)
 [![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org)
 
 > **High-Volume Autonomous Orchestration Engine for Google Jules**  
-> Built specifically to execute 300+ daily agent sessions and parallel swarms safely. Zero external runtime dependencies. Built strictly on native Node.js 18+ ESM.
+> Built specifically to execute 300+ daily agent sessions and parallel swarms safely. Zero external runtime dependencies. Built strictly on native Node.js 20+ ESM.
 
 ---
 

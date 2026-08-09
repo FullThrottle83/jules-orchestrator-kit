@@ -3,6 +3,10 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [0.22.0] - 2026-08-09
+### Engine Baseline & Runtime Upgrade
+- **Node.js LTS Engine Bump (`package.json`, `README.md`, `action.yml`)**: Raised Node.js engine requirement from `>=18.0.0` to `>=20.0.0` (Active LTS baseline). Unlocks stabilized `node:test` APIs, optimized V8 JIT compilation, and improved native `fetch` streaming performance.
+
 ## [0.21.0] - 2026-08-09
 ### Autonomous Jules Benchmark Audit & Hardening
 - **Falsy Zero-Budget Fix (`src/config.mjs`)**: Fixed `JULES_DAILY_BUDGET: 0` evaluating as falsy and bypassing zero-budget limits.
