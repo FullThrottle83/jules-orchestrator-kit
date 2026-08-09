@@ -185,92 +185,15 @@ export function detectPackageManager(root = process.cwd(), pkg = {}) {
   return "npm";
 }
 
+import { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo } from "./stack-detector.mjs";
+
+export { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo };
+
 /**
- * Autodetects verification test/build commands across 16 common tech stacks.
+ * Autodetects verification test/build commands across 24+ polyglot tech stacks.
  */
 export function detectStack(projectRoot = process.cwd()) {
-  const detectors = [
-    {
-      files: ["turbo.json"],
-      resolve: () => ({ testCmd: "npx turbo run test", buildCmd: "npx turbo run build", stack: "turbo" }),
-    },
-    {
-      files: ["pnpm-workspace.yaml"],
-      resolve: () => ({ testCmd: "pnpm -r test", buildCmd: "pnpm -r build", stack: "pnpm" }),
-    },
-    {
-      files: ["nx.json"],
-      resolve: () => ({ testCmd: "npx nx run-many -t test", buildCmd: "npx nx run-many -t build", stack: "nx" }),
-    },
-    {
-      files: ["bunfig.toml", "bun.lockb"],
-      resolve: () => ({ testCmd: "bun test", buildCmd: "bun run build", stack: "bun" }),
-    },
-    {
-      files: ["deno.json", "deno.jsonc"],
-      resolve: () => ({ testCmd: "deno test", buildCmd: "deno task build", stack: "deno" }),
-    },
-    {
-      files: ["package.json"],
-      resolve: (root) => {
-        try {
-          const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
-          const pm = detectPackageManager(root, pkg);
-          const scripts = pkg.scripts || {};
-          let testScript = scripts.test ? `${pm} test` : "";
-          const buildScript = scripts.build ? `${pm} run build` : "";
-          return { testCmd: testScript || `${pm} test`, buildCmd: buildScript, stack: "node" };
-        } catch (_) {
-          return { testCmd: "npm test", buildCmd: "npm run build", stack: "node" };
-        }
-      },
-    },
-    {
-      files: ["Cargo.toml"],
-      resolve: () => ({ testCmd: "cargo test --workspace", buildCmd: "cargo build", stack: "cargo" }),
-    },
-    {
-      files: ["go.mod"],
-      resolve: () => ({ testCmd: "go test ./...", buildCmd: "go build ./...", stack: "go" }),
-    },
-    {
-      files: ["pyproject.toml", "requirements.txt", "setup.py"],
-      resolve: () => ({ testCmd: "pytest", buildCmd: "", stack: "python" }),
-    },
-    {
-      files: ["mix.exs"],
-      resolve: () => ({ testCmd: "mix test", buildCmd: "mix compile", stack: "mix" }),
-    },
-    {
-      files: ["Gemfile"],
-      resolve: () => ({ testCmd: "bundle exec rake test", buildCmd: "", stack: "bundler" }),
-    },
-    {
-      files: ["Package.swift"],
-      resolve: () => ({ testCmd: "swift test", buildCmd: "swift build", stack: "swift" }),
-    },
-    {
-      files: ["pom.xml"],
-      resolve: () => ({ testCmd: "mvn test", buildCmd: "mvn compile", stack: "maven" }),
-    },
-    {
-      files: ["build.gradle", "build.gradle.kts"],
-      resolve: () => ({ testCmd: "./gradlew test", buildCmd: "./gradlew assemble", stack: "gradle" }),
-    },
-    {
-      files: ["Makefile"],
-      resolve: () => ({ testCmd: "make test", buildCmd: "make build", stack: "make" }),
-    },
-  ];
-
-  for (const detector of detectors) {
-    if (detector.files.some((f) => existsSync(join(projectRoot, f)))) {
-      const res = detector.resolve(projectRoot);
-      if (res) return res;
-    }
-  }
-
-  return { testCmd: "", buildCmd: "", stack: "unknown" };
+  return detectPolyglotStack(projectRoot);
 }
 
 export function resolveVerify(root = process.cwd()) {

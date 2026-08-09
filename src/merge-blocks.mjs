@@ -10,7 +10,47 @@ function sha1(content) {
 }
 
 /**
- * Chunks source code text into declaration blocks bounded by column-0 declaration boundaries.
+ * Recursively sorts object keys alphabetically to produce a canonical representation.
+ */
+function sortKeysRecursive(obj) {
+  if (obj === null || typeof obj !== "object") {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sortKeysRecursive);
+  }
+  const sorted = {};
+  const keys = Object.keys(obj).sort();
+  for (const key of keys) {
+    sorted[key] = sortKeysRecursive(obj[key]);
+  }
+  return sorted;
+}
+
+/**
+ * Computes canonical SHA-256 fingerprint for cross-language API contracts (OpenAPI/JSON/YAML).
+ */
+export function hashCrossLanguageInterface(taskId, outputFile, content = "", schemaType = "json") {
+  let cleaned = content;
+  // Strip single-line comments
+  cleaned = cleaned.replace(/^\s*\/\/.*$/gm, "").replace(/^\s*#.*$/gm, "");
+
+  let canonicalStr = cleaned.trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    const sorted = sortKeysRecursive(parsed);
+    canonicalStr = JSON.stringify(sorted);
+  } catch (_) {
+    // Fallback to normalized trimmed string if not JSON
+  }
+
+  const sha256 = createHash("sha256").update(canonicalStr).digest("hex");
+  return `${taskId}:${outputFile}:${sha256}`;
+}
+
+/**
+ * Chunks source code text into declaration blocks bounded by syntax declaration boundaries.
+ * Supports JS/TS/braced languages, Python whitespace, and XML/tag-based structures (.csproj).
  * @param {string} text
  * @param {string} [lang="js"]
  * @returns {Array<Object>} Array of block descriptors
@@ -24,11 +64,14 @@ export function chunkBlocks(text = "", lang = "js") {
   const blocks = [];
   const nameCounts = new Map();
 
-  const isPython = lang === "py" || lang === "python";
+  const isPython = lang === "py" || lang === "python" || lang === "yaml" || lang === "yml";
+  const isXml = lang === "xml" || lang === "html" || lang === "csproj" || lang === "fsproj" || lang === "vbproj" || lang === "xaml";
 
-  // Declaration regex matching column 0
-  const declRegex = /^(?:export\s+)?(?:async\s+)?(function\*?|class|const|let|var|def|type|interface|enum)\s+([a-zA-Z0-9_$]+)/;
-  const declAnyRegex = /^(?:export\s+)?(?:async\s+)?(function\*?|class|const|let|var|def|type|interface|enum)\b/;
+  // Declaration regexes matching column 0
+  const declRegex = /^(?:export\s+)?(?:async\s+)?(function\*?|class|const|let|var|def|type|interface|enum|struct|fn|pub|func)\s+([a-zA-Z0-9_$]+)/;
+  const declAnyRegex = /^(?:export\s+)?(?:async\s+)?(function\*?|class|const|let|var|def|type|interface|enum|struct|fn|pub|func)\b/;
+  const xmlTagOpenRegex = /^\s*<([a-zA-Z0-9_$-]+)(?:\s+[^>]*)?>/;
+  const xmlTagCloseRegex = /^\s*<\/([a-zA-Z0-9_$-]+)>/;
 
   let currentLines = [];
   let currentType = "prelude";
@@ -36,6 +79,7 @@ export function chunkBlocks(text = "", lang = "js") {
   let inBlock = false;
   let braceDepth = 0;
   let blockIndentLevel = 0;
+  let xmlTagName = null;
 
   function flushBlock() {
     if (currentLines.length === 0) return;
@@ -70,14 +114,37 @@ export function chunkBlocks(text = "", lang = "js") {
     inBlock = false;
     braceDepth = 0;
     blockIndentLevel = 0;
+    xmlTagName = null;
   }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const isColumnZero = line.length > 0 && line[0] !== " " && line[0] !== "\t";
 
+    if (isXml) {
+      // XML / Tag-based chunking (.csproj, XML, HTML)
+      const openMatch = line.match(xmlTagOpenRegex);
+      const closeMatch = line.match(xmlTagCloseRegex);
+
+      if (!inBlock && openMatch && !line.includes("/>") && !openMatch[1].startsWith("?") && !openMatch[1].startsWith("!")) {
+        const tag = openMatch[1];
+        if (tag !== "Project" && tag !== "html" && tag !== "svg") {
+          flushBlock();
+          currentType = "tag";
+          currentName = tag;
+          xmlTagName = tag;
+          inBlock = true;
+        }
+      }
+      currentLines.push(line);
+      if (inBlock && closeMatch && closeMatch[1] === xmlTagName) {
+        flushBlock();
+      }
+      continue;
+    }
+
     if (isPython) {
-      // Python block logic
+      // Python & YAML whitespace block logic
       if (isColumnZero && declAnyRegex.test(line)) {
         flushBlock();
         const match = line.match(declRegex);
@@ -86,11 +153,11 @@ export function chunkBlocks(text = "", lang = "js") {
         inBlock = true;
         blockIndentLevel = 0;
       } else if (inBlock && isColumnZero && line.trim().length > 0 && !line.trim().startsWith("#")) {
-        // Dedented back to column 0 in Python
+        // Dedented back to column 0 in Python/YAML
         flushBlock();
       }
     } else {
-      // JS/TS block logic
+      // Braced syntax block logic (JS, TS, C#, Rust, Go, Swift, C/C++)
       if (isColumnZero && declAnyRegex.test(line)) {
         flushBlock();
         const match = line.match(declRegex);
@@ -103,8 +170,8 @@ export function chunkBlocks(text = "", lang = "js") {
 
     currentLines.push(line);
 
-    if (!isPython && inBlock) {
-      // Track curly brace balance for JS/TS
+    if (!isPython && !isXml && inBlock) {
+      // Track curly brace balance
       for (const char of line) {
         if (char === "{") braceDepth++;
         if (char === "}") braceDepth--;
@@ -155,25 +222,20 @@ export function mergeBlocks3Way(baseText = "", oursText = "", theirsText = "", l
 
     if (tBlock && bBlock) {
       if (oBlock.hash === tBlock.hash) {
-        // Both match exactly
         classifications.push({ id, type: "IDENTICAL" });
         outputBlocks.push(oBlock.content);
       } else if (oBlock.hash === bBlock.hash) {
-        // Ours didn't change, theirs changed
         classifications.push({ id, type: "ONLY_THEIRS" });
         outputBlocks.push(tBlock.content);
       } else if (tBlock.hash === bBlock.hash) {
-        // Theirs didn't change, ours changed
         classifications.push({ id, type: "ONLY_OURS" });
         outputBlocks.push(oBlock.content);
       } else {
-        // Both changed differently
         conflicts++;
         classifications.push({ id, type: "CONFLICT_EDIT_EDIT" });
         outputBlocks.push(`<<<<<<< OURS\n${oBlock.content}\n=======\n${tBlock.content}\n>>>>>>> THEIRS`);
       }
     } else if (tBlock && !bBlock) {
-      // Added in both ours and theirs
       if (oBlock.hash === tBlock.hash) {
         classifications.push({ id, type: "IDENTICAL" });
         outputBlocks.push(oBlock.content);
@@ -183,18 +245,14 @@ export function mergeBlocks3Way(baseText = "", oursText = "", theirsText = "", l
         outputBlocks.push(`<<<<<<< OURS\n${oBlock.content}\n=======\n${tBlock.content}\n>>>>>>> THEIRS`);
       }
     } else if (!tBlock && bBlock) {
-      // Present in base and ours, missing in theirs
       if (oBlock.hash === bBlock.hash) {
-        // Deleted by theirs, unchanged by ours
         classifications.push({ id, type: "DELETED" });
       } else {
-        // Modified by ours, deleted by theirs -> CONFLICT
         conflicts++;
         classifications.push({ id, type: "CONFLICT_EDIT_EDIT" });
         outputBlocks.push(`<<<<<<< OURS\n${oBlock.content}\n=======\n>>>>>>> THEIRS`);
       }
     } else {
-      // !tBlock && !bBlock -> ADDED_OURS
       classifications.push({ id, type: "ADDED_OURS" });
       outputBlocks.push(oBlock.content);
     }
@@ -208,16 +266,12 @@ export function mergeBlocks3Way(baseText = "", oursText = "", theirsText = "", l
 
     const bBlock = baseMap.get(id);
     if (!bBlock) {
-      // Added in theirs
       classifications.push({ id, type: "ADDED_THEIRS" });
       outputBlocks.push(tBlock.content);
     } else {
-      // Present in base and theirs, deleted by ours
       if (tBlock.hash === bBlock.hash) {
-        // Deleted by ours, unchanged by theirs
         classifications.push({ id, type: "DELETED" });
       } else {
-        // Modified by theirs, deleted by ours -> CONFLICT
         conflicts++;
         classifications.push({ id, type: "CONFLICT_EDIT_EDIT" });
         outputBlocks.push(`<<<<<<< OURS\n=======\n${tBlock.content}\n>>>>>>> THEIRS`);

@@ -3,7 +3,7 @@
 import { parseArgs } from "node:util";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, resolveRoot, detectStack } from "../src/config.mjs";
+import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir, ensureDir } from "../src/state.mjs";
 import { worktreePrune } from "../src/git.mjs";
@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.25.1 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.26.0 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -27,6 +27,7 @@ Commands:
   clean                 Clean stale branches, worktrees, locks, and ledgers
   lock <action>         Manage mutex locks (acquire | release | status | cleanup)
   doctor                Run system diagnostics and stack resolution checks
+  bootstrap             Bootstrap zero-test repository with verification oracle
   init                  Scaffold .agent/ directory and config.yml
   version               Output agentctl version
 
@@ -44,7 +45,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.25.1");
+    console.log("agentctl v0.26.0");
     process.exit(0);
   }
 
@@ -236,6 +237,28 @@ async function main() {
       const budget = checkDailyBudget(root, config.limits.dailyTasks);
       console.log(`  Daily Budget     : ${budget.used} / ${budget.budget} sessions used`);
       console.log(`--------------------------------------------------\n`);
+      process.exit(0);
+      break;
+    }
+
+    case "bootstrap": {
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          force: { type: "boolean", short: "f" },
+        },
+        allowPositionals: true,
+      });
+
+      const res = bootstrapZeroTestRepo(root, { force: values.force });
+      if (res.bootstrapped) {
+        console.log(`✅ Zero-test repo bootstrapped successfully!`);
+        console.log(`   Stack detected : ${res.stack}`);
+        console.log(`   Oracle TestCmd : ${res.testCmd}`);
+        console.log(`   Config written : ${res.configPath}`);
+      } else {
+        console.log(`ℹ️ Repository already has a verification oracle (${res.testCmd}). Use --force to overwrite.`);
+      }
       process.exit(0);
       break;
     }

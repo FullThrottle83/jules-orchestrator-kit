@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.0] - 2026-08-09
+### Universal Polyglot Coverage, Zero-Test Bootstrapping & Container Execution Wrappers
+- **Universal Polyglot Stack Detector (`src/stack-detector.mjs`)**: Auto-detects 24+ tech ecosystems (PHP/Laravel/WP, .NET/C#/F#, Mobile Flutter/Swift/Dart/React-Native, Systems CMake/Cargo/Go/Make, Python, Node, Deno, Bun, Mix, Maven, Gradle, Bundler).
+- **Container Execution Wrappers (`src/stack-detector.mjs`)**: Auto-detects `.devcontainer/devcontainer.json` or `docker-compose.yml` and wraps task verification commands in `docker compose exec -T app <cmd>` or `devcontainer exec`.
+- **Scoped Monorepo Boundary Resolver (`resolveWorkspaceBoundary`)**: Isolates changed files up directory ancestry to nearest subproject root and synthesizes subshell test commands (`(cd backend && pytest) && (cd cli && cargo test)`), or falls back to global verification for shared contract files (`openapi.yaml`).
+- **Zero-Test Repository Bootstrapping (`agentctl bootstrap`)**: Synthesizes non-destructive syntax check oracles (`php -l`, `python -m compileall`, `dotnet build`, `npx tsc --noEmit`) or generates `.agent/smoke.test.mjs` for untested repos. Added `agentctl bootstrap` CLI command.
+- **Polyglot Indentation & Tag-Based 3-Way Block Merger (`src/merge-blocks.mjs`)**: Extended 3-way block merger to handle XML/`.csproj` tag blocks (`<PropertyGroup>`, `<ItemGroup>`), Python/YAML whitespace blocks, and canonical SHA-256 schema hashing (`hashCrossLanguageInterface`) for OpenAPI contract verification.
+- **Unit Test Suites (`test/stack-detector.test.mjs`, `test/polyglot-merge.test.mjs`)**: Created test suites asserting stack detection, container wrapping, monorepo boundary resolution, zero-test bootstrapping, XML block merging, and OpenAPI schema contract hashing.
+
 ## [0.25.1] - 2026-08-09
 ### Async I/O Refactoring & Script Modularization Polish
 - **Non-Blocking Queue Runner File I/O (`src/engine.mjs`)**: Replaced `fs.readFileSync` with `await fs.promises.readFile` inside the async batch processing map in `run()`, preventing event loop blocking during file prompt reads.
