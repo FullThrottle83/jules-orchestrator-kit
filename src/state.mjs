@@ -292,18 +292,24 @@ export function getLockDir(rootOrOpts = resolveRoot()) {
   return dir;
 }
 
+export function parseProcStat(stat) {
+  if (typeof stat !== "string") return null;
+  const rpar = stat.lastIndexOf(")");
+  if (rpar === -1) return null;
+  const rest = stat.slice(rpar + 2).trim().split(/\s+/);
+  return rest[19] || null;
+}
+
 export function getProcessStartTime(pid) {
-  if (!pid || typeof pid !== "number") return null;
+  if (!pid) return null;
+  if (typeof pid === "string" && pid.includes(")")) {
+    return parseProcStat(pid);
+  }
+  if (typeof pid !== "number") return null;
   if (process.platform === "linux") {
     try {
       const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
-      const rpar = stat.lastIndexOf(")");
-      if (rpar !== -1) {
-        const rest = stat.slice(rpar + 1).trim().split(/\s+/);
-        return rest[19] || null;
-      }
-      const parts = stat.trim().split(/\s+/);
-      return parts[21] || null;
+      return parseProcStat(stat);
     } catch (_) {}
   }
   return null;

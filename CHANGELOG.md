@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [0.22.5] - 2026-08-09
+### Robust /proc Parsing, Queue Task Filtering & Execution Guardrails
+- **Proc Stat Parsing (`src/state.mjs`)**: Refactored `getProcessStartTime` and added `parseProcStat` parsing fields strictly after `lastIndexOf(')') + 2` to prevent index shifts caused by process titles containing spaces or parentheses.
+- **Queue Task Matching Filter (`src/engine.mjs`, `bin/agentctl.mjs`)**: Added `isTaskFile()` helper filtering out `README.md` and matching `TASK-*.md` or valid envelope front-matter in `.agent/jules-queue/`.
+- **Process Execution Guardrails (`src/git.mjs`)**: Added default 10-minute timeout and 10 MB `maxBuffer` to process wrappers (`runCmd`, `git`). Handled `ETIMEDOUT` and `ENOBUFS` gracefully with structured exit codes (`124`, `1`).
+- **Immutable Base Commit SHA Pinning (`src/git.mjs`, `src/execution_envelope.mjs`)**: Updated `resolveBase` to return exact 40-character commit SHAs output by `git rev-parse <ref>^{commit}` to pin `baseSha` immutably.
+- **Edge Fixes Unit Test Suite (`test/edge-fixes.test.mjs`)**: Added comprehensive unit test coverage for all edge-case fixes (12 new tests passing).
+
 ## [0.22.4] - 2026-08-09
 ### Task DAG Executor with Cycle Detection & Interface Fingerprinting
 - **Task DAG Engine (`src/dag-engine.mjs`)**: Implemented native zero-dependency `DagExecutor` and `DagCycleError`. Resolves dependencies via Kahn's Topological Sort algorithm, computes SHA-256 output hashes (`node:crypto` + `node:fs`) post-task execution, enforces interface fingerprint matching on dependent task gates, and schedules ready tasks lexicographically for deterministic parallel execution.

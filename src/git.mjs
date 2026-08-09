@@ -14,8 +14,14 @@ function normalizePath(p) {
   return p.split(sep).join("/").replace(/\\/g, "/");
 }
 
+const DEFAULT_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024; // 10 MB
+
 export function runCmd(command, opts = {}) {
   const cwd = opts.cwd || process.cwd();
+  const timeout = opts.timeout || DEFAULT_TIMEOUT;
+  const maxBuffer = opts.maxBuffer || DEFAULT_MAX_BUFFER;
+
   let binary = "";
   let args = [];
 
@@ -40,16 +46,36 @@ export function runCmd(command, opts = {}) {
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
       env: opts.env || process.env,
+      timeout,
+      maxBuffer,
     });
     return { status: 0, stdout: stdout.trim(), stderr: "" };
   } catch (err) {
-    if (opts.ignoreError) {
-      return {
-        status: err.status || 1,
-        stdout: (err.stdout || "").toString().trim(),
-        stderr: (err.stderr || "").toString().trim(),
-      };
+    const isTimeout = err.code === "ETIMEDOUT" || (err.signal === "SIGTERM" && err.killed);
+    const isNobufs = err.code === "ENOBUFS" || (err.message && err.message.includes("maxBuffer"));
+
+    const status = err.status || (isTimeout ? 124 : 1);
+    let stdout = (err.stdout || "").toString().trim();
+    let stderr = (err.stderr || err.message || "").toString().trim();
+
+    if (isTimeout && !stderr.includes("ETIMEDOUT")) {
+      stderr = `Command execution timed out after ${timeout}ms (ETIMEDOUT)${stderr ? "\n" + stderr : ""}`;
     }
+    if (isNobufs && !stderr.includes("ENOBUFS")) {
+      stderr = `Command output buffer exceeded limit of ${maxBuffer} bytes (ENOBUFS)${stderr ? "\n" + stderr : ""}`;
+    }
+
+    if (opts.ignoreError) {
+      return { status, stdout, stderr };
+    }
+
+    if (isTimeout) {
+      throw new GateError(`Command execution timed out (ETIMEDOUT): ${binary}`, { code: status });
+    }
+    if (isNobufs) {
+      throw new GateError(`Command output buffer exceeded limit (ENOBUFS): ${binary}`, { code: status });
+    }
+
     throw err;
   }
 }
@@ -59,20 +85,35 @@ export function runCmd(command, opts = {}) {
  */
 export function git(args = [], opts = {}) {
   const cwd = opts.cwd || process.cwd();
+  const timeout = opts.timeout || DEFAULT_TIMEOUT;
+  const maxBuffer = opts.maxBuffer || DEFAULT_MAX_BUFFER;
   const argArray = Array.isArray(args) ? args : String(args).split(" ").filter(Boolean);
+
   try {
     const stdout = execFileSync("git", argArray, {
       cwd,
       encoding: "utf-8",
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
+      timeout,
+      maxBuffer,
     });
     return opts.raw ? stdout : stdout.trim();
   } catch (err) {
     if (opts.ignoreError) {
       return "";
     }
+    const isTimeout = err.code === "ETIMEDOUT" || (err.signal === "SIGTERM" && err.killed);
+    const isNobufs = err.code === "ENOBUFS" || (err.message && err.message.includes("maxBuffer"));
     const stderr = (err.stderr || err.message || "").toString().trim();
+
+    if (isTimeout) {
+      throw new GateError(`Git command timed out [git ${argArray.join(" ")}]: ETIMEDOUT`, { code: 124 });
+    }
+    if (isNobufs) {
+      throw new GateError(`Git command output buffer exceeded limit [git ${argArray.join(" ")}]: ENOBUFS`, { code: 1 });
+    }
+
     throw new GateError(`Git command failed [git ${argArray.join(" ")}]: ${stderr}`);
   }
 }
@@ -88,7 +129,7 @@ export function resolveBase(root = process.cwd(), baseRef = "main") {
         stdio: ["ignore", "pipe", "ignore"],
       });
       if (res && res.trim()) {
-        return ref;
+        return res.trim();
       }
     } catch (_) {}
   }

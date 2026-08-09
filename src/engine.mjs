@@ -3,9 +3,59 @@ import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider } from "./provider.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir } from "./state.mjs";
-import { readdirSync, readFileSync, renameSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+
+/**
+ * Validates whether a file in .agent/jules-queue/ is a task file.
+ * Filters out README.md and matches TASK-*.md or valid envelope front-matter.
+ */
+export function isTaskFile(fileName, queueDirOrContent = null) {
+  if (!fileName || typeof fileName !== "string") return false;
+  const lower = fileName.toLowerCase();
+
+  // Explicitly filter out README.md
+  if (lower === "readme.md" || lower.endsWith("/readme.md") || lower.endsWith("\\readme.md")) {
+    return false;
+  }
+
+  if (!lower.endsWith(".md")) {
+    return false;
+  }
+
+  // Matching TASK-*.md or task-*.md
+  if (/^task-.*\.md$/i.test(fileName)) {
+    return true;
+  }
+
+  // Check valid envelope front-matter
+  if (queueDirOrContent) {
+    try {
+      let content = queueDirOrContent;
+      if (typeof queueDirOrContent === "string" && !queueDirOrContent.includes("\n") && existsSync(queueDirOrContent)) {
+        const fullPath = queueDirOrContent.endsWith(fileName) ? queueDirOrContent : join(queueDirOrContent, fileName);
+        if (existsSync(fullPath)) {
+          content = readFileSync(fullPath, "utf-8");
+        }
+      }
+      if (typeof content === "string") {
+        const trimmed = content.trimStart();
+        if (trimmed.startsWith("---")) {
+          const endFm = trimmed.indexOf("\n---", 3);
+          if (endFm !== -1) {
+            const frontMatter = trimmed.slice(3, endFm);
+            if (/(?:taskId|envelopeId|baseRef|baseSha|task|title|id|version|capabilities|scope|verify):/i.test(frontMatter)) {
+              return true;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  return false;
+}
 
 /**
  * Computes a SHA-256 fingerprint for a failure state (normalized stderr + diff text).
@@ -322,7 +372,7 @@ export async function run(opts = {}) {
   const completedDir = join(queueDir, "completed");
   ensureDir(completedDir);
 
-  const files = readdirSync(queueDir).filter((f) => f.endsWith(".md"));
+  const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
   const results = [];
 
   for (let i = 0; i < files.length; i += concurrency) {

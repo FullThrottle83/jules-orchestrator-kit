@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, resolveRoot, detectStack } from "../src/config.mjs";
-import { gate, dispatch, run } from "../src/engine.mjs";
+import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir, ensureDir } from "../src/state.mjs";
 import { worktreePrune } from "../src/git.mjs";
 
@@ -13,7 +13,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.22.4 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.22.5 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -43,7 +43,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.22.4");
+    console.log("agentctl v0.22.5");
     process.exit(0);
   }
 
@@ -150,7 +150,7 @@ async function main() {
 
     case "queue": {
       const queueDir = getQueueDir(root);
-      const files = readdirSync(queueDir).filter((f) => f.endsWith(".md"));
+      const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
       console.log(` Found ${files.length} queued task(s) in .agent/queue/`);
       if (files.length > 0) {
         const tasks = files.map((f) => ({
@@ -168,7 +168,7 @@ async function main() {
     case "swarm": {
       console.log("🚀 Running Swarm Orchestrator...");
       const queueDir = getQueueDir(root);
-      const files = readdirSync(queueDir).filter((f) => f.endsWith(".md"));
+      const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
       if (files.length === 0) {
         console.log("No pending tasks found for swarm.");
         process.exit(0);
@@ -223,7 +223,7 @@ async function main() {
     }
 
     case "doctor": {
-      console.log(`\n🔍 agentctl System Diagnostics (v0.22.4)`);
+      console.log(`\n🔍 agentctl System Diagnostics (v0.22.5)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);

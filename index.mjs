@@ -16,7 +16,7 @@ export {
 } from "./src/security.mjs";
 export { sanitizeUntrustedData, buildAgentEnvelope } from "./src/prompt-guard.mjs";
 export { isolateMcpStdout, writeMcpFrame } from "./src/mcp.mjs";
-export { git, runCmd, changedFiles, diffBytes, diffText } from "./src/git.mjs";
+export { git, runCmd, resolveBase, changedFiles, diffBytes, diffText } from "./src/git.mjs";
 export { createProvider, JULES_PRESET, CLAUDE_PRESET, CODEX_PRESET } from "./src/provider.mjs";
 export {
   appendLedger,
@@ -36,8 +36,9 @@ export {
   BudgetError,
   isPidAlive,
   getProcessStartTime,
+  parseProcStat,
 } from "./src/state.mjs";
-export { gate, dispatch, repair, run, fingerprintFailureState } from "./src/engine.mjs";
+export { gate, dispatch, repair, run, fingerprintFailureState, isTaskFile } from "./src/engine.mjs";
 export { validateEnvelope } from "./src/envelope.mjs";
 export {
   createExecutionEnvelope,
