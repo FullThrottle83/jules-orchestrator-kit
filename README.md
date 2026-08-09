@@ -15,6 +15,14 @@
   Built specifically to execute 300+ daily agent sessions and parallel worktree swarms safely on native Node.js 20+ ESM.
 </p>
 
+<p align="center">
+  <a href="#-2-minute-quickstart">⚡ Quickstart</a> •
+  <a href="#-why-jules-orchestrator-kit">🎯 Why Kit?</a> •
+  <a href="#-system-architecture--visual-diagrams">🏛️ Architecture</a> •
+  <a href="#-cli-command-reference-agentctl">🛠️ CLI Commands</a> •
+  <a href="./EXAMPLES.md">📖 Recipes & Examples</a>
+</p>
+
 </div>
 
 ---
@@ -25,9 +33,21 @@
 
 ---
 
+## 🧭 Fast-Track Guide (Choose Your Path)
+
+| Your Goal | Recommended Starting Point |
+| :--- | :--- |
+| 🐣 **First time using Jules / AI Agents** | Follow the [2-Minute Quickstart](#-2-minute-quickstart) below — zero setup required! |
+| 🛠️ **Connecting to Claude Code, Cursor, or Antigravity** | Jump to [MCP & IDE Integration](#-5-model-context-protocol-mcp--ide-integration) |
+| ⚡ **Automating CI/CD Workflows** | See the [GitHub Actions Composite Action](#-github-actions-composite-action-githubactionssetup-jules) |
+| 📖 **Looking for copy-paste code patterns** | Browse 6 production recipes in [EXAMPLES.md](./EXAMPLES.md) |
+
+---
+
 ## ⚡ 2-Minute Quickstart
 
-> 💡 **TIP**: **New to Google Jules or agent automation?** You don't need any complex setup! `jules-orchestrator-kit` works out of the box with standard `npm test` and zero external dependencies.
+> [!TIP]
+> **New to Google Jules or agent automation?** You don't need any complex setup! `jules-orchestrator-kit` works out of the box with standard `npm test` and zero external runtime dependencies.
 
 ```bash
 # 1. Initialize orchestrator structure in your target codebase
@@ -45,7 +65,8 @@ npx agentctl gate
 npx agentctl mcp
 ```
 
-> 📖 **NOTE**: **Looking for production deployment patterns?**  
+> [!NOTE]
+> **Looking for production deployment patterns?**  
 > Check out [**EXAMPLES.md**](./EXAMPLES.md) for 6 real-world recipes (Nightly TODO Scanner, Composite CI Action, Multi-Worktree Swarms, OODA Auto-Fix, MCP IDE setup, and Specialist Rosters).
 
 ---
@@ -61,6 +82,23 @@ Whether you are dispatching your first automated coding task or managing high-th
 | **Zero Setup Hassle** | Works out of the box with standard `npm test`. | **Zero External Runtime Dependencies** (`node:fs`, `node:path`, `node:crypto`, `node:child_process`). |
 | **Multi-Agent Swarms** | Run multiple tasks simultaneously without conflict. | Deterministic VFS mutex and 3-way structural merge engine resolve parallel worktree changes cleanly. |
 | **IDE & Tooling** | Seamlessly connects to your favorite editor. | Native Model Context Protocol (MCP) server over memory-bounded stdio streams. |
+
+---
+
+## 🛠️ CLI Command Reference (`agentctl`)
+
+| Command | Usage Example | Description |
+| :--- | :--- | :--- |
+| **`init`** | `npx agentctl init` | Initializes `.agent/` configuration, workflows, and task queue directory |
+| **`dispatch`** | `agentctl dispatch --title "Fix Bug" --prompt "..."` | Dispatches an autonomous task to Google Jules |
+| **`gate`** | `agentctl gate [--fix] [--base main]` | Runs 4-phase safety gatekeeper audit against workspace |
+| **`queue`** | `agentctl queue` | Processes pending task queue sequentially from `.agent/jules-queue/` |
+| **`swarm`** | `agentctl swarm` | Launches parallel multi-agent swarm in isolated git worktrees |
+| **`merge-swarm`** | `agentctl merge-swarm` | Performs 3-way structural merge on completed swarm PRs |
+| **`mcp`** | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) JSON-RPC 2.0 server |
+| **`doctor`** | `agentctl doctor` | Verifies stack configuration, environment keys, and daily token budget |
+| **`scan`** | `agentctl scan` | Scans codebase for `TODO` and `FIXME` comments and generates task queue |
+| **`clean`** | `agentctl clean` | Audits and cleans up stale git worktrees, orphaned intents, locks, and temporary state files |
 
 ---
 
@@ -102,7 +140,8 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 <br/>
 
-> 🚨 **IMPORTANT**: The OODA (Observe-Orient-Decide-Act) loop executes up to 3 repair attempts when tests fail. If the failure output oscillates deterministically without progress, the OODA engine halts repair to save API tokens and returns Exit Code 4.
+> [!IMPORTANT]
+> The OODA (Observe-Orient-Decide-Act) loop executes up to 3 repair attempts when tests fail. If the failure output oscillates deterministically without progress, the OODA engine halts repair to save API tokens and returns Exit Code 4.
 
 </details>
 
@@ -126,7 +165,8 @@ Whether you are dispatching your first automated coding task or managing high-th
 5. **Prompt Guard Boundary (`src/prompt-guard.mjs`)**: `sanitizeUntrustedData` strips bidi control characters, ANSI escape sequences, zero-width unicode, and neutralizes prompt injection tags (`<|im_start|>`, `[INST]`).
 6. **MCP Stream Isolation (`src/mcp.mjs`)**: Seals `process.stdout.write` framing stream to prevent log output from corrupting JSON-RPC stdio frames.
 
-> ⚠️ **WARNING**: All security rules are fetched strictly from `origin/main` (never untrusted PR branches) to prevent prompt-injection attacks from altering security rules.
+> [!WARNING]
+> All security rules are fetched strictly from `origin/main` (never untrusted PR branches) to prevent prompt-injection attacks from altering security rules.
 
 </details>
 
@@ -141,7 +181,8 @@ Whether you are dispatching your first automated coding task or managing high-th
 
 <br/>
 
-> 📌 **NOTE**: Swarm execution spawns dedicated git worktrees for each task in parallel, isolated by VFS locks. Completed tasks are verified and merged back using 3-way AST/JSON structural merging (`agentctl swarm`).
+> [!NOTE]
+> Swarm execution spawns dedicated git worktrees for each task in parallel, isolated by VFS locks. Completed tasks are verified and merged back using 3-way AST/JSON structural merging (`agentctl swarm`).
 
 </details>
 
@@ -237,24 +278,12 @@ steps:
 
 ---
 
-## 🛠️ CLI Command Reference (`agentctl`)
+## 📖 Deep Reference Manuals & Technical Specs
 
-| Command | Usage Example | Description |
-| :--- | :--- | :--- |
-| **`init`** | `npx agentctl init` | Initializes `.agent/` configuration, workflows, and task queue directory |
-| **`dispatch`** | `agentctl dispatch --title "Fix Bug" --prompt "..."` | Dispatches an autonomous task to Google Jules |
-| **`gate`** | `agentctl gate [--fix] [--base main]` | Runs 4-phase safety gatekeeper audit against workspace |
-| **`queue`** | `agentctl queue` | Processes pending task queue sequentially from `.agent/jules-queue/` |
-| **`swarm`** | `agentctl swarm` | Launches parallel multi-agent swarm in isolated git worktrees |
-| **`merge-swarm`** | `agentctl merge-swarm` | Performs 3-way structural merge on completed swarm PRs |
-| **`mcp`** | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) JSON-RPC 2.0 server |
-| **`doctor`** | `agentctl doctor` | Verifies stack configuration, environment keys, and daily token budget |
-| **`scan`** | `agentctl scan` | Scans codebase for `TODO` and `FIXME` comments and generates task queue |
-| **`clean`** | `agentctl clean` | Audits and cleans up stale git worktrees, orphaned intents, locks, and temporary state files |
+<details>
+<summary><b>📝 1. Configuration Reference (.agent/jules.yml)</b></summary>
 
----
-
-## 📝 Configuration Reference (`.agent/jules.yml`)
+<br/>
 
 Auto-generated by `agentctl init` at the root of your project:
 
@@ -274,9 +303,12 @@ limits:
   diffKb: 75
 ```
 
----
+</details>
 
-## 🚦 Exit Code Registry & Troubleshooting
+<details>
+<summary><b>🚦 2. Exit Code Registry & Troubleshooting Matrix</b></summary>
+
+<br/>
 
 Standardized exit codes enforced across all CLI utilities and CI pipelines:
 
@@ -294,9 +326,12 @@ Standardized exit codes enforced across all CLI utilities and CI pipelines:
 | `124` | **Execution Timeout** | Subprocess execution exceeded hard timeout limit (default 10 minutes). |
 | `188` | **ERR_UNMOCKED_NET** | Unmocked outbound HTTP/HTTPS egress intercepted by hermetic network guard. |
 
----
+</details>
 
-## 🔐 Environment Variables Reference
+<details>
+<summary><b>🔐 3. Environment Variables Reference</b></summary>
+
+<br/>
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
@@ -311,9 +346,12 @@ Standardized exit codes enforced across all CLI utilities and CI pipelines:
 | `BASE_BRANCH` | Base branch for PR Audits & Merge-Base checks | `main` |
 | `NO_COLOR` | Set to `true` to disable ANSI color output | `false` |
 
----
+</details>
 
-## 🌐 Supported Tech Stacks & Auto-Detection
+<details>
+<summary><b>🌐 4. Supported Tech Stacks & Auto-Detection Matrix</b></summary>
+
+<br/>
 
 The orchestrator automatically infers verification and build commands across ecosystems:
 
@@ -329,6 +367,8 @@ The orchestrator automatically infers verification and build commands across eco
 | **Bun / Deno** | `bunfig.toml` / `deno.json` | `bun test` / `deno test` | `bun run build` |
 | **Elixir / Ruby** | `mix.exs` / `Gemfile` | `mix test` / `rake test` | *(standard build)* |
 | **Java / C / C++** | `pom.xml` / `Makefile` | `mvn test` / `make test` | `mvn compile` / `make` |
+
+</details>
 
 ---
 
