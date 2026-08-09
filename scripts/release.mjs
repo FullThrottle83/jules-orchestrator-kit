@@ -55,12 +55,22 @@ if (!notes) {
   console.log("   ✅ Extracted release notes from CHANGELOG.md.\n");
 }
 
-// 3. Create Git Tag if not exists
+// 3. Create Git Tag if not exists (or update if version mismatch)
 console.log(`3. Checking Git tag ${tagName}...`);
 try {
-  const tags = execSync("git tag -l", { cwd: root, encoding: "utf-8" });
-  if (tags.split("\n").includes(tagName)) {
-    console.log(`   ℹ️ Git tag ${tagName} already exists.`);
+  const tags = execSync("git tag -l", { cwd: root, encoding: "utf-8" }).split("\n").map((t) => t.trim());
+  if (tags.includes(tagName)) {
+    let taggedVersion = "";
+    try {
+      const rawPkg = execSync(`git show ${tagName}:package.json`, { cwd: root, encoding: "utf-8" });
+      taggedVersion = JSON.parse(rawPkg).version;
+    } catch (_) {}
+    if (taggedVersion && taggedVersion !== version) {
+      console.log(`   ⚠️ Tag ${tagName} points to package.json version ${taggedVersion}. Updating tag to HEAD (${version})...`);
+      execSync(`git tag -f -a ${tagName} -m "${pkg.name} ${tagName}"`, { cwd: root, stdio: "inherit" });
+    } else {
+      console.log(`   ℹ️ Git tag ${tagName} already exists.`);
+    }
   } else {
     execSync(`git tag -a ${tagName} -m "${pkg.name} ${tagName}"`, { cwd: root, stdio: "inherit" });
     console.log(`   ✅ Created Git tag ${tagName}.`);
