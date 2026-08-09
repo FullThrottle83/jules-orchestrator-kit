@@ -336,6 +336,7 @@ In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFil
 
 ## 📖 Recipes, Documentation & Prior Art
 
+- [**Google Jules Official Documentation**](https://jules.google) — Official platform overview and API specifications for Google Jules.
 - [**Universal Polyglot Architecture & Zero-Test Specification**](./docs/UNIVERSAL_POLYGLOT_ARCHITECTURE.md) — Comprehensive technical report on boundary resolution, OODA math, and B2B workflows.
 - [**v0.27.0 Architectural Audit & Platform Evolution**](./docs/V0.27_ARCHITECTURAL_AUDIT_AND_EVOLUTION.md) — PR review remediation, failover router, and local dashboard specs.
 - [**Examples & Task Envelope Recipes**](./EXAMPLES.md) — Production YAML and Markdown task envelopes.
