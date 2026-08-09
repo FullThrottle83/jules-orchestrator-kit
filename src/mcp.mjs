@@ -3,10 +3,11 @@ import { loadConfig, resolveRoot, detectStack } from "./config.mjs";
 import { gate, dispatch } from "./engine.mjs";
 import { classifyRiskTier } from "./risk.mjs";
 import { checkDailyBudget, lockStatus } from "./state.mjs";
+import { reapOrphanedIntents } from "./journal.mjs";
 
 export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
-  version: "0.20.0",
+  version: "0.22.6",
 };
 
 export const MAX_MCP_FRAME_SIZE = 4 * 1024 * 1024; // 4 MB memory safety ceiling
@@ -352,6 +353,8 @@ export function writeMcpFrame(targetOutput, data) {
 }
 
 export function startMcpServer(input = process.stdin, output = process.stdout, opts = {}) {
+  const root = opts.root || resolveRoot();
+  reapOrphanedIntents(root);
   isolateMcpStdout(process.stdout, opts);
   if (output && output !== process.stdout) {
     isolateMcpStdout(output, opts);

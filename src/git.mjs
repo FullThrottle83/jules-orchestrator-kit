@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { sep } from "node:path";
+import { journalIntent, journalDone } from "./journal.mjs";
 
 export class GateError extends Error {
   constructor(message, opts = {}) {
@@ -174,8 +175,28 @@ export function showFromOrigin(root = process.cwd(), base = "main", filePath = "
   }
 }
 
+export function createBranch(root = process.cwd(), branch = "") {
+  const opId = journalIntent(root, { type: "create_branch", branch, targetPath: "" });
+  try {
+    const res = git(["branch", branch], { cwd: root });
+    journalDone(root, opId);
+    return res;
+  } catch (err) {
+    journalDone(root, opId);
+    throw err;
+  }
+}
+
 export function worktreeAdd(root = process.cwd(), branch = "agent/task", targetDir = "") {
-  return git(["worktree", "add", targetDir, "-b", branch], { cwd: root });
+  const opId = journalIntent(root, { type: "worktree_add", targetPath: targetDir, branch });
+  try {
+    const res = git(["worktree", "add", targetDir, "-b", branch], { cwd: root });
+    journalDone(root, opId);
+    return res;
+  } catch (err) {
+    journalDone(root, opId);
+    throw err;
+  }
 }
 
 export function worktreeRemove(root = process.cwd(), targetDir = "") {

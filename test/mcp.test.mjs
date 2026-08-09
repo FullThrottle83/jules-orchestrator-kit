@@ -57,7 +57,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 5);
     const parsed = JSON.parse(res.result.content[0].text);
-    assert.equal(parsed.version, "0.20.0");
+    assert.equal(parsed.version, "0.22.6");
     assert.equal(typeof parsed.budget.used, "number");
   });
 

@@ -7,13 +7,14 @@ import { loadConfig, resolveRoot, detectStack } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir, ensureDir } from "../src/state.mjs";
 import { worktreePrune } from "../src/git.mjs";
+import { reapOrphanedIntents } from "../src/journal.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.22.5 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.22.6 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -43,11 +44,12 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.22.5");
+    console.log("agentctl v0.22.6");
     process.exit(0);
   }
 
   const root = resolveRoot();
+  reapOrphanedIntents(root);
   const config = loadConfig(root);
 
   switch (command) {
@@ -223,7 +225,7 @@ async function main() {
     }
 
     case "doctor": {
-      console.log(`\n🔍 agentctl System Diagnostics (v0.22.5)`);
+      console.log(`\n🔍 agentctl System Diagnostics (v0.22.6)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);

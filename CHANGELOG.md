@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [0.22.6] - 2026-08-09
+### Intent Journaling & Boot-Time Zombie Worktree Reaper
+- **Intent Journaling (`src/journal.mjs`)**: Implemented `journalIntent` and `journalDone` appending intent records to `.agent/state/journal.jsonl` with PID, `processStartTime`, operation type, target path, and timestamp.
+- **Boot-Time Zombie Worktree Reaper (`src/journal.mjs`)**: Implemented `reapOrphanedIntents` to scan intent journal on startup, identify orphaned operations from dead/recycled PIDs using `isPidAlive`, prune orphaned git worktrees (`git worktree remove --force`), clean up stale locks, and append `journal_reaped` records for 100% idempotency.
+- **Boot Wiring (`bin/agentctl.mjs`, `src/mcp.mjs`)**: Integrated automatic reaping at CLI boot in `main()` and MCP server startup in `startMcpServer()`.
+- **Git Mutation Wrapping (`src/git.mjs`)**: Wrapped `worktreeAdd` and `createBranch` with intent journaling.
+- **Unit Test Suite (`test/journal-reaper.test.mjs`)**: Added test coverage asserting dead PID cleanup, live PID preservation, completed intent safety, and idempotency.
+
 ## [0.22.5] - 2026-08-09
 ### Robust /proc Parsing, Queue Task Filtering & Execution Guardrails
 - **Proc Stat Parsing (`src/state.mjs`)**: Refactored `getProcessStartTime` and added `parseProcStat` parsing fields strictly after `lastIndexOf(')') + 2` to prevent index shifts caused by process titles containing spaces or parentheses.
