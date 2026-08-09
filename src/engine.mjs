@@ -5,7 +5,7 @@ import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation } from "./state.mjs";
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
-import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
+import fs, { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { appendTelemetry } from "./telemetry.mjs";
@@ -563,7 +563,7 @@ export async function run(tasksOrOpts = {}, opts = {}) {
         try {
           let prompt = typeof fileOrItem === "object" && fileOrItem.prompt ? fileOrItem.prompt : "";
           if (!prompt && existsSync(srcPath)) {
-            prompt = readFileSync(srcPath, "utf-8");
+            prompt = await fs.promises.readFile(srcPath, "utf-8");
           }
           const task = { title: fileName, prompt };
           const session = await dispatch(task, { root, config, dryRun: isDry });

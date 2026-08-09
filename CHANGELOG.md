@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.1] - 2026-08-09
+### Async I/O Refactoring & Script Modularization Polish
+- **Non-Blocking Queue Runner File I/O (`src/engine.mjs`)**: Replaced `fs.readFileSync` with `await fs.promises.readFile` inside the async batch processing map in `run()`, preventing event loop blocking during file prompt reads.
+- **Command Resolver Sub-Parsers (`scripts/command-resolver.mjs`)**: Modularized `resolveProjectCommands` by extracting `parseYamlConfig` and `detectFrameworkCommands`.
+- **Self-Audit Validation Passes (`scripts/jules-self-audit.mjs`)**: Modularized `runSelfAudit` into dedicated exported validation functions (`auditLedgers`, `auditWorktrees`, `auditGates`).
+
 ## [0.25.0] - 2026-08-09
 ### Provider Failure Domain Taxonomy, Socket Timeouts, and Budget Rollback
 - **Provider Error Taxonomy (`src/provider.mjs`)**: Added typed error classes `ProviderRateLimitError` (HTTP 429), `ProviderUnavailableError` (5xx errors and socket timeouts), and `ProviderSchemaError` (invalid payload format). Added `parseRetryAfter()` supporting numeric seconds and HTTP-date header formats.

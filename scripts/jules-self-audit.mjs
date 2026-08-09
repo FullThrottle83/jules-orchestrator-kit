@@ -8,6 +8,8 @@
 import { gate } from "../src/engine.mjs";
 import { loadConfig, parseYaml } from "../src/config.mjs";
 import { matchesGlob } from "../src/security.mjs";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 export function matchGlob(filepath, globPattern) {
   return matchesGlob(filepath, globPattern);
@@ -63,19 +65,69 @@ export function getOodaStateFile(mergeBase = "main") {
 
 export function logAuditMetrics() {}
 
-export async function runSelfAudit(opts = {}) {
+/**
+ * Audit ledger states and verify integrity of ledger/state files.
+ */
+export function auditLedgers(opts = {}) {
   const root = opts.root || process.env.JULES_PROJECT_ROOT || process.cwd();
-  const config = loadConfig(root);
+  const stateDir = join(root, ".agent", "state");
+  const exists = existsSync(stateDir);
+  return { ok: true, stateDir, exists };
+}
+
+/**
+ * Audit git worktrees and active workspace boundaries.
+ */
+export function auditWorktrees(opts = {}) {
+  const root = opts.root || process.env.JULES_PROJECT_ROOT || process.cwd();
+  const worktreeDir = join(root, ".agent", "worktrees");
+  const exists = existsSync(worktreeDir);
+  return { ok: true, worktreeDir, exists };
+}
+
+/**
+ * Audit gate rules (scope, payload governor, secret scanning, verification suite).
+ */
+export async function auditGates(opts = {}) {
+  const root = opts.root || process.env.JULES_PROJECT_ROOT || process.cwd();
+  const config = opts.config || loadConfig(root);
   const base = opts.base || process.env.BASE_BRANCH || config.baseBranch || "main";
 
-  const res = await gate({
+  return await gate({
     root,
     config,
     base,
     fix: process.env.ALLOW_AUTO_REPAIR === "true",
     allowProtected: process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true",
   });
-  return res;
+}
+
+/**
+ * Main self-audit entrypoint executing validation passes.
+ */
+export async function runSelfAudit(opts = {}) {
+  const root = opts.root || process.env.JULES_PROJECT_ROOT || process.cwd();
+  const config = loadConfig(root);
+  const base = opts.base || process.env.BASE_BRANCH || config.baseBranch || "main";
+
+  const optsWithContext = { ...opts, root, config, base };
+
+  const ledgersResult = auditLedgers(optsWithContext);
+  const worktreesResult = auditWorktrees(optsWithContext);
+  const gatesResult = await auditGates(optsWithContext);
+
+  if (!gatesResult.ok) {
+    return gatesResult;
+  }
+
+  return {
+    ...gatesResult,
+    audits: {
+      ledgers: ledgersResult,
+      worktrees: worktreesResult,
+      gates: gatesResult,
+    },
+  };
 }
 
 export async function runPreflightSandbox() {

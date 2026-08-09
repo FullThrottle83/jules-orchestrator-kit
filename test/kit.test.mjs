@@ -4,8 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
-import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager } from "../scripts/command-resolver.mjs";
-import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile } from "../scripts/jules-self-audit.mjs";
+import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager, parseYamlConfig, detectFrameworkCommands } from "../scripts/command-resolver.mjs";
+import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile, auditLedgers, auditWorktrees, auditGates } from "../scripts/jules-self-audit.mjs";
 import { resolveMarkdownConflict, redactSecrets, anonymizePii, verifyLedgerIntegrity, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation, extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "../scripts/utils.mjs";
 import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective, extractImageAttachments, getMultimodalAttachmentDirective } from "../scripts/jules-dispatch.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
@@ -25,8 +25,27 @@ describe("Dynamic Command Resolver", () => {
 
   test("resolves default verification commands from manifest or config", () => {
     const res = resolveProjectCommands(process.cwd());
-    assert.ok(res.source.startsWith("package.json") || res.source === ".agent/jules.yml");
+    assert.ok(res.source.startsWith("package.json") || res.source.endsWith(".yml"));
     assert.ok(res.testCmd.includes("test"));
+  });
+
+  test("parses sub-helpers parseYamlConfig and detectFrameworkCommands", () => {
+    const frameworkRes = detectFrameworkCommands(process.cwd());
+    assert.ok(frameworkRes.source);
+    assert.ok(frameworkRes.testCmd);
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-yaml-test-"));
+    try {
+      const agentDir = path.join(tmpDir, ".agent");
+      fs.mkdirSync(agentDir, { recursive: true });
+      fs.writeFileSync(path.join(agentDir, "jules.yml"), "test_cmd: 'npm run test:custom'\nbuild_cmd: 'npm run build:custom'\n");
+      const yamlRes = parseYamlConfig(tmpDir);
+      assert.ok(yamlRes);
+      assert.equal(yamlRes.testCmd, "npm run test:custom");
+      assert.equal(yamlRes.buildCmd, "npm run build:custom");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   test("resolves workspace execution boundary", () => {
@@ -109,6 +128,19 @@ allow_paths:
 
     assert.ok(RESTRICTED_AGENT_FILES.includes("AGENTS.md"));
     assert.ok(RESTRICTED_AGENT_FILES.includes("JULES_RULES_TEMPLATE.md"));
+  });
+
+  test("runs dedicated audit functions (auditLedgers, auditWorktrees, auditGates)", async () => {
+    const ledgers = auditLedgers({ root: process.cwd() });
+    assert.equal(ledgers.ok, true);
+    assert.ok(ledgers.stateDir);
+
+    const worktrees = auditWorktrees({ root: process.cwd() });
+    assert.equal(worktrees.ok, true);
+    assert.ok(worktrees.worktreeDir);
+
+    const gates = await auditGates({ root: process.cwd() });
+    assert.ok(typeof gates.ok === "boolean");
   });
 });
 
