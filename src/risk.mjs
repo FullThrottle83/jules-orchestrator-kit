@@ -18,6 +18,7 @@ const RESTRICTED_PATH_PATTERNS = [
   "**/ledger/**",
   ".github/**",
   ".githooks/**",
+  ".agent/rules/**",
   "wrangler.jsonc",
   "pnpm-lock.yaml",
   "package-lock.json",

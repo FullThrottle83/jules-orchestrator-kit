@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { handleMcpRequest, startMcpServer, MCP_SERVER_INFO, MCP_TOOLS } from "../src/mcp.mjs";
 import { BudgetError } from "../src/state.mjs";
 import { PassThrough } from "node:stream";
+import { spawnSync } from "node:child_process";
 
 test("Model Context Protocol (MCP) Server", async (t) => {
   await t.test("handles ping request", async () => {
@@ -88,5 +89,81 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     const err = new BudgetError("Exhausted");
     assert.equal(err.code, 7);
     assert.equal(err.name, "BudgetError");
+  });
+
+  await t.test("BudgetError exit code propagation in agentctl dispatch", () => {
+    const res = spawnSync("node", ["bin/agentctl.mjs", "dispatch", "-p", "test", "--dry-run"], {
+      env: { ...process.env, JULES_DAILY_BUDGET: "0" }
+    });
+    assert.equal(res.status, 7);
+  });
+
+  await t.test("handles unrecognized JSON-RPC method names gracefully with JSON-RPC error response -32601", async () => {
+    // Unrecognized method
+    const res1 = await handleMcpRequest({ jsonrpc: "2.0", id: 101, method: "non_existent_method" });
+    assert.equal(res1.jsonrpc, "2.0");
+    assert.equal(res1.id, 101);
+    assert.equal(res1.error.code, -32601);
+
+    // Unrecognized tool name under tools/call
+    const res2 = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 102,
+      method: "tools/call",
+      params: { name: "invalid_tool_name_xyz" },
+    });
+    assert.equal(res2.jsonrpc, "2.0");
+    assert.equal(res2.id, 102);
+    assert.equal(res2.error.code, -32601);
+  });
+
+  await t.test("handles invalid/malformed parameters passed to check_risk_tier tool", async () => {
+    // files missing completely
+    const resMissingFiles = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 201,
+      method: "tools/call",
+      params: { name: "check_risk_tier", arguments: {} },
+    });
+    assert.equal(resMissingFiles.jsonrpc, "2.0");
+    assert.equal(resMissingFiles.id, 201);
+    assert.equal(resMissingFiles.error.code, -32602);
+    assert.match(resMissingFiles.error.message, /files' must be an array/);
+
+    // files not being an array (string)
+    const resStringFiles = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 202,
+      method: "tools/call",
+      params: { name: "check_risk_tier", arguments: { files: "not-an-array" } },
+    });
+    assert.equal(resStringFiles.jsonrpc, "2.0");
+    assert.equal(resStringFiles.id, 202);
+    assert.equal(resStringFiles.error.code, -32602);
+
+    // files contains non-string elements
+    const resNonStringElem = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 203,
+      method: "tools/call",
+      params: { name: "check_risk_tier", arguments: { files: ["valid.txt", 123] } },
+    });
+    assert.equal(resNonStringElem.jsonrpc, "2.0");
+    assert.equal(resNonStringElem.id, 203);
+    assert.equal(resNonStringElem.error.code, -32602);
+
+    // diffLines parameter is not a number
+    const resInvalidDiffLines = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 204,
+      method: "tools/call",
+      params: {
+        name: "check_risk_tier",
+        arguments: { files: ["valid.txt"], diffLines: "not-a-number" },
+      },
+    });
+    assert.equal(resInvalidDiffLines.jsonrpc, "2.0");
+    assert.equal(resInvalidDiffLines.id, 204);
+    assert.equal(resInvalidDiffLines.error.code, -32602);
   });
 });

@@ -207,7 +207,28 @@ export async function handleMcpRequest(request, opts = {}) {
       }
 
       if (toolName === "check_risk_tier") {
-        const tierResult = classifyRiskTier(args.files || [], { diffLines: args.diffLines || 0 });
+        if (!args || !args.files || !Array.isArray(args.files)) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Invalid parameters: 'files' must be an array" },
+          };
+        }
+        if (args.files.some(f => typeof f !== "string")) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Invalid parameters: 'files' must be an array of strings" },
+          };
+        }
+        if (args.diffLines !== undefined && typeof args.diffLines !== "number") {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Invalid parameters: 'diffLines' must be a number" },
+          };
+        }
+        const tierResult = classifyRiskTier(args.files, { diffLines: args.diffLines || 0 });
         return {
           jsonrpc: "2.0",
           id,

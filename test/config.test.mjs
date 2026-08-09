@@ -44,4 +44,55 @@ limits:
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it("detects pnpm-workspace.yaml and returns correct pnpm recursive test command", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pnpm-workspace-"));
+    try {
+      fs.writeFileSync(path.join(tmp, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
+      const res = detectStack(tmp);
+      assert.equal(res.stack, "pnpm");
+      assert.equal(res.testCmd, "pnpm -r test");
+      assert.equal(res.buildCmd, "pnpm -r build");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("gracefully falls back when package.json contains malformed syntax", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "malformed-pkg-"));
+    try {
+      fs.writeFileSync(path.join(tmp, "package.json"), "invalid json {");
+      const res = detectStack(tmp);
+      assert.equal(res.stack, "node");
+      assert.equal(res.testCmd, "npm test");
+      assert.equal(res.buildCmd, "npm run build");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("gracefully falls back when package.json is an empty object", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "empty-pkg-"));
+    try {
+      fs.writeFileSync(path.join(tmp, "package.json"), "{}");
+      const res = detectStack(tmp);
+      assert.equal(res.stack, "node");
+      assert.equal(res.testCmd, "npm test");
+      assert.equal(res.buildCmd, "");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("handles null or undefined root parameter in loadConfig()", () => {
+    // Calling with null
+    const cfgNull = loadConfig(null);
+    assert.ok(cfgNull.version);
+    assert.equal(cfgNull.limits.diffKb, 75);
+
+    // Calling with undefined
+    const cfgUndefined = loadConfig(undefined);
+    assert.ok(cfgUndefined.version);
+    assert.equal(cfgUndefined.limits.diffKb, 75);
+  });
 });

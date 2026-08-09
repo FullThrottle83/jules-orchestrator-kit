@@ -306,6 +306,9 @@ export const TIER_PRESETS = {
  * Loads and validates configuration from .agent/config.yml or .agent/jules.yml.
  */
 export function loadConfig(root = resolveRoot(), explicitPath = null) {
+  if (root === null || root === undefined) {
+    root = resolveRoot();
+  }
   const candidates = explicitPath
     ? [explicitPath]
     : [join(root, ".agent/config.yml"), join(root, ".agent/jules.yml")];
@@ -328,8 +331,8 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
   const activeTier = String(process.env.JULES_TIER || parsed.tier || "ultra").toLowerCase();
   const tierLimits = TIER_PRESETS[activeTier] || TIER_PRESETS.ultra;
 
-  const envDailyTasks = process.env.JULES_DAILY_BUDGET ? Number(process.env.JULES_DAILY_BUDGET) : null;
-  const envDiffKb = process.env.JULES_MAX_DIFF_KB ? Number(process.env.JULES_MAX_DIFF_KB) : null;
+  const envDailyTasks = process.env.JULES_DAILY_BUDGET !== undefined ? Number(process.env.JULES_DAILY_BUDGET) : null;
+  const envDiffKb = process.env.JULES_MAX_DIFF_KB !== undefined ? Number(process.env.JULES_MAX_DIFF_KB) : null;
 
   const config = {
     version: parsed.version || DEFAULTS.version,
@@ -344,8 +347,8 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       ...DEFAULTS.limits,
       ...tierLimits,
       ...(parsed.limits || {}),
-      ...(envDailyTasks && !isNaN(envDailyTasks) ? { dailyTasks: envDailyTasks } : {}),
-      ...(envDiffKb && !isNaN(envDiffKb) ? { diffKb: envDiffKb } : {}),
+      ...(envDailyTasks !== null && !isNaN(envDailyTasks) ? { dailyTasks: envDailyTasks } : {}),
+      ...(envDiffKb !== null && !isNaN(envDiffKb) ? { diffKb: envDiffKb } : {}),
     },
     isolation: parsed.isolation || DEFAULTS.isolation,
     runner: parsed.runner || DEFAULTS.runner,

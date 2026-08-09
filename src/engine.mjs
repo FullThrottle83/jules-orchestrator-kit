@@ -13,7 +13,12 @@ import { createHash } from "node:crypto";
 export function fingerprintFailureState(failure = {}, root = process.cwd()) {
   const rawStderr = failure.stderr || failure.stdout || failure.message || "Unknown Error";
   const normalizedStderr = String(rawStderr)
+    .replace(/[\u001b\x1b]\[[0-9;]*[a-zA-Z]/g, "")
+    .replace(/\?[^\s"'\)\\]+/g, "<?>")
     .replace(/:\d+:\d+/g, ":?:?")
+    .replace(/:\d+/g, ":?")
+    .replace(/\bline \d+/gi, "line ?")
+    .replace(/\bcol(umn)? \d+/gi, "col ?")
     .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z?\b/g, "<timestamp>")
     .replace(/\b[0-9a-f]{7,40}\b/g, "<sha>")
     .replace(/\/[\w\/-]+\//g, "/?/")

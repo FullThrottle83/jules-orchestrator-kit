@@ -10,7 +10,12 @@ import { createServer } from "node:http";
  */
 export function verifySignature(payload, signatureHeader, secret) {
   if (!secret) return false; // Fail closed if secret is not configured
-  if (!signatureHeader || !signatureHeader.startsWith("sha256=")) return false;
+  if (typeof signatureHeader !== "string") return false;
+  if (!signatureHeader.startsWith("sha256=")) return false;
+
+  const hexSignature = signatureHeader.slice(7);
+  // Verify hexSignature consists strictly of 64 hex characters (0-9, a-f, A-F)
+  if (!/^[0-9a-fA-F]{64}$/.test(hexSignature)) return false;
 
   const hmac = createHmac("sha256", secret);
   const bodyBuf = Buffer.isBuffer(payload) ? payload : Buffer.from(payload, "utf-8");
@@ -30,13 +35,16 @@ export function verifySignature(payload, signatureHeader, secret) {
  * @returns {object} Parsed JSON payload
  */
 export function parseWebhookPayload(bodyBuf, contentType = "application/json") {
-  const str = bodyBuf.toString("utf-8");
+  if (!bodyBuf || bodyBuf.length === 0) return {};
+  const str = bodyBuf.toString("utf-8").trim();
+  if (!str) return {};
+
   if (contentType.includes("application/x-www-form-urlencoded")) {
     const params = new URLSearchParams(str);
     const payloadStr = params.get("payload");
     return payloadStr ? JSON.parse(payloadStr) : {};
   }
-  return str ? JSON.parse(str) : {};
+  return JSON.parse(str);
 }
 
 /**
@@ -47,35 +55,62 @@ export function parseWebhookPayload(bodyBuf, contentType = "application/json") {
  * @returns {object} Response summary { handled: boolean, action: string, details: object }
  */
 export function routeWebhookEvent(eventType, payload, handlers = {}) {
+  const safePayload = payload || {};
+
   if (eventType === "ping") {
-    return { handled: true, action: "ping", details: { zen: payload.zen, hookId: payload.hook_id } };
+    return { handled: true, action: "ping", details: { zen: safePayload.zen, hookId: safePayload.hook_id } };
   }
 
   if (eventType === "pull_request") {
-    const action = payload.action;
-    const prNumber = payload.number || payload.pull_request?.number;
-    const repo = payload.repository?.full_name;
-    const branch = payload.pull_request?.head?.ref;
-    const merged = payload.pull_request?.merged || false;
+    const action = safePayload.action;
+    const prNumber = safePayload.number || safePayload.pull_request?.number;
+    const repo = safePayload.repository?.full_name;
+    const branch = safePayload.pull_request?.head?.ref;
+    const merged = safePayload.pull_request?.merged || false;
 
     const details = { action, prNumber, repo, branch, merged };
     if (typeof handlers.onPullRequest === "function") {
-      handlers.onPullRequest(details, payload);
+      try {
+        handlers.onPullRequest(details, safePayload);
+      } catch (err) {
+        // Safely ignore errors from handlers
+      }
     }
     return { handled: true, action: `pull_request:${action}`, details };
   }
 
   if (eventType === "workflow_run") {
-    const action = payload.action;
-    const name = payload.workflow?.name || payload.workflow_run?.name;
-    const conclusion = payload.workflow_run?.conclusion;
-    const repo = payload.repository?.full_name;
+    const action = safePayload.action;
+    const name = safePayload.workflow?.name || safePayload.workflow_run?.name;
+    const conclusion = safePayload.workflow_run?.conclusion;
+    const repo = safePayload.repository?.full_name;
 
     const details = { action, name, conclusion, repo };
     if (typeof handlers.onWorkflowRun === "function") {
-      handlers.onWorkflowRun(details, payload);
+      try {
+        handlers.onWorkflowRun(details, safePayload);
+      } catch (err) {
+        // Safely ignore errors from handlers
+      }
     }
     return { handled: true, action: `workflow_run:${action}`, details };
+  }
+
+  // Fallback status handler for unhandled GitHub event types
+  if (typeof handlers.onUnhandled === "function") {
+    try {
+      handlers.onUnhandled(eventType, safePayload);
+    } catch (err) {
+      // Safely ignore or log error from fallback handler to prevent crashing
+    }
+  }
+
+  if (typeof handlers.onFallback === "function") {
+    try {
+      handlers.onFallback(eventType, safePayload);
+    } catch (err) {
+      // Safely ignore or log error from fallback handler to prevent crashing
+    }
   }
 
   return { handled: false, action: eventType, details: {} };
