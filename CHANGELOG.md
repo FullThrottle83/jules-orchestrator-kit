@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [1.0.1] - 2026-08-09
+### Provider Failure Domain Taxonomy, Socket Timeouts, and Budget Rollback
+- **Provider Error Taxonomy (`src/provider.mjs`)**: Added typed error classes `ProviderRateLimitError` (HTTP 429), `ProviderUnavailableError` (5xx errors and socket timeouts), and `ProviderSchemaError` (invalid payload format). Added `parseRetryAfter()` supporting numeric seconds and HTTP-date header formats.
+- **Socket Timeout Support (`src/provider.mjs`)**: Configured 120s default socket timeout via `AbortSignal.timeout(timeoutMs)` for all HTTP provider dispatch requests.
+- **Atomic Budget Rollback (`src/state.mjs`)**: Added `rollbackBudgetReservation()` to release reserved budget when provider calls fail to accept the session. Updated `checkDailyBudget` and `reserveBudgetAtomic` to dynamically balance reserved and rolled-back entries.
+- **OODA Repair Bypass (`src/engine.mjs`)**: Updated `dispatch()` and `repair()` to catch provider infrastructure failures, roll back reserved budget, log backoff recommendations, and bypass OODA repair retries.
+- **Provider Hardening Test Suite (`test/provider-hardening.test.mjs`)**: Created unit tests covering HTTP 429 errors, `Retry-After` parsing, budget rollback, repair bypass, and socket timeouts.
 
 ## [0.24.0] - 2026-08-09
 ### Mandatory v1.0.0 Bugfixes, Telemetry Resilience & Code Pruning

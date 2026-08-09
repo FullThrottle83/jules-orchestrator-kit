@@ -31,6 +31,45 @@ export const CODEX_PRESET = {
   promptViaStdin: false,
 };
 
+export class ProviderRateLimitError extends Error {
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = "ProviderRateLimitError";
+    this.retryAfterMs = opts.retryAfterMs ?? 60000;
+    this.status = opts.status || 429;
+  }
+}
+
+export class ProviderUnavailableError extends Error {
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = "ProviderUnavailableError";
+    this.status = opts.status || 503;
+    this.retryAfterMs = opts.retryAfterMs;
+  }
+}
+
+export class ProviderSchemaError extends Error {
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = "ProviderSchemaError";
+    this.status = opts.status;
+  }
+}
+
+export function parseRetryAfter(header) {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (!isNaN(seconds)) {
+    return Math.max(0, Math.round(seconds * 1000));
+  }
+  const dateMs = Date.parse(header);
+  if (!isNaN(dateMs)) {
+    return Math.max(0, dateMs - Date.now());
+  }
+  return null;
+}
+
 function interpolateString(template, data) {
   if (typeof template !== "string") return template;
   return template.replace(/\{(\w+)\}/g, (_, key) => data[key] ?? "");
@@ -111,20 +150,63 @@ export function createProvider(spec = "jules", config = {}) {
           body = JSON.stringify(data);
         }
 
-        const res = await fetch(url, {
-          method: providerSpec.method || "POST",
-          headers,
-          body,
-        });
+        const timeoutMs = ctx.timeoutMs || config.timeoutMs || providerSpec.timeoutMs || 120_000;
+        let res;
+        try {
+          res = await fetch(url, {
+            method: providerSpec.method || "POST",
+            headers,
+            body,
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+        } catch (err) {
+          if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
+            throw new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, {
+              status: 504,
+            });
+          }
+          throw err;
+        }
 
         if (!res.ok) {
           const text = await res.text();
           const cleanText = text.slice(0, 500);
           const sanitizedText = rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText;
+          const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
+          const retryAfterMs = parseRetryAfter(retryAfterHeader);
+
+          if (res.status === 429) {
+            throw new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
+              retryAfterMs: retryAfterMs ?? 60000,
+              status: 429,
+            });
+          }
+
+          if (res.status >= 500 && res.status < 600) {
+            throw new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
+              status: res.status,
+              retryAfterMs: retryAfterMs ?? undefined,
+            });
+          }
+
           throw new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
         }
 
-        const json = await res.json();
+        let json;
+        try {
+          json = await res.json();
+        } catch (err) {
+          throw new ProviderSchemaError(`Provider Payload Error: Invalid JSON response: ${err.message}`, {
+            status: res.status,
+          });
+        }
+
+        if (!json || typeof json !== "object") {
+          throw new ProviderSchemaError("Provider Payload Error: Expected JSON object response", {
+            status: res.status,
+          });
+        }
+
         return {
           id: json.id || json.name || "http-session",
           status: json.state || "active",

@@ -189,19 +189,31 @@ export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300) {
     const content = readFileSync(filePath, "utf-8");
     const lines = content.split("\n").filter(Boolean);
     let count = 0;
+    const activeIds = new Set();
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
         if (entry && entry.event === "budget_reserved") {
-          count++;
+          if (entry.reservationId) {
+            activeIds.add(entry.reservationId);
+          } else {
+            count++;
+          }
+        } else if (entry && (entry.event === "budget_rolled_back" || entry.event === "budget_released")) {
+          if (entry.reservationId) {
+            activeIds.delete(entry.reservationId);
+          } else {
+            count = Math.max(0, count - 1);
+          }
         }
       } catch (_) {}
     }
+    const used = count + activeIds.size;
     return {
-      ok: count < limit,
-      used: count,
+      ok: used < limit,
+      used,
       budget: limit,
-      remaining: Math.max(0, limit - count),
+      remaining: Math.max(0, limit - used),
     };
   } catch (_) {
     return { ok: true, used: 0, budget: limit, remaining: limit };
@@ -226,6 +238,7 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
     const filePath = join(stateDir, `ledger-${dateStr}.jsonl`);
 
     let count = 0;
+    const activeIds = new Set();
     let prevHash = "0".repeat(64);
 
     if (existsSync(filePath)) {
@@ -236,7 +249,17 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
           try {
             const entry = JSON.parse(line);
             if (entry && entry.event === "budget_reserved") {
-              count++;
+              if (entry.reservationId) {
+                activeIds.add(entry.reservationId);
+              } else {
+                count++;
+              }
+            } else if (entry && (entry.event === "budget_rolled_back" || entry.event === "budget_released")) {
+              if (entry.reservationId) {
+                activeIds.delete(entry.reservationId);
+              } else {
+                count = Math.max(0, count - 1);
+              }
             }
             if (entry && entry.hash) {
               prevHash = entry.hash;
@@ -246,8 +269,9 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
       } catch (_) {}
     }
 
-    if (count >= limit) {
-      throw new BudgetError(`Daily budget exhausted (${count}/${limit} tasks executed)`);
+    const used = count + activeIds.size;
+    if (used >= limit) {
+      throw new BudgetError(`Daily budget exhausted (${used}/${limit} tasks executed)`);
     }
 
     const timestamp = new Date().toISOString();
@@ -267,8 +291,8 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
     return {
       ok: true,
       reservationId,
-      remaining: Math.max(0, limit - (count + 1)),
-      used: count + 1,
+      remaining: Math.max(0, limit - (used + 1)),
+      used: used + 1,
     };
   }, opts);
 }
@@ -282,6 +306,11 @@ export function commitBudgetReservation(rootOrOpts = resolveRoot(), reservationI
   return appendLedger({ event: "budget_committed", reservationId }, root);
 }
 
+export function rollbackBudgetReservation(rootOrOpts = resolveRoot(), reservationId = "") {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
+  return appendLedger({ event: "budget_rolled_back", reservationId }, root);
+}
+
 export async function withBudget(fn, root = resolveRoot(), limit = 300) {
   const reservation = reserveBudget(root, limit);
   try {
@@ -289,6 +318,9 @@ export async function withBudget(fn, root = resolveRoot(), limit = 300) {
     commitBudgetReservation(root, reservation.reservationId);
     return result;
   } catch (err) {
+    if (err && typeof err === "object") {
+      err.reservationId = reservation.reservationId;
+    }
     appendLedger({ event: "budget_reservation_failed", reservationId: reservation.reservationId, error: err.message }, root);
     throw err;
   }

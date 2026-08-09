@@ -1,5 +1,5 @@
 /**
- * Google Jules Orchestrator Kit - Node.js SDK (v0.24.0)
+ * Google Jules Orchestrator Kit - Node.js SDK (v1.0.1)
  *
  * Exposes core orchestrator functions for programmatically driving agent tasks,
  * security auditing, repo gating, and state operations.
@@ -17,7 +17,16 @@ export {
 export { sanitizeUntrustedData, buildAgentEnvelope } from "./src/prompt-guard.mjs";
 export { isolateMcpStdout, writeMcpFrame } from "./src/mcp.mjs";
 export { git, runCmd, resolveBase, changedFiles, diffBytes, diffText } from "./src/git.mjs";
-export { createProvider, JULES_PRESET, CLAUDE_PRESET, CODEX_PRESET } from "./src/provider.mjs";
+export {
+  createProvider,
+  JULES_PRESET,
+  CLAUDE_PRESET,
+  CODEX_PRESET,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+  ProviderSchemaError,
+  parseRetryAfter,
+} from "./src/provider.mjs";
 export {
   appendLedger,
   readLedger,
@@ -25,6 +34,7 @@ export {
   reserveBudget,
   reserveBudgetAtomic,
   commitBudgetReservation,
+  rollbackBudgetReservation,
   withBudget,
   checkDailyBudget,
   acquireLock,

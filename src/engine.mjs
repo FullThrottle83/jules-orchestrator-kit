@@ -1,8 +1,8 @@
 import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
 import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
-import { createProvider } from "./provider.mjs";
-import { withBudget, appendLedger, getQueueDir, ensureDir } from "./state.mjs";
+import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
+import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation } from "./state.mjs";
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
@@ -346,6 +346,24 @@ export async function repair(failure, opts = {}) {
         config.limits.dailyTasks
       );
     } catch (err) {
+      if (err instanceof ProviderRateLimitError || err instanceof ProviderUnavailableError) {
+        if (err.reservationId) {
+          rollbackBudgetReservation(root, err.reservationId);
+        }
+        const retryAfterMs = err.retryAfterMs || 60000;
+        const backoffSec = Math.ceil(retryAfterMs / 1000);
+        console.warn(`[PROVIDER_INFRASTRUCTURE_FAILURE] ${err.name}: ${err.message}. Recommended backoff: ${backoffSec}s.`);
+        attempts.push({ n, ok: false, error: err.message, providerError: true, retryAfterMs });
+        appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: false, error: err.message, providerError: true });
+        return {
+          ok: false,
+          attempts,
+          finalStatus: "PROVIDER_INFRASTRUCTURE_FAILURE",
+          error: err.message,
+          retryAfterMs,
+          providerError: true,
+        };
+      }
       attempts.push({ n, ok: false, error: err.message });
       appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: false, error: err.message });
       break;
@@ -482,11 +500,31 @@ export async function dispatch(task, opts = {}) {
 
   const cleanTask = { ...task, prompt: envelopedPrompt };
 
-  return withBudget(
-    () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun }),
-    root,
-    config.limits.dailyTasks
-  );
+  try {
+    return await withBudget(
+      () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun }),
+      root,
+      config.limits.dailyTasks
+    );
+  } catch (err) {
+    if (err instanceof ProviderRateLimitError || err instanceof ProviderUnavailableError) {
+      if (err.reservationId) {
+        rollbackBudgetReservation(root, err.reservationId);
+      }
+      const retryAfterMs = err.retryAfterMs || 60000;
+      const status = err instanceof ProviderRateLimitError ? "RATE_LIMITED" : "PROVIDER_UNAVAILABLE";
+      const backoffSec = Math.ceil(retryAfterMs / 1000);
+      console.warn(`[PROVIDER_INFRASTRUCTURE_FAILURE] ${err.name}: ${err.message}. Recommended backoff: ${backoffSec}s.`);
+      return {
+        ok: false,
+        status,
+        error: err.message,
+        retryAfterMs,
+        providerError: true,
+      };
+    }
+    throw err;
+  }
 }
 
 export async function run(tasksOrOpts = {}, opts = {}) {
