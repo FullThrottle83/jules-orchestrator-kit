@@ -96,7 +96,10 @@ export function buildAgentEnvelope(systemPolicy = "", taskInstructions = "", unt
   }
 
   const sections = [];
-  sections.push(`SYSTEM WARNING: ${warning}`);
+
+  if (sanitizedBlocks.length > 0) {
+    sections.push(`SYSTEM WARNING: ${warning}`);
+  }
 
   if (systemPolicy && typeof systemPolicy === "string" && systemPolicy.trim()) {
     sections.push(`[SYSTEM POLICY]\n${systemPolicy.trim()}`);

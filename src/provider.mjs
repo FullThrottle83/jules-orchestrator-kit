@@ -3,15 +3,20 @@ import { spawnSync } from "node:child_process";
 export const JULES_PRESET = {
   name: "jules",
   type: "http",
-  url: "https://jules.googleapis.com/v1/projects/{project}/sessions",
+  url: "https://jules.googleapis.com/v1alpha/sessions",
   headers: {
-    "Authorization": "Bearer {token}",
+    "X-Goog-Api-Key": "{token}",
     "Content-Type": "application/json",
   },
   bodyTemplate: {
-    prompt: "{prompt}",
     title: "{title}",
-    branch: "{branch}",
+    prompt: "{prompt}",
+    sourceContext: {
+      source: "{source}",
+      githubRepoContext: {
+        startingBranch: "{branch}",
+      },
+    },
   },
 };
 
@@ -30,6 +35,14 @@ export const CODEX_PRESET = {
   args: ["exec", "{prompt}"],
   promptViaStdin: false,
 };
+
+export class MissingApiKeyError extends Error {
+  constructor(message = "JULES_API_KEY environment variable is required for Google Jules API dispatch.") {
+    super(message);
+    this.name = "MissingApiKeyError";
+    this.status = 401;
+  }
+}
 
 export class ProviderRateLimitError extends Error {
   constructor(message, opts = {}) {
@@ -92,6 +105,9 @@ function interpolateDeep(node, data) {
  * Creates an HTTP or Exec provider adapter based on spec/config.
  */
 export function createProvider(spec = "jules", config = {}) {
+  if (spec && typeof spec === "object" && typeof spec.dispatch === "function") {
+    return spec;
+  }
   const providerSpec = typeof spec === "string"
     ? (spec === "claude-code" ? CLAUDE_PRESET : spec === "codex" ? CODEX_PRESET : JULES_PRESET)
     : spec;
@@ -100,11 +116,21 @@ export function createProvider(spec = "jules", config = {}) {
     name: providerSpec.name || "custom-provider",
 
     async dispatch(task, ctx = {}) {
-      const rawToken = process.env.JULES_API_KEY || process.env.GEMINI_API_KEY || "";
+      const rawToken = process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
+      if (!rawToken && !ctx.dryRun && providerSpec.name === "jules") {
+        throw new MissingApiKeyError();
+      }
+
+      const rawRepo = task.source || ctx.source || process.env.JULES_REPO || "";
+      const sourceName = rawRepo
+        ? (rawRepo.startsWith("sources/") ? rawRepo : `sources/github/${rawRepo}`)
+        : "sources/github/default/repo";
+
       const data = {
         prompt: task.prompt || "",
         title: task.title || "Agent Task",
         branch: task.branch || (config.branchPrefix ? config.branchPrefix + "task" : "agent/task"),
+        source: sourceName,
         project: process.env.JULES_PROJECT_ID || "default",
         ...ctx,
       };
@@ -135,19 +161,25 @@ export function createProvider(spec = "jules", config = {}) {
         }
 
         let body;
+        let bodyObj;
         if (typeof providerSpec.bodyTemplate === "string") {
           try {
             const parsedObj = JSON.parse(providerSpec.bodyTemplate);
-            const interpolatedObj = interpolateDeep(parsedObj, data);
-            body = JSON.stringify(interpolatedObj);
+            bodyObj = interpolateDeep(parsedObj, data);
           } catch (_) {
             body = interpolateString(providerSpec.bodyTemplate, data);
           }
         } else if (providerSpec.bodyTemplate) {
-          const interpolatedObj = interpolateDeep(providerSpec.bodyTemplate, data);
-          body = JSON.stringify(interpolatedObj);
+          bodyObj = interpolateDeep(providerSpec.bodyTemplate, data);
         } else {
-          body = JSON.stringify(data);
+          bodyObj = { ...data };
+        }
+
+        if (bodyObj && typeof bodyObj === "object") {
+          if (data.repoless || ctx.repoless || task.repoless) {
+            delete bodyObj.sourceContext;
+          }
+          body = JSON.stringify(bodyObj);
         }
 
         const timeoutMs = ctx.timeoutMs || config.timeoutMs || providerSpec.timeoutMs || 120_000;

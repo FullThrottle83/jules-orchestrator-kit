@@ -493,9 +493,9 @@ export async function dispatch(task, opts = {}) {
   const cleanPrompt = redactSecrets(task.prompt || "");
 
   // Wire Prompt Guard & Envelope to wrap raw task arguments
-  const untrustedData = task.untrustedData || [cleanPrompt];
+  const taskInstructions = task.taskInstructions || cleanPrompt || task.title || "Autonomous Task Execution";
+  const untrustedData = Array.isArray(task.untrustedData) ? task.untrustedData : [];
   const systemPolicy = task.systemPolicy || config.systemPolicy || "";
-  const taskInstructions = task.taskInstructions || task.title || "Autonomous Task Execution";
   const envelopedPrompt = buildAgentEnvelope(systemPolicy, taskInstructions, untrustedData);
 
   const cleanTask = { ...task, prompt: envelopedPrompt };
@@ -547,7 +547,7 @@ export async function run(tasksOrOpts = {}, opts = {}) {
 
   let filesToProcess = [];
   if (Array.isArray(tasks)) {
-    filesToProcess = tasks.map((t) => (typeof t === "string" ? t : t.id || t.file || t.title));
+    filesToProcess = tasks;
   } else {
     filesToProcess = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
   }
@@ -558,21 +558,27 @@ export async function run(tasksOrOpts = {}, opts = {}) {
     const batch = filesToProcess.slice(i, i + concurrency);
     await Promise.all(
       batch.map(async (fileOrItem) => {
-        const fileName = typeof fileOrItem === "string" ? fileOrItem : fileOrItem.id || fileOrItem.file;
+        const fileName = typeof fileOrItem === "string" ? fileOrItem : fileOrItem.id || fileOrItem.file || fileOrItem.title || "task";
         const srcPath = join(queueDir, fileName);
         try {
           let prompt = typeof fileOrItem === "object" && fileOrItem.prompt ? fileOrItem.prompt : "";
+          let title = typeof fileOrItem === "object" && fileOrItem.title ? fileOrItem.title : fileName;
           if (!prompt && existsSync(srcPath)) {
             prompt = await fs.promises.readFile(srcPath, "utf-8");
           }
-          const task = { title: fileName, prompt };
+          const task = typeof fileOrItem === "object" ? { ...fileOrItem, title, prompt } : { title, prompt };
           const session = await dispatch(task, { root, config, dryRun: isDry });
-          const dstPath = join(completedDir, fileName);
-          if (existsSync(srcPath)) {
-            renameSync(srcPath, dstPath);
+
+          if (session && session.ok === false) {
+            results.push({ file: fileName, ok: false, status: session.status, error: session.error, session });
+          } else {
+            const dstPath = join(completedDir, fileName);
+            if (existsSync(srcPath)) {
+              renameSync(srcPath, dstPath);
+            }
+            appendLedger({ event: "task_completed", file: fileName, session }, root);
+            results.push({ file: fileName, ok: true, session });
           }
-          appendLedger({ event: "task_completed", file: fileName, session }, root);
-          results.push({ file: fileName, ok: true, session });
         } catch (err) {
           results.push({ file: fileName, ok: false, error: err.message });
         }

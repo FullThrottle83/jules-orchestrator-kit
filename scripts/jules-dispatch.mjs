@@ -10,10 +10,12 @@ import { loadConfig } from "../src/config.mjs";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-process.emitWarning(
-  "scripts/jules-dispatch.mjs is deprecated and will be removed in v1.0.0. Use 'agentctl dispatch' or the programmatic SDK.",
-  "DeprecationWarning"
-);
+if (process.argv[1] && (process.argv[1].endsWith("jules-dispatch.mjs") || process.argv[1].endsWith("jules-dispatch"))) {
+  process.emitWarning(
+    "scripts/jules-dispatch.mjs is deprecated and will be removed in v1.0.0. Use 'agentctl dispatch' or the programmatic SDK.",
+    "DeprecationWarning"
+  );
+}
 
 const args = process.argv.slice(2);
 let title = "Task Dispatch";

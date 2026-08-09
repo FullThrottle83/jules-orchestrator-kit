@@ -1,11 +1,11 @@
 /**
- * Google Jules Orchestrator Kit - Node.js SDK (v0.25.1)
+ * Google Jules Orchestrator Kit - Node.js SDK (v0.28.0)
  *
  * Exposes core orchestrator functions for programmatically driving agent tasks,
  * security auditing, repo gating, and state operations.
  */
 
-export { loadConfig, detectStack, resolveVerify, resolveRoot, normalizePath, TIER_PRESETS } from "./src/config.mjs";
+export { loadConfig, parseYaml, detectStack, resolveVerify, resolveRoot, normalizePath, TIER_PRESETS } from "./src/config.mjs";
 export {
   shannonEntropy,
   redactSecrets,
@@ -19,14 +19,17 @@ export { isolateMcpStdout, writeMcpFrame } from "./src/mcp.mjs";
 export { git, runCmd, resolveBase, changedFiles, diffBytes, diffText } from "./src/git.mjs";
 export {
   createProvider,
+  createFailoverProvider,
   JULES_PRESET,
   CLAUDE_PRESET,
   CODEX_PRESET,
+  MissingApiKeyError,
   ProviderRateLimitError,
   ProviderUnavailableError,
   ProviderSchemaError,
   parseRetryAfter,
 } from "./src/provider.mjs";
+export { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo } from "./src/stack-detector.mjs";
 export {
   appendLedger,
   readLedger,

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.0] - 2026-08-09
+### Core P0 Remediation & Google Jules REST v1alpha Alignment
+- **Google Jules REST v1alpha Provider Alignment (`src/provider.mjs`)**: Conformed default provider endpoint to `https://jules.googleapis.com/v1alpha/sessions` using `X-Goog-Api-Key` authentication header and structured `sourceContext` (`source` and `githubRepoContext.startingBranch`). Throws explicit `MissingApiKeyError` (401) when `JULES_API_KEY` is missing on live dispatches. Added support for `--repoless` session payloads.
+- **Prompt Guard Instruction Framing (`src/engine.mjs`, `src/prompt-guard.mjs`)**: Fixed `dispatch()` so primary user task instructions are passed as trusted operator instructions under `[TASK INSTRUCTIONS]` and not framed as untrusted data (`<<<UNTRUSTED-DATA>>>`). System warning is conditionally emitted only when untrusted external context is present.
+- **Queue State Engine & Retry Semantics (`src/engine.mjs`)**: Updated `run()` so rate-limited (HTTP 429) or unavailable (HTTP 5xx) task dispatches leave task files in `queue/` for retry instead of moving them to `completed/`.
+- **Working-Tree & Untracked File Gate Mode (`src/git.mjs`)**: Extended `changedFiles()`, `diffText()`, and `diffBytes()` with `working-tree` mode support to inspect uncommitted modifications, staged index, and untracked `.env`/secret files during pre-commit gating.
+- **Shell Command Safety (`src/git.mjs`)**: Updated `runCmd()` to detect shell operators (`&&`, `||`, `|`, `>`, `<`, `$`, `"`, `'`, `;`) in string commands and execute them safely via shell (`/bin/sh -c` or `cmd.exe /c`).
+- **Installer & Package Exports Alignment (`bin/init.js`, `scripts/jules-self-audit.mjs`, `index.mjs`)**: Injected `npx agentctl <cmd>` package scripts in consumer `package.json`, excluded maintainer scripts (`release.mjs`) from target copy, added dynamic module imports in `jules-self-audit.mjs`, exported missing API symbols in `index.mjs`, and suppressed SDK import deprecation warnings in `jules-dispatch.mjs`.
+- **P0 Remediation Test Suite (`test/p0-remediation.test.mjs`)**: Created unit tests covering v1alpha provider alignment, prompt guard provenance, queue retry semantics, working-tree gate mode, shell command execution, and snake_case config limits.
+
 ## [0.27.1] - 2026-08-09
 ### Dead Code Elimination & Architecture Housekeeping
 - **Dead Code Cleanup (`src/process-group.mjs`, `src/git.mjs`)**: Removed orphaned `src/process-group.mjs` module and unused `createBranch` / `worktreeAdd` exports from `src/git.mjs`.

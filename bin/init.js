@@ -221,7 +221,9 @@ let skippedCount = 0;
 
 if (fs.existsSync(sourceScriptsDir)) {
   const scriptFiles = fs.readdirSync(sourceScriptsDir);
+  const excludeFiles = new Set(["release.mjs"]);
   scriptFiles.forEach((file) => {
+    if (excludeFiles.has(file)) return;
     const srcFile = path.join(sourceScriptsDir, file);
     const destFile = path.join(targetScriptsDir, file);
     if (!fs.existsSync(destFile) || isForce) {
@@ -247,14 +249,14 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
     pkg.scripts = pkg.scripts || {};
     let updated = false;
     const julesScripts = {
-      "jules:dispatch": "node scripts/jules-dispatch.mjs",
-      "jules:queue": "node bin/agentctl.mjs queue",
-      "jules:create": "node scripts/jules-create.mjs",
-      "jules:status": "node scripts/jules-status.mjs",
-      "jules:audit": "node scripts/jules-self-audit.mjs",
-      "jules:scan": "node scripts/jules-scan-todos.mjs",
-      "jules:swarm": "node bin/agentctl.mjs swarm",
-      "jules:nightly": "node scripts/jules-nightly.mjs"
+      "jules:dispatch": "npx agentctl dispatch",
+      "jules:queue": "npx agentctl queue",
+      "jules:create": "npx agentctl create",
+      "jules:status": "npx agentctl status",
+      "jules:audit": "npx agentctl gate",
+      "jules:scan": "npx agentctl scan",
+      "jules:swarm": "npx agentctl swarm",
+      "jules:nightly": "npx agentctl clean"
     };
 
     for (const [key, val] of Object.entries(julesScripts)) {

@@ -257,6 +257,19 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
   const envDailyTasks = process.env.JULES_DAILY_BUDGET !== undefined ? Number(process.env.JULES_DAILY_BUDGET) : null;
   const envDiffKb = process.env.JULES_MAX_DIFF_KB !== undefined ? Number(process.env.JULES_MAX_DIFF_KB) : null;
 
+  const parsedLimits = parsed.limits || {};
+  const normalizedLimits = {
+    diffKb: parsedLimits.diff_kb ?? parsedLimits.diffKb,
+    promptKb: parsedLimits.prompt_kb ?? parsedLimits.promptKb,
+    dailyTasks: parsedLimits.daily_tasks ?? parsedLimits.dailyTasks,
+    repairAttempts: parsedLimits.repair_attempts ?? parsedLimits.repairAttempts,
+    concurrency: parsedLimits.concurrency,
+    staggerMs: parsedLimits.stagger_ms ?? parsedLimits.staggerMs,
+  };
+  for (const k of Object.keys(normalizedLimits)) {
+    if (normalizedLimits[k] === undefined) delete normalizedLimits[k];
+  }
+
   const config = {
     version: parsed.version || DEFAULTS.version,
     provider: parsed.provider || DEFAULTS.provider,
@@ -269,7 +282,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     limits: {
       ...DEFAULTS.limits,
       ...tierLimits,
-      ...(parsed.limits || {}),
+      ...normalizedLimits,
       ...(envDailyTasks !== null && !isNaN(envDailyTasks) ? { dailyTasks: envDailyTasks } : {}),
       ...(envDiffKb !== null && !isNaN(envDiffKb) ? { diffKb: envDiffKb } : {}),
     },

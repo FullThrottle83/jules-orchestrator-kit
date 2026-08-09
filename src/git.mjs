@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { normalizePath } from "./config.mjs";
 
 
@@ -23,23 +25,35 @@ export function runCmd(command, opts = {}) {
 
   let binary = "";
   let args = [];
+  let useShell = false;
+  let shellCmd = "";
 
   if (Array.isArray(command)) {
     binary = command[0];
     args = command.slice(1);
   } else if (typeof command === "string") {
-    const tokens = command.trim().split(/\s+/).filter(Boolean);
-    binary = tokens[0] || "";
-    args = tokens.slice(1);
+    const trimmed = command.trim();
+    if (/[\&\|\>\<\$\"\'\n\;]/.test(trimmed)) {
+      useShell = true;
+      shellCmd = trimmed;
+    } else {
+      const tokens = trimmed.split(/\s+/).filter(Boolean);
+      binary = tokens[0] || "";
+      args = tokens.slice(1);
+    }
   }
 
-  if (!binary) {
+  if (!binary && !useShell) {
     if (opts.ignoreError) return { status: 0, stdout: "", stderr: "" };
     throw new GateError("Empty command provided");
   }
 
   try {
-    const stdout = execFileSync(binary, args, {
+    const isWin = process.platform === "win32";
+    const execBin = useShell ? (isWin ? (process.env.ComSpec || "cmd.exe") : "/bin/sh") : binary;
+    const execArgs = useShell ? (isWin ? ["/d", "/s", "/c", shellCmd] : ["-c", shellCmd]) : args;
+
+    const stdout = execFileSync(execBin, execArgs, {
       cwd,
       encoding: "utf-8",
       shell: false,
@@ -69,10 +83,10 @@ export function runCmd(command, opts = {}) {
     }
 
     if (isTimeout) {
-      throw new GateError(`Command execution timed out (ETIMEDOUT): ${binary}`, { code: status });
+      throw new GateError(`Command execution timed out (ETIMEDOUT): ${useShell ? shellCmd : binary}`, { code: status });
     }
     if (isNobufs) {
-      throw new GateError(`Command output buffer exceeded limit (ENOBUFS): ${binary}`, { code: status });
+      throw new GateError(`Command output buffer exceeded limit (ENOBUFS): ${useShell ? shellCmd : binary}`, { code: status });
     }
 
     throw err;
@@ -138,29 +152,55 @@ export function resolveBase(root = process.cwd(), baseRef = "main") {
   );
 }
 
-export function changedFiles(root = process.cwd(), base = "main") {
+export function changedFiles(root = process.cwd(), base = "main", mode = "committed") {
   const resolvedRef = resolveBase(root, base);
-  const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...HEAD`], {
-    cwd: root,
-    raw: true,
-  });
-  return raw
-    .split("\0")
-    .map(normalizePath)
-    .filter(Boolean);
+  if (mode === "working-tree" || mode === "working") {
+    const committedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
+    const uncommittedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", "HEAD"], { cwd: root, raw: true, ignoreError: true }) || "";
+    const untrackedRaw = git(["-c", "core.quotePath=false", "ls-files", "-z", "--others", "--exclude-standard"], { cwd: root, raw: true, ignoreError: true }) || "";
+
+    const set = new Set([
+      ...committedRaw.split("\0").map(normalizePath).filter(Boolean),
+      ...uncommittedRaw.split("\0").map(normalizePath).filter(Boolean),
+      ...untrackedRaw.split("\0").map(normalizePath).filter(Boolean),
+    ]);
+    return Array.from(set);
+  } else if (mode === "staged" || mode === "index") {
+    const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", "--cached", resolvedRef], { cwd: root, raw: true });
+    return raw.split("\0").map(normalizePath).filter(Boolean);
+  } else {
+    const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
+    return raw.split("\0").map(normalizePath).filter(Boolean);
+  }
 }
 
-export function diffBytes(root = process.cwd(), base = "main") {
+export function diffText(root = process.cwd(), base = "main", mode = "committed") {
   const resolvedRef = resolveBase(root, base);
-  const raw = git(["diff", "--shortstat", `${resolvedRef}...HEAD`], { cwd: root });
-  if (!raw) return 0;
-  const diffStr = git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
-  return Buffer.byteLength(diffStr, "utf-8");
-}
+  if (mode === "working-tree" || mode === "working") {
+    const committed = git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
+    const uncommitted = git(["diff", "HEAD"], { cwd: root, raw: true, ignoreError: true }) || "";
 
-export function diffText(root = process.cwd(), base = "main") {
-  const resolvedRef = resolveBase(root, base);
+    const untrackedRaw = git(["-c", "core.quotePath=false", "ls-files", "-z", "--others", "--exclude-standard"], { cwd: root, raw: true, ignoreError: true }) || "";
+    const untrackedFiles = untrackedRaw.split("\0").map(normalizePath).filter(Boolean);
+    let untrackedDiff = "";
+    for (const file of untrackedFiles) {
+      try {
+        const fullPath = join(root, file);
+        if (existsSync(fullPath)) {
+          const content = readFileSync(fullPath, "utf-8");
+          untrackedDiff += `\ndiff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n`;
+          untrackedDiff += content.split("\n").map((line) => `+${line}`).join("\n") + "\n";
+        }
+      } catch (_) {}
+    }
+    return [committed, uncommitted, untrackedDiff].filter(Boolean).join("\n");
+  }
   return git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
+}
+
+export function diffBytes(root = process.cwd(), base = "main", mode = "committed") {
+  const text = diffText(root, base, mode);
+  return Buffer.byteLength(text, "utf-8");
 }
 
 export function showFromOrigin(root = process.cwd(), base = "main", filePath = "") {

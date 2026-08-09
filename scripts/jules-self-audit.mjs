@@ -5,11 +5,22 @@
  * Delegates execution to src/engine.mjs gate().
  */
 
-import { gate } from "../src/engine.mjs";
-import { loadConfig, parseYaml } from "../src/config.mjs";
-import { matchesGlob } from "../src/security.mjs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+
+let gate, loadConfig, parseYaml, matchesGlob;
+try {
+  ({ gate } = await import("../src/engine.mjs"));
+  ({ loadConfig, parseYaml } = await import("../src/config.mjs"));
+  ({ matchesGlob } = await import("../src/security.mjs"));
+} catch (_) {
+  try {
+    ({ gate, loadConfig, parseYaml, matchesGlob } = await import("jules-orchestrator-kit"));
+  } catch (err) {
+    console.error("Error: Could not resolve jules-orchestrator-kit modules.", err.message);
+    process.exit(1);
+  }
+}
 
 export function matchGlob(filepath, globPattern) {
   return matchesGlob(filepath, globPattern);
