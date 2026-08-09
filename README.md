@@ -43,8 +43,9 @@
 <a id="what-is-kit"></a>
 ## 💡 2-Sentence Mental Model
 
+> [!TIP]
 > **Think of `jules-orchestrator-kit` as an automated Engineering Manager for AI coding agents.**  
-> **It hands out clear tasks, runs your tests in an isolated sandbox, fixes broken code automatically, and only opens a Pull Request when 100% of your tests pass.**
+> It hands out clear tasks, runs your tests in an isolated sandbox, fixes broken code automatically, and only opens a Pull Request when 100% of your tests pass.
 
 <br/>
 
@@ -231,36 +232,20 @@ Ecosystems Natively Supported by src/stack-detector.mjs:
 ### 1. The Autonomous OODA Verification Loop
 Every task dispatched to `jules-orchestrator-kit` executes within an immutable, fail-closed verification loop:
 
-```
-+---------------------------------------------------------------------------------------------------+
-|                           AUTONOMOUS OODA SELF-HEALING ENGINE (v0.27+)                            |
-|                                                                                                   |
-|  [Task Envelope] --> (1. Validate Scope & Base Freshness)                                         |
-|                             |                                                                     |
-|                             v                                                                     |
-|                      (2. Create Isolated Git Worktree / VFS Lock)                                 |
-|                             |                                                                     |
-|                             v                                                                     |
-|                      (3. Dispatch AI Task to Google Jules / LLM)                                  |
-|                             |                                                                     |
-|                             v                                                                     |
-|                      (4. Execute Scoped Verification Gate)                                        |
-|                          -- detectPolyglotStack().testCmd                                         |
-|                          -- Docker Compose / Devcontainer wrapper                                 |
-|                             |                                                                     |
-|                   +---------+---------+                                                           |
-|                   | PASS              | FAIL                                                      |
-|                   v                   v                                                           |
-|         (5. Security Audit)   (6. Fingerprint Stderr / Flaky Verdict)                             |
-|           - Redact Secrets        |                                                               |
-|           - Check Diff < 75KB     +---> Is test QUARANTINED? (Oscillation >= 0.40)                |
-|                   |                     |                         |                               |
-|                   v                    YES                        NO                              |
-|         (7. Rebase & PR)                |                         |                               |
-|           - git rebase main             v                         v                               |
-|           - gh pr create      [Log Quarantined Flake]   [Attempt OODA Repair Turn]                |
-|                               (Exit Code 8)             (Max 3 Retries; Exit 4 on Exhaust)        |
-+---------------------------------------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    A["📩 Task Envelope"] --> B["1. Validate Scope & Base Freshness"]
+    B --> C["2. Create Isolated Git Worktree & VFS Lock"]
+    C --> D["3. Dispatch Task to Google Jules / LLM"]
+    D --> E["4. Execute Scoped Verification Gate<br/><code>detectPolyglotStack().testCmd</code>"]
+    
+    E -->|PASS| F["5. Security Audit<br/><i>Redact Secrets, Diff < 75KB</i>"]
+    F --> G["7. Rebase & Open PR<br/><code>git rebase main && gh pr create</code>"]
+
+    E -->|FAIL| H["6. Fingerprint Stderr & Flaky Verdict"]
+    H -->|Oscillation >= 0.40| I["🚨 Quarantined Test<br/><i>Exit Code 8</i>"]
+    H -->|Normal Failure| J["🔄 Attempt OODA Repair Turn<br/><i>Max 3 Retries; Exit 4 on Exhaust</i>"]
+    J --> D
 ```
 
 <br/>
@@ -268,26 +253,14 @@ Every task dispatched to `jules-orchestrator-kit` executes within an immutable, 
 ### 2. Polyglot Monorepo Scoped Execution Engine
 In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFiles)` traverses directory ancestry to isolate verification to affected subprojects:
 
-```
-+---------------------------------------------------------------------------------------------------+
-|                        MONOREPO BOUNDARY RESOLVER (resolveWorkspaceBoundary)                      |
-|                                                                                                   |
-|  changedFiles: ["backend/api/main.py", "cli/src/main.rs", "docs/README.md"]                      |
-|         |                                                                                         |
-|         +---> 1. Check Root Shared Triggers (openapi.yaml, docker-compose.yml, Makefile)          |
-|         |        -> None changed. Continue subproject isolation.                                  |
-|         |                                                                                         |
-|         +---> 2. Map Files to Subproject Roots by Trigger File Traversal:                         |
-|         |        - "backend/api/main.py" -> backend/pyproject.toml (Python Stack)                 |
-|         |        - "cli/src/main.rs"     -> cli/Cargo.toml (Rust/Cargo Stack)                     |
-|         |        - "docs/README.md"      -> (Documentation; R0 Cosmetic Risk)                     |
-|         |                                                                                         |
-|         +---> 3. Synthesize Scoped POSIX Subshell Verification Plan:                              |
-|                  testCmd:  "(cd backend && pytest) && (cd cli && cargo test --workspace)"         |
-|                  buildCmd: "(cd cli && cargo build)"                                              |
-|                                                                                                   |
-|  Result: 100% test isolation, 0 global test thrashing, 0 git index lock collisions.               |
-+---------------------------------------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    A["📁 Changed Files<br/><code>['backend/api/main.py', 'cli/src/main.rs']</code>"] --> B{"Check Shared Triggers?<br/><i>docker-compose.yml, openapi.yaml</i>"}
+    B -->|None Changed| C["Traverse Directory Ancestry"]
+    C --> D1["<code>backend/api/main.py</code> → <code>backend/pyproject.toml</code><br/><i>(Python Stack)</i>"]
+    C --> D2["<code>cli/src/main.rs</code> → <code>cli/Cargo.toml</code><br/><i>(Rust Stack)</i>"]
+    D1 --> E["Synthesize POSIX Subshell Verification Plan<br/><code>(cd backend && pytest) && (cd cli && cargo test)</code>"]
+    D2 --> E
 ```
 
 <br/>
