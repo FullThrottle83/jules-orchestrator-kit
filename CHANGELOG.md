@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.1] - 2026-08-09
+### Dead Code Elimination & Architecture Housekeeping
+- **Dead Code Cleanup (`src/process-group.mjs`, `src/git.mjs`)**: Removed orphaned `src/process-group.mjs` module and unused `createBranch` / `worktreeAdd` exports from `src/git.mjs`.
+- **Zero-Dependency Audit**: Verified 100% clean test execution and ESLint passing without introducing third-party analysis dependencies.
+
 ## [0.27.0] - 2026-08-09
 ### PR Review Auto-Remediation, Multi-Provider Failover & Zero-Dependency Dashboard
 - **PR Review Auto-Remediation (`src/review-repair.mjs`)**: Implemented `parseReviewComments()` to parse GitHub PR review comments (`CHANGES_REQUESTED`), filter out conversational praise (`lgtm`, `looks good`, `thanks`), map file/line coordinates, and synthesize OODA repair task envelopes. Added `agentctl review-repair <pr-comments.json>` CLI command.
