@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [0.21.0] - 2026-08-09
+### Autonomous Jules Benchmark Audit & Hardening
+- **Falsy Zero-Budget Fix (`src/config.mjs`)**: Fixed `JULES_DAILY_BUDGET: 0` evaluating as falsy and bypassing zero-budget limits.
+- **Rule Path Security Guard (`src/risk.mjs`)**: Added missing `.agent/rules/**` to `RESTRICTED_PATH_PATTERNS`, guaranteeing rule edits trigger R3 Restricted risk classification.
+- **OODA Fingerprint Normalization (`src/engine.mjs`)**: Extended `fingerprintFailureState()` regex for ANSI escape codes (`[\u001b\x1b]\[[0-9;]*[a-zA-Z]`), URL query parameters, line numbers, and column numbers.
+- **MCP Server Parameter Validation (`src/mcp.mjs`)**: Added JSON-RPC `-32602` error validation for `check_risk_tier` input parameters and `-32601` for invalid methods.
+- **Webhook Exception Hardening (`src/webhook.mjs`)**: Added safety `try-catch` wrappers around event callbacks and fallback routing for unhandled GitHub events (`onUnhandled`/`onFallback`).
+- **Expanded Secret Redaction (`src/security.mjs`)**: Added redaction for Base64 JWTs, Slack bot tokens (`xoxb-`), and multiline RSA private key blocks.
+- **Test Suite Expansion**: Expanded unit test coverage from 136 to 158 passing tests (`npm test`).
+
 ## [0.20.0] - 2026-08-08 (Community Release Candidate)
 ### L9 Production Architecture & Field-Testing Hardening
 - **Linearizable VFS Directory Mutex (`src/state.mjs`)**: Kernel-level VFS directory mutex (`withVfsMutex`) guaranteeing strict serial linearizability for SHA-256 hash-chained session ledgers under high-concurrency multi-agent swarms.
