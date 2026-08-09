@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.22.7 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.22.8 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -44,7 +44,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.22.7");
+    console.log("agentctl v0.22.8");
     process.exit(0);
   }
 
@@ -226,7 +226,7 @@ async function main() {
     }
 
     case "doctor": {
-      console.log(`\n🔍 agentctl System Diagnostics (v0.22.7)`);
+      console.log(`\n🔍 agentctl System Diagnostics (v0.22.8)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);

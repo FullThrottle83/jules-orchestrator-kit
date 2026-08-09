@@ -4,9 +4,12 @@ import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git
 import { createProvider } from "./provider.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir } from "./state.mjs";
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
+import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+
+export { recordVerifyRun, readVerifyRuns, flakyVerdict };
 
 /**
  * Validates whether a file in .agent/jules-queue/ is a task file.
@@ -176,9 +179,25 @@ export async function gate(opts = {}) {
     NODE_OPTIONS: guardNodeOptions,
   };
 
+  let flakyVerdictResult = null;
+
   if (testCmd) {
+    const startTime = Date.now();
     const res = runCmd(testCmd, { cwd: root, ignoreError: true, env: testEnv });
+    const durationMs = Date.now() - startTime;
     testResult = { ok: res.status === 0, status: res.status, stdout: res.stdout, stderr: res.stderr, command: testCmd };
+
+    const fingerprint = !testResult.ok ? fingerprintFailureState(testResult, root) : null;
+    recordVerifyRun(root, testCmd, testResult.ok, fingerprint, durationMs);
+
+    if (!testResult.ok) {
+      const runs = readVerifyRuns(root, testCmd);
+      flakyVerdictResult = flakyVerdict(runs);
+      if (flakyVerdictResult.verdict === "QUARANTINED") {
+        phases.push({ phase: "verify", ok: false, testResult, buildResult, flakyVerdict: flakyVerdictResult });
+        return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult };
+      }
+    }
   }
 
   if (testResult.ok && buildCmd) {

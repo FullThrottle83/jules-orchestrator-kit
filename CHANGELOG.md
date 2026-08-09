@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
+## [0.22.8] - 2026-08-09
+### Statistical Flaky Test Quarantine & Ledger (Exit Code 8)
+- **Flaky Test Ledger (`src/flaky-ledger.mjs`)**: Added `recordVerifyRun` appending run records to `.agent/state/flaky.jsonl` and `readVerifyRuns` / `getVerifyRuns` for reading stored run records. Implemented `flakyVerdict` evaluating sliding window of last $n \le 10$ runs to categorize tests (`HEALTHY`, `REPAIRABLE_REGRESSION`, `INSUFFICIENT_DATA`, or `QUARANTINED`).
+- **Gate Integration (`src/engine.mjs`)**: Integrated verification run recording into `gate()`. Automatically evaluates `flakyVerdict()` on test failure and returns exit code `8` (`FLAKY_QUARANTINE`) when a test is quarantined, suppressing OODA auto-repair loop.
+- **Unit Test Suite (`test/flaky-ledger.test.mjs`)**: Added test coverage verifying alternating P/F quarantine evaluation (`allowRepair = false`), 6 consecutive failures evaluation (`allowRepair = true`), ledger file IO, and gate exit code 8 return.
+- **Documentation & Exit Code Registry (`AGENTS.md`)**: Documented Exit Code 8 (`FLAKY_QUARANTINE`) in exit code registry and troubleshooting matrix.
+
 ## [0.22.7] - 2026-08-09
 ### Integration Safety & Lock/Reaper Edge-Case Hardening
 - **Stale Mutex Directory Reaper (`src/journal.mjs`)**: Added `reapStaleMutexDirs` scanning `.agent/state/` for `.mutex` directories older than `ttlMs` (30s) and using atomic grave paths (`.grave-<pid>`) with `rmdirSync` for CAS deletion. Wired into CLI boot in `bin/agentctl.mjs` and MCP server startup in `src/mcp.mjs`.
