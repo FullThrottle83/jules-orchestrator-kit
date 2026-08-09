@@ -1,5 +1,5 @@
 /**
- * Google Jules Orchestrator Kit - Node.js SDK (v0.28.2)
+ * Google Jules Orchestrator Kit - Node.js SDK (v0.29.0)
  *
  * Exposes core orchestrator functions for programmatically driving agent tasks,
  * security auditing, repo gating, and state operations.
@@ -72,4 +72,17 @@ export { scanCodebaseForTodos, runScanner } from "./scripts/jules-scan-todos.mjs
 export { getDynamicGuardrails, dispatchTask } from "./scripts/jules-dispatch.mjs";
 export { classifyQueueFailure } from "./scripts/jules-queue-runner.mjs";
 export { extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "./scripts/utils.mjs";
+
+// Native TUI Primitives
+export { isTTY, styleText, select, multiSelect, input, confirm, secretInput, spinner, ANSI } from "./src/tui.mjs";
+
+// Stack Oracle & Verification Probes
+export { detectStackOracles, runVerificationProbe } from "./src/wizard-oracle.mjs";
+
+// Onboarding & Presets Engine
+export { planInit, loadPresets, runInitWizard, TIER_PROFILES, BUILTIN_PRESETS } from "./src/wizard-init.mjs";
+
+// Guided Task Authoring Subsystem
+export { planTaskCreate, runTaskCreateWizard, GUARDRAIL_FOOTER } from "./src/wizard-task.mjs";
+
 

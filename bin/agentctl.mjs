@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "node:util";
-import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
-import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir, ensureDir } from "../src/state.mjs";
+import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir } from "../src/state.mjs";
 import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 
@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.28.2 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.29.0 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -30,7 +30,8 @@ Commands:
   bootstrap             Bootstrap zero-test repository with verification oracle
   review-repair         Parse PR review comments and synthesize OODA repair tasks
   dashboard             Start local HTTP telemetry and audit dashboard
-  init                  Scaffold .agent/ directory and config.yml
+  init                  Scaffold .agent/ config and run onboarding wizard
+  task create           Interactively author and scope a Jules task envelope
   status                Display queue and system status summary
   scan                  Scan codebase for TODO/FIXME task candidates
   version               Output agentctl version
@@ -53,7 +54,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.28.2");
+    console.log("agentctl v0.29.0");
     process.exit(0);
   }
 
@@ -264,7 +265,7 @@ async function main() {
     }
 
     case "doctor": {
-      console.log(`\n🔍 agentctl System Diagnostics (v0.28.2)`);
+      console.log(`\n🔍 agentctl System Diagnostics (v0.29.0)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);
@@ -326,34 +327,81 @@ async function main() {
     }
 
     case "init": {
-      const agentDir = join(root, ".agent");
-      ensureDir(agentDir);
-      const configPath = join(agentDir, "config.yml");
-      if (!existsSync(configPath)) {
-        writeFileSync(
-          configPath,
-          `version: 1
-provider: jules
-limits:
-  diff_kb: 75
-  daily_tasks: 300
-branch_prefix: agent/
-base_branch: main
-`,
-          "utf-8"
-        );
-        console.log(`✅ Created .agent/config.yml`);
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          interactive: { type: "boolean", short: "i" },
+          tier: { type: "string", short: "t" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const { runInitWizard } = await import("../src/wizard-init.mjs");
+      const res = await runInitWizard(root, {
+        interactive: values.interactive !== false,
+        tier: values.tier || "pro",
+      });
+
+      if (values.json) {
+        console.log(JSON.stringify(res, null, 2));
       } else {
-        console.log(`ℹ️ .agent/config.yml already exists.`);
+        console.log(`✅ Onboarding complete! Manifest generated at ${res.configPath}`);
+        console.log(`   Tier: ${res.plan.tier.toUpperCase()} (${res.plan.limits.concurrency} worker(s), ${res.plan.limits.daily_tasks} daily tasks)`);
+        console.log(`   Verification Test Command : "${res.plan.verify.test}"`);
+        console.log(`   Active Presets            : ${res.plan.presets.join(", ")}`);
       }
       process.exit(0);
+      break;
+    }
+
+    case "task": {
+      const subCommand = args[1] || "create";
+      if (subCommand === "create") {
+        const { values } = parseArgs({
+          args: args.slice(2),
+          options: {
+            title: { type: "string", short: "t" },
+            prompt: { type: "string", short: "p" },
+            "verify-cmd": { type: "string", short: "v" },
+            "auto-pr": { type: "boolean" },
+            "require-plan-approval": { type: "boolean" },
+            repoless: { type: "boolean" },
+            json: { type: "boolean", short: "j" },
+          },
+          allowPositionals: true,
+        });
+
+        const { runTaskCreateWizard } = await import("../src/wizard-task.mjs");
+        const res = await runTaskCreateWizard(root, {
+          title: values.title,
+          prompt: values.prompt,
+          verifyCmd: values["verify-cmd"],
+          autoPr: values["auto-pr"],
+          requirePlanApproval: values["require-plan-approval"],
+          repoless: values.repoless,
+        });
+
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`✅ Task synthesized & queued at ${res.taskFile}`);
+          console.log(`   Task ID  : ${res.plan.taskId}`);
+          console.log(`   Title    : ${res.plan.title}`);
+          console.log(`   Auto-PR  : ${res.plan.flags.autoPr}`);
+        }
+        process.exit(0);
+      } else {
+        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create`);
+        process.exit(1);
+      }
       break;
     }
 
     case "status": {
       const queueDir = getQueueDir(root);
       const files = existsSync(queueDir) ? readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir)) : [];
-      console.log(`\n📊 agentctl Status Summary (v0.28.2)`);
+      console.log(`\n📊 agentctl Status Summary (v0.29.0)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Pending Tasks    : ${files.length}`);

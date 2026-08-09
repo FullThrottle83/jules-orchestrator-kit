@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.0] - 2026-08-10
+### Onboarding, Stack Oracle & Guided Task Authoring Subsystem
+- **Native Terminal UI (TUI) Engine (`src/tui.mjs`)**: Added zero-third-party-dependency TUI primitives built on `node:readline/promises`, `node:tty` (`setRawMode(true)`), and ANSI escape sequences, including single-select menus, multi-select checkboxes, validated text inputs, secret inputs, confirmation prompts, spinners, and non-TTY headless fallbacks.
+- **Stack Oracle & Verification Probes (`src/wizard-oracle.mjs`)**: Added multi-tier stack inspection (Node, Cargo, Go, Pytest, CMake, Elixir, Docker, monorepos) and `runVerificationProbe()` execution validator.
+- **Interactive Onboarding Engine (`src/wizard-init.mjs`, `agentctl init --interactive`)**: Added pure planning core `planInit()`, tier matrix (`free`, `pro`, `enterprise`), declarative preset loader (`.agent/presets/*.yml`), and atomic configuration generator.
+- **Guided Task Authoring Subsystem (`src/wizard-task.mjs`, `agentctl task create`)**: Added task creation planning core `planTaskCreate()`, TODO candidate harvesting from `scanCodebaseForTodos()`, Shannon entropy secret leak scrubbing, falsifiability verification enforcement, `gate --mode working-tree` preflight checks, and guardrail footer auto-synthesis.
+- **SDK Exports (`index.mjs`)**: Exported TUI, Stack Oracle, Onboarding, and Task Authoring SDK functions.
+
 ## [0.28.2] - 2026-08-10
 ### Phase 1 P0 Closure: Jules Provider & Gate Engine Remediation
 - **Jules Provider `startingBranch` & Source Validation (`src/provider.mjs`)**: Updated `startingBranch` to default to `config.baseBranch` (or `main`) rather than a target branch prefix (`agent/task`). Added validation throwing an explicit error when repository source is missing on non-repoless live dispatches.
