@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+## [0.22.3] - 2026-08-09
+### Hermetic Network Egress Guard
+- **Hermetic Preload Guard (`src/preload-net-guard.mjs`)**: Intercepts and blocks unmocked network egress in test sub-processes without external npm dependencies by monkey-patching `globalThis.fetch`, `node:http.request`, `node:http.get`, `node:https.request`, and `node:https.get`.
+- **Engine Environment Injection (`src/engine.mjs`, `src/git.mjs`)**: Automatically injects `NODE_OPTIONS="--import ./src/preload-net-guard.mjs"` into verification/test suite executions inside `gate()` and passes custom `env` options in `runCmd()`.
+- **Network Guard Unit Test Suite (`test/net-guard.test.mjs`)**: Added unit test suite asserting blocked unmocked egress (exit code `188` and `[FATAL] ERR_UNMOCKED_NET: <host>` output to stderr) and allowed loopback requests (`localhost`, `127.0.0.1`, `::1`).
+
 ## [0.22.2] - 2026-08-09
 ### Security Boundary & MCP Stdout Isolation
 - **Input Sanitization Boundary (`src/prompt-guard.mjs`)**: Added `sanitizeUntrustedData` and `buildAgentEnvelope`. Strips zero-width unicode, bidi control characters, ANSI sequences, and normalizes UTF-8. Neutralizes LLM control tags (`<|im_start|>`, `[INST]`), role markers (`system:`, `assistant:`), tag breakout attempts, and prompt injection patterns (`ignore previous instructions`). Prepends strict systemic data-only warning.

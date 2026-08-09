@@ -39,6 +39,7 @@ export function runCmd(command, opts = {}) {
       encoding: "utf-8",
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
+      env: opts.env || process.env,
     });
     return { status: 0, stdout: stdout.trim(), stderr: "" };
   } catch (err) {

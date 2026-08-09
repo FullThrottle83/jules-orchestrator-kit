@@ -13,7 +13,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.22.2 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.22.3 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -223,7 +223,7 @@ async function main() {
     }
 
     case "doctor": {
-      console.log(`\n🔍 agentctl System Diagnostics (v0.22.1)`);
+      console.log(`\n🔍 agentctl System Diagnostics (v0.22.3)`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);

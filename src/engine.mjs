@@ -113,13 +113,24 @@ export async function gate(opts = {}) {
   let testResult = { ok: true, status: 0 };
   let buildResult = { ok: true, status: 0 };
 
+  const existingNodeOptions = process.env.NODE_OPTIONS || "";
+  const netGuardFlag = "--import ./src/preload-net-guard.mjs";
+  const guardNodeOptions = existingNodeOptions && !existingNodeOptions.includes(netGuardFlag)
+    ? `${existingNodeOptions} ${netGuardFlag}`
+    : existingNodeOptions ? existingNodeOptions : netGuardFlag;
+
+  const testEnv = {
+    ...process.env,
+    NODE_OPTIONS: guardNodeOptions,
+  };
+
   if (testCmd) {
-    const res = runCmd(testCmd, { cwd: root, ignoreError: true });
+    const res = runCmd(testCmd, { cwd: root, ignoreError: true, env: testEnv });
     testResult = { ok: res.status === 0, status: res.status, stdout: res.stdout, stderr: res.stderr, command: testCmd };
   }
 
   if (testResult.ok && buildCmd) {
-    const res = runCmd(buildCmd, { cwd: root, ignoreError: true });
+    const res = runCmd(buildCmd, { cwd: root, ignoreError: true, env: testEnv });
     buildResult = { ok: res.status === 0, status: res.status, stdout: res.stdout, stderr: res.stderr, command: buildCmd };
   }
 
