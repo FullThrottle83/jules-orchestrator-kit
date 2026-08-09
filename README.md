@@ -332,19 +332,21 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 
 | Command | Usage | Description | Exit Codes |
 | :--- | :--- | :--- | :--- |
+| `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack oracle inspector generating `.agent/config.yml`. | `0` (Created) |
+| `task create` | `agentctl task create [--title <t>] [--prompt <p>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing & preflight gate checks. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
 | `dispatch` | `agentctl dispatch --title <t> --prompt <p>` | Dispatches a single task to an AI agent in an isolated worktree. | `0` (Success), `1` (Arg error), `2` (429 Rate limit), `3` (Scope deny), `4` (OODA exhausted), `5` (Diff > 75KB), `6` (Secret leak) |
+| `scan` | `agentctl scan` | Scans codebase for TODO/FIXME annotations to seed task authoring. | `0` (Scanned) |
 | `review-repair`| `agentctl review-repair <pr-comments.json>`| Parses GitHub PR review comments and synthesizes actionable OODA repair tasks. | `0` (Parsed), `1` (Missing file) |
 | `dashboard` | `agentctl dashboard [port]` | Starts zero-dependency local HTTP telemetry and audit visualizer dashboard. | `0` (Running) |
-| `gate` / `audit`| `agentctl gate --base main --json` | Runs security, secret scanning, and verification gate against current branch. | `0` (Approved), `3` (Scope violation), `5` (Diff limit), `6` (Secret leak) |
+| `gate` / `audit`| `agentctl gate --mode working-tree --json` | Runs security, secret scanning, and verification gate against working tree or branch. | `0` (Approved), `3` (Scope violation), `5` (Diff limit), `6` (Secret leak) |
 | `bootstrap` | `agentctl bootstrap [--force] [--json]` | Inspects an untested repository and synthesizes `.agent/config.yml` with a zero-test verification oracle (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`). | `0` (Bootstrapped / Existing) |
 | `queue` | `agentctl queue` | Consumes and executes pending markdown task envelopes in `.agent/queue/`. | `0` (Complete) |
 | `swarm` | `agentctl swarm` | Runs parallel multi-agent swarm across queued tasks with token-bucket concurrency. | `0` (Complete) |
 | `doctor` | `agentctl doctor` | Diagnostic inspect: displays detected stack, container wrapper, test command, and daily session budget. | `0` (Healthy) |
 | `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
-| `init` | `agentctl init` | Scaffolds `.agent/` directory structure and default `.agent/config.yml`. | `0` (Created) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
-| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.27.0`). | `0` |
+| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.29.0`). | `0` |
 
 <br/>
 
@@ -353,14 +355,15 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 <br/>
 
 <a id="roadmap"></a>
-## 🗺️ v0.27+ Next-Gen Feature Roadmap
+## 🗺️ v0.29+ Feature Roadmap
 
 | Feature | Module / Command | Architectural Blueprint | Target Release |
 | :--- | :--- | :--- | :---: |
+| **Onboarding & Stack Oracle Wizard** | `agentctl init --interactive` (`src/wizard-init.mjs`) | Zero-dependency interactive CLI wizard auto-detecting verification oracles, quota tiers, and preset workflows. | **v0.29.0** *(Shipped)* |
+| **Guided Task Authoring Subsystem** | `agentctl task create` (`src/wizard-task.mjs`) | Guided task authoring with TODO candidate harvesting, Shannon entropy secret scrubbing, and guardrail footer synthesis. | **v0.29.0** *(Shipped)* |
 | **PR Review Auto-Remediation Loop** | `agentctl review-repair` (`src/review-repair.mjs`) | Ingests GitHub PR review comments (`CHANGES_REQUESTED`), extracts line/file context, and dispatches automated OODA repair turns until reviewer comments are resolved. | **v0.27.0** *(Shipped)* |
 | **Multi-Provider Failover Router** | `createFailoverProvider` (`src/provider.mjs`) | Ordered router (`["jules", "claude-code", "local-mcp"]`) that seamlessly falls back to secondary LLMs on HTTP 429 rate limits or 5xx service unavailability. | **v0.27.0** *(Shipped)* |
 | **Telemetry & Audit Web Dashboard**| `agentctl dashboard` (`src/dashboard.mjs`) | Zero-dependency local HTTP server displaying real-time DAG execution graphs, Wilson-Score flaky test ledgers, and SHA-256 telemetry chains. | **v0.27.0** *(Shipped)* |
-| **Cross-Language Contract Guard** | `hashCrossLanguageInterface` (`src/merge-blocks.mjs`)| Canonical SHA-256 schema hashing for OpenAPI/Protobuf specs across polyglot task dependencies in `DagExecutor`. | **v0.26.0** *(Shipped)* |
 
 <br/>
 
@@ -371,11 +374,10 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 ## 📖 Recipes, Documentation & Prior Art
 
 - [**Google Jules Official Documentation**](https://jules.google) — Official platform overview and API specifications for Google Jules.
-- [**Google Labs Code Repositories**](https://github.com/google-labs-code) — Official Google Labs public GitHub organization (jules-action, jules-sdk).
+- [**Onboarding & Task Wizard Specification**](./docs/ONBOARDING_AND_TASK_WIZARD_SPEC.md) — Normative architecture specification for zero-dependency TUI, stack oracle, and guided task authoring.
 - [**Universal Polyglot Architecture & Zero-Test Specification**](./docs/UNIVERSAL_POLYGLOT_ARCHITECTURE.md) — Comprehensive technical report on boundary resolution, OODA math, and B2B workflows.
 - [**v0.27.0 Architectural Audit & Platform Evolution**](./docs/V0.27_ARCHITECTURAL_AUDIT_AND_EVOLUTION.md) — PR review remediation, failover router, and local dashboard specs.
 - [**Examples & Task Envelope Recipes**](./EXAMPLES.md) — Production YAML and Markdown task envelopes.
-- [**Adversarial Security Audit Phase 4 Report**](./docs/AUDIT_REPORT.md) — CWE-77, CWE-1321, and CWE-183 security hardening analysis.
 - [**Changelog**](./CHANGELOG.md) — Full release history and migration guides.
 
 <br/>
