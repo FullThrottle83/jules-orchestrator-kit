@@ -1,4 +1,4 @@
-import { openSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, existsSync, lstatSync } from "node:fs";
+import { openSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, existsSync, lstatSync, unlinkSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import { normalizePath } from "./config.mjs";
@@ -61,18 +61,26 @@ export function safeAtomicWrite(filePath, content, options = {}) {
   const dir = dirname(filePath);
   const tempFile = join(dir, `.tmp-${basename(filePath)}-${randomBytes(6).toString("hex")}`);
 
-  const fd = openSync(tempFile, "wx", mode);
+  let fd;
   try {
+    fd = openSync(tempFile, "wx", mode);
     writeSync(fd, content, null, encoding);
     if (options.sync !== false) {
       fsyncSync(fd);
     }
-  } finally {
     closeSync(fd);
+    fd = undefined;
+    renameSync(tempFile, filePath);
+    return true;
+  } catch (err) {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch (_) {}
+    }
+    try {
+      if (existsSync(tempFile)) unlinkSync(tempFile);
+    } catch (_) {}
+    throw err;
   }
-
-  renameSync(tempFile, filePath);
-  return true;
 }
 
 export function shannonEntropy(str) {

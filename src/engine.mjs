@@ -6,11 +6,23 @@ import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReserva
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import fs, { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
-import { appendTelemetry } from "./telemetry.mjs";
+import { appendTelemetry as appendTelemetryUnsafe } from "./telemetry.mjs";
 
 export { recordVerifyRun, readVerifyRuns, flakyVerdict, sanitizeUntrustedData };
+
+function appendTelemetry(root, kind, fields = {}) {
+  try {
+    return appendTelemetryUnsafe(root, kind, fields);
+  } catch (_) {
+    return null;
+  }
+}
+
+function isSafeQueueFileName(fileName) {
+  return typeof fileName === "string" && fileName.length > 0 && basename(fileName) === fileName && fileName !== "." && fileName !== "..";
+}
 
 /**
  * Validates whether a file in .agent/jules-queue/ is a task file.
@@ -204,7 +216,13 @@ export async function gate(opts = {}) {
     const startTime = Date.now();
     const res = runCmd(testCmd, { cwd: root, ignoreError: true, env: testEnv });
     const durationMs = Date.now() - startTime;
-    testResult = { ok: res.status === 0, status: res.status, stdout: res.stdout, stderr: res.stderr, command: testCmd };
+    testResult = {
+      ok: res.status === 0,
+      status: res.status,
+      stdout: redactSecrets(res.stdout || ""),
+      stderr: redactSecrets(res.stderr || ""),
+      command: testCmd,
+    };
 
     const fingerprint = !testResult.ok ? fingerprintFailureState(testResult, root) : null;
     recordVerifyRun(root, testCmd, testResult.ok, fingerprint, durationMs);
@@ -223,7 +241,13 @@ export async function gate(opts = {}) {
 
   if (testResult.ok && buildCmd) {
     const res = runCmd(buildCmd, { cwd: root, ignoreError: true, env: testEnv });
-    buildResult = { ok: res.status === 0, status: res.status, stdout: res.stdout, stderr: res.stderr, command: buildCmd };
+    buildResult = {
+      ok: res.status === 0,
+      status: res.status,
+      stdout: redactSecrets(res.stdout || ""),
+      stderr: redactSecrets(res.stderr || ""),
+      command: buildCmd,
+    };
   }
 
   const verifyOk = testResult.ok && buildResult.ok;
@@ -342,7 +366,7 @@ export async function repair(failure, opts = {}) {
       );
     } catch (err) {
       if (err instanceof ProviderRateLimitError || err instanceof ProviderUnavailableError) {
-        if (err.reservationId) {
+        if (err.reservationId && !err.budgetReservationRolledBack) {
           rollbackBudgetReservation(root, err.reservationId);
         }
         const retryAfterMs = err.retryAfterMs || 60000;
@@ -473,7 +497,10 @@ Stderr:
 ${cleanStderr}`;
 }
 
-export async function dispatch(task, opts = {}) {
+export async function dispatch(task = {}, opts = {}) {
+  if (!task || typeof task !== "object") {
+    throw new TypeError("Dispatch task must be an object");
+  }
   const root = opts.config?._root || opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
   const provider = createProvider(config.provider, config);
@@ -503,7 +530,7 @@ export async function dispatch(task, opts = {}) {
     );
   } catch (err) {
     if (err instanceof ProviderRateLimitError || err instanceof ProviderUnavailableError) {
-      if (err.reservationId) {
+      if (err.reservationId && !err.budgetReservationRolledBack) {
         rollbackBudgetReservation(root, err.reservationId);
       }
       const retryAfterMs = err.retryAfterMs || 60000;
@@ -534,7 +561,8 @@ export async function run(tasksOrOpts = {}, opts = {}) {
 
   const root = options.root || process.cwd();
   const config = options.config || loadConfig(root);
-  const concurrency = options.concurrency || config.limits.concurrency || 1;
+  const requestedConcurrency = Number(options.concurrency ?? config.limits.concurrency ?? 1);
+  const concurrency = Number.isInteger(requestedConcurrency) && requestedConcurrency > 0 ? requestedConcurrency : 1;
   const isDry = options.dryRun !== undefined ? options.dryRun : (process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1");
   const queueDir = getQueueDir(root);
   const completedDir = join(queueDir, "completed");
@@ -553,9 +581,12 @@ export async function run(tasksOrOpts = {}, opts = {}) {
     const batch = filesToProcess.slice(i, i + concurrency);
     await Promise.all(
       batch.map(async (fileOrItem) => {
-        const fileName = typeof fileOrItem === "string" ? fileOrItem : fileOrItem.id || fileOrItem.file || fileOrItem.title || "task";
-        const srcPath = join(queueDir, fileName);
+        const fileName = typeof fileOrItem === "string" ? fileOrItem : fileOrItem?.id || fileOrItem?.file || fileOrItem?.title || "task";
         try {
+          if (!isSafeQueueFileName(fileName)) {
+            throw new Error(`Unsafe queue task path: ${fileName}`);
+          }
+          const srcPath = join(queueDir, fileName);
           let prompt = typeof fileOrItem === "object" && fileOrItem.prompt ? fileOrItem.prompt : "";
           let title = typeof fileOrItem === "object" && fileOrItem.title ? fileOrItem.title : fileName;
           if (!prompt && existsSync(srcPath)) {
@@ -569,6 +600,9 @@ export async function run(tasksOrOpts = {}, opts = {}) {
           } else {
             const dstPath = join(completedDir, fileName);
             if (existsSync(srcPath)) {
+              if (existsSync(dstPath)) {
+                throw new Error(`Completed task destination already exists: ${fileName}`);
+              }
               renameSync(srcPath, dstPath);
             }
             appendLedger({ event: "task_completed", file: fileName, session }, root);

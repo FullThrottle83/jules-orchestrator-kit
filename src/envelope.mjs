@@ -2,7 +2,7 @@ import { git, runCmd, resolveBase } from "./git.mjs";
 import { checkScope } from "./security.mjs";
 import { normalizeScope } from "./config.mjs";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { resolve, relative, isAbsolute } from "node:path";
 
 /**
  * Validates a Task Envelope before dispatch or during CI triage.
@@ -67,7 +67,12 @@ export function validateEnvelope(envelope = {}, opts = {}) {
   if (Array.isArray(envelope.referenced_paths)) {
     for (const relPath of envelope.referenced_paths) {
       if (typeof relPath !== "string") continue;
-      const absPath = join(root, relPath);
+      const absPath = resolve(root, relPath);
+      const rootRelative = relative(resolve(root), absPath);
+      if (isAbsolute(rootRelative) || rootRelative === ".." || rootRelative.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+        errors.push(`Premise failure: referenced path '${relPath}' escapes repository root.`);
+        continue;
+      }
       let existsInGit = false;
       if (resolvedBase) {
         const catRes = runCmd(["git", "cat-file", "-e", `${resolvedBase}:${relPath}`], { cwd: root, ignoreError: true });

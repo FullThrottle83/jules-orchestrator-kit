@@ -1,3 +1,5 @@
+import { StringDecoder } from "node:string_decoder";
+
 /**
  * @typedef {"up" | "down" | "left" | "right" | "page-up" | "page-down" | "home" | "end" | "space" | "enter" | "tab" | "shift-tab" | "escape" | "ctrl-c" | "backspace" | "delete" | "character" | "unknown"} KeyName
  */
@@ -60,8 +62,22 @@ export function createKeyDecoder(options = {}) {
   const escapeTimeoutMs = options.escapeTimeoutMs ?? 30;
   const maxBufferBytes = options.maxBufferBytes ?? 1024;
 
+  const utf8Decoder = new StringDecoder("utf8");
   let buffer = "";
   let lastTimeMs = 0;
+
+  function appendChunk(chunk) {
+    if (Buffer.isBuffer(chunk) || chunk instanceof Uint8Array) {
+      buffer += utf8Decoder.write(chunk);
+    } else if (chunk !== null && chunk !== undefined) {
+      buffer += String(chunk);
+    }
+
+    while (Buffer.byteLength(buffer, "utf8") > maxBufferBytes) {
+      const firstCodePoint = buffer.codePointAt(0);
+      buffer = buffer.slice(firstCodePoint > 0xffff ? 2 : 1);
+    }
+  }
 
   /**
    * Process a single token from buffer.
@@ -91,7 +107,7 @@ export function createKeyDecoder(options = {}) {
 
     // Handle ESC prefix sequences
     if (buffer[0] === "\x1b") {
-      if (buffer.length === 1) {
+      if (buffer === "\x1b") {
         // Wait for timeout to distinguish standalone ESC
         if (nowMs - lastTimeMs >= escapeTimeoutMs) {
           return {
@@ -150,26 +166,26 @@ export function createKeyDecoder(options = {}) {
           idx++;
         }
         // Incomplete CSI/SS3 sequence in buffer, wait unless buffer exceeded cap
-        if (buffer.length < maxBufferBytes) {
+        if (Buffer.byteLength(buffer, "utf8") < maxBufferBytes) {
           return null;
         }
       }
 
-      // Alt+Character (ESC followed by single printable character)
-      if (buffer.length >= 2 && buffer[1] >= " " && buffer[1] <= "~") {
-        const char = buffer[1];
-        const seq = buffer.slice(0, 2);
+      // Alt+Character (ESC followed by a single printable character)
+      const altChar = Array.from(buffer.slice(1))[0];
+      if (altChar && altChar.codePointAt(0) >= 0x20 && altChar.codePointAt(0) <= 0x7e) {
+        const seq = `\x1b${altChar}`;
         return {
           event: {
-            name: char === " " ? "space" : "character",
+            name: altChar === " " ? "space" : "character",
             sequence: seq,
-            text: char,
+            text: altChar,
             ctrl: false,
             alt: true,
             shift: false,
             timestampMs: nowMs,
           },
-          consumed: 2,
+          consumed: seq.length,
         };
       }
     }
@@ -193,8 +209,9 @@ export function createKeyDecoder(options = {}) {
     }
 
     // Printable single character or Unicode scalar
-    const firstChar = buffer[0];
-    if (firstChar >= " ") {
+    const firstCodePoint = buffer.codePointAt(0) || 0;
+    const firstChar = String.fromCodePoint(firstCodePoint);
+    if (firstCodePoint >= 0x20) {
       return {
         event: {
           name: firstChar === " " ? "space" : "character",
@@ -205,7 +222,7 @@ export function createKeyDecoder(options = {}) {
           shift: false,
           timestampMs: nowMs,
         },
-        consumed: 1,
+        consumed: firstChar.length,
       };
     }
 
@@ -213,13 +230,13 @@ export function createKeyDecoder(options = {}) {
     return {
       event: {
         name: "unknown",
-        sequence: buffer[0],
+        sequence: firstChar,
         ctrl: false,
         alt: false,
         shift: false,
         timestampMs: nowMs,
       },
-      consumed: 1,
+      consumed: firstChar.length,
     };
   }
 
@@ -231,10 +248,7 @@ export function createKeyDecoder(options = {}) {
      * @returns {KeyEvent[]}
      */
     push(chunk, nowMs = Date.now()) {
-      buffer += String(chunk);
-      if (buffer.length > maxBufferBytes) {
-        buffer = buffer.slice(-maxBufferBytes);
-      }
+      appendChunk(chunk);
       lastTimeMs = nowMs;
 
       const events = [];

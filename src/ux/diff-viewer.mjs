@@ -51,10 +51,12 @@ export function parseUnifiedDiff(text, options = {}) {
   const maxLines = options.maxLines ?? 5000;
 
   let truncated = false;
-  const totalBytes = Buffer.byteLength(text || "", "utf-8");
+  text = typeof text === "string" ? text : String(text || "");
+  const totalBytes = Buffer.byteLength(text, "utf-8");
+  const byteLimit = Number.isFinite(maxBytes) ? Math.max(0, Math.floor(maxBytes)) : 1_000_000;
 
-  if (totalBytes > maxBytes) {
-    text = text.slice(0, maxBytes);
+  if (totalBytes > byteLimit) {
+    text = Buffer.from(text, "utf-8").subarray(0, byteLimit).toString("utf-8");
     truncated = true;
   }
 
@@ -67,7 +69,8 @@ export function parseUnifiedDiff(text, options = {}) {
   let newLineNum = 0;
   let lineCount = 0;
 
-  for (const rawLine of rawLines) {
+  for (let rawIndex = 0; rawIndex < rawLines.length; rawIndex++) {
+    const rawLine = rawLines[rawIndex];
     if (lineCount >= maxLines) {
       truncated = true;
       break;
@@ -75,6 +78,9 @@ export function parseUnifiedDiff(text, options = {}) {
     lineCount++;
 
     const line = sanitizeControlChars(rawLine);
+    if (line === "" && rawLine === "" && rawIndex === rawLines.length - 1) {
+      continue;
+    }
 
     if (line.startsWith("diff --git ")) {
       if (files.length >= maxFiles) {
@@ -98,20 +104,26 @@ export function parseUnifiedDiff(text, options = {}) {
       continue;
     }
 
-    if (!currentFile) {
-      if (line.startsWith("--- ") || line.startsWith("+++ ")) {
-        currentFile = {
-          oldPath: line.startsWith("--- ") ? line.slice(4).replace(/^a\//, "") : "",
-          newPath: line.startsWith("+++ ") ? line.slice(4).replace(/^b\//, "") : "",
-          status: "modified",
-          hunks: [],
-          additions: 0,
-          deletions: 0,
-        };
-        files.push(currentFile);
-      } else {
-        continue;
-      }
+    if (!currentFile && (line.startsWith("--- ") || line.startsWith("+++ "))) {
+      currentFile = {
+        oldPath: "",
+        newPath: "",
+        status: "modified",
+        hunks: [],
+        additions: 0,
+        deletions: 0,
+      };
+      files.push(currentFile);
+    }
+    if (!currentFile) continue;
+
+    if (!currentHunk && line.startsWith("--- ")) {
+      currentFile.oldPath = line.slice(4).replace(/^a\//, "");
+      continue;
+    }
+    if (!currentHunk && line.startsWith("+++ ")) {
+      currentFile.newPath = line.slice(4).replace(/^b\//, "");
+      continue;
     }
 
     if (line.startsWith("new file mode ")) {
@@ -120,6 +132,12 @@ export function parseUnifiedDiff(text, options = {}) {
     }
     if (line.startsWith("deleted file mode ")) {
       currentFile.status = "deleted";
+      continue;
+    }
+    if (line.startsWith("similarity index ") || line.startsWith("rename from ") || line.startsWith("rename to ")) {
+      currentFile.status = "renamed";
+      if (line.startsWith("rename from ")) currentFile.oldPath = line.slice("rename from ".length);
+      if (line.startsWith("rename to ")) currentFile.newPath = line.slice("rename to ".length);
       continue;
     }
     if (line.startsWith("Binary files ")) {

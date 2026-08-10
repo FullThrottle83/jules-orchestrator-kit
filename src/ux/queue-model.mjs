@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { parseEnvelopeHeader } from "../envelope.mjs";
+import { isPidAlive } from "../state.mjs";
 
 /**
  * @typedef {"pending" | "dispatching" | "remote-queued" | "planning" | "awaiting-plan-approval" | "awaiting-user-feedback" | "running" | "output-ready" | "verifying" | "deferred" | "quarantined" | "failed" | "completed" | "cancelled"} TaskState
@@ -26,9 +27,18 @@ import { parseEnvelopeHeader } from "../envelope.mjs";
  * @property {string} [worktree]
  * @property {string} [errorSummary]
  * @property {string} envelopeHash
+ * @property {string | null} stateHash
  * @property {number} stateRevision
  * @property {string} taskFile
  */
+
+function isQueueTaskFile(fileName, content = "") {
+  if (!fileName || fileName.toLowerCase() === "readme.md" || !fileName.toLowerCase().endsWith(".md")) {
+    return false;
+  }
+  if (/^task-.*\.md$/i.test(fileName)) return true;
+  return Boolean(parseEnvelopeHeader(content) || content.includes("# Task ID:"));
+}
 
 /**
  * @typedef {Object} QueueSnapshot
@@ -53,6 +63,8 @@ export async function buildQueueSnapshot(root, options = {}) {
   const repoRoot = resolve(root || process.cwd());
   const queueDir = join(repoRoot, ".agent", "jules-queue");
   const warnings = [];
+  const limit = Number.isFinite(options.limit) ? Math.max(0, Math.floor(options.limit)) : 100;
+  const includeCompleted = options.includeCompleted !== false;
   /** @type {QueueTaskSummary[]} */
   const tasks = [];
 
@@ -77,7 +89,7 @@ export async function buildQueueSnapshot(root, options = {}) {
     warnings.push("Canonical queue directory .agent/jules-queue does not exist.");
   } else {
     try {
-      const files = readdirSync(queueDir).filter((f) => f.endsWith(".md"));
+      const files = readdirSync(queueDir).filter((f) => f.toLowerCase().endsWith(".md"));
       for (const file of files) {
         const taskId = file.replace(/\.md$/, "");
         const taskPath = join(queueDir, file);
@@ -85,23 +97,38 @@ export async function buildQueueSnapshot(root, options = {}) {
 
         try {
           const content = readFileSync(taskPath, "utf-8");
+          if (!isQueueTaskFile(file, content)) continue;
           const envelope = parseEnvelopeHeader(content) || {};
           const envelopeHash = "sha256:" + createHash("sha256").update(content).digest("hex");
 
           let sidecar = {};
+          let stateHash = null;
           if (existsSync(statePath)) {
             try {
-              sidecar = JSON.parse(readFileSync(statePath, "utf-8"));
+              const stateContent = readFileSync(statePath, "utf-8");
+              stateHash = "sha256:" + createHash("sha256").update(stateContent).digest("hex");
+              sidecar = JSON.parse(stateContent);
             } catch {
               warnings.push(`Malformed sidecar file for task ${taskId}`);
             }
           }
 
-          /** @type {TaskState} */
-          const state = sidecar.state || "pending";
+          const knownStates = new Set([
+            "pending", "dispatching", "remote-queued", "planning", "awaiting-plan-approval",
+            "awaiting-user-feedback", "running", "output-ready", "verifying", "deferred",
+            "quarantined", "failed", "completed", "cancelled",
+          ]);
+          let state = knownStates.has(sidecar.state) ? sidecar.state : "pending";
+          if (sidecar.state && state === "pending" && sidecar.state !== "pending") {
+            warnings.push(`Unknown state '${sidecar.state}' for task ${taskId}; treating it as pending`);
+          }
+          if ((state === "running" || state === "verifying") && sidecar.pid !== undefined && !isPidAlive(sidecar.pid)) {
+            state = "failed";
+            warnings.push(`Task ${taskId} references dead PID ${sidecar.pid}; treating it as failed`);
+          }
           counts[state] = (counts[state] || 0) + 1;
 
-          if (!options.includeCompleted && (state === "completed" || state === "cancelled")) {
+          if (!includeCompleted && (state === "completed" || state === "cancelled")) {
             continue;
           }
 
@@ -110,11 +137,11 @@ export async function buildQueueSnapshot(root, options = {}) {
             title: envelope.title || taskId,
             state,
             riskTier: envelope.riskTier || "R1",
-            attempt: sidecar.attempt || 0,
-            maxAttempts: sidecar.maxAttempts || envelope.maxAttempts || 3,
+            attempt: sidecar.attempt ?? 0,
+            maxAttempts: sidecar.maxAttempts ?? envelope.maxAttempts ?? 3,
             createdAt: sidecar.createdAt || envelope.createdAt || new Date().toISOString(),
             updatedAt: sidecar.updatedAt || new Date().toISOString(),
-            durationMs: sidecar.durationMs || 0,
+            durationMs: sidecar.durationMs ?? 0,
             source: envelope.source,
             startingBranch: envelope.startingBranch,
             autoPr: Boolean(envelope.autoPr),
@@ -125,7 +152,8 @@ export async function buildQueueSnapshot(root, options = {}) {
             worktree: sidecar.worktree,
             errorSummary: sidecar.errorSummary,
             envelopeHash,
-            stateRevision: sidecar.revision || 1,
+            stateHash,
+            stateRevision: sidecar.revision ?? 1,
             taskFile: `.agent/jules-queue/${file}`,
           });
         } catch (err) {
@@ -150,7 +178,7 @@ export async function buildQueueSnapshot(root, options = {}) {
     generatedAt,
     revision,
     counts,
-    tasks: tasks.slice(0, options.limit || 100),
+    tasks: tasks.slice(0, limit),
     warnings,
   };
 }

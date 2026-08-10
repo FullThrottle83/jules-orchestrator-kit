@@ -1,4 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
+import { redactSecrets } from "../security.mjs";
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
+function finalizePlan(plan) {
+  const { planHash: _oldHash, ...unsigned } = plan;
+  const planHash = "sha256:" + createHash("sha256").update(JSON.stringify(unsigned)).digest("hex");
+  return deepFreeze({ ...unsigned, planHash });
+}
 
 /**
  * @typedef {import("../ux/capabilities.mjs").ActionPlan} ActionPlan
@@ -14,9 +27,12 @@ import { createHash, randomUUID } from "node:crypto";
  * @param {Record<string, any>} [intent.answers]
  * @returns {Promise<ActionPlan>}
  */
-export async function planTaskAction(snapshot, intent) {
-  const taskId = intent.taskId;
-  const task = (snapshot.tasks || []).find((t) => t.id === taskId);
+export async function planTaskAction(snapshot, intent = {}) {
+  const taskId = typeof intent.taskId === "string" ? intent.taskId : "";
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(taskId)) {
+    throw new Error("Task id must be a safe queue identifier.");
+  }
+  const task = (snapshot?.tasks || []).find((t) => t.id === taskId);
   if (!task) {
     throw new Error(`Task ${taskId} not found in queue snapshot.`);
   }
@@ -31,12 +47,12 @@ export async function planTaskAction(snapshot, intent) {
       throw new Error(`Task ${taskId} in state '${task.state}' cannot be retried.`);
     }
 
-    const nextAttempt = task.attempt + 1;
+    const nextAttempt = (Number.isFinite(task.attempt) ? task.attempt : 0) + 1;
     const sidecarContent = JSON.stringify(
       {
         schema: "agentctl/task-state-v1",
         taskId,
-        revision: task.stateRevision + 1,
+        revision: (Number.isFinite(task.stateRevision) ? task.stateRevision : 0) + 1,
         state: "pending",
         attempt: nextAttempt,
         maxAttempts: task.maxAttempts,
@@ -47,7 +63,7 @@ export async function planTaskAction(snapshot, intent) {
       2
     );
 
-    return {
+    return finalizePlan({
       schema: "agentctl/action-plan-v1",
       id: planId,
       kind: "task.retry",
@@ -60,7 +76,7 @@ export async function planTaskAction(snapshot, intent) {
         {
           kind: "file-hash",
           target: sidecarRelPath,
-          expected: task.envelopeHash, // Checked prior state hash if sidecar exists
+          expected: task.stateHash, // Checked prior state hash if sidecar exists
         },
       ],
       fileMutations: [
@@ -82,7 +98,7 @@ export async function planTaskAction(snapshot, intent) {
         prompt: `Confirm retry of ${taskId} (Attempt ${nextAttempt})?`,
       },
       planHash: "sha256:" + createHash("sha256").update(planId).digest("hex"),
-    };
+    });
   }
 
   if (intent.kind === "quarantine-override") {
@@ -90,7 +106,7 @@ export async function planTaskAction(snapshot, intent) {
       throw new Error(`Task ${taskId} is not in quarantined state.`);
     }
 
-    const reason = String(intent.answers?.reason || "").trim();
+    const reason = redactSecrets(String(intent.answers?.reason || "").trim());
     if (!reason) {
       throw new Error("Quarantine override requires a non-empty reason.");
     }
@@ -99,7 +115,7 @@ export async function planTaskAction(snapshot, intent) {
       {
         schema: "agentctl/task-state-v1",
         taskId,
-        revision: task.stateRevision + 1,
+        revision: (Number.isFinite(task.stateRevision) ? task.stateRevision : 0) + 1,
         state: "pending",
         attempt: task.attempt,
         maxAttempts: task.maxAttempts,
@@ -110,7 +126,7 @@ export async function planTaskAction(snapshot, intent) {
       2
     );
 
-    return {
+    return finalizePlan({
       schema: "agentctl/action-plan-v1",
       id: planId,
       kind: "task.quarantine-override",
@@ -119,7 +135,13 @@ export async function planTaskAction(snapshot, intent) {
       risk: "high",
       repository: root,
       createdAt: new Date().toISOString(),
-      preconditions: [],
+      preconditions: [
+        {
+          kind: "file-hash",
+          target: sidecarRelPath,
+          expected: task.stateHash,
+        },
+      ],
       fileMutations: [
         {
           operation: "replace",
@@ -141,7 +163,7 @@ export async function planTaskAction(snapshot, intent) {
         requireReason: true,
       },
       planHash: "sha256:" + createHash("sha256").update(planId).digest("hex"),
-    };
+    });
   }
 
   if (intent.kind === "delete-task") {
@@ -150,7 +172,7 @@ export async function planTaskAction(snapshot, intent) {
     }
 
     const trashRelPath = `.agent/jules-queue/.trash/${taskId}.md`;
-    return {
+    return finalizePlan({
       schema: "agentctl/action-plan-v1",
       id: planId,
       kind: "task.delete",
@@ -159,7 +181,13 @@ export async function planTaskAction(snapshot, intent) {
       risk: "moderate",
       repository: root,
       createdAt: new Date().toISOString(),
-      preconditions: [],
+      preconditions: [
+        {
+          kind: "file-hash",
+          target: task.taskFile,
+          expected: task.envelopeHash,
+        },
+      ],
       fileMutations: [
         {
           operation: "move",
@@ -179,7 +207,7 @@ export async function planTaskAction(snapshot, intent) {
         prompt: `Delete task ${taskId}?`,
       },
       planHash: "sha256:" + createHash("sha256").update(planId).digest("hex"),
-    };
+    });
   }
 
   throw new Error(`Unsupported task action intent: ${intent.kind}`);
