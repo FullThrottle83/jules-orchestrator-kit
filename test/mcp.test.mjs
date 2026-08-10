@@ -24,10 +24,10 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 3);
     assert.equal(Array.isArray(res.result.tools), true);
-    assert.equal(res.result.tools.length, 5);
+    assert.equal(res.result.tools.length, 6);
     assert.deepEqual(res.result.tools, MCP_TOOLS);
     const names = res.result.tools.map((t) => t.name);
-    assert.deepEqual(names, ["dispatch_jules_task", "audit_jules_gate", "check_risk_tier", "get_jules_status", "telemetry_tail"]);
+    assert.deepEqual(names, ["dispatch_jules_task", "audit_jules_gate", "check_risk_tier", "get_jules_status", "telemetry_tail", "optimize_jules_prompt"]);
   });
 
   await t.test("executes check_risk_tier tool call", async () => {

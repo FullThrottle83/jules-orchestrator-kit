@@ -6,6 +6,7 @@ import { scanDiff, shannonEntropy } from "./security.mjs";
 import { getQueueDir } from "./state.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
 import { select, input, confirm, spinner, isTTY } from "./tui.mjs";
+import { scorePromptFalsifiability } from "./task-optimizer.mjs";
 
 export const GUARDRAIL_FOOTER = `
 ---
@@ -98,12 +99,16 @@ Test/Verification Command: ${verifyCmd || "(None)"}
 
 ${GUARDRAIL_FOOTER}`;
 
+  const promptAnalysis = scorePromptFalsifiability(rawPrompt, { rootDir: root, verifyCmd });
+
   const envelopeMetadata = {
     version: 1,
     id: taskId,
     title,
     flags,
     verifyCmd,
+    falsifiabilityScore: promptAnalysis.score,
+    grade: promptAnalysis.grade,
   };
 
   const taskFileContent = `<!-- JULES_TASK_ENVELOPE: ${JSON.stringify(envelopeMetadata)} -->
@@ -123,6 +128,7 @@ ${fullPrompt}
     verifyCmd,
     flags,
     secretFindings,
+    promptAnalysis,
     taskFileContent,
   };
 }

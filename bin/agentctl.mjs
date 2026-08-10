@@ -2,7 +2,7 @@
 
 import { parseArgs } from "node:util";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir } from "../src/state.mjs";
@@ -391,8 +391,66 @@ async function main() {
           console.log(`   Auto-PR  : ${res.plan.flags.autoPr}`);
         }
         process.exit(0);
+      } else if (subCommand === "optimize") {
+        const { values, positionals } = parseArgs({
+          args: args.slice(2),
+          options: {
+            fix: { type: "boolean", short: "f" },
+            file: { type: "string" },
+            dir: { type: "string", short: "d" },
+            json: { type: "boolean", short: "j" },
+            "verify-cmd": { type: "string", short: "v" },
+          },
+          allowPositionals: true,
+        });
+
+        const { scorePromptFalsifiability, optimizeTaskPrompt } = await import("../src/task-optimizer.mjs");
+        const targetDir = values.dir ? resolve(values.dir) : root;
+        let promptText = positionals.join(" ");
+
+        if (values.file) {
+          if (existsSync(values.file)) {
+            promptText = readFileSync(values.file, "utf-8");
+          } else {
+            console.error(`Error: File '${values.file}' does not exist.`);
+            process.exit(1);
+          }
+        }
+
+        if (values.fix) {
+          const opt = optimizeTaskPrompt(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"] });
+          if (values.json) {
+            console.log(JSON.stringify(opt, null, 2));
+          } else {
+            console.log(opt.optimizedPrompt);
+          }
+          process.exit(0);
+        }
+
+        const analysis = scorePromptFalsifiability(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"] });
+        if (values.json) {
+          console.log(JSON.stringify(analysis, null, 2));
+        } else {
+          console.log(`\n🎯 Task Prompt Falsifiability Analysis`);
+          console.log(`--------------------------------------------------`);
+          console.log(`  Score / Grade    : ${analysis.score} / 100 (${analysis.grade})`);
+          console.log(`  Falsifiable      : ${analysis.isFalsifiable ? "✅ YES" : "❌ NO"}`);
+          if (analysis.oracle.command) {
+            console.log(`  Oracle Command   : "${analysis.oracle.command}" (${analysis.oracle.autoDetected ? "Auto-detected" : "User-supplied"})`);
+          }
+          if (analysis.issues.length > 0) {
+            console.log(`\n  Issues Identified (${analysis.issues.length}):`);
+            analysis.issues.forEach((i) => console.log(`   - [${i.type}] ${i.message} (-${i.penalty} pts)`));
+          }
+          if (analysis.suggestions.length > 0) {
+            console.log(`\n  Suggestions for Improvement:`);
+            analysis.suggestions.forEach((s) => console.log(`   - ${s}`));
+          }
+          console.log(`--------------------------------------------------\n`);
+        }
+        process.exit(analysis.isFalsifiable ? 0 : 1);
       } else {
-        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create`);
+        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create, agentctl task optimize`);
         process.exit(1);
       }
       break;

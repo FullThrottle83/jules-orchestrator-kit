@@ -148,6 +148,19 @@ export const MCP_TOOLS = [
       },
     },
   },
+  {
+    name: "optimize_jules_prompt",
+    description: "Evaluate task prompt falsifiability, check static path validity, and synthesize optimized task envelope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "Raw task prompt instructions to analyze or optimize" },
+        fix: { type: "boolean", description: "If true, synthesizes and returns an optimized task envelope" },
+        verifyCmd: { type: "string", description: "Optional explicit verification command" },
+      },
+      required: ["prompt"],
+    },
+  },
 ];
 
 export async function handleMcpRequest(request, opts = {}) {
@@ -287,6 +300,27 @@ export async function handleMcpRequest(request, opts = {}) {
           id,
           result: {
             content: [{ type: "text", text: JSON.stringify(events, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "optimize_jules_prompt") {
+        if (!args || typeof args.prompt !== "string") {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Invalid parameters: 'prompt' must be a string" },
+          };
+        }
+        const { scorePromptFalsifiability, optimizeTaskPrompt } = await import("./task-optimizer.mjs");
+        const res = args.fix
+          ? optimizeTaskPrompt(args.prompt, { rootDir: root, verifyCmd: args.verifyCmd })
+          : scorePromptFalsifiability(args.prompt, { rootDir: root, verifyCmd: args.verifyCmd });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           },
         };
       }
