@@ -65,11 +65,13 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 `jules-orchestrator-kit` provides the missing **Safety, Orchestration, and Verification Kernel** for high-reliability AI agent deployments:
 
-* **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:test`). Zero third-party npm packages mean zero supply-chain CVE risk.
+* **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`). Zero third-party npm packages mean zero supply-chain CVE risk.
 
 * **🛡️ Fail-Closed Security Gatekeeper:** Unconditionally evaluates explicit Deny rules *before* Allow rules, redacts high-entropy secrets and PII from dry-runs and git diffs, and rejects PRs exceeding the 75 KB Diff Payload governor.
 
 * **🔄 Autonomous OODA Self-Healing:** Captures test stderr/stdout, normalizes failure fingerprints, and feeds structured error contexts back into repair iterations (up to 3 automatic attempts) before human escalation.
+
+* **💻 Native Interactive UX & Command Palette (`v0.30.0`):** Features a zero-dependency full-screen Terminal Engine (`capabilities`, `key-decoder`, `renderer`, `layout`, `widgets`), interactive diagnostic matrix (`agentctl doctor`), task queue/swarm managers (`agentctl queue`, `agentctl swarm`), and a searchable Command Palette.
 
 * **🌐 Universal Polyglot Spine:** Natively auto-detects 24+ tech stacks (PHP/Laravel/WordPress, .NET/C#, Python, Go, Rust, C/C++, Flutter/Swift, Node/Deno/Bun) and transparently wraps verification suites in Docker Compose or Devcontainer sandboxes.
 
@@ -77,7 +79,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
-* **📈 Proven Scale & Reliability:** Empirically tested with **224 unit tests across 55 suites passing in < 1.2s**, supporting 300+ daily agent sessions per repository.
+* **📈 Proven Scale & Reliability:** Empirically tested with **337 unit tests across 52 suites passing in < 2.0s**, supporting 300+ daily agent sessions per repository.
 
 <br/>
 
@@ -124,11 +126,12 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 <a id="matrix"></a>
 ## 📊 Feature Comparison Matrix
 
-| Dimension | Raw Agent Execution (No Orchestrator) | Standard CI/CD Pipelines | `jules-orchestrator-kit` (v0.27+) |
+| Dimension | Raw Agent Execution (No Orchestrator) | Standard CI/CD Pipelines | `jules-orchestrator-kit` (v0.30.0) |
 | :--- | :--- | :--- | :--- |
 | **Self-Healing Loop** | ❌ None (Crashes on test error) | ❌ None (Fails build; notifies human) | ✅ **Autonomous OODA Loop** (Max 3 repair turns with error fingerprinting) |
+| **Interactive UX Engine**| ❌ Raw unformatted CLI dumps | ❌ Non-interactive log outputs | ✅ **Native TUI Engine & Command Palette** (Zero-dependency alternate-screen TUI) |
 | **Scope Isolation** | ❌ None (Can modify CI files or lockfiles) | 🟡 Post-commit branch rules only | ✅ **Fail-Closed Scope Guard** (Deny-first evaluation; blocks protected paths) |
-| **Polyglot Stack Detection**| ❌ Manual prompt instructions | 🟡 Hardcoded YAML workflow steps | ✅ **Universal 24+ Stack Detector** (`src/stack-detector.mjs`) |
+| **Polyglot Stack Detection**| ❌ Manual prompt instructions | 🟡 Hardcoded YAML workflow steps | ✅ **Universal 24+ Stack Detector** (`src/config.mjs`) |
 | **Flaky Test Quarantine** | ❌ Fails session randomly | ❌ Breaks CI pipeline randomly | ✅ **Wilson-Score Statistical Quarantine** (Oscillation ≥ 0.40 quarantined automatically) |
 | **Monorepo Scoping** | ❌ Runs full global test suite | 🟡 Requires custom Nx/Turbo scripting | ✅ **Scoped Subshell Boundary Resolver** (`resolveWorkspaceBoundary`) |
 | **Zero-Test Bootstrapping**| ❌ Halts without verification oracle | ❌ Fails build if no tests exist | ✅ **Instant Oracle Synthesis** (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`) |
@@ -156,8 +159,11 @@ Get from zero to an autonomously verified GitHub Pull Request across any softwar
 
 ### 1️⃣ Node.js / TypeScript (npm, pnpm, yarn, bun, deno)
 ```bash
-# Dispatch a scoped task; auto-detects package.json / tsconfig.json and runs type-checked tests
-npx jules-orchestrator-kit dispatch --title "Add rate limiting to API router" \
+# Launch interactive command palette or author a falsifiable task
+npx jules-orchestrator-kit
+
+# Or dispatch directly from CLI
+npx jules-orchestrator-kit task create --title "Add rate limiting to API router" \
   --prompt "Implement IP-based token-bucket rate limiting in src/router.ts with unit tests."
 ```
 
@@ -165,9 +171,9 @@ npx jules-orchestrator-kit dispatch --title "Add rate limiting to API router" \
 
 ### 2️⃣ Python / FastAPI / Django (pytest, pyproject.toml)
 ```bash
-# Bootstrap zero-test or legacy Python repo, then dispatch task
+# Bootstrap zero-test or legacy Python repo, then author task
 npx jules-orchestrator-kit bootstrap --force
-npx jules-orchestrator-kit dispatch --title "Add OAuth2 JWT validation" \
+npx jules-orchestrator-kit task create --title "Add OAuth2 JWT validation" \
   --prompt "Add JWT bearer authentication middleware to backend/api/auth.py and verify via pytest."
 ```
 
@@ -176,7 +182,7 @@ npx jules-orchestrator-kit dispatch --title "Add OAuth2 JWT validation" \
 ### 3️⃣ PHP / Laravel / WordPress (Docker Compose + PHPUnit/Pest)
 ```bash
 # Auto-detects docker-compose.yml and wraps test commands in `docker compose exec -T app ...`
-npx jules-orchestrator-kit dispatch --title "Upgrade PHP 8.3 type annotations" \
+npx jules-orchestrator-kit task create --title "Upgrade PHP 8.3 type annotations" \
   --prompt "Add strict type hints to all repository classes in app/Repositories/."
 ```
 
@@ -185,7 +191,7 @@ npx jules-orchestrator-kit dispatch --title "Upgrade PHP 8.3 type annotations" \
 ### 4️⃣ .NET / C# Enterprise (*.sln, *.csproj)
 ```bash
 # Auto-detects .sln / .csproj and runs `dotnet test --no-restore --nologo`
-npx jules-orchestrator-kit dispatch --title "Implement OrderService caching" \
+npx jules-orchestrator-kit task create --title "Implement OrderService caching" \
   --prompt "Add IMemoryCache caching to OrderService.cs with xUnit coverage."
 ```
 
@@ -194,7 +200,7 @@ npx jules-orchestrator-kit dispatch --title "Implement OrderService caching" \
 ### 5️⃣ UI / Frontend E2E (Playwright)
 ```bash
 # Dispatch frontend task verified via headless Playwright E2E tests
-npx jules-orchestrator-kit dispatch --title "Add Dark Mode Toggle Component" \
+npx jules-orchestrator-kit task create --title "Add Dark Mode Toggle Component" \
   --prompt "Create ThemeToggle component in src/components/ThemeToggle.tsx and verify via npx playwright test."
 ```
 
@@ -202,8 +208,8 @@ npx jules-orchestrator-kit dispatch --title "Add Dark Mode Toggle Component" \
 
 ### 6️⃣ Polyglot Monorepo (FastAPI + React + Rust CLI)
 ```bash
-# Run a parallel worktree swarm; changed files automatically route to scoped subproject tests
-npx jules-orchestrator-kit swarm
+# Open interactive queue & swarm manager dashboard
+npx jules-orchestrator-kit queue --interactive
 ```
 
 <br/>
@@ -214,7 +220,7 @@ npx jules-orchestrator-kit swarm
 <br/>
 
 ```
-Ecosystems Natively Supported by src/stack-detector.mjs:
+Ecosystems Natively Supported by src/config.mjs:
 ├── PHP / Laravel / WordPress (composer.json, phpunit.xml, pest.php, artisan, wp-cli.yml)
 ├── .NET / C# / F# (*.sln, *.csproj, *.fsproj, global.json)
 ├── Mobile / Dart / Flutter (pubspec.yaml)
@@ -266,27 +272,36 @@ Every task dispatched to `jules-orchestrator-kit` executes within an immutable, 
 
 ```mermaid
 flowchart TD
-    subgraph Phase1 ["1. Ingress & Provisioning"]
+    subgraph P1 ["1. Ingress & Provisioning"]
         A["📩 Task Envelope"] --> B["1. Validate Scope &<br/>Base Freshness"]
         B --> C["2. Create Isolated Git<br/>Worktree & VFS Lock"]
     end
 
-    subgraph Phase2 ["2. Agent Execution & Verification"]
+    subgraph P2 ["2. Agent Execution & Verification"]
         C --> D["3. Dispatch Task to<br/>Google Jules / LLM"]
-        D --> E["4. Execute Scoped Verification Gate<br/><code>detectPolyglotStack().testCmd</code>"]
+        D --> E["4. Execute Verification Gate<br/><code>detectPolyglotStack().testCmd</code>"]
     end
 
-    subgraph Phase3 ["3. Success & Publication"]
+    subgraph P3 ["3. Success & Publication"]
         E -->|PASS| F["5. Security Audit<br/><i>Redact Secrets, Diff < 75KB</i>"]
         F --> G["7. Rebase & Open PR<br/><code>git rebase main && gh pr create</code>"]
     end
 
-    subgraph Phase4 ["4. Self-Healing & Quarantine"]
+    subgraph P4 ["4. Self-Healing & Quarantine"]
         E -->|FAIL| H["6. Fingerprint Stderr &<br/>Flaky Verdict"]
         H -->|Oscillation >= 0.40| I["🚨 Quarantined Test<br/><i>Exit Code 8</i>"]
-        H -->|Normal Failure| J["🔄 Attempt OODA Repair Turn<br/><i>Max 3 Retries; Exit 4 on Exhaust</i>"]
+        H -->|Normal Failure| J["🔄 OODA Repair Turn<br/><i>Max 3 Retries; Exit 4 on Exhaust</i>"]
         J --> D
     end
+
+    classDef default fill:#1e293b,stroke:#475569,stroke-width:1px,color:#f8fafc;
+    classDef highlight fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#60a5fa;
+    classDef success fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#34d399;
+    classDef warning fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fbbf24;
+
+    class A,D highlight;
+    class G success;
+    class I,J warning;
 ```
 
 <br/>
@@ -311,6 +326,13 @@ flowchart TD
         D1 --> E["Synthesize POSIX Subshell Verification Plan<br/><code>(cd backend && pytest) && (cd cli && cargo test)</code>"]
         D2 --> E
     end
+
+    classDef default fill:#1e293b,stroke:#475569,stroke-width:1px,color:#f8fafc;
+    classDef highlight fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#60a5fa;
+    classDef success fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#34d399;
+
+    class A highlight;
+    class E success;
 ```
 
 <br/>
@@ -353,18 +375,18 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack oracle inspector generating `.agent/config.yml`. | `0` (Created) |
 | `task create` | `agentctl task create [--title <t>] [--prompt <p>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing & preflight gate checks. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
 | `dispatch` | `agentctl dispatch --title <t> --prompt <p>` | Dispatches a single task to an AI agent in an isolated worktree. | `0` (Success), `1` (Arg error), `2` (429 Rate limit), `3` (Scope deny), `4` (OODA exhausted), `5` (Diff > 75KB), `6` (Secret leak) |
+| `doctor` | `agentctl doctor [--interactive] [--fix safe]` | Diagnostic DAG check runner & automated transactional repair planner. | `0` (Healthy) |
+| `queue` | `agentctl queue [--interactive] [--json]` | Consumes, inspects, and executes task envelopes in `.agent/jules-queue/`. | `0` (Complete) |
+| `swarm` | `agentctl swarm [--interactive] [--json]` | Runs parallel multi-agent swarm across worker slots with process PID liveness detection. | `0` (Complete) |
 | `scan` | `agentctl scan` | Scans codebase for TODO/FIXME annotations to seed task authoring. | `0` (Scanned) |
 | `review-repair`| `agentctl review-repair <pr-comments.json>`| Parses GitHub PR review comments and synthesizes actionable OODA repair tasks. | `0` (Parsed), `1` (Missing file) |
 | `dashboard` | `agentctl dashboard [port]` | Starts zero-dependency local HTTP telemetry and audit visualizer dashboard. | `0` (Running) |
 | `gate` / `audit`| `agentctl gate --mode working-tree --json` | Runs security, secret scanning, and verification gate against working tree or branch. | `0` (Approved), `3` (Scope violation), `5` (Diff limit), `6` (Secret leak) |
 | `bootstrap` | `agentctl bootstrap [--force] [--json]` | Inspects an untested repository and synthesizes `.agent/config.yml` with a zero-test verification oracle (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`). | `0` (Bootstrapped / Existing) |
-| `queue` | `agentctl queue` | Consumes and executes pending markdown task envelopes in `.agent/jules-queue/`. | `0` (Complete) |
-| `swarm` | `agentctl swarm` | Runs parallel multi-agent swarm across queued tasks with token-bucket concurrency. | `0` (Complete) |
-| `doctor` | `agentctl doctor` | Diagnostic inspect: displays detected stack, container wrapper, test command, and daily session budget. | `0` (Healthy) |
 | `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
-| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.29.1`). | `0` |
+| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.30.0`). | `0` |
 
 <br/>
 
@@ -373,16 +395,18 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 <br/>
 
 <a id="roadmap"></a>
-## 🗺️ v0.29+ Feature Roadmap
+## 🗺️ Feature Roadmap & Release History
 
-| Feature | Module / Command | Architectural Blueprint | Target Release |
+| Feature | Module / Command | Architectural Description | Target Release |
 | :--- | :--- | :--- | :---: |
+| **Interactive UX Engine & TUI Engine** | `src/ux/` (`capabilities`, `key-decoder`, `renderer`, `layout`, `widgets`) | Zero-dependency terminal capabilities detector, sequence key decoder, virtual frame renderer, and widgets. | **v0.30.0** *(Shipped)* |
+| **Guided Diagnostics & Transactional Core** | `src/ops/` (`doctor-registry`, `doctor-planner`, `transaction`, `receipts`) | Diagnostic check DAG (`runDoctorChecks`), pure fix planner (`planDiagnosticFixes`), and transactional executor with rollback. | **v0.30.0** *(Shipped)* |
+| **Interactive Queue & Swarm Manager** | `src/ux/`, `src/ops/` (`queue-model`, `swarm-model`, `task-actions`, `swarm-actions`) | Task sidecar state machine, queue snapshot builder, PID liveness reconciler, task actions, and swarm actions. | **v0.30.0** *(Shipped)* |
+| **Command Registry & Command Palette** | `src/ops/command-registry.mjs`, `src/ux/palette.mjs` | Single-source command descriptor registry (`COMMAND_REGISTRY`), `--help` string formatter, fuzzy search filter, and command palette. | **v0.30.0** *(Shipped)* |
 | **Onboarding & Stack Oracle Wizard** | `agentctl init --interactive` (`src/wizard-init.mjs`) | Zero-dependency interactive CLI wizard auto-detecting verification oracles, quota tiers, and preset workflows. | **v0.29.0** *(Shipped)* |
 | **Guided Task Authoring Subsystem** | `agentctl task create` (`src/wizard-task.mjs`) | Guided task authoring with TODO candidate harvesting, Shannon entropy secret scrubbing, and guardrail footer synthesis. | **v0.29.0** *(Shipped)* |
 | **P0 Remediation & Safety Alignment** | Queue, Task Envelope & Secrets (`src/wizard-task.mjs`) | Canonical queue path alignment (`.agent/jules-queue/`), path traversal guards, atomic writes, multiline secret scans, and JSON headers. | **v0.29.1** *(Shipped)* |
-| **PR Review Auto-Remediation Loop** | `agentctl review-repair` (`src/review-repair.mjs`) | Ingests GitHub PR review comments (`CHANGES_REQUESTED`), extracts line/file context, and dispatches automated OODA repair turns until reviewer comments are resolved. | **v0.27.0** *(Shipped)* |
-| **Multi-Provider Failover Router** | `createFailoverProvider` (`src/provider.mjs`) | Ordered router (`["jules", "claude-code", "local-mcp"]`) that seamlessly falls back to secondary LLMs on HTTP 429 rate limits or 5xx service unavailability. | **v0.27.0** *(Shipped)* |
-| **Telemetry & Audit Web Dashboard**| `agentctl dashboard` (`src/dashboard.mjs`) | Zero-dependency local HTTP server displaying real-time DAG execution graphs, Wilson-Score flaky test ledgers, and SHA-256 telemetry chains. | **v0.27.0** *(Shipped)* |
+| **PR Review Auto-Remediation Loop** | `agentctl review-repair` (`src/review-repair.mjs`) | Ingests GitHub PR review comments (`CHANGES_REQUESTED`), extracts line/file context, and dispatches automated OODA repair turns. | **v0.27.0** *(Shipped)* |
 
 <br/>
 
@@ -390,13 +414,10 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 
 <br/>
 
-## 📖 Recipes, Documentation & Prior Art
+## 📖 Documentation & Architecture
 
+- [**System Architecture & Pipeline Overview**](./docs/architecture.md) — Comprehensive technical sequence diagram and control plane architecture.
 - [**Google Jules Official Documentation**](https://jules.google) — Official platform overview and API specifications for Google Jules.
-- [**v0.29.0 Implementation Audit Report**](./docs/V0.29.0_IMPLEMENTATION_AUDIT.md) — Comprehensive implementation audit and acceptance review.
-- [**Onboarding & Task Wizard Specification**](./docs/ONBOARDING_AND_TASK_WIZARD_SPEC.md) — Normative architecture specification for zero-dependency TUI, stack oracle, and guided task authoring.
-- [**Universal Polyglot Architecture & Zero-Test Specification**](./docs/UNIVERSAL_POLYGLOT_ARCHITECTURE.md) — Comprehensive technical report on boundary resolution, OODA math, and B2B workflows.
-- [**v0.27.0 Architectural Audit & Platform Evolution**](./docs/V0.27_ARCHITECTURAL_AUDIT_AND_EVOLUTION.md) — PR review remediation, failover router, and local dashboard specs.
 - [**Examples & Task Envelope Recipes**](./EXAMPLES.md) — Production YAML and Markdown task envelopes.
 - [**Changelog**](./CHANGELOG.md) — Full release history and migration guides.
 
