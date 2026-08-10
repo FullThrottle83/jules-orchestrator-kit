@@ -69,7 +69,7 @@ export function computeReportHash(report) {
  * @param {string[]} [options.selectedChecks]
  * @returns {Promise<DoctorReport>}
  */
-export async function runDoctorChecks(options) {
+export async function runDoctorChecks(options = {}) {
   const root = resolve(options.root || process.cwd());
   const activeProbe = Boolean(options.activeProbe);
   const _startTime = Date.now();
@@ -225,17 +225,20 @@ export async function runDoctorChecks(options) {
   }
 
   // 3. Config Checks
-  const configPath = join(root, ".agent", "config.yml");
-  const configExists = existsSync(configPath);
-  if (configExists) {
+  const configCandidates = [
+    [".agent/config.yml", join(root, ".agent", "config.yml")],
+    [".agent/jules.yml", join(root, ".agent", "jules.yml")],
+  ];
+  const existingConfig = configCandidates.find(([, path]) => existsSync(path));
+  if (existingConfig) {
     addResult({
       id: "config.present",
       category: "Config",
       title: "Agent Configuration File",
       status: "pass",
       severity: "info",
-      summary: ".agent/config.yml exists",
-      evidence: [{ label: "configPath", value: ".agent/config.yml", sensitive: false }],
+      summary: `${existingConfig[0]} exists`,
+      evidence: [{ label: "configPath", value: existingConfig[0], sensitive: false }],
     });
   } else {
     addResult({
@@ -244,7 +247,7 @@ export async function runDoctorChecks(options) {
       title: "Agent Configuration File",
       status: "warn",
       severity: "medium",
-      summary: ".agent/config.yml is missing",
+      summary: "Neither .agent/config.yml nor .agent/jules.yml exists",
       fixes: [
         {
           id: "config.create-default",
@@ -306,7 +309,8 @@ export async function runDoctorChecks(options) {
   }
 
   // 5. State & Telemetry Checks
-  const telemetryHeadPath = join(root, ".agent", "state", "telemetry", ".head");
+  const telemetryDate = new Date().toISOString().split("T")[0];
+  const telemetryHeadPath = join(root, ".agent", "state", `telemetry-${telemetryDate}.head`);
   if (existsSync(telemetryHeadPath)) {
     addResult({
       id: "state.telemetry",
@@ -314,7 +318,7 @@ export async function runDoctorChecks(options) {
       title: "Telemetry Spine Head Integrity",
       status: "pass",
       severity: "info",
-      summary: "Telemetry .head file present and valid",
+      summary: "Telemetry .head file present"
     });
   } else {
     addResult({
@@ -340,11 +344,24 @@ export async function runDoctorChecks(options) {
   // 6. VFS Locks Check
   const locksDir = join(root, ".agent", "state", "locks");
   let activeLockCount = 0;
-  if (existsSync(locksDir)) {
-    const lockFiles = readdirSync(locksDir).filter((f) => f.endsWith(".lock"));
-    activeLockCount = lockFiles.length;
+  let lockInspectionFailed = false;
+  try {
+    if (existsSync(locksDir)) {
+      const lockFiles = readdirSync(locksDir).filter((f) => f.endsWith(".json"));
+      activeLockCount = lockFiles.length;
+    }
+  } catch (_) {
+    lockInspectionFailed = true;
+    addResult({
+      id: "locks.active",
+      category: "State",
+      title: "VFS Active Locks",
+      status: "unknown",
+      severity: "medium",
+      summary: "Could not inspect VFS lock directory",
+    });
   }
-  if (activeLockCount === 0) {
+  if (!lockInspectionFailed && activeLockCount === 0) {
     addResult({
       id: "locks.active",
       category: "State",
@@ -353,7 +370,7 @@ export async function runDoctorChecks(options) {
       severity: "info",
       summary: "No active VFS locks present",
     });
-  } else {
+  } else if (!lockInspectionFailed) {
     addResult({
       id: "locks.active",
       category: "State",

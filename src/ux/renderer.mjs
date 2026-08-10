@@ -1,4 +1,4 @@
-import { getStringWidth, clipText } from "./layout.mjs";
+import { getStringWidth, clipText, stripAnsi } from "./layout.mjs";
 
 /**
  * @typedef {Object} TextStyle
@@ -53,11 +53,9 @@ const BG_CODES = {
  * @returns {string}
  */
 export function sanitizeControlChars(text) {
-  if (!text) return "";
-  // Strip ANSI sequences and control chars 0x00..0x1F (except TAB/space) and 0x7F..0x9F
-  return String(text)
-    .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "")
-    .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+  if (text === null || text === undefined) return "";
+  // Strip CSI, OSC, and single-byte ANSI sequences before removing controls.
+  return stripAnsi(text).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 }
 
 /**

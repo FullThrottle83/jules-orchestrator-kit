@@ -7,15 +7,25 @@ import {
   existsSync,
   statSync,
   readdirSync,
+  truncateSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { resolveRoot } from "./config.mjs";
 import { getStateDir, withVfsMutex } from "./state.mjs";
-import { safeAtomicWrite } from "./security.mjs";
+import { safeAtomicWrite, redactSecrets } from "./security.mjs";
 
 export const MAX_TELEMETRY_SEGMENT_BYTES = 8 * 1024 * 1024; // 8 MB log segment ceiling
 export const TELEMETRY_GENESIS_HASH = "0".repeat(64);
+
+function scrubTelemetryValue(value) {
+  if (typeof value === "string") return redactSecrets(value);
+  if (Array.isArray(value)) return value.map(scrubTelemetryValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, scrubTelemetryValue(child)]));
+  }
+  return value;
+}
 
 /**
  * Reads up to 64 KB from EOF of target log segment to extract true tail hash.
@@ -46,6 +56,27 @@ function readTailHash(filePath, bufferSize = 64 * 1024) {
     }
   } catch (_) {}
   return null;
+}
+
+function discardIncompleteTail(filePath, bufferSize = 64 * 1024) {
+  if (!existsSync(filePath)) return;
+  try {
+    const stat = statSync(filePath);
+    if (stat.size === 0) return;
+    const readSize = Math.min(stat.size, bufferSize);
+    const position = stat.size - readSize;
+    const fd = openSync(filePath, "r");
+    const buf = Buffer.alloc(readSize);
+    try {
+      readSync(fd, buf, 0, readSize, position);
+    } finally {
+      closeSync(fd);
+    }
+    if (buf[buf.length - 1] === 0x0a) return;
+    const lastNewline = buf.lastIndexOf(0x0a);
+    const truncateAt = lastNewline === -1 ? position : position + lastNewline + 1;
+    truncateSync(filePath, truncateAt);
+  } catch (_) {}
 }
 
 /**
@@ -132,6 +163,8 @@ export function appendTelemetry(rootOrOpts = resolveRoot(), kind = "event", fiel
         : `telemetry-${dateStr}-${activeSegmentIndex}.jsonl`;
     let activeFilePath = join(stateDir, activeFileName);
 
+    // Discard a torn final JSONL record before reconciling the true tail.
+    discardIncompleteTail(activeFilePath);
     // Reconcile .head hash against true log tail (reading last 64 KB from EOF)
     const tailHash = readTailHash(activeFilePath);
     if (tailHash) {
@@ -162,7 +195,7 @@ export function appendTelemetry(rootOrOpts = resolveRoot(), kind = "event", fiel
     }
 
     const ts = new Date().toISOString();
-    const payloadWithoutHash = { v: 1, ts, kind, ...fields, prevHash };
+    const payloadWithoutHash = { v: 1, ts, kind, ...scrubTelemetryValue(fields), prevHash };
     const hash = createHash("sha256").update(JSON.stringify(payloadWithoutHash)).digest("hex");
     const entry = { ...payloadWithoutHash, hash };
 

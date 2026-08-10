@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { redactSecrets } from "./security.mjs";
 
 export const JULES_PRESET = {
   name: "jules",
@@ -73,7 +74,7 @@ export class ProviderSchemaError extends Error {
 export function parseRetryAfter(header) {
   if (!header) return null;
   const seconds = Number(header);
-  if (!isNaN(seconds)) {
+  if (Number.isFinite(seconds)) {
     return Math.max(0, Math.round(seconds * 1000));
   }
   const dateMs = Date.parse(header);
@@ -110,12 +111,20 @@ export function createProvider(spec = "jules", config = {}) {
   }
   const providerSpec = typeof spec === "string"
     ? (spec === "claude-code" ? CLAUDE_PRESET : spec === "codex" ? CODEX_PRESET : JULES_PRESET)
-    : spec;
+    : spec || JULES_PRESET;
+
+  if (!providerSpec || typeof providerSpec !== "object") {
+    throw new TypeError("Provider specification must be a string or object");
+  }
 
   return {
     name: providerSpec.name || "custom-provider",
 
-    async dispatch(task, ctx = {}) {
+    async dispatch(task = {}, ctx = {}) {
+      if (!task || typeof task !== "object") {
+        throw new TypeError("Provider task must be an object");
+      }
+      if (!ctx || typeof ctx !== "object") ctx = {};
       const rawToken = process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
       if (!rawToken && !ctx.dryRun && providerSpec.name === "jules") {
         throw new MissingApiKeyError();
@@ -195,7 +204,8 @@ export function createProvider(spec = "jules", config = {}) {
           body = JSON.stringify(bodyObj);
         }
 
-        const timeoutMs = ctx.timeoutMs || config.timeoutMs || providerSpec.timeoutMs || 120_000;
+        const requestedTimeout = Number(ctx.timeoutMs ?? config.timeoutMs ?? providerSpec.timeoutMs ?? 120_000);
+        const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 120_000;
         let res;
         try {
           res = await fetch(url, {
@@ -216,7 +226,7 @@ export function createProvider(spec = "jules", config = {}) {
         if (!res.ok) {
           const text = await res.text();
           const cleanText = text.slice(0, 500);
-          const sanitizedText = rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText;
+          const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
           const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
           const retryAfterMs = parseRetryAfter(retryAfterHeader);
 
@@ -282,7 +292,7 @@ export function createProvider(spec = "jules", config = {}) {
           throw new Error(`Provider Exec Failed: ${res.error.message}`);
         }
         if (res.status !== 0) {
-          const stderr = (res.stderr || "").slice(0, 500);
+          const stderr = redactSecrets((res.stderr || "").slice(0, 500));
           throw new Error(`Provider Exec Exit ${res.status}: ${stderr}`);
         }
 
@@ -332,7 +342,9 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
             err.status === 429;
 
           if (i === providerList.length - 1 || !isRecoverable) {
-            err._failoverErrors = errors;
+            if (err && typeof err === "object") {
+              err._failoverErrors = errors;
+            }
             throw err;
           }
         }
@@ -340,7 +352,7 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
     },
 
     validate() {
-      return providerList.every((p) => p.validate());
+      return providerList.every((p) => typeof p.validate !== "function" || p.validate());
     },
   };
 }

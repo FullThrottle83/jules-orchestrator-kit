@@ -10,10 +10,20 @@ import {
   fsyncSync,
   unlinkSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { resolveRoot } from "./config.mjs";
+import { redactSecrets } from "./security.mjs";
+
+function scrubStateValue(value) {
+  if (typeof value === "string") return redactSecrets(value);
+  if (Array.isArray(value)) return value.map(scrubStateValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, scrubStateValue(child)]));
+  }
+  return value;
+}
 
 export function ensureDir(dirPath) {
   if (!dirPath || typeof dirPath !== "string" || dirPath.includes("\0")) {
@@ -109,7 +119,7 @@ export function appendLedger(entry, rootOrOpts = resolveRoot()) {
     }
 
     const timestamp = new Date().toISOString();
-    const rawPayload = { timestamp, ...entry, prevHash };
+    const rawPayload = { timestamp, ...scrubStateValue(entry), prevHash };
     const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
     const payload = { ...rawPayload, hash };
 
@@ -321,7 +331,17 @@ export async function withBudget(fn, root = resolveRoot(), limit = 300) {
     if (err && typeof err === "object") {
       err.reservationId = reservation.reservationId;
     }
-    appendLedger({ event: "budget_reservation_failed", reservationId: reservation.reservationId, error: err.message }, root);
+    try {
+      rollbackBudgetReservation(root, reservation.reservationId);
+      if (err && typeof err === "object") err.budgetReservationRolledBack = true;
+    } catch (_) {}
+    try {
+      appendLedger({
+        event: "budget_reservation_failed",
+        reservationId: reservation.reservationId,
+        error: err?.message || String(err),
+      }, root);
+    } catch (_) {}
     throw err;
   }
 }
@@ -363,8 +383,8 @@ export function isPidAlive(pid, expectedStartTime = null) {
   if (!pid || typeof pid !== "number") return false;
   try {
     process.kill(pid, 0);
-  } catch (_) {
-    return false;
+  } catch (err) {
+    if (err?.code !== "EPERM") return false;
   }
 
   if (expectedStartTime !== null && expectedStartTime !== undefined && process.platform === "linux") {
@@ -381,7 +401,14 @@ export function isPidAlive(pid, expectedStartTime = null) {
   return true;
 }
 
+function assertSafeTaskId(taskId) {
+  if (typeof taskId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(taskId) || basename(taskId) !== taskId) {
+    throw new Error("Invalid task id for lock path");
+  }
+}
+
 export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveRoot(), opts = {}) {
+  assertSafeTaskId(taskId);
   const root = typeof rootOrOpts === "string" ? rootOrOpts : (rootOrOpts?.root || resolveRoot());
   const branch = (typeof rootOrOpts === "object" && rootOrOpts?.branch) || opts?.branch || process.env.JULES_BRANCH || process.env.BRANCH_NAME || "";
   const lockDir = getLockDir(root);
@@ -418,11 +445,11 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
     acquiredAt: new Date().toISOString(),
   };
 
+  let fd;
   try {
-    const fd = openSync(lockFile, "wx");
+    fd = openSync(lockFile, "wx");
     writeSync(fd, JSON.stringify(payload, null, 2), "utf-8");
     fsyncSync(fd);
-    closeSync(fd);
     return { ok: true, lockFile };
   } catch (err) {
     if (err.code === "EEXIST") {
@@ -433,11 +460,21 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
         return { ok: false, holder: "unknown", taskId };
       }
     }
+    try { unlinkSync(lockFile); } catch (_) {}
     throw err;
+  } finally {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch (_) {}
+    }
   }
 }
 
 export function releaseLock(taskId, rootOrOpts = resolveRoot()) {
+  try {
+    assertSafeTaskId(taskId);
+  } catch (_) {
+    return false;
+  }
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
   const lockDir = getLockDir(root);
   const lockFile = join(lockDir, `${taskId}.json`);

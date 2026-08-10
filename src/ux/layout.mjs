@@ -1,3 +1,43 @@
+const ANSI_ESCAPE_REGEX = /(?:\u001b\][\s\S]*?(?:\u0007|\u001b\\)|\u001b\[[0-?]*[ -/]*[@-~]|\u001b[@-Z\\-_]|\u009b[0-?]*[ -/]*[@-~])/g;
+
+/**
+ * Remove terminal control sequences before measuring or rendering text.
+ * @param {string} value
+ * @returns {string}
+ */
+export function stripAnsi(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).replace(ANSI_ESCAPE_REGEX, "").replace(/\u001b\][\s\S]*$/g, "");
+}
+
+function isCombining(code) {
+  return (
+    (code >= 0x0300 && code <= 0x036f) ||
+    (code >= 0x1ab0 && code <= 0x1aff) ||
+    (code >= 0x1dc0 && code <= 0x1dff) ||
+    (code >= 0x20d0 && code <= 0x20ff) ||
+    (code >= 0xfe00 && code <= 0xfe0f) ||
+    (code >= 0xe0100 && code <= 0xe01ef) ||
+    (code >= 0x1f3fb && code <= 0x1f3ff) ||
+    code === 0x200d
+  );
+}
+
+function isEmoji(code) {
+  return (
+    (code >= 0x1f000 && code <= 0x1faff) ||
+    (code >= 0x2600 && code <= 0x27ff)
+  );
+}
+
+function graphemeClusters(value) {
+  if (typeof Intl?.Segmenter === "function") {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(segmenter.segment(value), ({ segment }) => segment);
+  }
+  return Array.from(value);
+}
+
 /**
  * Calculate display width of string without external dependencies.
  * Handles wide characters, emoji ranges, and combining characters.
@@ -5,23 +45,35 @@
  * @returns {number}
  */
 export function getStringWidth(str) {
-  if (!str) return 0;
-  // Remove ANSI escape sequences if present
-  const plain = str.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "");
+  const plain = stripAnsi(str);
+  if (!plain) return 0;
 
   let width = 0;
+  let joinNext = false;
+  let regionalIndicators = 0;
   for (const char of plain) {
     const code = char.codePointAt(0) || 0;
 
-    // Combining characters (width 0)
-    if ((code >= 0x0300 && code <= 0x036f) || (code >= 0x1ab0 && code <= 0x1aff)) {
+    if (isCombining(code)) {
+      if (code === 0x200d) joinNext = true;
       continue;
     }
-    // Control characters (width 0)
     if (code < 32 || (code >= 0x7f && code <= 0x9f)) {
       continue;
     }
-    // East Asian Wide / Fullwidth and Emoji ranges (width 2)
+
+    if (code >= 0x1f1e6 && code <= 0x1f1ff) {
+      if (regionalIndicators % 2 === 0) width += 2;
+      regionalIndicators++;
+      continue;
+    }
+    regionalIndicators = 0;
+
+    if (joinNext) {
+      joinNext = false;
+      continue;
+    }
+
     if (
       (code >= 0x1100 && code <= 0x115f) ||
       (code >= 0x2e80 && code <= 0xa4cf) ||
@@ -31,9 +83,7 @@ export function getStringWidth(str) {
       (code >= 0xfe30 && code <= 0xfe6f) ||
       (code >= 0xff00 && code <= 0xff60) ||
       (code >= 0xffe0 && code <= 0xffe6) ||
-      (code >= 0x1f300 && code <= 0x1f9ff) ||
-      (code >= 0x2600 && code <= 0x26ff) ||
-      (code >= 0x2700 && code <= 0x27bf)
+      isEmoji(code)
     ) {
       width += 2;
     } else {
@@ -51,24 +101,33 @@ export function getStringWidth(str) {
  * @returns {string}
  */
 export function clipText(text, maxWidth, ellipsis = "…") {
-  if (maxWidth <= 0) return "";
-  const currentWidth = getStringWidth(text);
-  if (currentWidth <= maxWidth) return text;
+  const widthLimit = Number.isFinite(maxWidth) ? Math.max(0, Math.floor(maxWidth)) : 0;
+  if (widthLimit === 0) return "";
 
-  const ellipsisWidth = getStringWidth(ellipsis);
-  if (maxWidth <= ellipsisWidth) return ellipsis.slice(0, maxWidth);
+  const plain = stripAnsi(text);
+  if (getStringWidth(plain) <= widthLimit) return plain;
 
-  const targetWidth = maxWidth - ellipsisWidth;
+  const cleanEllipsis = stripAnsi(ellipsis);
+  const ellipsisWidth = getStringWidth(cleanEllipsis);
+  if (ellipsisWidth >= widthLimit) {
+    let fitted = "";
+    for (const cluster of graphemeClusters(cleanEllipsis)) {
+      if (getStringWidth(fitted + cluster) > widthLimit) break;
+      fitted += cluster;
+    }
+    return fitted;
+  }
+
+  const targetWidth = widthLimit - ellipsisWidth;
   let truncated = "";
   let accumulatedWidth = 0;
-
-  for (const char of text) {
-    const charWidth = getStringWidth(char);
-    if (accumulatedWidth + charWidth > targetWidth) break;
-    accumulatedWidth += charWidth;
-    truncated += char;
+  for (const cluster of graphemeClusters(plain)) {
+    const clusterWidth = getStringWidth(cluster);
+    if (accumulatedWidth + clusterWidth > targetWidth) break;
+    accumulatedWidth += clusterWidth;
+    truncated += cluster;
   }
-  return truncated + ellipsis;
+  return truncated + cleanEllipsis;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 
 /**
@@ -39,15 +39,27 @@ function createDiffPreview(path, oldContent, newContent) {
   return lines.join("\n");
 }
 
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
+function finalizePlan(plan) {
+  const { planHash: _oldHash, ...unsigned } = plan;
+  const planHash = "sha256:" + createHash("sha256").update(JSON.stringify(unsigned)).digest("hex");
+  return deepFreeze({ ...unsigned, planHash });
+}
+
 /**
  * Plan diagnostic fixes into immutable ActionPlan objects.
  * @param {FixPlanningContext} context
  * @returns {Promise<ActionPlan[]>}
  */
-export async function planDiagnosticFixes(context) {
+export async function planDiagnosticFixes(context = {}) {
   const root = resolve(context.root || process.cwd());
-  const report = context.report;
-  const selectedFixIds = context.selectedFixIds || ["safe"];
+  const report = context.report || { results: [] };
+  const selectedFixIds = Array.isArray(context.selectedFixIds) ? context.selectedFixIds : ["safe"];
 
   const wantSafeOnly = selectedFixIds.includes("safe");
   /** @type {ActionPlan[]} */
@@ -63,9 +75,9 @@ export async function planDiagnosticFixes(context) {
         const newContent = `# jules-orchestrator-kit configuration manifest
 version: 1
 tier: pro
-verification:
-  testCmd: "npm test"
-  buildCmd: "npm run build"
+verify:
+  test: "npm test"
+  build: "npm run build"
 `;
         const diff = createDiffPreview(configPath, "", newContent);
         const planId = `PLAN-${Date.now()}-${randomUUID().slice(0, 8)}`;
@@ -101,8 +113,28 @@ verification:
           planHash: "sha256:" + createHash("sha256").update(planId).digest("hex"),
         });
       } else if (fix.id === "state.rebuild-head") {
-        const headPath = ".agent/state/telemetry/.head";
-        const newContent = "sha256:0000000000000000000000000000000000000000000000000000000000000000\n";
+        const dateStr = new Date().toISOString().split("T")[0];
+        const stateDir = join(root, ".agent", "state");
+        const headPath = `.agent/state/telemetry-${dateStr}.head`;
+        let tailHash = "0".repeat(64);
+        let segment = 0;
+        try {
+          const telemetryFiles = readdirSync(stateDir)
+            .filter((name) => name.startsWith(`telemetry-${dateStr}`) && name.endsWith(".jsonl"))
+            .sort((a, b) => {
+              const index = (name) => Number(name.match(/-(\d+)\.jsonl$/)?.[1] || 0);
+              return index(a) - index(b);
+            });
+          const lastFile = telemetryFiles.at(-1);
+          if (lastFile) {
+            const lines = readFileSync(join(stateDir, lastFile), "utf-8").split("\n").filter(Boolean);
+            const lastEntry = JSON.parse(lines.at(-1));
+            if (typeof lastEntry?.hash === "string") tailHash = lastEntry.hash;
+            const segmentMatch = lastFile.match(/-(\d+)\.jsonl$/);
+            segment = segmentMatch ? Number(segmentMatch[1]) : 0;
+          }
+        } catch (_) {}
+        const newContent = JSON.stringify({ v: 1, hash: tailHash, segment, ts: new Date().toISOString() });
         const planId = `PLAN-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
         plans.push({
@@ -127,7 +159,7 @@ verification:
           preview: {
             unifiedDiff: createDiffPreview(headPath, "", newContent),
             warnings: [],
-            estimatedImpact: ["Creates .agent/state/telemetry/.head pointer"],
+            estimatedImpact: [`Creates ${headPath} pointer`],
           },
           confirmation: {
             mode: "none",
@@ -138,7 +170,7 @@ verification:
       } else if (fix.id === "locks.prune-stale") {
         const locksDir = join(root, ".agent", "state", "locks");
         if (existsSync(locksDir)) {
-          const lockFiles = readdirSync(locksDir).filter((f) => f.endsWith(".lock"));
+          const lockFiles = readdirSync(locksDir).filter((f) => f.endsWith(".json"));
           for (const lockFile of lockFiles) {
             const lockRelPath = `.agent/state/locks/${lockFile}`;
             const planId = `PLAN-${Date.now()}-${randomUUID().slice(0, 8)}`;
@@ -178,5 +210,5 @@ verification:
     }
   }
 
-  return plans;
+  return plans.map(finalizePlan);
 }
