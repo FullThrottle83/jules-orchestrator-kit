@@ -271,26 +271,27 @@ Every task dispatched to `jules-orchestrator-kit` executes within an immutable, 
 <br/>
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'nodePadding': 25 }}}%%
 flowchart TD
     subgraph P1 ["1. Ingress & Provisioning"]
-        A["📩 Task Envelope"] --> B["1. Validate Scope &<br/>Base Freshness"]
-        B --> C["2. Create Isolated Git<br/>Worktree & VFS Lock"]
+        A["📩 Task Envelope"] --> B["Scope & Base<br/>Freshness Check"]
+        B --> C["Isolated Worktree<br/>& VFS Mutex Lock"]
     end
 
-    subgraph P2 ["2. Agent Execution & Verification"]
-        C --> D["3. Dispatch Task to<br/>Google Jules / LLM"]
-        D --> E["4. Execute Verification Gate<br/><code>detectPolyglotStack().testCmd</code>"]
+    subgraph P2 ["2. Execution & Verification"]
+        C --> D["Dispatch Task<br/>to Agent Swarm"]
+        D --> E["Execute Gate<br/>Polyglot Suite"]
     end
 
     subgraph P3 ["3. Success & Publication"]
-        E -->|PASS| F["5. Security Audit<br/><i>Redact Secrets, Diff < 75KB</i>"]
-        F --> G["7. Rebase & Open PR<br/><code>git rebase main && gh pr create</code>"]
+        E -->|PASS| F["Security Audit<br/>Secret Redaction"]
+        F --> G["Rebase & PR<br/>gh pr create"]
     end
 
     subgraph P4 ["4. Self-Healing & Quarantine"]
-        E -->|FAIL| H["6. Fingerprint Stderr &<br/>Flaky Verdict"]
-        H -->|Oscillation >= 0.40| I["🚨 Quarantined Test<br/><i>Exit Code 8</i>"]
-        H -->|Normal Failure| J["🔄 OODA Repair Turn<br/><i>Max 3 Retries; Exit 4 on Exhaust</i>"]
+        E -->|FAIL| H["Fingerprint Stderr<br/>Flaky Verdict"]
+        H -->|Oscillation >= 0.40| I["🚨 Quarantined Test<br/>Exit Code 8"]
+        H -->|Normal Failure| J["🔄 OODA Repair<br/>Max 3 Retries"]
         J --> D
     end
 
@@ -310,20 +311,21 @@ flowchart TD
 In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFiles)` traverses directory ancestry to isolate verification to affected subprojects:
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'nodePadding': 25 }}}%%
 flowchart TD
     subgraph Input ["1. Changed Files Input"]
-        A["📁 Changed Files<br/><code>['backend/api/main.py', 'cli/src/main.rs']</code>"]
+        A["📁 Changed Files<br/>backend/api/main.py<br/>cli/src/main.rs"]
     end
 
     subgraph Resolution ["2. Ancestry & Boundary Resolver"]
-        A --> B{"Check Shared Triggers?<br/><i>docker-compose.yml, openapi.yaml</i>"}
+        A --> B{"Shared Triggers?<br/>docker-compose.yml"}
         B -->|None Changed| C["Traverse Directory Ancestry"]
-        C --> D1["<code>backend/api/main.py</code> → <code>backend/pyproject.toml</code><br/><i>(Python Stack)</i>"]
-        C --> D2["<code>cli/src/main.rs</code> → <code>cli/Cargo.toml</code><br/><i>(Rust Stack)</i>"]
+        C --> D1["backend/pyproject.toml<br/>(Python Stack)"]
+        C --> D2["cli/Cargo.toml<br/>(Rust Stack)"]
     end
 
     subgraph Output ["3. Isolated Verification Plan"]
-        D1 --> E["Synthesize POSIX Subshell Verification Plan<br/><code>(cd backend && pytest) && (cd cli && cargo test)</code>"]
+        D1 --> E["POSIX Subshell Plan<br/>(cd backend && pytest) && (cd cli && cargo test)"]
         D2 --> E
     end
 
