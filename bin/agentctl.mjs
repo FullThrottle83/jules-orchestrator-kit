@@ -32,6 +32,7 @@ Commands:
   dashboard             Start local HTTP telemetry and audit dashboard
   init                  Scaffold .agent/ config and run onboarding wizard
   task create           Interactively author and scope a Jules task envelope
+  task optimize         Linter & optimizer for Jules task prompts (--fix, --json)
   status                Display queue and system status summary
   scan                  Scan codebase for TODO/FIXME task candidates
   version               Output agentctl version

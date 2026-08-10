@@ -140,8 +140,11 @@ export async function gate(opts = {}) {
       trustedScope = normalizeScope(parsed);
       if (parsed.verify || parsed.test_cmd || parsed.build_cmd) {
         trustedVerify = {
+          setup: parsed.verify?.setup || config.verify.setup,
           test: parsed.verify?.test || parsed.test_cmd || config.verify.test,
+          teardown: parsed.verify?.teardown || config.verify.teardown,
           build: parsed.verify?.build || parsed.build_cmd || config.verify.build,
+          timeoutMs: parsed.verify?.timeoutMs || parsed.verify?.timeout_ms || config.verify.timeoutMs,
         };
       }
     } catch (_) {}
@@ -213,28 +216,56 @@ export async function gate(opts = {}) {
   let flakyVerdictResult = null;
 
   if (testCmd) {
-    const startTime = Date.now();
-    const res = runCmd(testCmd, { cwd: root, ignoreError: true, env: testEnv });
-    const durationMs = Date.now() - startTime;
-    testResult = {
-      ok: res.status === 0,
-      status: res.status,
-      stdout: redactSecrets(res.stdout || ""),
-      stderr: redactSecrets(res.stderr || ""),
-      command: testCmd,
-    };
+    const setupCmd = trustedVerify.setup;
+    const teardownCmd = trustedVerify.teardown;
+    const verifyTimeout = trustedVerify.timeoutMs;
 
-    const fingerprint = !testResult.ok ? fingerprintFailureState(testResult, root) : null;
-    recordVerifyRun(root, testCmd, testResult.ok, fingerprint, durationMs);
+    try {
+      if (setupCmd) {
+        const setupRes = runCmd(setupCmd, { cwd: root, ignoreError: true, env: testEnv, timeout: verifyTimeout });
+        if (setupRes.status !== 0) {
+          testResult = {
+            ok: false,
+            status: setupRes.status,
+            stdout: redactSecrets(setupRes.stdout || ""),
+            stderr: redactSecrets(setupRes.stderr || ""),
+            command: setupCmd,
+            phase: "setup",
+          };
+        }
+      }
 
-    if (!testResult.ok) {
-      const runs = readVerifyRuns(root, testCmd);
-      flakyVerdictResult = flakyVerdict(runs);
-      if (flakyVerdictResult.verdict === "QUARANTINED") {
-        phases.push({ phase: "verify", ok: false, testResult, buildResult, flakyVerdict: flakyVerdictResult });
-        appendTelemetry(root, "gate_phase", { phase: "verify", ok: false, quarantined: true });
-        appendTelemetry(root, "gate_finished", { ok: false, code: 8 });
-        return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult };
+      if (testResult.ok) {
+        const startTime = Date.now();
+        const res = runCmd(testCmd, { cwd: root, ignoreError: true, env: testEnv, timeout: verifyTimeout });
+        const durationMs = Date.now() - startTime;
+        testResult = {
+          ok: res.status === 0,
+          status: res.status,
+          stdout: redactSecrets(res.stdout || ""),
+          stderr: redactSecrets(res.stderr || ""),
+          command: testCmd,
+        };
+
+        const fingerprint = !testResult.ok ? fingerprintFailureState(testResult, root) : null;
+        recordVerifyRun(root, testCmd, testResult.ok, fingerprint, durationMs);
+
+        if (!testResult.ok) {
+          const runs = readVerifyRuns(root, testCmd);
+          flakyVerdictResult = flakyVerdict(runs);
+          if (flakyVerdictResult.verdict === "QUARANTINED") {
+            phases.push({ phase: "verify", ok: false, testResult, buildResult, flakyVerdict: flakyVerdictResult });
+            appendTelemetry(root, "gate_phase", { phase: "verify", ok: false, quarantined: true });
+            appendTelemetry(root, "gate_finished", { ok: false, code: 8 });
+            return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult };
+          }
+        }
+      }
+    } finally {
+      if (teardownCmd) {
+        try {
+          runCmd(teardownCmd, { cwd: root, ignoreError: true, env: testEnv });
+        } catch (_) {}
       }
     }
   }

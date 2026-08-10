@@ -119,7 +119,10 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
     return { ...container, stack: "make", testCmd: "make test", buildCmd: "make build", triggerFile: "Makefile" };
   }
 
-  // 5. Python / Elixir / Ruby / Java
+  // 5. Python / Django / Elixir / Ruby / Java
+  if (existsSync(join(projectRoot, "manage.py"))) {
+    return { ...container, stack: "django", testCmd: "python manage.py test --keepdb", buildCmd: "python manage.py check", triggerFile: "manage.py" };
+  }
   if (existsSync(join(projectRoot, "pyproject.toml")) || existsSync(join(projectRoot, "requirements.txt")) || existsSync(join(projectRoot, "setup.py"))) {
     const triggerFile = existsSync(join(projectRoot, "pyproject.toml")) ? "pyproject.toml" : existsSync(join(projectRoot, "requirements.txt")) ? "requirements.txt" : "setup.py";
     return { ...container, stack: "python", testCmd: "pytest", buildCmd: "python3 -m compileall -q .", triggerFile };
@@ -138,14 +141,21 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
     return { ...container, stack: "gradle", testCmd: "./gradlew test", buildCmd: "./gradlew assemble", triggerFile };
   }
 
-  // 6. JS / TS Runtimes
+  // 6. JS / TS Runtimes & ORMs (Prisma, Drizzle)
+  let setupCmd = "";
+  if (existsSync(join(projectRoot, "prisma", "schema.prisma"))) {
+    setupCmd = "npx prisma db push --schema=prisma/schema.prisma";
+  } else if (existsSync(join(projectRoot, "drizzle.config.ts")) || existsSync(join(projectRoot, "drizzle.config.js"))) {
+    setupCmd = "npx drizzle-kit push";
+  }
+
   if (existsSync(join(projectRoot, "bunfig.toml")) || existsSync(join(projectRoot, "bun.lockb"))) {
     const triggerFile = existsSync(join(projectRoot, "bunfig.toml")) ? "bunfig.toml" : "bun.lockb";
-    return { ...container, stack: "bun", testCmd: "bun test", buildCmd: "bun run build", triggerFile };
+    return { ...container, stack: "bun", setupCmd, testCmd: "bun test", buildCmd: "bun run build", triggerFile };
   }
   if (existsSync(join(projectRoot, "deno.json")) || existsSync(join(projectRoot, "deno.jsonc"))) {
     const triggerFile = existsSync(join(projectRoot, "deno.json")) ? "deno.json" : "deno.jsonc";
-    return { ...container, stack: "deno", testCmd: "deno test", buildCmd: "deno task build", triggerFile };
+    return { ...container, stack: "deno", setupCmd, testCmd: "deno test", buildCmd: "deno task build", triggerFile };
   }
   if (existsSync(join(projectRoot, "package.json"))) {
     let testScript = "npm test";
@@ -161,7 +171,7 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
       testScript = "npm test";
       buildScript = "npm run build";
     }
-    return { ...container, stack: "node", testCmd: testScript, buildCmd: buildScript, triggerFile: "package.json" };
+    return { ...container, stack: "node", setupCmd, testCmd: testScript, buildCmd: buildScript, triggerFile: "package.json" };
   }
 
   // 7. .NET / C# / F# / PHP / Python root file extension fallback

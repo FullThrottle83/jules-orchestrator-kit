@@ -198,7 +198,12 @@ export function detectStack(projectRoot = process.cwd()) {
 
 export function resolveVerify(root = process.cwd()) {
   const s = detectStack(root);
-  return { test: s.testCmd || "", build: s.buildCmd || "" };
+  return {
+    setup: s.setupCmd || "",
+    test: s.testCmd || "",
+    teardown: s.teardownCmd || "",
+    build: s.buildCmd || "",
+  };
 }
 
 export const TIER_PRESETS = {
@@ -247,8 +252,11 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     }
   }
 
+  const setupCmd = parsed.setup_cmd || parsed.verify?.setup || "";
   const testCmd = parsed.test_cmd || parsed.verify?.test || "";
+  const teardownCmd = parsed.teardown_cmd || parsed.verify?.teardown || "";
   const buildCmd = parsed.build_cmd || parsed.verify?.build || "";
+  const verifyTimeoutMs = parsed.verify?.timeoutMs ?? parsed.verify?.timeout_ms ?? 60000;
   const autoVerify = resolveVerify(root);
 
   const activeTier = String(process.env.JULES_TIER || parsed.tier || "ultra").toLowerCase();
@@ -275,8 +283,11 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     provider: parsed.provider || DEFAULTS.provider,
     tier: activeTier,
     verify: {
+      setup: setupCmd || autoVerify.setup || "",
       test: testCmd || autoVerify.test,
+      teardown: teardownCmd || autoVerify.teardown || "",
       build: buildCmd || autoVerify.build,
+      timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 60000,
     },
     scope: normalizeScope(parsed),
     limits: {

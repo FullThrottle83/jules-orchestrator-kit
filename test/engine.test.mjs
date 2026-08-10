@@ -15,4 +15,42 @@ describe("src/engine.mjs", () => {
     assert.equal(session.id, "dry-run-session-id");
     assert.equal(session.status, "pending");
   });
+
+  it("gate executes setup -> test -> teardown lifecycle sequentially and guarantees teardown on failure", async () => {
+    const { mkdtempSync, rmSync, writeFileSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const tmpDir = mkdtempSync(join(tmpdir(), "lifecycle-test-"));
+    const { execSync } = await import("node:child_process");
+    try {
+      execSync("git init -b main", { cwd: tmpDir, stdio: "ignore" });
+      execSync("git config user.name 'Test'", { cwd: tmpDir, stdio: "ignore" });
+      execSync("git config user.email 'test@test.com'", { cwd: tmpDir, stdio: "ignore" });
+      execSync("git commit --allow-empty -m 'initial'", { cwd: tmpDir, stdio: "ignore" });
+      const setupFile = join(tmpDir, "setup.flag");
+      const testFile = join(tmpDir, "test.flag");
+      const teardownFile = join(tmpDir, "teardown.flag");
+
+      const mockConfig = {
+        baseBranch: "main",
+        scope: { deny: [], allow: [], protect: [] },
+        limits: { diffKb: 75 },
+        verify: {
+          setup: `node -e "require('fs').writeFileSync('${setupFile.replace(/\\/g, "/")}', 'setup_ok')"`,
+          test: `node -e "require('fs').writeFileSync('${testFile.replace(/\\/g, "/")}', 'test_ok'); process.exit(1)"`, // Fails test
+          teardown: `node -e "require('fs').writeFileSync('${teardownFile.replace(/\\/g, "/")}', 'teardown_ok')"`,
+          timeoutMs: 10000,
+        },
+      };
+
+      const res = await gate({ root: tmpDir, config: mockConfig });
+      assert.equal(res.ok, false, "Expected gate to fail due to process.exit(1)");
+      assert.ok(existsSync(setupFile), "Expected setup command to execute");
+      assert.ok(existsSync(testFile), "Expected test command to execute");
+      assert.ok(existsSync(teardownFile), "Expected teardown command to execute unconditionally in finally block");
+    } finally {
+      try { rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
 });
