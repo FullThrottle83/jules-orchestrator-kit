@@ -43,7 +43,7 @@ describe("src/engine.mjs", () => {
   });
 
   it("gate executes setup -> test -> teardown lifecycle sequentially and guarantees teardown on failure", async () => {
-    const { mkdtempSync, rmSync, writeFileSync, existsSync } = await import("node:fs");
+    const { mkdtempSync, rmSync, existsSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
 

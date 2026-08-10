@@ -8,7 +8,6 @@ import {
   createCheckpoint,
   restoreCheckpoint,
   listCheckpoints,
-  pruneCheckpoints,
 } from "../src/ops/checkpoint.mjs";
 
 test("Atomic Git Checkpoint & Rollback Manager", async (t) => {
@@ -42,7 +41,7 @@ test("Atomic Git Checkpoint & Rollback Manager", async (t) => {
   });
 
   await t.test("b) restoreCheckpoint resets uncommitted file modifications and untracked files", () => {
-    const snapshot = createCheckpoint("sess-2", { root: tmpDir });
+    createCheckpoint("sess-2", { root: tmpDir });
 
     // Modify file and add un-tracked file
     writeFileSync(join(tmpDir, "file1.txt"), "Dirty modified content!");

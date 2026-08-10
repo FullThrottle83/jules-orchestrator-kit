@@ -1,4 +1,4 @@
-import { writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join, basename } from "node:path";
 import { detectPolyglotStack } from "../stack-detector.mjs";
 import { resolveRoot } from "../config.mjs";

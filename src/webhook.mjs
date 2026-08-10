@@ -223,6 +223,7 @@ export async function dispatchEscalation(incident = {}, config = {}) {
       dryRun: true,
       payload: {
         sessionId,
+        taskId,
         reason,
         resumeCmd,
         logLines,
