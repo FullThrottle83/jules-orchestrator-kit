@@ -270,62 +270,26 @@ Every task dispatched to `jules-orchestrator-kit` executes within an immutable, 
 
 <br/>
 
-```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': { 'nodePadding': 25 }}}%%
-flowchart TD
-    subgraph P1 ["1. Ingress & Provisioning"]
-        A["📩 Task Envelope"] --> B["Scope & Base<br/>Freshness Check"]
-        B --> C["Isolated Worktree<br/>& VFS Mutex Lock"]
-    end
-
-    subgraph P2 ["2. Execution & Verification"]
-        C --> D["Dispatch Task<br/>to Agent Swarm"]
-        D --> E["Execute Gate<br/>Polyglot Suite"]
-    end
-
-    subgraph P3 ["3. Success & Publication"]
-        E -->|PASS| F["Security Audit<br/>Secret Redaction"]
-        F --> G["Rebase & PR<br/>gh pr create"]
-    end
-
-    subgraph P4 ["4. Self-Healing & Quarantine"]
-        E -->|FAIL| H["Fingerprint Stderr<br/>Flaky Verdict"]
-        H -->|Oscillation >= 0.40| I["🚨 Quarantined Test<br/>Exit Code 8"]
-        H -->|Normal Failure| J["🔄 OODA Repair<br/>Max 3 Retries"]
-        J --> D
-    end
-
-    classDef default fill:#1e293b,stroke:#475569,stroke-width:1px,color:#f8fafc;
-    classDef highlight fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#60a5fa;
-    classDef success fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#34d399;
-    classDef warning fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fbbf24;
-
-    class A,D highlight;
-    class G success;
-    class I,J warning;
-```
-
-<br/>
-
 ### 2. Polyglot Monorepo Scoped Execution Engine
 In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFiles)` traverses directory ancestry to isolate verification to affected subprojects:
 
+<br/>
+
 ```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': { 'nodePadding': 25 }}}%%
 flowchart TD
     subgraph Input ["1. Changed Files Input"]
-        A["📁 Changed Files<br/>backend/api/main.py<br/>cli/src/main.rs"]
+        A["📁 Changed Files"]
     end
 
-    subgraph Resolution ["2. Ancestry & Boundary Resolver"]
-        A --> B{"Shared Triggers?<br/>docker-compose.yml"}
-        B -->|None Changed| C["Traverse Directory Ancestry"]
-        C --> D1["backend/pyproject.toml<br/>(Python Stack)"]
-        C --> D2["cli/Cargo.toml<br/>(Rust Stack)"]
+    subgraph Resolution ["2. Boundary Resolver"]
+        A --> B{"Shared Triggers?"}
+        B -->|None| C["Traverse Directory Ancestry"]
+        C --> D1["backend/pyproject.toml"]
+        C --> D2["cli/Cargo.toml"]
     end
 
-    subgraph Output ["3. Isolated Verification Plan"]
-        D1 --> E["POSIX Subshell Plan<br/>(cd backend && pytest) && (cd cli && cargo test)"]
+    subgraph Output ["3. Verification Plan"]
+        D1 --> E["POSIX Subshell Execution Plan"]
         D2 --> E
     end
 
