@@ -265,7 +265,6 @@ branchPrefix: "agent/"   # Prefix for task branches
 verify:
   test: "npm test"
   build: "npm run build"
-  lint: "npm run lint"
 
 # Scope protection rules (Deny-first evaluation)
 scope:
@@ -391,13 +390,15 @@ Dispatch tasks using canonical task envelopes or the Google Jules REST v1alpha A
 Programmatically configure ordered provider failover (e.g. falling back to secondary providers on HTTP 429 rate limits):
 
 ```javascript
-import { createFailoverProvider } from "jules-orchestrator-kit";
+import { createFailoverProvider, loadConfig } from "jules-orchestrator-kit";
 
-// Programmatic multi-provider router with automatic failover
-const provider = createFailoverProvider([
-  { type: "jules", apiKey: process.env.JULES_API_KEY },
-  { type: "claude-code", apiKey: process.env.ANTHROPIC_API_KEY }
-]);
+const config = loadConfig(process.cwd());
+const provider = createFailoverProvider(["jules", "claude-code"], config);
+
+const result = await provider.dispatch(
+  { title: "Repair failing tests", prompt: "Fix the failing test suite." },
+  { root: process.cwd() }
+);
 ```
 
 ### 3. Model Context Protocol (MCP) Server
