@@ -275,31 +275,9 @@ In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFil
 
 <br/>
 
-```mermaid
-flowchart TD
-    subgraph Input ["1. Changed Files Input"]
-        A["📁 Changed Files"]
-    end
-
-    subgraph Resolution ["2. Boundary Resolver"]
-        A --> B{"Shared Triggers?"}
-        B -->|None| C["Traverse Directory Ancestry"]
-        C --> D1["backend/pyproject.toml"]
-        C --> D2["cli/Cargo.toml"]
-    end
-
-    subgraph Output ["3. Verification Plan"]
-        D1 --> E["POSIX Subshell Execution Plan"]
-        D2 --> E
-    end
-
-    classDef default fill:#1e293b,stroke:#475569,stroke-width:1px,color:#f8fafc;
-    classDef highlight fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#60a5fa;
-    classDef success fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#34d399;
-
-    class A highlight;
-    class E success;
-```
+<p align="center">
+  <img src="docs/assets/monorepo-resolver.svg" alt="Polyglot Monorepo Scoped Boundary Resolver" width="100%" />
+</p>
 
 <br/>
 

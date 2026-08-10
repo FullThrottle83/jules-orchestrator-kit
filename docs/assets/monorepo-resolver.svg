@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 945 220" width="100%" height="100%">
+  <defs>
+    <linearGradient id="mono-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#1e1b4b" />
+    </linearGradient>
+  </defs>
+
+  <!-- Container Background -->
+  <rect width="945" height="220" rx="14" fill="url(#mono-grad)" stroke="#6366f1" stroke-width="2" />
+
+  <!-- Title Badge -->
+  <text x="30" y="36" fill="#a5b4fc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" letter-spacing="1.5">POLYGLOT MONOREPO SCOPED BOUNDARY RESOLVER</text>
+
+  <!-- Step 1: Changed Files -->
+  <g transform="translate(30, 56)">
+    <rect width="210" height="135" rx="10" fill="#1e293b" stroke="#818cf8" stroke-width="2.5" />
+    <text x="16" y="32" fill="#a5b4fc" font-family="sans-serif" font-size="14" font-weight="800">1. Changed Files</text>
+    <text x="16" y="60" fill="#ffffff" font-family="monospace" font-size="12" font-weight="700">backend/api/main.py</text>
+    <text x="16" y="82" fill="#ffffff" font-family="monospace" font-size="12" font-weight="700">cli/src/main.rs</text>
+    <text x="16" y="106" fill="#94a3b8" font-family="sans-serif" font-size="11" font-weight="600">Multi-Language Input</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <path d="M 245 123 L 260 123" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="260,117 269,123 260,129" fill="#f8fafc" />
+
+  <!-- Step 2: Ancestry Resolver -->
+  <g transform="translate(270, 56)">
+    <rect width="240" height="135" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2.5" />
+    <text x="16" y="32" fill="#7dd3fc" font-family="sans-serif" font-size="14" font-weight="800">2. Ancestry Resolver</text>
+    <text x="16" y="58" fill="#38bdf8" font-family="sans-serif" font-size="11.5" font-weight="700">Traverse directory ancestry</text>
+    <text x="16" y="80" fill="#ffffff" font-family="monospace" font-size="11" font-weight="700">→ backend/pyproject.toml</text>
+    <text x="16" y="100" fill="#ffffff" font-family="monospace" font-size="11" font-weight="700">→ cli/Cargo.toml</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <path d="M 515 123 L 530 123" stroke="#f8fafc" stroke-width="3" />
+  <polygon points="530,117 539,123 530,129" fill="#f8fafc" />
+
+  <!-- Step 3: Verification Plan -->
+  <g transform="translate(540, 56)">
+    <rect width="375" height="135" rx="10" fill="#064e3b" stroke="#34d399" stroke-width="2.5" />
+    <text x="16" y="32" fill="#6ee7b7" font-family="sans-serif" font-size="14" font-weight="800">3. Isolated Verification Plan</text>
+    <text x="16" y="60" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="700">POSIX Subshell Execution:</text>
+    <rect x="14" y="72" width="347" height="42" rx="6" fill="#022c22" stroke="#10b981" stroke-width="1.5" />
+    <text x="24" y="98" fill="#34d399" font-family="monospace" font-size="11" font-weight="700">(cd backend &amp;&amp; pytest) &amp;&amp; (cd cli &amp;&amp; cargo test)</text>
+  </g>
+</svg>
