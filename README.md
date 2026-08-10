@@ -23,12 +23,15 @@
 
 <p align="center">
   <a href="#what-is-kit">💡&nbsp;What&nbsp;is&nbsp;Kit?</a> &nbsp;•&nbsp;
+  <a href="#who-is-it-for">👥&nbsp;Who&nbsp;Is&nbsp;It&nbsp;For?</a> &nbsp;•&nbsp;
   <a href="#quickstart">⚡&nbsp;Quickstart</a> &nbsp;•&nbsp;
-  <a href="#triage-guidelines">🎯&nbsp;Triage&nbsp;Guidelines</a> &nbsp;•&nbsp;
+  <a href="#triage-guidelines">🎯&nbsp;Triage</a> &nbsp;•&nbsp;
   <a href="#matrix">📊&nbsp;Matrix</a>
   <br/>
+  <a href="#configuration">⚙️&nbsp;Configuration</a> &nbsp;•&nbsp;
   <a href="#architecture">🏛️&nbsp;Architecture</a> &nbsp;•&nbsp;
   <a href="#cli-docs">🛠️&nbsp;CLI&nbsp;Docs</a> &nbsp;•&nbsp;
+  <a href="#providers">🔌&nbsp;Providers</a> &nbsp;•&nbsp;
   <a href="#roadmap">🗺️&nbsp;Roadmap</a>
 </p>
 
@@ -52,6 +55,26 @@
 > [!TIP]
 > **Think of `jules-orchestrator-kit` as an automated Engineering Manager for AI coding agents.**  
 > It hands out clear tasks, runs your tests in an isolated sandbox, fixes broken code automatically, and only opens a Pull Request when 100% of your tests pass.
+
+<br/>
+
+---
+
+<br/>
+
+<a id="who-is-it-for"></a>
+## 👥 Who Is It For?
+
+Whether you are trying your first AI coding session or running enterprise monorepo swarms, `jules-orchestrator-kit` scales with your workflow:
+
+<br/>
+
+| Role | Primary Value Proposition | Key Commands |
+| :--- | :--- | :--- |
+| **🌱 Beginners & Solo Developers** | Safely experiment with AI agents without risking broken code, leaked API keys, or ruined git history. | `agentctl init`<br/>`agentctl task create` |
+| **📦 Single-Repo Maintainers** | Automate bug fixes, dependency updates, and PR reviews with automated OODA test verification. | `agentctl gate`<br/>`agentctl queue` |
+| **🏗️ Monorepo Engineering Teams** | Isolate subproject verification (`backend/`, `frontend/`, `cli/`) so agent edits never thrash global test suites. | `agentctl swarm`<br/>`agentctl lock` |
+| **🛡️ Platform & Security Engineers** | Enforce zero-trust security policies, pre-commit secret scrubbing, and strict 75 KB diff payload limits. | `agentctl doctor`<br/>`agentctl dashboard` |
 
 <br/>
 
@@ -151,64 +174,41 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 <br/>
 
 <a id="quickstart"></a>
-## ⚡ Universal 30-Second Quickstart (Zero to Verified PR)
+## ⚡ Guided Quickstart (Dry-Run → Dispatch → Verify)
 
-Get from zero to an autonomously verified GitHub Pull Request across any software ecosystem in 30 seconds.
+Get started with a safe 3-step workflow across any repository:
 
 <br/>
 
-### 1️⃣ Node.js / TypeScript (npm, pnpm, yarn, bun, deno)
+### Step 1: Safe Dry-Run Security Gate
+Before creating any task, test your current workspace security rules:
 ```bash
-# Launch interactive command palette or author a falsifiable task
-npx jules-orchestrator-kit
-
-# Or dispatch directly from CLI
-npx jules-orchestrator-kit task create --title "Add rate limiting to API router" \
-  --prompt "Implement IP-based token-bucket rate limiting in src/router.ts with unit tests."
+# Run preflight security, secret scanning, and scope audit without modifying files
+npx jules-orchestrator-kit gate --mode working-tree
 ```
 
 <br/>
 
-### 2️⃣ Python / FastAPI / Django (pytest, pyproject.toml)
+### Step 2: Author a Scoped Task
+Launch the interactive task authoring wizard or create a task via CLI:
 ```bash
-# Bootstrap zero-test or legacy Python repo, then author task
-npx jules-orchestrator-kit bootstrap --force
-npx jules-orchestrator-kit task create --title "Add OAuth2 JWT validation" \
-  --prompt "Add JWT bearer authentication middleware to backend/api/auth.py and verify via pytest."
+# Interactive authoring wizard with secret scrubbing & verification probes
+npx jules-orchestrator-kit task create
+
+# Or dispatch directly with explicit flags
+npx jules-orchestrator-kit task create --title "Fix authentication token expiration" \
+  --prompt "Fix JWT expiration check in src/auth.mjs and verify with npm test."
 ```
 
 <br/>
 
-### 3️⃣ PHP / Laravel / WordPress (Docker Compose + PHPUnit/Pest)
+### Step 3: Local Verification & Queue Execution
+Inspect diagnostics and execute queued tasks:
 ```bash
-# Auto-detects docker-compose.yml and wraps test commands in `docker compose exec -T app ...`
-npx jules-orchestrator-kit task create --title "Upgrade PHP 8.3 type annotations" \
-  --prompt "Add strict type hints to all repository classes in app/Repositories/."
-```
+# Run interactive diagnostic matrix
+npx jules-orchestrator-kit doctor --interactive
 
-<br/>
-
-### 4️⃣ .NET / C# Enterprise (*.sln, *.csproj)
-```bash
-# Auto-detects .sln / .csproj and runs `dotnet test --no-restore --nologo`
-npx jules-orchestrator-kit task create --title "Implement OrderService caching" \
-  --prompt "Add IMemoryCache caching to OrderService.cs with xUnit coverage."
-```
-
-<br/>
-
-### 5️⃣ UI / Frontend E2E (Playwright)
-```bash
-# Dispatch frontend task verified via headless Playwright E2E tests
-npx jules-orchestrator-kit task create --title "Add Dark Mode Toggle Component" \
-  --prompt "Create ThemeToggle component in src/components/ThemeToggle.tsx and verify via npx playwright test."
-```
-
-<br/>
-
-### 6️⃣ Polyglot Monorepo (FastAPI + React + Rust CLI)
-```bash
-# Open interactive queue & swarm manager dashboard
+# Process pending task queue in isolated worktrees
 npx jules-orchestrator-kit queue --interactive
 ```
 
@@ -241,6 +241,52 @@ Ecosystems Natively Supported by src/config.mjs:
 ```
 
 </details>
+
+<br/>
+
+---
+
+<br/>
+
+<a id="configuration"></a>
+## ⚙️ Configuration Reference (`.agent/config.yml`)
+
+`jules-orchestrator-kit` auto-detects stack defaults, but allows explicit override through `.agent/config.yml`:
+
+```yaml
+# .agent/config.yml — Universal Orchestrator Configuration
+
+version: 1
+
+# Verification commands (auto-detected if omitted)
+verify:
+  test: "npm test"
+  build: "npm run build"
+  lint: "npm run lint"
+
+# Scope protection rules (Deny-first evaluation)
+scope:
+  forbidden_paths:
+    - ".github/workflows/**"
+    - ".agent/config.yml"
+    - "keys/**"
+
+# Operational limits & governors
+limits:
+  max_diff_bytes: 76800  # 75 KB Diff Payload Governor limit
+  max_ooda_retries: 3    # Maximum self-healing repair iterations
+  daily_sessions: 300    # Daily task session quota limit
+
+# Native UX settings
+ux:
+  ansi: auto             # auto | true | false
+  alternate_screen: true # Enable full-screen TUI viewports
+
+# Diagnostic checks
+doctor:
+  passive_checks: true
+  safe_fixes: true
+```
 
 <br/>
 
@@ -331,6 +377,21 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
 | `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.30.0`). | `0` |
+
+<br/>
+
+---
+
+<br/>
+
+<a id="providers"></a>
+## 🔌 Supported Providers & LLM Integrations
+
+`jules-orchestrator-kit` supports standard AI agent platforms and multi-provider failover routing:
+
+- **Google Jules (`jules`):** Native integration via Google Jules REST v1alpha API and task envelopes.
+- **Claude Code & Anthropic:** Multi-provider failover router (`createFailoverProvider`) intercepts HTTP 429 rate limits and routes sessions to secondary providers.
+- **Model Context Protocol (MCP):** Native stdio MCP server (`agentctl mcp`) exposes gate checks, stack detection, and task queue controls to Antigravity, Claude, and Cursor.
 
 <br/>
 
