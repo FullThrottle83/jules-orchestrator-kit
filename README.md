@@ -174,16 +174,16 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 <br/>
 
 <a id="quickstart"></a>
-## ⚡ Guided Quickstart (Dry-Run → Dispatch → Verify)
+## ⚡ Guided Quickstart (Audit → Author → Verify)
 
 Get started with a safe 3-step workflow across any repository:
 
 <br/>
 
-### Step 1: Safe Dry-Run Security Gate
-Before creating any task, test your current workspace security rules:
+### Step 1: Security & Scope Gate Audit
+Audit your current working tree or branch for secret leaks, protected path violations, and verification readiness:
 ```bash
-# Run preflight security, secret scanning, and scope audit without modifying files
+# Run security, secret scanning, and scope gate audit without modifying files
 npx jules-orchestrator-kit gate --mode working-tree
 ```
 
@@ -251,14 +251,17 @@ Ecosystems Natively Supported by src/config.mjs:
 <a id="configuration"></a>
 ## ⚙️ Configuration Reference (`.agent/config.yml`)
 
-`jules-orchestrator-kit` auto-detects stack defaults, but allows explicit override through `.agent/config.yml`:
+`jules-orchestrator-kit` auto-detects stack defaults, but allows explicit overrides through `.agent/config.yml`:
 
 ```yaml
 # .agent/config.yml — Universal Orchestrator Configuration
 
 version: 1
+provider: "jules"        # Provider key ("jules" | "claude-code" | "local")
+baseBranch: "main"       # Default target base branch
+branchPrefix: "agent/"   # Prefix for task branches
 
-# Verification commands (auto-detected if omitted)
+# Verification commands (auto-detected by Stack Oracle if omitted)
 verify:
   test: "npm test"
   build: "npm run build"
@@ -266,26 +269,18 @@ verify:
 
 # Scope protection rules (Deny-first evaluation)
 scope:
-  forbidden_paths:
-    - ".github/workflows/**"
+  deny:
+    - ".github/**"
     - ".agent/config.yml"
     - "keys/**"
 
 # Operational limits & governors
 limits:
-  max_diff_bytes: 76800  # 75 KB Diff Payload Governor limit
-  max_ooda_retries: 3    # Maximum self-healing repair iterations
-  daily_sessions: 300    # Daily task session quota limit
-
-# Native UX settings
-ux:
-  ansi: auto             # auto | true | false
-  alternate_screen: true # Enable full-screen TUI viewports
-
-# Diagnostic checks
-doctor:
-  passive_checks: true
-  safe_fixes: true
+  diffKb: 75             # 75 KB Diff Payload Governor limit
+  promptKb: 50           # Maximum prompt payload size
+  dailyTasks: 300        # Daily task session quota limit
+  repairAttempts: 3      # Maximum OODA repair iterations
+  concurrency: 1         # Worker slot concurrency limit
 ```
 
 <br/>
@@ -366,12 +361,12 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `task create` | `agentctl task create [--title <t>] [--prompt <p>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing & preflight gate checks. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
 | `dispatch` | `agentctl dispatch --title <t> --prompt <p>` | Dispatches a single task to an AI agent in an isolated worktree. | `0` (Success), `1` (Arg error), `2` (429 Rate limit), `3` (Scope deny), `4` (OODA exhausted), `5` (Diff > 75KB), `6` (Secret leak) |
 | `doctor` | `agentctl doctor [--interactive] [--fix safe]` | Diagnostic DAG check runner & automated transactional repair planner. | `0` (Healthy) |
-| `queue` | `agentctl queue [--interactive] [--json]` | Consumes, inspects, and executes task envelopes in `.agent/jules-queue/`. | `0` (Complete) |
-| `swarm` | `agentctl swarm [--interactive] [--json]` | Runs parallel multi-agent swarm across worker slots with process PID liveness detection. | `0` (Complete) |
+| `queue` | `agentctl queue [--interactive] [--json]` | Consumes, inspects, and executes task envelopes in `.agent/jules-queue/` (supports `--json`). | `0` (Complete) |
+| `swarm` | `agentctl swarm [--interactive] [--json]` | Runs parallel multi-agent swarm across worker slots with process PID liveness detection (supports `--json`). | `0` (Complete) |
 | `scan` | `agentctl scan` | Scans codebase for TODO/FIXME annotations to seed task authoring. | `0` (Scanned) |
 | `review-repair`| `agentctl review-repair <pr-comments.json>`| Parses GitHub PR review comments and synthesizes actionable OODA repair tasks. | `0` (Parsed), `1` (Missing file) |
 | `dashboard` | `agentctl dashboard [port]` | Starts zero-dependency local HTTP telemetry and audit visualizer dashboard. | `0` (Running) |
-| `gate` / `audit`| `agentctl gate --mode working-tree --json` | Runs security, secret scanning, and verification gate against working tree or branch. | `0` (Approved), `3` (Scope violation), `5` (Diff limit), `6` (Secret leak) |
+| `gate` / `audit`| `agentctl gate --mode working-tree [--json]` | Runs security, secret scanning, and verification gate against working tree or branch (supports `--json`). | `0` (Approved), `3` (Scope violation), `5` (Diff limit), `6` (Secret leak) |
 | `bootstrap` | `agentctl bootstrap [--force] [--json]` | Inspects an untested repository and synthesizes `.agent/config.yml` with a zero-test verification oracle (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`). | `0` (Bootstrapped / Existing) |
 | `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
@@ -385,13 +380,31 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 <br/>
 
 <a id="providers"></a>
-## 🔌 Supported Providers & LLM Integrations
+## 🔌 Provider Integration & SDK Usage
 
-`jules-orchestrator-kit` supports standard AI agent platforms and multi-provider failover routing:
+`jules-orchestrator-kit` supports standard AI agent platforms and programmatic failover routing:
 
-- **Google Jules (`jules`):** Native integration via Google Jules REST v1alpha API and task envelopes.
-- **Claude Code & Anthropic:** Multi-provider failover router (`createFailoverProvider`) intercepts HTTP 429 rate limits and routes sessions to secondary providers.
-- **Model Context Protocol (MCP):** Native stdio MCP server (`agentctl mcp`) exposes gate checks, stack detection, and task queue controls to Antigravity, Claude, and Cursor.
+### 1. Google Jules Native Integration
+Dispatch tasks using canonical task envelopes or the Google Jules REST v1alpha API.
+
+### 2. Multi-Provider Failover SDK (`createFailoverProvider`)
+Programmatically configure ordered provider failover (e.g. falling back to secondary providers on HTTP 429 rate limits):
+
+```javascript
+import { createFailoverProvider } from "jules-orchestrator-kit";
+
+// Programmatic multi-provider router with automatic failover
+const provider = createFailoverProvider([
+  { type: "jules", apiKey: process.env.JULES_API_KEY },
+  { type: "claude-code", apiKey: process.env.ANTHROPIC_API_KEY }
+]);
+```
+
+### 3. Model Context Protocol (MCP) Server
+Expose orchestrator gates and queue controls over stdio to client tools (Antigravity, Claude, Cursor):
+```bash
+npx jules-orchestrator-kit mcp
+```
 
 <br/>
 
