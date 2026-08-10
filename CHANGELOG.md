@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.31.0] - 2026-08-10
+### Developer Onboarding, TDD Red-to-Green, AST Selective Testing & Lifecycle Sandboxing
+- **Warm Multi-Turn Session Resumption (`src/provider.mjs`)**: Added `resume(sessionId, prompt)` targeting `POST /v1alpha/sessions/{id}:sendMessage` with fail-soft cold dispatch fallback, saving 60–80% token consumption across OODA turns.
+- **AST Blast-Radius Selective Testing (`src/dag-engine.mjs`)**: Implemented `resolveAffectedTests()` with `GLOBAL_CONTRACT_PATTERNS` guard to selectively run only affected leaf tests in large codebases while preserving full-suite verification on global changes.
+- **Verification Lifecycle Sandbox (`src/config.mjs`, `src/engine.mjs`)**: Added `verify.setup` and `verify.teardown` lifecycle execution with guaranteed `try...finally` process-group cleanup for Prisma, Drizzle, Django, and SQLite migrations.
+- **Prompt Falsifiability & Scope Linter (`src/task-optimizer.mjs`, `agentctl task optimize`)**: Added pre-dispatch prompt analyzer scoring testability (0–100), fuzzy typo resolution for file paths via Levenshtein distance, and automatic task envelope formatting.
+- **Asynchronous HITL Escalation Bridge (`src/webhook.mjs`, `agentctl escalate`)**: Added zero-dependency Slack and Discord webhook alert dispatchers with `agentctl resume <sessionId> --response "<text>"` command resumption.
+- **1-Click Atomic Git Checkpoint & Rollback (`src/ops/checkpoint.mjs`, `agentctl rollback`)**: Added automatic pre-flight working tree snapshots and instant 1-command git tree rollback.
+- **Evidence-Backed PR Review Bundler (`src/engine.mjs`)**: Added `synthesizePrDescription()` generating structured PR bodies with OODA timelines, zero-trust security audit receipts, test output logs, and AST impact graphs.
+- **Automated TDD Red-to-Green Harness (`src/ops/tdd-generator.mjs`, `agentctl test-gen`)**: Implemented 3-step test-driven development cycle that scaffolds unit tests, asserts initial RED failure, locks the test in `scope.deny`, and dispatches Jules for GREEN resolution.
+- **Live Dev Server & SSR Hydration Smoke Probing (`verify.server`, `src/engine.mjs`)**: Added `probeDevServer()` booting the dev server in an isolated process group and verifying HTTP 200 without SSR hydration panics.
+- **IDE Native MCP Config Scaffolder (`src/ops/ide-scaffold.mjs`, `agentctl mcp init`)**: Added 1-command config generation for Cursor (`.cursor/mcp.json`), VS Code (`tasks.json`), and Claude Desktop.
+- **Unit Test Coverage**: Added test suites (`test/task-optimizer.test.mjs`, `test/checkpoint.test.mjs`, `test/escalation.test.mjs`, `test/tdd-generator.test.mjs`, `test/server-probe.test.mjs`, `test/ide-scaffold.test.mjs`), bringing total passing unit tests to 368 across 52 test suites.
+
 ## [0.30.0] - 2026-08-10
 ### Interactive UX, Guided Diagnostics & Swarm Management Subsystem
 - **Terminal Engine Hardening (`src/ux/`)**: Implemented zero-dependency terminal capabilities detector (`capabilities.mjs`), incremental sequence key decoder (`key-decoder.mjs`), raw mode lifecycle manager (`terminal-session.mjs`), virtual screen renderer (`renderer.mjs`), responsive breakpoint layout engine (`layout.mjs`), interactive TUI widgets (`widgets.mjs`), unified git diff syntax highlighter (`diff-viewer.mjs`), and bounded log viewer (`log-viewer.mjs`).
