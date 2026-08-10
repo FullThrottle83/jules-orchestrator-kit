@@ -33,6 +33,8 @@ Commands:
   init                  Scaffold .agent/ config and run onboarding wizard
   task create           Interactively author and scope a Jules task envelope
   task optimize         Linter & optimizer for Jules task prompts (--fix, --json)
+  test-gen              Scaffold & run automated TDD Red-to-Green test cycle (--run)
+  mcp init              Scaffold IDE integration config (cursor | vscode | claude | all)
   rollback              Restore git state & working tree to atomic pre-flight checkpoint
   resume                Resume warm session with human response (--response "<text>")
   status                Display queue and system status summary
@@ -547,7 +549,84 @@ async function main() {
       break;
     }
 
+    case "test-gen": {
+      const { scaffoldTddTest, runTddCycle } = await import("../src/ops/tdd-generator.mjs");
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          title: { type: "string", short: "t" },
+          spec: { type: "string", short: "s" },
+          run: { type: "boolean", short: "r" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const title = values.title || args[1] || "feature-spec";
+      const specText = values.spec || args.slice(2).join(" ") || "TDD requirement specification.";
+
+      try {
+        if (values.run) {
+          const res = await runTddCycle({ title, spec: specText }, { root });
+          if (values.json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            console.log(`\n🔴 TDD RED Check Verified!`);
+            console.log(`   Test File   : ${res.testFile}`);
+            console.log(`   Scope Lock  : Locked into scope.deny`);
+            console.log(`   Status      : Ready for green implementation dispatch\n`);
+          }
+        } else {
+          const scaffold = scaffoldTddTest({ title, spec: specText }, { root });
+          if (values.json) {
+            console.log(JSON.stringify(scaffold, null, 2));
+          } else {
+            console.log(`\n🧪 TDD Test Scaffolded Successfully!`);
+            console.log(`   File Path : ${scaffold.relativePath}`);
+            console.log(`   Command   : ${scaffold.testCmd}\n`);
+          }
+        }
+        process.exit(0);
+      } catch (err) {
+        console.error(`❌ TDD Generation Failed: ${err.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+
     case "mcp": {
+      const subAction = args[1];
+      if (subAction === "init") {
+        const { scaffoldIdeConfig } = await import("../src/ops/ide-scaffold.mjs");
+        const { values } = parseArgs({
+          args: args.slice(2),
+          options: {
+            target: { type: "string", short: "t", default: "all" },
+            json: { type: "boolean", short: "j" },
+          },
+          allowPositionals: true,
+        });
+
+        const target = values.target || args[2] || "all";
+        try {
+          const res = scaffoldIdeConfig(target, { root });
+          if (values.json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            console.log(`\n🔌 IDE MCP Config Scaffolded Successfully!`);
+            console.log(`   Target  : ${res.target}`);
+            for (const item of res.results) {
+              console.log(`   - ${item.target.toUpperCase()} : ${item.file}`);
+            }
+            console.log("");
+          }
+          process.exit(0);
+        } catch (err) {
+          console.error(`❌ IDE MCP Scaffold Failed: ${err.message}`);
+          process.exit(1);
+        }
+      }
+
       const { startMcpServer } = await import("../src/mcp.mjs");
       startMcpServer();
       break;

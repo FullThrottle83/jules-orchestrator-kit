@@ -94,8 +94,15 @@ export { createCheckpoint, restoreCheckpoint, listCheckpoints, pruneCheckpoints,
 // Webhook & HITL Escalation Bridge
 export { dispatchEscalation, verifySignature, parseWebhookPayload, routeWebhookEvent, createWebhookServer } from "./src/webhook.mjs";
 
-// PR Review Evidence Bundler
-export { synthesizePrDescription } from "./src/engine.mjs";
+// PR Review Evidence Bundler & Dev Server Probe
+export { synthesizePrDescription, probeDevServer } from "./src/engine.mjs";
+
+// Automated TDD Red-to-Green Harness
+export { scaffoldTddTest, runTddCycle, TddError } from "./src/ops/tdd-generator.mjs";
+
+// IDE Native MCP Scaffolder
+export { scaffoldIdeConfig, IdeScaffoldError } from "./src/ops/ide-scaffold.mjs";
+
 
 
 

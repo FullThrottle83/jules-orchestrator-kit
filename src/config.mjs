@@ -196,13 +196,18 @@ export function detectStack(projectRoot = process.cwd()) {
   return detectPolyglotStack(projectRoot);
 }
 
-export function resolveVerify(root = process.cwd()) {
+export function resolveVerify(root = process.cwd(), userVerify = {}) {
   const s = detectStack(root);
   return {
-    setup: s.setupCmd || "",
-    test: s.testCmd || "",
-    teardown: s.teardownCmd || "",
-    build: s.buildCmd || "",
+    setup: userVerify.setup ?? s.setupCmd ?? "",
+    test: userVerify.test ?? s.testCmd ?? "",
+    teardown: userVerify.teardown ?? s.teardownCmd ?? "",
+    build: userVerify.build ?? s.buildCmd ?? "",
+    server: userVerify.server ? {
+      command: userVerify.server.command || "",
+      url: userVerify.server.url || "http://localhost:3000",
+      timeoutMs: Number(userVerify.server.timeoutMs || 15000),
+    } : null,
   };
 }
 

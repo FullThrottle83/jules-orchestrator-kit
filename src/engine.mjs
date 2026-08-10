@@ -10,6 +10,7 @@ import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { appendTelemetry as appendTelemetryUnsafe } from "./telemetry.mjs";
 
+import { spawn } from "node:child_process";
 import { resolveAffectedTests } from "./dag-engine.mjs";
 
 export { recordVerifyRun, readVerifyRuns, flakyVerdict, sanitizeUntrustedData, resolveAffectedTests };
@@ -283,9 +284,14 @@ export async function gate(opts = {}) {
     };
   }
 
-  const verifyOk = testResult.ok && buildResult.ok;
-  const failingCmd = !testResult.ok ? testResult : !buildResult.ok ? buildResult : null;
-  phases.push({ phase: "verify", ok: verifyOk, testResult, buildResult });
+  let serverResult = { ok: true, status: 0 };
+  if (testResult.ok && buildResult.ok && trustedVerify.server && trustedVerify.server.command) {
+    serverResult = await probeDevServer(trustedVerify.server, root);
+  }
+
+  const verifyOk = testResult.ok && buildResult.ok && serverResult.ok;
+  const failingCmd = !testResult.ok ? testResult : !buildResult.ok ? buildResult : !serverResult.ok ? serverResult : null;
+  phases.push({ phase: "verify", ok: verifyOk, testResult, buildResult, serverResult });
   appendTelemetry(root, "gate_phase", { phase: "verify", ok: verifyOk });
   if (progressBus && progressToken) {
     progressBus.reportProgress(progressToken, 100, 100, "Phase 4/4: Automated Test & Build Verification complete");
@@ -710,4 +716,135 @@ ${
 
   return prBody;
 }
+
+/**
+ * Live Dev Server & SSR Hydration Smoke Prober.
+ * Spawns the server in a detached process group, polls the URL via globalThis.fetch,
+ * intercepts SSR hydration errors, and cleanly kills the process group in a finally block.
+ * @param {object} serverConfig
+ * @param {string} serverConfig.command
+ * @param {string} [serverConfig.url="http://localhost:3000"]
+ * @param {number} [serverConfig.timeoutMs=15000]
+ * @param {string} root
+ * @returns {Promise<object>} Probe result { ok: boolean, status: number, error: string, logs: string }
+ */
+export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
+  if (!serverConfig || !serverConfig.command) {
+    return { ok: true, skipped: true, reason: "No server command configured" };
+  }
+
+  const cmd = serverConfig.command;
+  const url = serverConfig.url || "http://localhost:3000";
+  const timeoutMs = Number(serverConfig.timeoutMs || 15000);
+
+  const isWin = process.platform === "win32";
+  const shellBin = isWin ? (process.env.ComSpec || "cmd.exe") : "/bin/sh";
+  const shellArgs = isWin ? ["/d", "/s", "/c", cmd] : ["-c", cmd];
+
+  let child;
+  let stdoutLogs = "";
+  let stderrLogs = "";
+
+  try {
+    child = spawn(shellBin, shellArgs, {
+      cwd: root,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
+    });
+
+    if (child.stdout) {
+      child.stdout.on("data", (chunk) => {
+        stdoutLogs += chunk.toString("utf-8");
+      });
+    }
+    if (child.stderr) {
+      child.stderr.on("data", (chunk) => {
+        stderrLogs += chunk.toString("utf-8");
+      });
+    }
+
+    const startTime = Date.now();
+    let pollResponse = null;
+    let pollError = null;
+
+    while (Date.now() - startTime < timeoutMs) {
+      if (child.exitCode !== null) {
+        return {
+          ok: false,
+          status: child.exitCode,
+          error: `Dev server process exited prematurely with code ${child.exitCode}`,
+          logs: (stderrLogs || stdoutLogs).slice(-2000),
+        };
+      }
+
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        const bodyText = await res.text();
+        pollResponse = { status: res.status, bodyText, ok: res.ok };
+        break;
+      } catch (err) {
+        pollError = err;
+      }
+
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
+    if (!pollResponse) {
+      return {
+        ok: false,
+        status: 504,
+        error: `Dev server probe timed out after ${timeoutMs}ms attempting to reach ${url}. ${pollError ? pollError.message : ""}`,
+        logs: (stderrLogs || stdoutLogs).slice(-2000),
+      };
+    }
+
+    const combinedLogs = (stderrLogs + "\n" + pollResponse.bodyText).toLowerCase();
+    const hydrationPanics = [
+      "hydration failed",
+      "text content did not match",
+      "unhandled runtime error",
+      "minified react error #418",
+      "minified react error #423",
+      "minified react error #425",
+    ];
+
+    const detectedPanic = hydrationPanics.find((panic) => combinedLogs.includes(panic));
+    if (detectedPanic) {
+      return {
+        ok: false,
+        status: 500,
+        error: `SSR Hydration Smoke Probe Failure: Detected '${detectedPanic}' error in server response or stderr.`,
+        logs: (stderrLogs || stdoutLogs).slice(-2000),
+      };
+    }
+
+    if (!pollResponse.ok) {
+      return {
+        ok: false,
+        status: pollResponse.status,
+        error: `Dev server responded with HTTP status ${pollResponse.status}`,
+        logs: (stderrLogs || stdoutLogs).slice(-2000),
+      };
+    }
+
+    return {
+      ok: true,
+      status: pollResponse.status,
+      url,
+      logs: stdoutLogs.slice(-500),
+    };
+  } finally {
+    if (child && child.pid) {
+      try {
+        if (isWin) {
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+        } else {
+          process.kill(-child.pid, "SIGTERM");
+        }
+      } catch (_) {}
+    }
+  }
+}
+
 
