@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { gate, dispatch } from "../src/engine.mjs";
+import { gate, dispatch, synthesizePrDescription } from "../src/engine.mjs";
 
 describe("src/engine.mjs", () => {
   it("gate passes clean repository verification", async () => {
@@ -14,6 +14,32 @@ describe("src/engine.mjs", () => {
     const session = await dispatch(task, { dryRun: true });
     assert.equal(session.id, "dry-run-session-id");
     assert.equal(session.status, "pending");
+  });
+
+  it("synthesizePrDescription generates evidence-backed PR description body", () => {
+    const prBody = synthesizePrDescription(
+      { id: "sess-777", attempts: [1, 2], resumed: true },
+      {
+        phases: [
+          { phase: "scope", ok: true },
+          { phase: "payload", ok: true, bytes: 12000, limitBytes: 76800 },
+          { phase: "secrets", ok: true },
+        ],
+      },
+      {
+        durationMs: 4500,
+        modifiedFiles: ["src/auth.mjs"],
+        knownTestFiles: ["test/auth.test.mjs"],
+        testOutput: "✔ 12 tests passed",
+      }
+    );
+
+    assert.ok(prBody.includes("## 🚀 Autonomous Jules Agent Execution Evidence"));
+    assert.ok(prBody.includes("`sess-777`"));
+    assert.ok(prBody.includes("`2/3`"));
+    assert.ok(prBody.includes("✅ Active Context Stream"));
+    assert.ok(prBody.includes("✔ 12 tests passed"));
+    assert.ok(prBody.includes("test/auth.test.mjs"));
   });
 
   it("gate executes setup -> test -> teardown lifecycle sequentially and guarantees teardown on failure", async () => {

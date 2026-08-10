@@ -185,3 +185,122 @@ export function createWebhookServer({ _port = 8787, secret = process.env.JULES_W
 
   return server;
 }
+
+/**
+ * Dispatches an asynchronous escalation incident payload to configured Slack and/or Discord webhooks.
+ * @param {object} incident - Incident details
+ * @param {string} incident.sessionId
+ * @param {string} [incident.taskId]
+ * @param {string} [incident.branch]
+ * @param {string} [incident.reason] - AWAITING_USER_FEEDBACK | OODA_REPAIR_EXHAUSTED | R3_GATE_VIOLATION
+ * @param {string} [incident.logs] - Last 20 lines of compiler/test output
+ * @param {object} [config]
+ * @returns {Promise<object>} Dispatch status { dispatched: boolean, slack: boolean, discord: boolean }
+ */
+export async function dispatchEscalation(incident = {}, config = {}) {
+  const slackUrl = process.env.SLACK_WEBHOOK_URL || config.slackWebhookUrl || "";
+  const discordUrl = process.env.DISCORD_WEBHOOK_URL || config.discordWebhookUrl || "";
+
+  if (!slackUrl && !discordUrl && !config.dryRun) {
+    return { dispatched: false, slack: false, discord: false, reason: "No webhook URL configured" };
+  }
+
+  const sessionId = incident.sessionId || "unknown-session";
+  const taskId = incident.taskId || "agent-task";
+  const branch = incident.branch || "main";
+  const reason = incident.reason || "AWAITING_USER_FEEDBACK";
+  const rawLogs = incident.logs || incident.error || "No error log attached.";
+
+  // Normalize last 20 lines of logs
+  const logLines = String(rawLogs).split("\n").slice(-20).join("\n");
+  const resumeCmd = `agentctl resume ${sessionId} --response "<your-answer>"`;
+
+  const results = { dispatched: true, slack: false, discord: false };
+
+  if (config.dryRun) {
+    return {
+      ...results,
+      dryRun: true,
+      payload: {
+        sessionId,
+        reason,
+        resumeCmd,
+        logLines,
+      },
+    };
+  }
+
+  // Dispatch to Slack
+  if (slackUrl) {
+    try {
+      const slackBody = {
+        text: `🚨 *Jules Agent Escalation* [${reason}]: Session ${sessionId}`,
+        blocks: [
+          {
+            type: "header",
+            text: { type: "plain_text", text: `🚨 Jules Escalation: ${reason}` },
+          },
+          {
+            type: "section",
+            fields: [
+              { type: "mrkdwn", text: `*Session ID:*\n\`${sessionId}\`` },
+              { type: "mrkdwn", text: `*Branch:*\n\`${branch}\`` },
+            ],
+          },
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: `*Recent Log Output:*\n\`\`\`${logLines.slice(0, 1000)}\`\`\`` },
+          },
+          {
+            type: "context",
+            elements: [
+              { type: "mrkdwn", text: `👉 *To resume session run:* \`${resumeCmd}\`` },
+            ],
+          },
+        ],
+      };
+
+      const res = await fetch(slackUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(slackBody),
+      });
+      results.slack = res.ok;
+    } catch (_) {
+      results.slack = false;
+    }
+  }
+
+  // Dispatch to Discord
+  if (discordUrl) {
+    try {
+      const discordBody = {
+        content: `🚨 **Jules Agent Escalation** [${reason}] for session \`${sessionId}\``,
+        embeds: [
+          {
+            title: `Escalation Reason: ${reason}`,
+            color: 15158332, // Red
+            fields: [
+              { name: "Session ID", value: `\`${sessionId}\``, inline: true },
+              { name: "Branch", value: `\`${branch}\``, inline: true },
+              { name: "Resume Command", value: `\`${resumeCmd}\`` },
+            ],
+            description: `\`\`\`\n${logLines.slice(0, 1000)}\n\`\`\``,
+          },
+        ],
+      };
+
+      const res = await fetch(discordUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(discordBody),
+      });
+      results.discord = res.ok;
+    } catch (_) {
+      results.discord = false;
+    }
+  }
+
+  return results;
+}
+

@@ -33,6 +33,8 @@ Commands:
   init                  Scaffold .agent/ config and run onboarding wizard
   task create           Interactively author and scope a Jules task envelope
   task optimize         Linter & optimizer for Jules task prompts (--fix, --json)
+  rollback              Restore git state & working tree to atomic pre-flight checkpoint
+  resume                Resume warm session with human response (--response "<text>")
   status                Display queue and system status summary
   scan                  Scan codebase for TODO/FIXME task candidates
   version               Output agentctl version
@@ -483,6 +485,65 @@ async function main() {
         console.log(`   ... and ${todos.length - 10} more.`);
       }
       process.exit(0);
+      break;
+    }
+
+    case "rollback": {
+      const { restoreCheckpoint } = await import("../src/ops/checkpoint.mjs");
+      const targetId = args[1] || "--latest";
+      try {
+        const res = restoreCheckpoint(targetId, { root });
+        console.log(`\n✅ Git Checkpoint Restored Successfully!`);
+        console.log(`   Session ID : ${res.id}`);
+        console.log(`   HEAD SHA   : ${res.headSha || "N/A"}`);
+        console.log(`   RestoredAt : ${res.restoredAt}\n`);
+        process.exit(0);
+      } catch (err) {
+        console.error(`❌ Rollback Failed: ${err.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case "resume": {
+      const { createProvider } = await import("../src/provider.mjs");
+      const sessionId = args[1];
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          response: { type: "string", short: "r" },
+          "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      if (!sessionId || sessionId.startsWith("-")) {
+        console.error("Error: Session ID is required for agentctl resume <sessionId>.");
+        process.exit(1);
+      }
+
+      const responseText = values.response || args.slice(2).join(" ");
+      if (!responseText) {
+        console.error("Error: --response text is required to resume warm session.");
+        process.exit(1);
+      }
+
+      const provider = createProvider(config.provider || "jules", config);
+      try {
+        const res = await provider.resume(sessionId, responseText, { root, dryRun: values["dry-run"] });
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`\n✅ Warm Session Resumed Successfully!`);
+          console.log(`   Session ID : ${res.id}`);
+          console.log(`   Status     : ${res.status}\n`);
+        }
+        process.exit(0);
+      } catch (err) {
+        console.error(`❌ Resume Failed: ${err.message}`);
+        process.exit(1);
+      }
       break;
     }
 

@@ -88,4 +88,14 @@ export { planTaskCreate, runTaskCreateWizard, GUARDRAIL_FOOTER } from "./src/wiz
 // Prompt Falsifiability & Task Optimizer Engine
 export { scorePromptFalsifiability, optimizeTaskPrompt, levenshteinDistance, extractPathTokens } from "./src/task-optimizer.mjs";
 
+// Atomic Git Checkpoints & Rollback
+export { createCheckpoint, restoreCheckpoint, listCheckpoints, pruneCheckpoints, CheckpointError } from "./src/ops/checkpoint.mjs";
+
+// Webhook & HITL Escalation Bridge
+export { dispatchEscalation, verifySignature, parseWebhookPayload, routeWebhookEvent, createWebhookServer } from "./src/webhook.mjs";
+
+// PR Review Evidence Bundler
+export { synthesizePrDescription } from "./src/engine.mjs";
+
+
 
