@@ -266,18 +266,27 @@ Every task dispatched to `jules-orchestrator-kit` executes within an immutable, 
 
 ```mermaid
 flowchart TD
-    A["📩 Task Envelope"] --> B["1. Validate Scope & Base Freshness"]
-    B --> C["2. Create Isolated Git Worktree & VFS Lock"]
-    C --> D["3. Dispatch Task to Google Jules / LLM"]
-    D --> E["4. Execute Scoped Verification Gate<br/><code>detectPolyglotStack().testCmd</code>"]
-    
-    E -->|PASS| F["5. Security Audit<br/><i>Redact Secrets, Diff < 75KB</i>"]
-    F --> G["7. Rebase & Open PR<br/><code>git rebase main && gh pr create</code>"]
+    subgraph Phase1 ["1. Ingress & Provisioning"]
+        A["📩 Task Envelope"] --> B["1. Validate Scope &<br/>Base Freshness"]
+        B --> C["2. Create Isolated Git<br/>Worktree & VFS Lock"]
+    end
 
-    E -->|FAIL| H["6. Fingerprint Stderr & Flaky Verdict"]
-    H -->|Oscillation >= 0.40| I["🚨 Quarantined Test<br/><i>Exit Code 8</i>"]
-    H -->|Normal Failure| J["🔄 Attempt OODA Repair Turn<br/><i>Max 3 Retries; Exit 4 on Exhaust</i>"]
-    J --> D
+    subgraph Phase2 ["2. Agent Execution & Verification"]
+        C --> D["3. Dispatch Task to<br/>Google Jules / LLM"]
+        D --> E["4. Execute Scoped Verification Gate<br/><code>detectPolyglotStack().testCmd</code>"]
+    end
+
+    subgraph Phase3 ["3. Success & Publication"]
+        E -->|PASS| F["5. Security Audit<br/><i>Redact Secrets, Diff < 75KB</i>"]
+        F --> G["7. Rebase & Open PR<br/><code>git rebase main && gh pr create</code>"]
+    end
+
+    subgraph Phase4 ["4. Self-Healing & Quarantine"]
+        E -->|FAIL| H["6. Fingerprint Stderr &<br/>Flaky Verdict"]
+        H -->|Oscillation >= 0.40| I["🚨 Quarantined Test<br/><i>Exit Code 8</i>"]
+        H -->|Normal Failure| J["🔄 Attempt OODA Repair Turn<br/><i>Max 3 Retries; Exit 4 on Exhaust</i>"]
+        J --> D
+    end
 ```
 
 <br/>
@@ -287,12 +296,21 @@ In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFil
 
 ```mermaid
 flowchart TD
-    A["📁 Changed Files<br/><code>['backend/api/main.py', 'cli/src/main.rs']</code>"] --> B{"Check Shared Triggers?<br/><i>docker-compose.yml, openapi.yaml</i>"}
-    B -->|None Changed| C["Traverse Directory Ancestry"]
-    C --> D1["<code>backend/api/main.py</code> → <code>backend/pyproject.toml</code><br/><i>(Python Stack)</i>"]
-    C --> D2["<code>cli/src/main.rs</code> → <code>cli/Cargo.toml</code><br/><i>(Rust Stack)</i>"]
-    D1 --> E["Synthesize POSIX Subshell Verification Plan<br/><code>(cd backend && pytest) && (cd cli && cargo test)</code>"]
-    D2 --> E
+    subgraph Input ["1. Changed Files Input"]
+        A["📁 Changed Files<br/><code>['backend/api/main.py', 'cli/src/main.rs']</code>"]
+    end
+
+    subgraph Resolution ["2. Ancestry & Boundary Resolver"]
+        A --> B{"Check Shared Triggers?<br/><i>docker-compose.yml, openapi.yaml</i>"}
+        B -->|None Changed| C["Traverse Directory Ancestry"]
+        C --> D1["<code>backend/api/main.py</code> → <code>backend/pyproject.toml</code><br/><i>(Python Stack)</i>"]
+        C --> D2["<code>cli/src/main.rs</code> → <code>cli/Cargo.toml</code><br/><i>(Rust Stack)</i>"]
+    end
+
+    subgraph Output ["3. Isolated Verification Plan"]
+        D1 --> E["Synthesize POSIX Subshell Verification Plan<br/><code>(cd backend && pytest) && (cd cli && cargo test)</code>"]
+        D2 --> E
+    end
 ```
 
 <br/>
