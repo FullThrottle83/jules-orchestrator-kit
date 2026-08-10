@@ -161,7 +161,7 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 <a id="matrix"></a>
 ## 📊 Feature Comparison Matrix
 
-| Dimension | Raw Agent Execution (No Orchestrator) | Standard CI/CD Pipelines | `jules-orchestrator-kit` (v0.30.0) |
+| Dimension | Raw Agent Execution (No Orchestrator) | Standard CI/CD Pipelines | `jules-orchestrator-kit` (v0.31.0) |
 | :--- | :--- | :--- | :--- |
 | **Self-Healing Loop** | ❌ None (Crashes on test error) | ❌ None (Fails build; notifies human) | ✅ **Autonomous OODA Loop** (Max 3 repair turns with error fingerprinting) |
 | **Interactive UX Engine**| ❌ Raw unformatted CLI dumps | ❌ Non-interactive log outputs | ✅ **Native TUI Engine & Command Palette** (Zero-dependency alternate-screen TUI) |
@@ -387,7 +387,7 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
 | `mcp init` | `agentctl mcp init [--target cursor\|vscode\|claude\|all]` | 1-click scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | `0` (Scaffolded) |
-| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.30.0`). | `0` |
+| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.31.0`). | `0` |
 
 <br/>
 
