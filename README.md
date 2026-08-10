@@ -88,6 +88,18 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 `jules-orchestrator-kit` provides the missing **Safety, Orchestration, and Verification Kernel** for high-reliability AI agent deployments:
 
+* **🔥 Warm Multi-Turn Session Resumption (`v0.31.0`):** Streams OODA repair prompts directly into active Google Jules session streams via `POST /v1alpha/sessions/{id}:sendMessage`, saving 60–80% context tokens while preserving reasoning context.
+
+* **🧪 Automated TDD Red-to-Green Harness (`agentctl test-gen`):** Scaffolds falsifiable unit tests from bug specs, verifies **RED** failure state, locks the test file in `scope.deny`, and tasks Jules with making it pass (**GREEN** state).
+
+* **🛡️ 1-Click Atomic Git Checkpoint & Rollback (`agentctl rollback`):** Snapshots working tree state, git diffs, and stashes before every session, enabling instant 1-command git restoration.
+
+* **🌐 Verification Sandbox & SSR Hydration Prober (`verify.server`):** Executes deterministic `setup`/`teardown` hooks for databases and boots dev servers to intercept React/Next.js SSR hydration panics before approving PRs.
+
+* **⚡ AST Blast-Radius Selective Testing:** Traverses file import dependency graphs to execute only affected downstream test suites, cutting monorepo test latency from minutes to milliseconds.
+
+* **🚨 Asynchronous HITL Escalation Bridge (`agentctl escalate`):** Dispatches Slack & Discord webhook alerts when Jules needs feedback, allowing engineers to unblock agents asynchronously via `agentctl resume <id> --response "<reply>"`.
+
 * **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`). Zero third-party npm packages mean zero supply-chain CVE risk.
 
 * **🛡️ Fail-Closed Security Gatekeeper:** Unconditionally evaluates explicit Deny rules *before* Allow rules, redacts high-entropy secrets and PII from dry-runs and git diffs, and rejects PRs exceeding the 75 KB Diff Payload governor.
@@ -102,7 +114,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
-* **📈 Proven Scale & Reliability:** Empirically tested with **337 unit tests across 52 suites passing in < 2.0s**, supporting 300+ daily agent sessions per repository.
+* **📈 Proven Scale & Reliability:** Empirically tested with **368 unit tests across 52 suites passing in < 3.0s**, supporting 300+ daily agent sessions per repository.
 
 <br/>
 
@@ -358,6 +370,10 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | :--- | :--- | :--- | :--- |
 | `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack oracle inspector generating `.agent/config.yml`. | `0` (Created) |
 | `task create` | `agentctl task create [--title <t>] [--prompt <p>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing & preflight gate checks. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
+| `task optimize` | `agentctl task optimize "<prompt>" [--fix] [--json]` | Linter & optimizer scoring prompt falsifiability (0–100), fixing typos, and checking scope violations. | `0` (Scored/Fixed) |
+| `test-gen` | `agentctl test-gen --title <t> --spec <s> [--run]` | Scaffolds falsifiable unit tests, verifies **RED** failure state, and locks test in `scope.deny`. | `0` (Scaffolded/Red) |
+| `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
+| `resume` | `agentctl resume <sessionId> --response "<reply>"` | Streams engineer response back into active Google Jules warm session context window. | `0` (Resumed), `1` (Error) |
 | `dispatch` | `agentctl dispatch --title <t> --prompt <p>` | Dispatches a single task to an AI agent in an isolated worktree. | `0` (Success), `1` (Arg error), `2` (429 Rate limit), `3` (Scope deny), `4` (OODA exhausted), `5` (Diff > 75KB), `6` (Secret leak) |
 | `doctor` | `agentctl doctor [--interactive] [--fix safe]` | Diagnostic DAG check runner & automated transactional repair planner. | `0` (Healthy) |
 | `queue` | `agentctl queue [--interactive] [--json]` | Consumes, inspects, and executes task envelopes in `.agent/jules-queue/` (supports `--json`). | `0` (Complete) |
@@ -370,6 +386,7 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
+| `mcp init` | `agentctl mcp init [--target cursor\|vscode\|claude\|all]` | 1-click scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | `0` (Scaffolded) |
 | `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.30.0`). | `0` |
 
 <br/>
@@ -418,6 +435,12 @@ npx jules-orchestrator-kit mcp
 
 | Feature | Module / Command | Architectural Description | Target Release |
 | :--- | :--- | :--- | :---: |
+| **Warm Session Resumption & PR Bundler** | `src/provider.mjs`, `src/engine.mjs` | Multi-turn warm session context streaming via `POST /v1alpha/sessions/{id}:sendMessage` & evidence PR descriptions. | **v0.31.0** *(Shipped)* |
+| **TDD Harness & Prompt Falsifiability Linter** | `agentctl test-gen`, `agentctl task optimize` | Automated RED-state test generator, `scope.deny` test locking, and prompt testability linter with fuzzy path resolution. | **v0.31.0** *(Shipped)* |
+| **Atomic Git Checkpoint & Rollback** | `agentctl rollback` (`src/ops/checkpoint.mjs`) | Pre-flight git HEAD/stash snapshotting, atomic rollback restoration, and 10-session pruning rotation. | **v0.31.0** *(Shipped)* |
+| **Verification Sandbox & SSR Hydration Prober** | `verify.server`, `verify.setup`/`teardown` | Isolated process group dev server probing, Next.js/React SSR panic detection, and deterministic DB hooks. | **v0.31.0** *(Shipped)* |
+| **AST Selective Testing & Escalation Bridge** | `src/dag-engine.mjs`, `agentctl escalate` | Downstream import test resolution, Slack/Discord webhook alerts, and async `agentctl resume` unblocking. | **v0.31.0** *(Shipped)* |
+| **IDE Native MCP Config Scaffolder** | `agentctl mcp init` (`src/ops/ide-scaffold.mjs`) | 1-click scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | **v0.31.0** *(Shipped)* |
 | **Interactive UX Engine & TUI Engine** | `src/ux/` (`capabilities`, `key-decoder`, `renderer`, `layout`, `widgets`) | Zero-dependency terminal capabilities detector, sequence key decoder, virtual frame renderer, and widgets. | **v0.30.0** *(Shipped)* |
 | **Guided Diagnostics & Transactional Core** | `src/ops/` (`doctor-registry`, `doctor-planner`, `transaction`, `receipts`) | Diagnostic check DAG (`runDoctorChecks`), pure fix planner (`planDiagnosticFixes`), and transactional executor with rollback. | **v0.30.0** *(Shipped)* |
 | **Interactive Queue & Swarm Manager** | `src/ux/`, `src/ops/` (`queue-model`, `swarm-model`, `task-actions`, `swarm-actions`) | Task sidecar state machine, queue snapshot builder, PID liveness reconciler, task actions, and swarm actions. | **v0.30.0** *(Shipped)* |
