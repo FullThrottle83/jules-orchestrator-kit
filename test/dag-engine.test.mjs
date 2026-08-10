@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { DagExecutor, DagCycleError } from "../src/dag-engine.mjs";
+import { DagExecutor, DagCycleError, isGlobalContractFile, resolveAffectedTests } from "../src/dag-engine.mjs";
 
 describe("DagExecutor & Interface Fingerprinting", () => {
   let testDir;
@@ -273,4 +273,33 @@ describe("DagExecutor & Interface Fingerprinting", () => {
     assert.deepEqual(order, ["A", "K", "M", "Z"]);
     assert.deepEqual(result.executionHistory, ["A", "K", "M", "Z"]);
   });
+
+  it("isGlobalContractFile identifies global contract files accurately", () => {
+    assert.equal(isGlobalContractFile("package.json"), true);
+    assert.equal(isGlobalContractFile("package-lock.json"), true);
+    assert.equal(isGlobalContractFile("tsconfig.json"), true);
+    assert.equal(isGlobalContractFile("schema.prisma"), true);
+    assert.equal(isGlobalContractFile("types.d.ts"), true);
+    assert.equal(isGlobalContractFile(".env"), true);
+    assert.equal(isGlobalContractFile(".agent/rules/jules.md"), true);
+    assert.equal(isGlobalContractFile("Cargo.toml"), true);
+    assert.equal(isGlobalContractFile("src/auth.mjs"), false);
+    assert.equal(isGlobalContractFile("lib/utils.py"), false);
+  });
+
+  it("resolveAffectedTests returns null (full suite fallback) on global contract files and resolves selective tests on leaf files", () => {
+    // Global contract change -> null
+    assert.equal(resolveAffectedTests(["package.json"]), null);
+    assert.equal(resolveAffectedTests(["src/auth.mjs", "tsconfig.json"]), null);
+
+    // Test file modified directly -> resolves test file
+    assert.deepEqual(resolveAffectedTests(["test/auth.test.mjs"]), ["test/auth.test.mjs"]);
+
+    // Leaf file modified -> maps to known test file matching basename
+    const affected = resolveAffectedTests(["src/auth.mjs"], {
+      knownTestFiles: ["test/auth.test.mjs", "test/db.test.mjs"],
+    });
+    assert.deepEqual(affected, ["test/auth.test.mjs"]);
+  });
 });
+

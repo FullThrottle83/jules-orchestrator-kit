@@ -330,3 +330,79 @@ export class DagExecutor {
     });
   }
 }
+
+/**
+ * Global Contract Trigger List:
+ * Files matching these patterns are considered global structural contracts.
+ * If ANY modified file matches these patterns, selective test execution MUST yield to full test suite execution (returns null).
+ */
+export const GLOBAL_CONTRACT_PATTERNS = [
+  /^package(-lock)?\.json$/,
+  /^pnpm-lock\.yaml$/,
+  /^yarn\.lock$/,
+  /^tsconfig.*\.json$/,
+  /^schema\./,
+  /\.d\.ts$/,
+  /^\.env/,
+  /^\.agent\//,
+  /^Cargo\.(toml|lock)$/,
+  /^go\.(mod|sum)$/,
+  /^composer\.(json|lock)$/,
+];
+
+/**
+ * Checks if a relative file path matches global contract triggers.
+ */
+export function isGlobalContractFile(filePath = "") {
+  if (typeof filePath !== "string") return false;
+  const normalized = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+  const baseName = normalized.split("/").pop();
+  return GLOBAL_CONTRACT_PATTERNS.some((pattern) => pattern.test(normalized) || pattern.test(baseName));
+}
+
+/**
+ * Resolves affected test files based on modified files and static import analysis.
+ * Returns null if full test suite should be executed (due to global contract change or unknown dependency),
+ * or an array of affected test file paths.
+ */
+export function resolveAffectedTests(modifiedFiles = [], options = {}) {
+  if (!Array.isArray(modifiedFiles) || modifiedFiles.length === 0) {
+    return [];
+  }
+
+  // 1. Check Global Contract Trigger List
+  for (const file of modifiedFiles) {
+    if (isGlobalContractFile(file)) {
+      return null; // Force full test suite execution
+    }
+  }
+
+  const knownTestFiles = Array.isArray(options.knownTestFiles) ? options.knownTestFiles : [];
+  const testSuffixRegex = options.testSuffixRegex || /\.(test|spec)\.(m?[jt]sx?|py|rs|go)$/i;
+
+  const affected = new Set();
+
+  for (const file of modifiedFiles) {
+    if (typeof file !== "string") continue;
+    const normalized = file.replace(/\\/g, "/").replace(/^\.\//, "");
+
+    // If the modified file itself is a test file, add it directly
+    if (testSuffixRegex.test(normalized)) {
+      affected.add(normalized);
+      continue;
+    }
+
+    // Match known test files that import or reference this file/module
+    const baseNameNoExt = normalized.split("/").pop().replace(/\.[^/.]+$/, "");
+    for (const testFile of knownTestFiles) {
+      if (typeof testFile !== "string") continue;
+      const normTest = testFile.replace(/\\/g, "/").replace(/^\.\//, "");
+      if (normTest.includes(baseNameNoExt)) {
+        affected.add(normTest);
+      }
+    }
+  }
+
+  return affected.size > 0 ? Array.from(affected) : null;
+}
+

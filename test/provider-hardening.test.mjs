@@ -203,4 +203,48 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
       if (server) server.close();
     }
   });
+
+  await t.test("d) Warm session resumption dispatches to sendMessage endpoint and handles fail-soft fallback on 404", async () => {
+    let server;
+    try {
+      let sendMessageCalled = false;
+      let dispatchCalled = false;
+
+      server = createServer((req, res) => {
+        if (req.url.includes(":sendMessage")) {
+          sendMessageCalled = true;
+          // Simulate expired/closed remote session with 404
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Session closed or not found" }));
+        } else {
+          dispatchCalled = true;
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ id: "fallback-cold-session", state: "active" }));
+        }
+      });
+
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+      const url = `http://127.0.0.1:${port}/sessions`;
+
+      const provider = createProvider({ type: "http", url });
+
+      // Warm resume with task fallback object provided
+      const res = await provider.resume(
+        "session-123",
+        "Fix test error on line 42",
+        {},
+        { title: "Fallback Task", prompt: "Cold prompt" }
+      );
+
+      assert.ok(sendMessageCalled, "Expected sendMessage endpoint to be called first");
+      assert.ok(dispatchCalled, "Expected fail-soft fallback to call cold dispatch on 404");
+      assert.equal(res.id, "fallback-cold-session");
+      assert.equal(res._warmFallback, true);
+      assert.equal(res._warmErrorStatus, 404);
+    } finally {
+      if (server) server.close();
+    }
+  });
 });
+

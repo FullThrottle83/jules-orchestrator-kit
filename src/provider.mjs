@@ -311,6 +311,124 @@ export function createProvider(spec = "jules", config = {}) {
       if (providerSpec.type === "exec" && !providerSpec.command) return false;
       return true;
     },
+
+    async resume(sessionId, prompt = "", ctx = {}, task = null) {
+      if (!sessionId || typeof sessionId !== "string") {
+        throw new TypeError("resume() requires a valid sessionId string");
+      }
+      if (!ctx || typeof ctx !== "object") ctx = {};
+
+      const rawToken = process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
+      if (!rawToken && !ctx.dryRun && providerSpec.name === "jules") {
+        throw new MissingApiKeyError();
+      }
+
+      if (ctx.dryRun) {
+        return {
+          id: sessionId,
+          status: "pending",
+          resumed: true,
+          provider: providerSpec.name,
+          prompt: redactSecrets(prompt),
+        };
+      }
+
+      if (providerSpec.type === "http") {
+        const sendMessageUrlTemplate = providerSpec.sendMessageUrl || `${providerSpec.url}/${sessionId}:sendMessage`;
+        const urlData = { sessionId, token: rawToken, ...ctx };
+        const url = interpolateString(sendMessageUrlTemplate, urlData);
+
+        const headers = {};
+        for (const [k, v] of Object.entries(providerSpec.headers || {})) {
+          const val = interpolateString(v, urlData);
+          if (val.includes("\r") || val.includes("\n")) {
+            throw new Error(`CRITICAL: Header injection attempt detected in header "${k}"`);
+          }
+          headers[k] = val;
+        }
+
+        const bodyObj = { prompt: prompt };
+        const body = JSON.stringify(bodyObj);
+
+        const requestedTimeout = Number(ctx.timeoutMs ?? config.timeoutMs ?? providerSpec.timeoutMs ?? 120_000);
+        const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 120_000;
+        let res;
+        try {
+          res = await fetch(url, {
+            method: "POST",
+            headers,
+            body,
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+        } catch (err) {
+          if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
+            throw new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, {
+              status: 504,
+            });
+          }
+          throw err;
+        }
+
+        if (!res.ok) {
+          const text = await res.text();
+          const cleanText = text.slice(0, 500);
+          const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
+
+          // Fail-soft fallback: if remote session is closed/expired (400 or 404) and task object is available, fall back to cold dispatch
+          if ((res.status === 400 || res.status === 404) && task && typeof task === "object") {
+            const fallbackRes = await this.dispatch(task, { ...ctx, warmResumptionFailed: true });
+            return {
+              ...fallbackRes,
+              _warmFallback: true,
+              _warmErrorStatus: res.status,
+            };
+          }
+
+          const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
+          const retryAfterMs = parseRetryAfter(retryAfterHeader);
+
+          if (res.status === 429) {
+            throw new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
+              retryAfterMs: retryAfterMs ?? 60000,
+              status: 429,
+            });
+          }
+
+          if (res.status >= 500 && res.status < 600) {
+            throw new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
+              status: res.status,
+              retryAfterMs: retryAfterMs ?? undefined,
+            });
+          }
+
+          const err = new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
+          err.status = res.status;
+          throw err;
+        }
+
+        let json;
+        try {
+          json = await res.json();
+        } catch (err) {
+          throw new ProviderSchemaError(`Provider Payload Error: Invalid JSON response: ${err.message}`, {
+            status: res.status,
+          });
+        }
+
+        return {
+          id: json.id || json.name || sessionId,
+          status: json.state || "active",
+          resumed: true,
+          raw: json,
+        };
+      }
+
+      if (providerSpec.type === "exec") {
+        return this.dispatch({ ...(task || {}), prompt }, ctx);
+      }
+
+      throw new Error(`Unsupported provider type: ${providerSpec.type}`);
+    },
   };
 }
 
@@ -332,6 +450,32 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
         const provider = providerList[i];
         try {
           const res = await provider.dispatch(task, ctx);
+          return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
+        } catch (err) {
+          errors.push({ provider: provider.name, error: err });
+          const isRecoverable =
+            err instanceof ProviderRateLimitError ||
+            err instanceof ProviderUnavailableError ||
+            (err.status && err.status >= 500 && err.status < 600) ||
+            err.status === 429;
+
+          if (i === providerList.length - 1 || !isRecoverable) {
+            if (err && typeof err === "object") {
+              err._failoverErrors = errors;
+            }
+            throw err;
+          }
+        }
+      }
+    },
+
+    async resume(sessionId, prompt, ctx = {}, task = null) {
+      const errors = [];
+      for (let i = 0; i < providerList.length; i++) {
+        const provider = providerList[i];
+        if (typeof provider.resume !== "function") continue;
+        try {
+          const res = await provider.resume(sessionId, prompt, ctx, task);
           return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
         } catch (err) {
           errors.push({ provider: provider.name, error: err });
