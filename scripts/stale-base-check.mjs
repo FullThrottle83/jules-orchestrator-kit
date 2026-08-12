@@ -21,6 +21,6 @@ try {
   console.log("✅ Stale-base predicate check passed.");
   process.exit(0);
 } catch (err) {
-  console.warn(`⚠️ Stale-base check skipped (git base ref not available or shallow clone): ${err.message}`);
-  process.exit(0);
+  console.error(`❌ STALE BASE GATE FAIL: Could not resolve base branch "${baseBranch}": ${err.message}`);
+  process.exit(1);
 }

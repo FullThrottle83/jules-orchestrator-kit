@@ -432,11 +432,13 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   }
 
   const startTime = getProcessStartTime(process.pid);
+  const concurrencyGroup = String(opts?.concurrencyGroup || opts?.concurrency_group || "").trim();
   const payload = {
     agent: agentName,
     taskId,
     branch,
     files,
+    concurrencyGroup,
     pid: process.pid,
     processStartTime: startTime,
     starttime: startTime,
@@ -505,4 +507,29 @@ export function lockStatus(rootOrOpts = resolveRoot()) {
   } catch (_) {}
   return locks;
 }
+
+/**
+ * Checks if a specific concurrency group is currently locked by an active task session.
+ *
+ * @param {string} groupName - Concurrency group name
+ * @param {string|Object} [rootOrOpts=resolveRoot()] - Project root path or options
+ * @param {string} [excludeTaskId=""] - Optional task ID to exclude from check
+ * @returns {boolean} True if group is active/locked
+ */
+export function isConcurrencyGroupLocked(groupName, rootOrOpts = resolveRoot(), excludeTaskId = "") {
+  if (!groupName || typeof groupName !== "string" || !groupName.trim()) {
+    return false;
+  }
+  const targetGroup = groupName.trim().toLowerCase();
+  const locks = lockStatus(rootOrOpts);
+  for (const lock of locks) {
+    if (excludeTaskId && lock.taskId === excludeTaskId) continue;
+    const lockGroup = String(lock.concurrencyGroup || lock.concurrency_group || "").trim().toLowerCase();
+    if (lockGroup === targetGroup) {
+      return true;
+    }
+  }
+  return false;
+}
+
 

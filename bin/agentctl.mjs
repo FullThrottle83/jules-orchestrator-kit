@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.30.0 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.32.0 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -39,6 +39,9 @@ Commands:
   resume                Resume warm session with human response (--response "<text>")
   status                Display queue and system status summary
   scan                  Scan codebase for TODO/FIXME task candidates
+  hydrate [prompt]      Prepend active system learnings and baton-pass state to a prompt
+  harvest               Harvest failure traces and record/quarantine resolution rules
+  learning add          Record a system learning rule into .agent/knowledge/
   version               Output agentctl version
 
 Options:
@@ -59,7 +62,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.29.1");
+    console.log("agentctl v0.32.0");
     process.exit(0);
   }
 
@@ -630,6 +633,67 @@ async function main() {
       const { startMcpServer } = await import("../src/mcp.mjs");
       startMcpServer();
       break;
+    }
+
+    case "hydrate": {
+      const { hydratePrompt } = await import("../src/memory.mjs");
+      const promptInput = args.slice(1).join(" ") || "";
+      const result = hydratePrompt(root, promptInput);
+      console.log(result);
+      process.exit(0);
+    }
+
+    case "harvest": {
+      const { harvestFailure } = await import("../src/memory.mjs");
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          "exit-code": { type: "string" },
+          log: { type: "string" },
+          diff: { type: "string" },
+          task: { type: "string" },
+          agent: { type: "string" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const exitCode = parseInt(values["exit-code"] || "4", 10);
+      const logPath = values.log || "";
+      const diffText = values.diff || "";
+      const taskId = values.task || "unknown";
+      const agent = values.agent || "jules";
+
+      const res = harvestFailure(root, { exitCode, logPath, diffText, taskId, agent });
+      if (values.json) {
+        console.log(JSON.stringify(res, null, 2));
+      } else {
+        if (res.status === "HARVESTED") {
+          console.log(`🌾 Harvested failure candidate: ${res.candidate.trigger}`);
+          console.log(`   Solution: ${res.candidate.solution}`);
+        } else {
+          console.log(`⚠️ Harvest rejected: ${res.reason}`);
+        }
+      }
+      process.exit(0);
+    }
+
+    case "learning": {
+      const subcmd = args[1];
+      if (subcmd === "add") {
+        const { recordLearning } = await import("../src/memory.mjs");
+        const trigger = args[2];
+        const solution = args[3];
+        if (!trigger || !solution) {
+          console.error('Usage: agentctl learning add "<trigger/symptom>" "<solution>"');
+          process.exit(1);
+        }
+        const res = recordLearning(root, { trigger, solution });
+        console.log(`✅ System learning recorded. Total learnings: ${res.count}`);
+        process.exit(0);
+      }
+      console.error('Usage: agentctl learning add "<trigger/symptom>" "<solution>"');
+      process.exit(1);
     }
 
     default:

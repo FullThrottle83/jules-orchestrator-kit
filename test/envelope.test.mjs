@@ -44,4 +44,21 @@ test("Task Envelope Premise & Scope Validation", async (t) => {
     assert.equal(res.ok, false);
     assert.match(res.errors[0], /Allowed paths violate protected scope/);
   });
+
+  await t.test("validates concurrency_group in task envelope", () => {
+    const validEnv = {
+      intent: "Database migration task",
+      concurrency_group: "db-migrations",
+    };
+    assert.equal(validateEnvelope(validEnv).ok, true);
+
+    const invalidEnv = {
+      intent: "Database migration task",
+      concurrency_group: "",
+    };
+    const res = validateEnvelope(invalidEnv);
+    assert.equal(res.ok, false);
+    assert.match(res.errors[0], /concurrency_group must be a non-empty string/);
+  });
 });
+

@@ -2,7 +2,7 @@ import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
 import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
-import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation } from "./state.mjs";
+import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked } from "./state.mjs";
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import fs, { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
@@ -12,8 +12,10 @@ import { appendTelemetry as appendTelemetryUnsafe } from "./telemetry.mjs";
 
 import { spawn } from "node:child_process";
 import { resolveAffectedTests } from "./dag-engine.mjs";
+import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory } from "./remediation.mjs";
 
-export { recordVerifyRun, readVerifyRuns, flakyVerdict, sanitizeUntrustedData, resolveAffectedTests };
+export { recordVerifyRun, readVerifyRuns, flakyVerdict, sanitizeUntrustedData, resolveAffectedTests, recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory, isConcurrencyGroupLocked };
+
 
 function appendTelemetry(root, kind, fields = {}) {
   try {
@@ -444,6 +446,12 @@ export async function repair(failure, opts = {}) {
     const gateRes = await gate({ root, config, fix: false, progressBus, progressToken });
     if (gateRes.ok) {
       breaker.reset();
+      recordRemediation(root, {
+        fingerprint: initialFingerprint,
+        symptom: currentFailure.stderr || currentFailure.message || "Failure resolved by OODA repair",
+        remediationHint: `Resolved on repair attempt #${n}`,
+        targetFiles: currentFailure.targetFiles || [],
+      });
       return { ok: true, attempts, finalStatus: "PASSED" };
     }
 
@@ -452,6 +460,12 @@ export async function repair(failure, opts = {}) {
 
     const check = breaker.observe(currentFingerprint);
     if (check.tripped) {
+      harvestFailureRecord(root, {
+        fingerprint: currentFingerprint,
+        symptom: currentFailure.stderr || currentFailure.message || "Deterministic Regression",
+        remediationHint: `Identical failure state fingerprint (${currentFingerprint}) observed during attempt #${n}`,
+        targetFiles: currentFailure.targetFiles || [],
+      });
       return {
         ok: false,
         attempts,
@@ -462,7 +476,15 @@ export async function repair(failure, opts = {}) {
     }
   }
 
+  harvestFailureRecord(root, {
+    fingerprint: initialFingerprint,
+    symptom: currentFailure.stderr || currentFailure.message || "OODA Repair Exhausted",
+    remediationHint: "OODA repair attempts exhausted without clean verification pass.",
+    targetFiles: currentFailure.targetFiles || [],
+  });
+
   return { ok: false, attempts, finalStatus: "OODA_EXHAUSTED" };
+
 }
 
 /**
@@ -553,11 +575,15 @@ export async function dispatch(task = {}, opts = {}) {
   // Redact secrets in prompt before dispatching
   const cleanPrompt = redactSecrets(task.prompt || "");
 
-  // Wire Prompt Guard & Envelope to wrap raw task arguments
+  // Wire Prompt Guard, Memory Hydration & Envelope to wrap raw task arguments
   const taskInstructions = task.taskInstructions || cleanPrompt || task.title || "Autonomous Task Execution";
   const untrustedData = Array.isArray(task.untrustedData) ? task.untrustedData : [];
   const systemPolicy = task.systemPolicy || config.systemPolicy || "";
-  const envelopedPrompt = buildAgentEnvelope(systemPolicy, taskInstructions, untrustedData);
+
+  const targetFiles = Array.isArray(task.targetFiles) ? task.targetFiles : (Array.isArray(task.referenced_paths) ? task.referenced_paths : []);
+  const learnedRemediations = task.learnedRemediations || hydrateMemory(root, { targetFiles, fingerprint: task.fingerprint || "" });
+
+  const envelopedPrompt = buildAgentEnvelope(systemPolicy, taskInstructions, untrustedData, { learnedRemediations });
 
   const cleanTask = { ...task, prompt: envelopedPrompt };
 
@@ -632,6 +658,13 @@ export async function run(tasksOrOpts = {}, opts = {}) {
             prompt = await fs.promises.readFile(srcPath, "utf-8");
           }
           const task = typeof fileOrItem === "object" ? { ...fileOrItem, title, prompt } : { title, prompt };
+
+          const groupName = task.concurrency_group || task.concurrencyGroup || "";
+          if (groupName && isConcurrencyGroupLocked(groupName, root, task.id || fileName)) {
+            results.push({ file: fileName, ok: false, status: "SKIPPED_CONCURRENCY_GROUP_LOCKED", reason: `Concurrency group '${groupName}' is active` });
+            return;
+          }
+
           const session = await dispatch(task, { root, config, dryRun: isDry });
 
           if (session && session.ok === false) {
@@ -653,6 +686,7 @@ export async function run(tasksOrOpts = {}, opts = {}) {
       })
     );
   }
+
 
   return { processed: results.length, results };
 }

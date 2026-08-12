@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.0] - 2026-08-12
+### CI Unshallow Gate & SPORE Memory Engine Integration
+- **CI Unshallow Gate Fix (`src/git.mjs`, `scripts/stale-base-check.mjs`)**: Added `ensureBaseFetched()` helper with `--depth=100` / `--unshallow` fallback for shallow clones in CI, and enforced hard `exit 1` on base branch resolution failure in `stale-base-check.mjs`.
+- **SPORE Memory Engine & System Learnings (`src/memory.mjs`, `bin/agentctl.mjs`)**: Added zero-dependency memory module providing `recordLearning()`, `hydratePrompt()`, and `harvestFailure()`. Automatically generates `.agent/SYSTEM_LEARNINGS.md` table and adds CLI subcommands `agentctl hydrate`, `agentctl harvest`, and `agentctl learning add`.
+- **Unit Test Coverage (`test/spore-memory.test.mjs`)**: Added test suite for learning recording, prompt hydration, and failure harvesting, bringing total passing unit tests to 378 across 54 test suites.
+
 ## [0.31.0] - 2026-08-10
 ### Developer Onboarding, TDD Red-to-Green, AST Selective Testing & Lifecycle Sandboxing
 - **Warm Multi-Turn Session Resumption (`src/provider.mjs`)**: Added `resume(sessionId, prompt)` targeting `POST /v1alpha/sessions/{id}:sendMessage` with fail-soft cold dispatch fallback, saving 60–80% token consumption across OODA turns.

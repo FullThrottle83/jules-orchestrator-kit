@@ -61,7 +61,7 @@ export {
 } from "./src/execution_envelope.mjs";
 export { checkAssetIntegrity } from "./src/asset_integrity.mjs";
 export { classifyRiskTier, RISK_TIERS } from "./src/risk.mjs";
-export { checkRulesBudget } from "./src/rules_budget.mjs";
+export { recordRemediation, queryRemediations } from "./src/remediation.mjs";
 export { DagExecutor, DagCycleError } from "./src/dag-engine.mjs";
 export { journalIntent, journalDone, reapOrphanedIntents, reapStaleMutexDirs } from "./src/journal.mjs";
 

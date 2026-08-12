@@ -131,6 +131,30 @@ export function git(args = [], opts = {}) {
   }
 }
 
+export function ensureBaseFetched(root = process.cwd(), baseRef = "main") {
+  try {
+    execFileSync("git", ["fetch", "origin", baseRef, "--depth=100"], {
+      cwd: root,
+      encoding: "utf-8",
+      shell: false,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    return true;
+  } catch (_) {
+    try {
+      execFileSync("git", ["fetch", "origin", baseRef, "--unshallow"], {
+        cwd: root,
+        encoding: "utf-8",
+        shell: false,
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      return true;
+    } catch (__) {
+      return false;
+    }
+  }
+}
+
 export function resolveBase(root = process.cwd(), baseRef = "main") {
   const candidates = [`origin/${baseRef}`, `refs/remotes/origin/${baseRef}`, baseRef];
   for (const ref of candidates) {
@@ -146,6 +170,23 @@ export function resolveBase(root = process.cwd(), baseRef = "main") {
       }
     } catch (_) {}
   }
+
+  ensureBaseFetched(root, baseRef);
+
+  for (const ref of candidates) {
+    try {
+      const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+        cwd: root,
+        encoding: "utf-8",
+        shell: false,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (res && res.trim()) {
+        return res.trim();
+      }
+    } catch (_) {}
+  }
+
   throw new GateError(
     `Cannot resolve base reference "${baseRef}". Ensure base branch is fetched (e.g., fetch-depth: 0 in CI).`,
     { code: 1 }

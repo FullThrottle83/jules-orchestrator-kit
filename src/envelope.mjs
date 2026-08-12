@@ -101,7 +101,15 @@ export function validateEnvelope(envelope = {}, opts = {}) {
     }
   }
 
+  // 6. Concurrency Group Check
+  if (envelope.concurrency_group !== undefined) {
+    if (typeof envelope.concurrency_group !== "string" || !envelope.concurrency_group.trim()) {
+      errors.push("concurrency_group must be a non-empty string when provided.");
+    }
+  }
+
   return {
+
     ok: errors.length === 0,
     code: errors.length === 0 ? 0 : 1,
     errors,

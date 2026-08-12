@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { resolveRoot } from "./config.mjs";
 import { resolveBase } from "./git.mjs";
 import { classifyRiskTier } from "./risk.mjs";
+import { queryRemediations } from "./remediation.mjs";
 
 /**
  * Generates a SHA-256 hash of the execution envelope payload.
@@ -19,6 +20,7 @@ export function hashExecutionEnvelope(envelope) {
     riskTier: envelope.riskTier,
     budgetReservationId: envelope.budgetReservationId,
     capabilities: envelope.capabilities,
+    remediations: envelope.remediations || [],
     createdAt: envelope.createdAt,
   };
   const sortedKeys = Object.keys(rawPayload).sort();
@@ -45,11 +47,12 @@ export function freezeExecutionEnvelope(envelope) {
     }),
     verify: Object.freeze({ ...(envelope.verify || {}) }),
     capabilities: Object.freeze([...(envelope.capabilities || [])]),
+    remediations: Object.freeze([...(envelope.remediations || [])]),
   });
 }
 
 /**
- * Creates an immutable Capability-Bounded Execution Envelope (CBEE).
+ * Creates an immutable Capability-Bounded Execution Envelope (CBEE) with pre-flight remediation hydration.
  */
 export function createExecutionEnvelope(task = {}, opts = {}) {
   const root = opts.root || resolveRoot();
@@ -65,6 +68,9 @@ export function createExecutionEnvelope(task = {}, opts = {}) {
 
   const files = task.files || opts.files || [];
   const riskMeta = classifyRiskTier(files, { diffLines: opts.diffLines || 0 });
+
+  const taskFingerprint = task.fingerprint || opts.fingerprint || null;
+  const remediations = queryRemediations(root, { targetFiles: files, fingerprint: taskFingerprint, limit: 3 });
 
   const rawEnvelope = {
     id: envelopeId,
@@ -84,6 +90,7 @@ export function createExecutionEnvelope(task = {}, opts = {}) {
     riskTier: riskMeta.tier,
     budgetReservationId: opts.reservationId || null,
     capabilities: opts.capabilities || ["git:read", "git:diff", "test:run"],
+    remediations,
     createdAt: new Date().toISOString(),
   };
 
@@ -101,3 +108,4 @@ export function verifyExecutionEnvelope(envelope) {
   const expectedHash = hashExecutionEnvelope(envelope);
   return envelope.hash === expectedHash;
 }
+
