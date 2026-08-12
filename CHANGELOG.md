@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.1] - 2026-08-12
+### Universal Edge-Runtime Import Guard & Environment Protection
+- **Universal Edge-Runtime Detection (`src/stack-detector.mjs`)**: Added `detectEdgeRuntime()` helper detecting Cloudflare Workers (`wrangler.toml`/`wrangler.json`), Vercel Edge (`@vercel/edge`), Netlify Edge Functions (`@netlify/edge-functions`), and Deno runtimes across polyglot project roots.
+- **Edge Import Security Gatekeeper (`src/security.mjs`, `checkEdgeRuntimeImports`)**: Added static verification gate flagging unsupported native Node.js built-in module imports (`node:fs`, `node:child_process`, `node:net`, `node:tls`, `node:vm`, etc.) in Edge diff contexts or files declaring `export const runtime = 'edge'`.
+- **Documentation & Unit Tests (`AGENTS.md`, `README.md`, `test/security.test.mjs`, `test/stack-detector.test.mjs`)**: Updated system directives, security gatekeeper documentation, and test assertions covering Edge stack detection and import violations.
+
 ## [0.32.0] - 2026-08-12
 ### CI Unshallow Gate & SPORE Memory Engine Integration
 - **CI Unshallow Gate Fix (`src/git.mjs`, `scripts/stale-base-check.mjs`)**: Added `ensureBaseFetched()` helper with `--depth=100` / `--unshallow` fallback for shallow clones in CI, and enforced hard `exit 1` on base branch resolution failure in `stale-base-check.mjs`.

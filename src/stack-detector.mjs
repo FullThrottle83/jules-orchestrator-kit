@@ -26,10 +26,45 @@ test("Zero-Test Bootstrapped Smoke Verification", () => {
   return ".agent/smoke.test.mjs";
 }
 
+export function detectEdgeRuntime(projectRoot = process.cwd()) {
+  const isCloudflare = existsSync(join(projectRoot, "wrangler.toml")) || existsSync(join(projectRoot, "wrangler.json"));
+  const isDeno = existsSync(join(projectRoot, "deno.json")) || existsSync(join(projectRoot, "deno.jsonc"));
+  const isNetlify = existsSync(join(projectRoot, "netlify.toml"));
+
+  let isPkgEdge = false;
+  let pkgEdgePlatform = null;
+
+  const pkgPath = join(projectRoot, "package.json");
+  if (existsSync(pkgPath)) {
+    try {
+      const content = readFileSync(pkgPath, "utf-8");
+      if (content.includes("@cloudflare/workers-types") || content.includes("@cloudflare/env")) {
+        isPkgEdge = true;
+        pkgEdgePlatform = "cloudflare";
+      } else if (content.includes("@vercel/edge") || content.includes("@vercel/functions")) {
+        isPkgEdge = true;
+        pkgEdgePlatform = "vercel";
+      } else if (content.includes("@netlify/edge-functions")) {
+        isPkgEdge = true;
+        pkgEdgePlatform = "netlify";
+      }
+    } catch (_) {}
+  }
+
+  const isEdge = isCloudflare || isDeno || isNetlify || isPkgEdge;
+  const platform = isCloudflare ? "cloudflare" : isDeno ? "deno" : isNetlify ? "netlify" : pkgEdgePlatform;
+
+  return {
+    isEdgeRuntime: isEdge,
+    edgePlatform: platform,
+  };
+}
+
 /**
  * Detects 24+ polyglot stacks and container environments.
  */
 export function detectPolyglotStack(projectRoot = process.cwd()) {
+  const edgeInfo = detectEdgeRuntime(projectRoot);
   const isDevcontainer = existsSync(join(projectRoot, ".devcontainer", "devcontainer.json"));
   const isCompose =
     existsSync(join(projectRoot, "docker-compose.yml")) ||
@@ -38,6 +73,7 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
     existsSync(join(projectRoot, "compose.yaml"));
 
   const container = {
+    ...edgeInfo,
     containerized: isDevcontainer || isCompose,
     containerType: isDevcontainer ? "devcontainer" : isCompose ? "docker-compose" : null,
     containerCmd: isDevcontainer

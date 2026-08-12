@@ -102,7 +102,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`). Zero third-party npm packages mean zero supply-chain CVE risk.
 
-* **🛡️ Fail-Closed Security Gatekeeper:** Unconditionally evaluates explicit Deny rules *before* Allow rules, redacts high-entropy secrets and PII from dry-runs and git diffs, and rejects PRs exceeding the 75 KB Diff Payload governor.
+* **🛡️ Fail-Closed Security Gatekeeper:** Unconditionally evaluates explicit Deny rules *before* Allow rules, redacts high-entropy secrets and PII from dry-runs and git diffs, blocks unsupported Node.js native module imports in Edge environments (Cloudflare Workers, Vercel Edge, Netlify Edge), and rejects PRs exceeding the 75 KB Diff Payload governor.
 
 * **🔄 Autonomous OODA Self-Healing:** Captures test stderr/stdout, normalizes failure fingerprints, and feeds structured error contexts back into repair iterations (up to 3 automatic attempts) before human escalation.
 

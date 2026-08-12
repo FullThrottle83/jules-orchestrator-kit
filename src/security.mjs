@@ -236,7 +236,58 @@ export function checkScope(files = [], scope = {}, opts = {}) {
   };
 }
 
-export function scanDiff(diffTextStr = "") {
+export const FORBIDDEN_EDGE_MODULES = [
+  "fs", "node:fs",
+  "child_process", "node:child_process",
+  "cluster", "node:cluster",
+  "dgram", "node:dgram",
+  "net", "node:net",
+  "tls", "node:tls",
+  "v8", "node:v8",
+  "vm", "node:vm",
+  "worker_threads", "node:worker_threads",
+];
+
+export function checkEdgeRuntimeImports(diffOrText = "", options = {}) {
+  if (!diffOrText || typeof diffOrText !== "string") return { ok: true, violations: [] };
+
+  const isEdgeExplicit = options.isEdgeRuntime === true;
+  const hasEdgeExport = /export\s+const\s+runtime\s*=\s*['"]edge['"]/i.test(diffOrText);
+  const isEdgeContext = isEdgeExplicit || hasEdgeExport;
+
+  if (!isEdgeContext) {
+    return { ok: true, violations: [] };
+  }
+
+  const lines = diffOrText.split("\n");
+  const targetLines = lines.filter((line) => {
+    if (diffOrText.includes("+++ b/")) {
+      return line.startsWith("+") && !line.startsWith("+++");
+    }
+    return true;
+  });
+
+  const edgeImportRegex = /(?:import\s+.*?\s+from\s+|require\s*\(\s*)['"](node:(?:fs|child_process|cluster|dgram|net|tls|v8|vm|worker_threads)|(?:fs|child_process|cluster|dgram|net|tls|v8|vm|worker_threads))(?:\/.*)?['"]/i;
+
+  const violations = [];
+  for (const line of targetLines) {
+    const match = line.match(edgeImportRegex);
+    if (match) {
+      violations.push({
+        module: match[1],
+        line: line.trim(),
+        reason: `Edge Runtime Violation: Native Node module "${match[1]}" is unsupported in Edge environments (Cloudflare Workers / Vercel Edge / Netlify Edge).`,
+      });
+    }
+  }
+
+  return {
+    ok: violations.length === 0,
+    violations,
+  };
+}
+
+export function scanDiff(diffTextStr = "", options = {}) {
   if (!diffTextStr) return { ok: true, findings: [] };
   const addedLines = diffTextStr
     .split("\n")
@@ -254,8 +305,15 @@ export function scanDiff(diffTextStr = "") {
     findings.push({ severity: "HIGH", type: "LOW_CONFIDENCE_SECRET", description: "Low-confidence secret or authorization token detected in added diff lines" });
   }
 
+  const edgeRes = checkEdgeRuntimeImports(diffTextStr, options);
+  if (!edgeRes.ok) {
+    for (const v of edgeRes.violations) {
+      findings.push({ severity: "HIGH", type: "EDGE_RUNTIME_VIOLATION", description: v.reason });
+    }
+  }
+
   return {
-    ok: !hasHigh && !hasLow,
+    ok: !hasHigh && !hasLow && edgeRes.ok,
     findings,
   };
 }

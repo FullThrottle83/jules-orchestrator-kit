@@ -123,4 +123,19 @@ describe("src/security.mjs", () => {
     assert.equal(resRsa.findings[0].severity, "CRITICAL");
     assert.equal(resRsa.findings[0].type, "HIGH_CONFIDENCE_SECRET");
   });
+
+  it("checkEdgeRuntimeImports flags forbidden native Node modules in Edge contexts", () => {
+    const edgeDiff = `
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -1,2 +1,3 @@
+ export const runtime = 'edge';
++import fs from 'node:fs';
+`;
+    const res = scanDiff(edgeDiff);
+    assert.equal(res.ok, false, "Edge diff with node:fs import should fail scanDiff");
+    assert.equal(res.findings.length, 1);
+    assert.equal(res.findings[0].type, "EDGE_RUNTIME_VIOLATION");
+    assert.ok(res.findings[0].description.includes("node:fs"));
+  });
 });

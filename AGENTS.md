@@ -66,6 +66,7 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 - **Task Envelope Premise Validator**: Validates referenced paths, allowed scope, and base freshness before dispatching tasks (`node scripts/validate-envelope.mjs <envelope.json>`). Prevents session burnout on missing files.
 - **Stale-Base Gate Predicate**: Rejects PRs/branches whose merge-base is > 25 commits behind `origin/main` (`node scripts/stale-base-check.mjs`).
 - **Asset Integrity Gate**: Inspects binary and font assets (`.woff2`, `.png`, `.jpg`) to ensure saved HTML/text error pages never land silently (`node scripts/asset-integrity-check.mjs`).
+- **Edge-Runtime Import Guard**: Automatically detects Edge environments (Cloudflare Workers, Vercel Edge, Netlify Edge) and blocks unsupported native Node.js module imports (`node:fs`, `node:child_process`, `node:net`, `node:tls`).
 
 ### Standard Jules Guardrails Footer
 

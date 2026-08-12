@@ -80,6 +80,24 @@ test("resolveWorkspaceBoundary - maps changed files to subprojects and handles m
   }
 });
 
+test("detectEdgeRuntime - detects wrangler configs and edge packages", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "edge-detect-test-"));
+  try {
+    writeFileSync(join(tmp, "wrangler.toml"), 'name = "worker"');
+    let res = detectPolyglotStack(tmp);
+    assert.equal(res.isEdgeRuntime, true);
+    assert.equal(res.edgePlatform, "cloudflare");
+    rmSync(join(tmp, "wrangler.toml"));
+
+    writeFileSync(join(tmp, "package.json"), '{"devDependencies": {"@vercel/edge": "^1.0.0"}}');
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.isEdgeRuntime, true);
+    assert.equal(res.edgePlatform, "vercel");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("bootstrapZeroTestRepo - generates verification oracle for zero-test repositories", () => {
   const tmp = mkdtempSync(join(tmpdir(), "bootstrap-test-"));
   try {
