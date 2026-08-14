@@ -149,7 +149,7 @@ export function ensureBaseFetched(root = process.cwd(), baseRef = "main") {
         stdio: ["ignore", "ignore", "ignore"],
       });
       return true;
-    } catch (__) {
+    } catch (_) {
       return false;
     }
   }
