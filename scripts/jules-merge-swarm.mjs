@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { classifyRiskTier, RISK_TIERS } from "../src/risk.mjs";
-import { changedFiles } from "../src/git.mjs";
+import { changedFiles, git, resolveBase } from "../src/git.mjs";
+import { normalizePath } from "../src/config.mjs";
 
 export const EXIT = Object.freeze({
   SUCCESS: 0,
@@ -170,16 +171,21 @@ export function checkSafetyGate(branchName = "", projectRoot = process.cwd()) {
     } catch (_) {}
   }
 
-  // Check R3 risk tier if files modified
-  try {
-    const files = changedFiles(projectRoot, process.env.BASE_BRANCH || "main");
-    if (files.length > 0) {
-      const tier = classifyRiskTier(files);
-      if (tier.tier === RISK_TIERS.R3) {
-        return { safe: false, reason: `R3 Restricted Path violation: ${tier.reason}` };
+  // Check R3 risk tier if files modified on target branch
+  if (branchName) {
+    try {
+      const baseBranch = process.env.BASE_BRANCH || "main";
+      const resolvedBase = resolveBase(projectRoot, baseBranch);
+      const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedBase}...${branchName}`], { cwd: projectRoot, raw: true, ignoreError: true }) || "";
+      const files = raw.split("\0").map(normalizePath).filter(Boolean);
+      if (files.length > 0) {
+        const tier = classifyRiskTier(files);
+        if (tier.tier === RISK_TIERS.R3) {
+          return { safe: false, reason: `R3 Restricted Path violation: ${tier.reason}` };
+        }
       }
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
 
   return { safe: true };
 }
