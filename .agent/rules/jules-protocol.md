@@ -31,3 +31,6 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions:
 10. **Stop-on-Uncertainty Rule:** If the task cannot be completed safely within scope, the agent must stop without opening a PR rather than guessing.
 11. **Pre-Dispatch Grounding Mandate:** Verify all file paths, script names, and exported symbols against the live repository tree before writing them into a prompt.
 12. **Programmatic CI Scope Guarding:** Enforce prompt constraints at the CI level using an unbypassable `Agent Scope Guard` workflow that evaluates diffs against a protected paths manifest (`.agent/protected-paths.json`).
+13. **Google Labs Exploration Budget Protocol:** Execute tasks across 3 discrete phases: (1) Discovery & Symbol Tracing (silent inspection, write NO code), (2) Oracle & Test Formulation, and (3) Surgical Implementation & Verification.
+14. **Critic Agent Steering (Adversarial Pre-Review):** Jules' internal Critic Agent must evaluate proposed patches for edge-case regressions, $O(n^2)$ bottlenecks, unhandled parameters, and layout shifts (CLS) prior to PR submission.
+15. **Web Excellence & Frontend Guardrails:** Enforce quantitative Core Web Vitals (LCP < 1.2s, CLS < 0.05), WCAG 2.2 AA/AAA semantic accessibility, Schema.org JSON-LD compliance, and Playwright multi-viewport responsive testing.

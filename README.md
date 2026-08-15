@@ -369,8 +369,9 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | Command | Usage | Description | Exit Codes |
 | :--- | :--- | :--- | :--- |
 | `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack oracle inspector generating `.agent/config.yml`. | `0` (Created) |
-| `task create` | `agentctl task create [--title <t>] [--prompt <p>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing & preflight gate checks. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
-| `task optimize` | `agentctl task optimize "<prompt>" [--fix] [--json]` | Linter & optimizer scoring prompt falsifiability (0–100), fixing typos, and checking scope violations. | `0` (Scored/Fixed) |
+| `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing & preflight gate checks. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
+| `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes specialized web task envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`). | `0` (Synthesized/Listed) |
+| `task optimize` | `agentctl task optimize "<prompt>" [--fix] [--web] [--json]` | Linter & optimizer injecting Google Labs 3-phase exploration budgets, critic steering, and web oracles. | `0` (Scored/Fixed) |
 | `test-gen` | `agentctl test-gen --title <t> --spec <s> [--run]` | Scaffolds falsifiable unit tests, verifies **RED** failure state, and locks test in `scope.deny`. | `0` (Scaffolded/Red) |
 | `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
 | `resume` | `agentctl resume <sessionId> --response "<reply>"` | Streams engineer response back into active Google Jules warm session context window. | `0` (Resumed), `1` (Error) |

@@ -7,6 +7,7 @@ import { getQueueDir } from "./state.mjs";
 import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
 import { select, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { scorePromptFalsifiability } from "./task-optimizer.mjs";
+import { getWebTemplate, synthesizeWebEnvelope } from "./web-templates.mjs";
 
 export const GUARDRAIL_FOOTER = `
 ---
@@ -22,6 +23,7 @@ const TRIVIAL_ORACLES = new Set(["true", "echo", ":", "false", "exit 0", "exit 1
 
 /**
  * Pure planning core for task creation & envelope synthesis.
+ * Supports web task templates, exploration budgets, and critic agent steering.
  * @param {string} root
  * @param {object} inputObj
  * @returns {{
@@ -39,9 +41,27 @@ const TRIVIAL_ORACLES = new Set(["true", "echo", ":", "false", "exit 0", "exit 1
 export function planTaskCreate(root = process.cwd(), inputObj = {}) {
   const config = loadConfig(root);
 
-  const title = inputObj.title || "Agent Task";
-  const rawPrompt = inputObj.prompt || "";
-  const verifyCmd = (inputObj.verifyCmd || config.verify.test || config.verify.build || "").trim();
+  let title = inputObj.title;
+  let rawPrompt = inputObj.prompt || "";
+  let verifyCmd = (inputObj.verifyCmd || config.verify.test || config.verify.build || "").trim();
+
+  // 0. Process Template if specified
+  if (inputObj.template) {
+    const tpl = getWebTemplate(inputObj.template);
+    if (!tpl) {
+      throw new Error(`Unknown task template '${inputObj.template}'.`);
+    }
+    const synthesized = synthesizeWebEnvelope(inputObj.template, inputObj.templateParams || {}, {
+      verifyCmd: inputObj.verifyCmd,
+      explorationBudget: inputObj.explorationBudget,
+      criticGuidance: inputObj.criticGuidance
+    });
+    rawPrompt = rawPrompt ? `${rawPrompt}\n\n${synthesized.prompt}` : synthesized.fullEnvelope;
+    if (!title) title = synthesized.title;
+    if (!verifyCmd) verifyCmd = synthesized.verifyCmd;
+  }
+
+  if (!title) title = "Agent Task";
 
   // 1. Falsifiability check
   if (!rawPrompt.trim()) {
@@ -61,7 +81,9 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
   if (!secretScan.ok) {
     secretScan.findings.forEach((f) => secretFindings.push({ id: f.type || f.id || "SECRET_LEAK", ...f }));
   }
-  if (shannonEntropy(rawPrompt) > 4.5 && !inputObj.allowHighEntropy) {
+  const hasHighEntropyToken = rawPrompt.split(/\s+/).some((token) => token.length >= 20 && shannonEntropy(token) > 4.3);
+  const isShortHighEntropy = rawPrompt.length <= 120 && shannonEntropy(rawPrompt) > 4.5;
+  if ((hasHighEntropyToken || isShortHighEntropy) && !inputObj.allowHighEntropy) {
     secretFindings.push({ id: "HIGH_ENTROPY_PROMPT", line: 1 });
   }
 

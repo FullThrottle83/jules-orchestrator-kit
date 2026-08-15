@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.2] - 2026-08-15
+### Web Development Task Templates, Google Labs Exploration Budgets & Critic Agent Steering
+- **Web Development Task Templates (`src/web-templates.mjs`, `agentctl task template`)**: Added zero-dependency template synthesis engine supporting `web-cwv` (Core Web Vitals & Lighthouse Budget Guard), `web-wcag` (WCAG 2.2 AA/AAA semantic accessibility & modal focus traps), `web-seo` (Schema.org JSON-LD, OpenGraph, Twitter Cards, canonical links), `web-playwright` (E2E visual regression & responsive viewports), and `web-flaky-heal` (anti-flakiness & network mocking).
+- **Google Labs Exploration Budget Protocol (`src/task-optimizer.mjs`)**: Implemented 3-phase discovery envelope injection (Phase 1: Discovery & Symbol Tracing, Phase 2: Oracle Formulation, Phase 3: Surgical Implementation & Verification), proven by Google Labs research to increase diagnostic accuracy (Hit@5) from 33% to 57%.
+- **Internal Critic Agent Steering (`src/task-optimizer.mjs`, `src/web-templates.mjs`)**: Added adversarial pre-review directives targeting Jules' internal Critic Agent to catch $O(n^2)$ bottlenecks, dropped arguments, Cumulative Layout Shifts (CLS), and accessibility defects before PR creation.
+- **CLI & MCP Tool Extensions (`bin/agentctl.mjs`, `src/mcp.mjs`)**: Added `agentctl task template [id]`, `agentctl task create --template <id>`, `agentctl task optimize --web`, and the `get_web_task_template` MCP stdio tool.
+- **Unit Test Coverage (`test/web-templates.test.mjs`, `test/task-optimizer.test.mjs`, `test/mcp.test.mjs`)**: Added comprehensive test coverage bringing total passing unit tests to 387 across 54 test suites.
+
 ## [0.32.1] - 2026-08-12
 ### Universal Edge-Runtime Import Guard & Environment Protection
 - **Universal Edge-Runtime Detection (`src/stack-detector.mjs`)**: Added `detectEdgeRuntime()` helper detecting Cloudflare Workers (`wrangler.toml`/`wrangler.json`), Vercel Edge (`@vercel/edge`), Netlify Edge Functions (`@netlify/edge-functions`), and Deno runtimes across polyglot project roots.

@@ -73,6 +73,50 @@ export function extractPathTokens(promptText) {
   return tokens;
 }
 
+/**
+ * Detects whether a prompt text pertains to web development domains (CWV, WCAG, SEO, E2E).
+ * @param {string} promptText
+ * @returns {{ isWeb: boolean, categories: string[], suggestedOracles: string[] }}
+ */
+export function detectWebIntent(promptText) {
+  if (!promptText || typeof promptText !== "string") {
+    return { isWeb: false, categories: [], suggestedOracles: [] };
+  }
+
+  const text = promptText.toLowerCase();
+  const categories = [];
+  const suggestedOracles = [];
+
+  const isPerformance = /\b(?:lighthouse|core web vitals|cwv|lcp|cls|inp|fcp|bundle size|lazy load|lazy-load|preload|render-blocking)\b/i.test(text);
+  const isA11y = /\b(?:wcag|a11y|accessibility|aria|screen reader|contrast ratio|focus trap|keyboard navigation)\b/i.test(text);
+  const isSeo = /\b(?:seo|json-ld|schema\.org|structured data|opengraph|sitemap|canonical|meta tag)\b/i.test(text);
+  const isE2e = /\b(?:playwright|e2e|visual regression|snapshot|viewport|responsive|tailwind|css|astro|next\.js|nuxt|svelte|react|vue)\b/i.test(text);
+
+  if (isPerformance) {
+    categories.push("Performance (CWV)");
+    suggestedOracles.push("npm run build && npx lhci autorun");
+  }
+  if (isA11y) {
+    categories.push("Accessibility (WCAG)");
+    suggestedOracles.push("npx axe-cli http://localhost:3000 || npm test");
+  }
+  if (isSeo) {
+    categories.push("SEO & Structured Data");
+    suggestedOracles.push("npm run build && node scripts/validate-seo.mjs");
+  }
+  if (isE2e) {
+    categories.push("Frontend & E2E");
+    suggestedOracles.push("npx playwright test");
+  }
+
+  const isWeb = categories.length > 0;
+  return {
+    isWeb,
+    categories,
+    suggestedOracles
+  };
+}
+
 const VAGUE_BUZZWORDS = [
   { term: "clean up", penalty: 15, msg: "Vague goal: 'clean up' lacks explicit acceptance criteria." },
   { term: "make faster", penalty: 15, msg: "Vague goal: 'make faster' lacks quantitative benchmark criteria." },
@@ -106,7 +150,8 @@ export function scorePromptFalsifiability(promptText, options = {}) {
       issues: [{ type: "EMPTY_PROMPT", message: "Task prompt is empty.", penalty: 100 }],
       suggestions: ["Provide a clear description of the code change requested."],
       paths: { found: [], missingCount: 0, scopeDeniedCount: 0 },
-      oracle: { command: null, autoDetected: false, isTrivial: false }
+      oracle: { command: null, autoDetected: false, isTrivial: false },
+      webIntent: { isWeb: false, categories: [], suggestedOracles: [] }
     };
   }
 
@@ -128,13 +173,13 @@ export function scorePromptFalsifiability(promptText, options = {}) {
   // 2. Concrete Evidence Indicators (Bonus/Protection)
   const hasErrorTrace = /(?:error|exception|fail|failed|stack|traceback|line\s+\d+|exit\s+code)/i.test(rawPrompt);
   const hasSymbolRef = /(?:`[^`]+`|\b[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\b|\b[a-zA-Z0-9_]+\(\))/i.test(rawPrompt);
-  const hasExplicitCheck = /(?:verify|assert|should|must|returns?|expect)/i.test(rawPrompt);
+  const hasExplicitCheck = /(?:verify|assert|should|must|returns?|expect|< \d+|>= \d+)/i.test(rawPrompt);
 
   if (hasErrorTrace || hasSymbolRef || hasExplicitCheck) {
     score = Math.min(100, score + 10);
   } else {
     score -= 10;
-    issues.push({ type: "NO_CONCRETE_CRITERIA", message: "Lacks explicit symbol references, test names, or error tracebacks.", penalty: 10 });
+    issues.push({ type: "NO_CONCRETE_CRITERIA", message: "Lacks explicit symbol references, test names, or quantitative acceptance criteria.", penalty: 10 });
     suggestions.push("Specify exact function names, file paths, or expected test assertions.");
   }
 
@@ -192,7 +237,13 @@ export function scorePromptFalsifiability(promptText, options = {}) {
     });
   }
 
-  // 4. Stack Oracle Detection
+  // 4. Web Domain Intent Detection
+  const webIntent = detectWebIntent(rawPrompt);
+  if (webIntent.isWeb && webIntent.categories.length > 0) {
+    suggestions.push(`Web domain detected (${webIntent.categories.join(", ")}). Consider incorporating exploration budget and critic agent checks.`);
+  }
+
+  // 5. Stack Oracle Detection
   let verifyCmd = options.verifyCmd || null;
   let autoDetected = false;
   let isTrivial = false;
@@ -243,12 +294,17 @@ export function scorePromptFalsifiability(promptText, options = {}) {
       command: verifyCmd,
       autoDetected,
       isTrivial
-    }
+    },
+    webIntent
   };
 }
 
 /**
  * Transforms raw prompt into an optimized, structured task envelope.
+ * Supports Google Labs Exploration Budget Protocol & Critic Agent Guidance.
+ * @param {string} promptText
+ * @param {object} [options={}]
+ * @returns {{ optimizedPrompt: string, analysis: object }}
  */
 export function optimizeTaskPrompt(promptText, options = {}) {
   const analysis = scorePromptFalsifiability(promptText, options);
@@ -271,10 +327,31 @@ export function optimizeTaskPrompt(promptText, options = {}) {
     }
   }
 
+  const isWeb = Boolean(options.web || (analysis.webIntent && analysis.webIntent.isWeb));
+  const includeExplorationBudget = options.explorationBudget !== false;
+  const includeCriticGuidance = options.criticGuidance !== false;
+  const verifyCmd = analysis.oracle.command || options.verifyCmd || "npm test";
+
   // Construct structured Markdown envelope
   const lines = [];
   lines.push(`# TASK: ${promptBody.split("\n")[0]}`);
   lines.push("");
+
+  if (includeExplorationBudget) {
+    lines.push("## Google Labs Exploration Budget Protocol (3-Phase Discovery)");
+    lines.push("To maximize diagnostic accuracy (Hit@5 57%), execute this task in 3 distinct phases:");
+    lines.push("1. **PHASE 1: DISCOVERY & SYMBOL TRACING (Stay Silent, Write NO Code)**");
+    lines.push("   - Read target source files, definitions, and dependent call sites.");
+    lines.push("   - Formulate diagnostic hypothesis and verify exact symbol signatures before making edits.");
+    lines.push("2. **PHASE 2: ORACLE FORMULATION**");
+    lines.push(`   - Execute baseline verification: \`${verifyCmd}\`.`);
+    lines.push("   - Identify specific test assertions, benchmarks, or status codes to satisfy.");
+    lines.push("3. **PHASE 3: SURGICAL IMPLEMENTATION & VERIFICATION**");
+    lines.push("   - Apply minimal, zero-bloat code modifications.");
+    lines.push(`   - Execute \`${verifyCmd}\` and verify 100% clean exit code 0.`);
+    lines.push("");
+  }
+
   lines.push("## Objective & Acceptance Criteria");
   lines.push(`- **Goal**: ${promptBody}`);
   if (analysis.oracle.command) {
@@ -292,10 +369,22 @@ export function optimizeTaskPrompt(promptText, options = {}) {
     lines.push("");
   }
 
+  if (includeCriticGuidance) {
+    lines.push("## Internal Critic Agent Focus (Adversarial Pre-Review)");
+    lines.push("Before submitting pull request, ensure the patch satisfies:");
+    lines.push("- [ ] Correctness: Functions handle all edge-case arguments and invalid input types.");
+    lines.push("- [ ] Complexity: No accidental O(n²) bottlenecks or memory leak allocations.");
+    if (isWeb) {
+      lines.push("- [ ] Web Integrity: Zero layout shifts (CLS), broken images, or missing accessible ARIA attributes.");
+    }
+    lines.push("- [ ] Security: No unescaped user inputs, leaked tokens, or unauthorized network calls.");
+    lines.push("");
+  }
+
   lines.push("## Standard Guardrails");
   lines.push("- Do NOT modify package.json, lockfiles, or .github/ infrastructure files.");
   lines.push("- Diff Payload Governor: Keep total diff payload under 75 KB (\`git diff | wc -c\`).");
-  lines.push("- Verify before finishing: Execute full verification command and confirm zero errors.");
+  lines.push(`- Verify before finishing: Execute \`${verifyCmd}\` and confirm zero errors.`);
 
   const optimizedPrompt = lines.join("\n");
 

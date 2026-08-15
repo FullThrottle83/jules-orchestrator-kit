@@ -167,3 +167,24 @@ npx agentctl dispatch \
 npx agentctl dispatch \
   --prompt "$(cat .agent/prompts/Janitor.md) Remove dead code and unused imports in src/utils.mjs"
 ```
+
+---
+
+## Pattern 7: Web Development Task Envelopes & Exploration Budget
+
+Leverage specialized web envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`) with Google Labs 3-Phase Discovery Protocols:
+
+```bash
+# 1. List available web development templates
+npx agentctl task template --list
+
+# 2. Synthesize a Core Web Vitals & Lighthouse envelope
+npx agentctl task template web-cwv
+
+# 3. Create and queue a WCAG 2.2 accessibility audit task
+npx agentctl task create --template web-wcag
+
+# 4. Optimize a raw frontend prompt with automated Exploration Budget & Critic focus
+npx agentctl task optimize "Audit Core Web Vitals and optimize LCP in src/dashboard.mjs" --fix
+```
+

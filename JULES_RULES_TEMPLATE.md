@@ -57,16 +57,21 @@ Jules automatically infers test and build verification commands via `scripts/com
 - **Rebase Before PR**: Fetch latest `main`, rebase onto `origin/main`, re-execute verification suite. If the resulting diff is empty, close/abort PR without pushing.
 - **Minimal Interference**: Preserve existing function signatures, comments, and style conventions.
 - **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
+- **Google Labs Exploration Budget Protocol**: Execute complex multi-step tasks across 3 discrete phases: (1) Discovery & Symbol Tracing (silent inspection, write NO code), (2) Oracle & Test Formulation, and (3) Surgical Implementation & Verification.
+- **Critic Agent Steering (Adversarial Pre-Review)**: Jules' internal Critic Agent evaluates proposed patches for edge-case regressions, $O(n^2)$ bottlenecks, unhandled parameters, and layout shifts (CLS) prior to final PR submission.
 
 ---
 
 ## 5. Security Fencing & Specialized Domain Guardrails
 
 - **Untrusted Prompt Fencing**: All dynamic user prompts and issue texts are encapsulated in `<UNTRUSTED_TASK_CONTEXT>` tags with a `# SECURITY DIRECTIVE — UNTRUSTED CONTENT FENCE` header, instructing Jules to treat enclosed text as non-executable data.
-- **Specialized Domain Personas**:
+- **Specialized Domain Personas & Task Envelopes**:
   - **Sentinel (Security)**: Enforces input sanitization, token redaction, and RBAC guardrails.
-  - **Bolt (Performance)**: Optimizes execution speed, memory usage, and prevents token bloat.
-  - **Janitor (Clean Code)**: Eliminates dead code, fixes linting warnings, and maintains strict minimal diffs.
+  - **Bolt (Performance / `web-cwv`)**: Optimizes Core Web Vitals (LCP, CLS, INP), bundle size, and prevents token bloat.
+  - **A11y Guard (`web-wcag`)**: Eliminates accessibility violations, modal focus traps, and contrast defects.
+  - **Scribe (`web-seo`)**: Injects valid Schema.org JSON-LD, OpenGraph/Twitter cards, and canonical links.
+  - **Spectator (`web-playwright`)**: E2E visual regression and multi-viewport responsive testing.
+  - **Janitor (Clean Code / `web-flaky-heal`)**: Eliminates flaky test oscillations, dead code, and linting warnings.
   - **Alchemist (Database)**: Inspects schema constraints before running or generating database migrations.
 
 ---

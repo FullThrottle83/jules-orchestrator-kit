@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   levenshteinDistance,
   extractPathTokens,
+  detectWebIntent,
   scorePromptFalsifiability,
   optimizeTaskPrompt
 } from "../src/task-optimizer.mjs";
@@ -21,6 +22,20 @@ test("extractPathTokens extracts path-like tokens from prompt text", () => {
   assert.ok(tokens.includes("src/security.mjs"));
   assert.ok(tokens.includes("test/security.test.mjs"));
   assert.equal(tokens.length, 2);
+});
+
+test("detectWebIntent detects performance, a11y, seo, and frontend keywords", () => {
+  const cwvIntent = detectWebIntent("Optimize Core Web Vitals LCP and CLS on checkout page");
+  assert.equal(cwvIntent.isWeb, true);
+  assert.ok(cwvIntent.categories.includes("Performance (CWV)"));
+  assert.ok(cwvIntent.suggestedOracles.some((o) => o.includes("lhci")));
+
+  const a11yIntent = detectWebIntent("Fix WCAG 2.2 accessibility violations in modal dialog focus trap and aria-live");
+  assert.equal(a11yIntent.isWeb, true);
+  assert.ok(a11yIntent.categories.includes("Accessibility (WCAG)"));
+
+  const nonWebIntent = detectWebIntent("Optimize SQL query indexing in postgres daemon");
+  assert.equal(nonWebIntent.isWeb, false);
 });
 
 test("scorePromptFalsifiability scores empty and vague prompts with low grades", () => {
@@ -58,19 +73,21 @@ test("scorePromptFalsifiability flags scope violations and trivial verification 
   assert.ok(scopeRes.issues.some((i) => i.type === "TRIVIAL_ORACLE"));
 });
 
-test("optimizeTaskPrompt synthesizes structured task envelope", () => {
+test("optimizeTaskPrompt synthesizes structured task envelope with exploration budget and critic guidance", () => {
   const opt = optimizeTaskPrompt(
     "Fix JWT secret parsing in src/security.js when handling multiline RSA private keys.",
     { rootDir: process.cwd(), verifyCmd: "npm test" }
   );
 
   assert.ok(opt.optimizedPrompt.includes("# TASK: Fix JWT secret parsing"));
+  assert.ok(opt.optimizedPrompt.includes("Google Labs Exploration Budget Protocol (3-Phase Discovery)"));
+  assert.ok(opt.optimizedPrompt.includes("Internal Critic Agent Focus"));
   assert.ok(opt.optimizedPrompt.includes("`npm test`"));
   assert.ok(opt.optimizedPrompt.includes("Standard Guardrails"));
   assert.ok(opt.optimizedPrompt.includes("src/security.mjs"));
 });
 
-test("optimize_jules_prompt MCP tool handles prompt optimization requests", async () => {
+test("optimize_jules_prompt MCP tool handles prompt optimization requests with web flags", async () => {
   const req = {
     jsonrpc: "2.0",
     id: 1,
@@ -78,8 +95,9 @@ test("optimize_jules_prompt MCP tool handles prompt optimization requests", asyn
     params: {
       name: "optimize_jules_prompt",
       arguments: {
-        prompt: "Refactor error handling in src/provider.mjs and run npm test",
+        prompt: "Audit Core Web Vitals and optimize LCP in src/dashboard.mjs",
         fix: true,
+        web: true,
         verifyCmd: "npm test",
       },
     },
@@ -90,6 +108,8 @@ test("optimize_jules_prompt MCP tool handles prompt optimization requests", asyn
   assert.ok(res.result);
   const content = JSON.parse(res.result.content[0].text);
   assert.ok(content.optimizedPrompt);
+  assert.ok(content.optimizedPrompt.includes("Web Integrity"));
   assert.ok(content.analysis);
   assert.ok(content.analysis.score >= 70);
+  assert.ok(content.analysis.webIntent.isWeb);
 });

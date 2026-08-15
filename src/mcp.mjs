@@ -157,8 +157,25 @@ export const MCP_TOOLS = [
         prompt: { type: "string", description: "Raw task prompt instructions to analyze or optimize" },
         fix: { type: "boolean", description: "If true, synthesizes and returns an optimized task envelope" },
         verifyCmd: { type: "string", description: "Optional explicit verification command" },
+        web: { type: "boolean", description: "Enable web domain specific optimizations" },
+        explorationBudget: { type: "boolean", description: "Include 3-phase Google Labs discovery protocol" },
+        criticGuidance: { type: "boolean", description: "Include internal critic agent review guidelines" },
       },
       required: ["prompt"],
+    },
+  },
+  {
+    name: "get_web_task_template",
+    description: "Retrieve or synthesize a web development task envelope (web-cwv, web-wcag, web-seo, web-playwright, web-flaky-heal) with exploration budget and critic steering.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        template: { type: "string", description: "Template ID (web-cwv, web-wcag, web-seo, web-playwright, web-flaky-heal). Omit to list all available templates." },
+        params: { type: "object", description: "Optional template parameters (targetPage, standard, schemaType, viewports, etc.)" },
+        verifyCmd: { type: "string", description: "Optional override for verification test command" },
+        explorationBudget: { type: "boolean", description: "Enable 3-phase Google Labs discovery budget (default true)" },
+        criticGuidance: { type: "boolean", description: "Enable internal critic agent focus guidelines (default true)" },
+      },
     },
   },
 ];
@@ -314,13 +331,53 @@ export async function handleMcpRequest(request, opts = {}) {
         }
         const { scorePromptFalsifiability, optimizeTaskPrompt } = await import("./task-optimizer.mjs");
         const res = args.fix
-          ? optimizeTaskPrompt(args.prompt, { rootDir: root, verifyCmd: args.verifyCmd })
+          ? optimizeTaskPrompt(args.prompt, {
+              rootDir: root,
+              verifyCmd: args.verifyCmd,
+              web: args.web,
+              explorationBudget: args.explorationBudget,
+              criticGuidance: args.criticGuidance,
+            })
           : scorePromptFalsifiability(args.prompt, { rootDir: root, verifyCmd: args.verifyCmd });
         return {
           jsonrpc: "2.0",
           id,
           result: {
             content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "get_web_task_template") {
+        const { listWebTemplates, getWebTemplate, synthesizeWebEnvelope } = await import("./web-templates.mjs");
+        if (!args || !args.template) {
+          const templates = listWebTemplates();
+          return {
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [{ type: "text", text: JSON.stringify({ ok: true, templates }, null, 2) }],
+            },
+          };
+        }
+        const tpl = getWebTemplate(args.template);
+        if (!tpl) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: `Unknown web template '${args.template}'` },
+          };
+        }
+        const envelope = synthesizeWebEnvelope(args.template, args.params || {}, {
+          verifyCmd: args.verifyCmd,
+          explorationBudget: args.explorationBudget,
+          criticGuidance: args.criticGuidance,
+        });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, ...envelope }, null, 2) }],
           },
         };
       }

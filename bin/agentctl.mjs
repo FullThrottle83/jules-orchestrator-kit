@@ -14,7 +14,7 @@ const command = args[0];
 
 function printHelp() {
   console.log(`
-🚀 agentctl v0.32.1 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.32.2 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -31,8 +31,9 @@ Commands:
   review-repair         Parse PR review comments and synthesize OODA repair tasks
   dashboard             Start local HTTP telemetry and audit dashboard
   init                  Scaffold .agent/ config and run onboarding wizard
-  task create           Interactively author and scope a Jules task envelope
-  task optimize         Linter & optimizer for Jules task prompts (--fix, --json)
+  task create           Interactively author and scope a Jules task envelope (--template <name>)
+  task optimize         Linter & optimizer for Jules task prompts (--fix, --json, --web)
+  task template         List and generate web development task templates (--list, --json)
   test-gen              Scaffold & run automated TDD Red-to-Green test cycle (--run)
   mcp init              Scaffold IDE integration config (cursor | vscode | claude | all)
   rollback              Restore git state & working tree to atomic pre-flight checkpoint
@@ -62,7 +63,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.32.0");
+    console.log("agentctl v0.32.2");
     process.exit(0);
   }
 
@@ -371,6 +372,7 @@ async function main() {
           options: {
             title: { type: "string", short: "t" },
             prompt: { type: "string", short: "p" },
+            template: { type: "string" },
             "verify-cmd": { type: "string", short: "v" },
             "auto-pr": { type: "boolean" },
             "require-plan-approval": { type: "boolean" },
@@ -384,6 +386,7 @@ async function main() {
         const res = await runTaskCreateWizard(root, {
           title: values.title,
           prompt: values.prompt,
+          template: values.template,
           verifyCmd: values["verify-cmd"],
           autoPr: values["auto-pr"],
           requirePlanApproval: values["require-plan-approval"],
@@ -399,6 +402,51 @@ async function main() {
           console.log(`   Auto-PR  : ${res.plan.flags.autoPr}`);
         }
         process.exit(0);
+      } else if (subCommand === "template") {
+        const { values, positionals } = parseArgs({
+          args: args.slice(2),
+          options: {
+            list: { type: "boolean", short: "l" },
+            json: { type: "boolean", short: "j" },
+            "verify-cmd": { type: "string", short: "v" },
+          },
+          allowPositionals: true,
+        });
+
+        const { listWebTemplates, getWebTemplate, synthesizeWebEnvelope } = await import("../src/web-templates.mjs");
+        const templateName = positionals[0];
+
+        if (values.list || !templateName) {
+          const templates = listWebTemplates();
+          if (values.json) {
+            console.log(JSON.stringify({ ok: true, templates }, null, 2));
+          } else {
+            console.log(`\n🌐 Available Web Development Task Templates`);
+            console.log(`--------------------------------------------------`);
+            templates.forEach((t) => {
+              console.log(`  • ${t.id.padEnd(16)} [${t.category}]`);
+              console.log(`    ${t.description}`);
+              console.log(`    Default Oracle: ${t.defaultVerifyCmd}\n`);
+            });
+            console.log(`Usage: agentctl task template <id> [--json]`);
+            console.log(`--------------------------------------------------\n`);
+          }
+          process.exit(0);
+        }
+
+        const tpl = getWebTemplate(templateName);
+        if (!tpl) {
+          console.error(`Error: Unknown template '${templateName}'. Run 'agentctl task template --list' to see options.`);
+          process.exit(1);
+        }
+
+        const envelope = synthesizeWebEnvelope(templateName, {}, { verifyCmd: values["verify-cmd"] });
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, ...envelope }, null, 2));
+        } else {
+          console.log(envelope.fullEnvelope);
+        }
+        process.exit(0);
       } else if (subCommand === "optimize") {
         const { values, positionals } = parseArgs({
           args: args.slice(2),
@@ -406,6 +454,7 @@ async function main() {
             fix: { type: "boolean", short: "f" },
             file: { type: "string" },
             dir: { type: "string", short: "d" },
+            web: { type: "boolean", short: "w" },
             json: { type: "boolean", short: "j" },
             "verify-cmd": { type: "string", short: "v" },
           },
@@ -426,7 +475,7 @@ async function main() {
         }
 
         if (values.fix) {
-          const opt = optimizeTaskPrompt(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"] });
+          const opt = optimizeTaskPrompt(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"], web: values.web });
           if (values.json) {
             console.log(JSON.stringify(opt, null, 2));
           } else {
@@ -446,6 +495,9 @@ async function main() {
           if (analysis.oracle.command) {
             console.log(`  Oracle Command   : "${analysis.oracle.command}" (${analysis.oracle.autoDetected ? "Auto-detected" : "User-supplied"})`);
           }
+          if (analysis.webIntent && analysis.webIntent.isWeb) {
+            console.log(`  Web Intent       : 🌐 YES [${analysis.webIntent.categories.join(", ")}]`);
+          }
           if (analysis.issues.length > 0) {
             console.log(`\n  Issues Identified (${analysis.issues.length}):`);
             analysis.issues.forEach((i) => console.log(`   - [${i.type}] ${i.message} (-${i.penalty} pts)`));
@@ -458,7 +510,7 @@ async function main() {
         }
         process.exit(analysis.isFalsifiable ? 0 : 1);
       } else {
-        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create, agentctl task optimize`);
+        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create, agentctl task optimize, agentctl task template`);
         process.exit(1);
       }
       break;
