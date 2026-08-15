@@ -4,7 +4,12 @@ node_modules/
 .agent/state/
 .agent/jules-queue/.state/
 .agent/jules-queue/failed/
+.agent/jules-queue/completed/
 .agent/jules-queue/.processing/
 .agent/jules-queue/*.md
+.agent/jules-queue/*.jsonl
+.agent/jules-queue/*.json
+.agent/sync-manifest.json
 !.agent/jules-queue/README.md
+
 
