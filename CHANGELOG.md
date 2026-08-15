@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.3] - 2026-08-15
+### Queue Hygiene, Swarm Gate Hardening & Documentation Synchronization
+- **Queue Runtime Hygiene & Git Sterilisation (`.gitignore`)**: Untracked historical local task execution files and tightened `.gitignore` rules to guarantee an empty, clean `.agent/jules-queue/` on fresh clones.
+- **Swarm Merge Safety Gate Hardening (`scripts/jules-merge-swarm.mjs`)**: Scoped risk tier evaluation in `checkSafetyGate` specifically to the target swarm PR branch diff rather than uncommitted local workspace working tree state.
+- **Documentation Alignment (`README.md`, `ROADMAP_V1.md`)**: Synchronized CLI tables, version output descriptors, and release milestone roadmaps to current stable `v0.32.3`.
+
 ## [0.32.2] - 2026-08-15
 ### Web Development Task Templates, Google Labs Exploration Budgets & Critic Agent Steering
 - **Web Development Task Templates (`src/web-templates.mjs`, `agentctl task template`)**: Added zero-dependency template synthesis engine supporting `web-cwv` (Core Web Vitals & Lighthouse Budget Guard), `web-wcag` (WCAG 2.2 AA/AAA semantic accessibility & modal focus traps), `web-seo` (Schema.org JSON-LD, OpenGraph, Twitter Cards, canonical links), `web-playwright` (E2E visual regression & responsive viewports), and `web-flaky-heal` (anti-flakiness & network mocking).

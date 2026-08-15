@@ -11,8 +11,8 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.30.0 (Current Stable) ──► v0.31.0 ──► v0.32.0 ──► v0.33.0 ──► v1.0.0 (Production Kernel)
- (TUI & Guided Ops)        (Onboarding) (IDE & Bridge)(Monorepos) (Enterprise Hardened)
+ v0.32.3 (Current Stable) ──► v0.33.0 ──► v1.0.0 (Production Kernel)
+ (Web, UX & Bridge)        (Monorepos) (Enterprise Hardened)
 ```
 
 ---
