@@ -17,8 +17,9 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ---
 
-## ✅ Shipped Foundation (v0.20.0 – v0.30.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.32.3)
 
+### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
 - [x] **L9 Kernel Hardening** (`src/state.mjs`, `src/journal.mjs`) — VFS directory mutex, PID recycling protection, atomic budget ledger.
 - [x] **Universal Polyglot Stack Detector** (`src/stack-detector.mjs`) — 24+ ecosystems auto-detected (.NET, Rust, Go, Python, PHP, Java, JS/TS, Flutter).
@@ -30,38 +31,21 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **PR Review Auto-Remediation** (`src/review-repair.mjs`) — Ingests `CHANGES_REQUESTED` comments into OODA repair loops.
 - [x] **Interactive TUI & Command Palette** (`src/ux/`, `src/ops/`) — Full-screen raw terminal engine, diagnostic check DAG (`agentctl doctor`), and queue/swarm managers.
 
----
+### v0.31.0: Developer Onboarding & Prompt Intelligence
+- [x] **Prompt Falsifiability & Scope Linter (`agentctl task optimize`)** — Heuristic analyzer scoring task prompts, fuzzy file path validation, and envelope synthesis.
+- [x] **1-Click Atomic Git Checkpoint & Rollback (`agentctl rollback`)** — Epistemic pre-flight working tree snapshots and instant 1-command git tree rollback.
+- [x] **Automated TDD Red-to-Green Harness (`agentctl test-gen`)** — 3-step test-driven development cycle asserting initial RED failure and locking tests in `scope.deny`.
+- [x] **AST Blast-Radius Selective Testing** — Selective leaf test runner with global contract change protections.
+- [x] **Verification Lifecycle Sandbox** — `verify.setup` / `verify.teardown` process-group isolation for migrations.
+- [x] **IDE Native MCP Config Scaffolder (`agentctl mcp init`)** — 1-command config generation for Cursor, VS Code, and Claude Desktop.
 
-## 🎯 Target Milestone v0.31.0: Developer Onboarding & Prompt Intelligence
-*Focus: Eliminating beginner friction, preventing hallucinations, and making task authoring foolproof.*
-
-- [ ] **Prompt Falsifiability & Scope Linter (`agentctl task optimize`)**:
-  - Pre-dispatch heuristic analyzer scoring task prompts for objective testability.
-  - Automatically identifies referenced file paths and warns if target files do not exist.
-  - Generates recommended verification predicates if none are supplied.
-- [ ] **Zero-Token Sandbox Playground (`agentctl simulate`)**:
-  - Dry-run simulator that validates scope boundaries, secret scanning, and payload governors against mock changes without calling the Google Jules API.
-- [ ] **Interactive 60-Second Demo Walkthrough (`agentctl tour`)**:
-  - Self-contained CLI guided tour creating an in-memory fixture, executing an OODA self-repair turn, and demonstrating gate verification.
-- [ ] **1-Click Atomic Git Checkpoint & Rollback (`agentctl rollback`)**:
-  - Epistemic git checkpointing before task execution, enabling instant 1-command rollback of agent modifications.
-
----
-
-## 🎯 Target Milestone v0.32.0: Real-Time Human-in-the-Loop & IDE Ecosystem
-*Focus: Seamless workflow integration across editors, chat platforms, and CI/CD pipelines.*
-
-- [ ] **Human-in-the-Loop Asynchronous Escalation Bridge (`agentctl escalate`)**:
-  - Webhook dispatch to Slack, Discord, and GitHub PR comments when Jules enters `AWAITING_USER_FEEDBACK` or fails R3 gates.
-  - Lightweight zero-dependency async webhook listener to resume sessions with user answers.
-- [ ] **Multi-Turn Session Resumption via Google Jules v1alpha API**:
-  - Leverage `sessions.sendMessage` / `sessions.resume` to feed OODA repair prompts into active sessions rather than creating disconnected session instances.
-- [ ] **IDE Native Tooling Recipes (VS Code, Cursor, JetBrains)**:
-  - Plug-and-play configuration recipes for editor extensions to invoke `agentctl mcp` over stdio.
-  - Right-click task authoring from code selections and inline OODA failure diagnostics.
-- [ ] **Zero-Dependency Web Studio Enhancements (`agentctl studio`)**:
-  - Live log streaming via Server-Sent Events (SSE) in `src/dashboard.mjs`.
-  - Visual DAG workflow dependency viewer and interactive side-by-side git diff inspector.
+### v0.32.0 – v0.32.3: Real-Time HITL, Web Templates & Memory Engine
+- [x] **Human-in-the-Loop Escalation Bridge & Session Resumption (`agentctl escalate`, `agentctl resume`)** — Webhook dispatch and multi-turn warm session resumption via `POST /v1alpha/sessions/{id}:sendMessage`.
+- [x] **SPORE Memory Engine & System Learnings (`agentctl hydrate`, `agentctl harvest`, `agentctl learning add`)** — Cross-session institutional learning ledger.
+- [x] **Universal Edge-Runtime Import Guard** — Static AST security gate blocking Node.js built-ins in Edge contexts (Cloudflare Workers, Vercel Edge, Netlify).
+- [x] **Web Development Task Templates (`agentctl task template`)** — Pre-calibrated envelopes for `web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, and `web-flaky-heal`.
+- [x] **Google Labs Exploration Budget Protocol & Critic Steering** — 3-phase discovery envelope injection and adversarial Critic Agent directives.
+- [x] **Zero-Dependency Local Dashboard & Telemetry Visualizer (`agentctl dashboard`)** — Dark-mode HTML visualizer and REST telemetry APIs.
 
 ---
 
@@ -72,8 +56,6 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
   - Extend `resolveWorkspaceBoundary` to detect illegal cross-package imports and circular dependencies in TypeScript, Go, and Rust monorepos before running CI.
 - [ ] **Dynamic Complexity & Cost Router**:
   - Heuristic classifier that routes trivial tasks (typos, linter fixes, lockfile bumps) to fast/local providers while reserving Google Jules for complex multi-file refactors.
-- [ ] **Test-Driven Agent Generation Harness (`agentctl test-gen`)**:
-  - Automatically synthesizes a failing unit test or Playwright snapshot from a bug description to establish a strict TDD verification gate for Jules.
 - [ ] **Automated Flaky Test Healing Swarm**:
   - Background worker that consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness prompt templates to repair timing and race conditions.
 
