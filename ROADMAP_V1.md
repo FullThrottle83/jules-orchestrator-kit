@@ -52,7 +52,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 🎯 Target Milestone v0.33.0: Monorepo Swarms, Dynamic Routing & Code Intelligence
 *Focus: Multi-agent coordination, cost optimization, and monorepo architectural integrity.*
 
-- [ ] **Monorepo Architecture & Cross-Package Import Guard**:
+- [x] **Monorepo Architecture & Cross-Package Import Guard**:
   - Extend `resolveWorkspaceBoundary` to detect illegal cross-package imports and circular dependencies in TypeScript, Go, and Rust monorepos before running CI.
 - [ ] **Dynamic Complexity & Cost Router**:
   - Heuristic classifier that routes trivial tasks (typos, linter fixes, lockfile bumps) to fast/local providers while reserving Google Jules for complex multi-file refactors.

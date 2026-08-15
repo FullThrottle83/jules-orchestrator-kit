@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
-import { join, sep } from "node:path";
+import { join, relative } from "node:path";
 
 /**
  * Generate a zero-dependency smoke test file using node:test for untested JS/Generic repos.
@@ -231,41 +231,362 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
 }
 
 /**
+ * Normalizes file paths to POSIX slashes.
+ */
+function toPosixPath(p = "") {
+  return p.replace(/\\/g, "/");
+}
+
+/**
+ * Finds the nearest subproject root directory for a given relative file path.
+ */
+export function findSubprojectRoot(fileRelPath = "", root = process.cwd()) {
+  const normalized = toPosixPath(fileRelPath);
+  const parts = normalized.split("/");
+  if (parts.length <= 1) return ".";
+
+  const manifestFiles = [
+    "package.json",
+    "Cargo.toml",
+    "go.mod",
+    "pyproject.toml",
+    "setup.py",
+    "requirements.txt",
+    "composer.json",
+    "pom.xml",
+    "build.gradle",
+  ];
+
+  // Walk up from parent directory of file to top-level folder
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const candidateDir = parts.slice(0, i).join("/");
+    const fullCandidate = join(root, candidateDir);
+    if (existsSync(fullCandidate)) {
+      try {
+        const entries = readdirSync(fullCandidate);
+        const hasManifest = entries.some(
+          (e) => manifestFiles.includes(e) || e.endsWith(".csproj") || e.endsWith(".fsproj")
+        );
+        if (hasManifest) {
+          return candidateDir;
+        }
+      } catch (_) {}
+    }
+  }
+
+  return ".";
+}
+
+/**
+ * Detects illegal cross-package imports escaping subproject boundaries in monorepos.
+ */
+export function detectCrossPackageBoundaryViolations(changedFiles = [], root = process.cwd(), options = {}) {
+  const violations = [];
+  if (!changedFiles || changedFiles.length === 0) return violations;
+
+  const fileContents = options.fileContents || {};
+
+  // Regex patterns for relative imports across languages
+  const jsImportRegex = /(?:import\s+(?:[\w*\s{},]*\s+from\s+)?|export\s+(?:[\w*\s{},]*\s+from\s+)?|require\s*\(\s*|import\s*\(\s*)['"](\.[^'"]+)['"]/g;
+  const goImportRegex = /(?:^|\n)\s*(?:import\s+['"](\.[^'"]+)['"]|import\s*\([\s\S]*?['"](\.[^'"]+)['"][\s\S]*?\))/g;
+  const rustPathRegex = /#\[path\s*=\s*['"](\.[^'"]+)['"]\]/g;
+  const pyRelImportRegex = /(?:^|\n)\s*from\s+(\.{2,}\w*)\s+import/g;
+
+  for (const file of changedFiles) {
+    const posixFile = toPosixPath(file);
+    let content = fileContents[file] || fileContents[posixFile];
+
+    if (!content) {
+      const fullPath = join(root, file);
+      if (existsSync(fullPath)) {
+        try {
+          content = readFileSync(fullPath, "utf-8");
+        } catch (_) {}
+      }
+    }
+
+    if (!content || typeof content !== "string") continue;
+
+    const subproject = findSubprojectRoot(posixFile, root);
+    if (subproject === "." && !options.enforceRootBoundary) {
+      continue;
+    }
+
+    const fileDir = posixFile.includes("/") ? posixFile.substring(0, posixFile.lastIndexOf("/")) : ".";
+    const ext = posixFile.includes(".") ? posixFile.substring(posixFile.lastIndexOf(".")).toLowerCase() : "";
+    const isJsTs = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".svelte", ".vue"].includes(ext) || !ext;
+    const isGo = ext === ".go";
+    const isRust = ext === ".rs";
+    const isPython = ext === ".py";
+
+    const lines = content.split("\n");
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+
+      // 1. JS / TS imports
+      if (isJsTs) {
+        let match;
+        jsImportRegex.lastIndex = 0;
+        while ((match = jsImportRegex.exec(line)) !== null) {
+          const relTarget = match[1];
+          if (relTarget.startsWith("..")) {
+            const resolved = toPosixPath(join(fileDir, relTarget));
+            const relToSubproject = toPosixPath(relative(subproject, resolved));
+            if (relToSubproject.startsWith("..") || resolved === "." || (subproject !== "." && !resolved.startsWith(subproject + "/"))) {
+              violations.push({
+                file: posixFile,
+                subproject,
+                importTarget: relTarget,
+                resolvedTarget: resolved,
+                line: lineIdx + 1,
+                language: "javascript/typescript",
+                reason: `Cross-Package Boundary Violation: File "${posixFile}" in package "${subproject}" illegally imports "${relTarget}" (resolves to "${resolved}"), escaping its package boundary. Declare a workspace dependency instead of a relative cross-package file import.`,
+              });
+            }
+          }
+        }
+      }
+
+      // 2. Go relative imports escaping module
+      if (isGo) {
+        let match;
+        goImportRegex.lastIndex = 0;
+        while ((match = goImportRegex.exec(line)) !== null) {
+          const relTarget = match[1] || match[2];
+          if (relTarget && relTarget.startsWith("..")) {
+            const resolved = toPosixPath(join(fileDir, relTarget));
+            const relToSubproject = toPosixPath(relative(subproject, resolved));
+            if (relToSubproject.startsWith("..")) {
+              violations.push({
+                file: posixFile,
+                subproject,
+                importTarget: relTarget,
+                resolvedTarget: resolved,
+                line: lineIdx + 1,
+                language: "go",
+                reason: `Cross-Module Boundary Violation: Go file "${posixFile}" in module "${subproject}" illegally imports relative path "${relTarget}" escaping module root.`,
+              });
+            }
+          }
+        }
+      }
+
+      // 3. Rust path attributes escaping crate
+      if (isRust) {
+        let match;
+        rustPathRegex.lastIndex = 0;
+        while ((match = rustPathRegex.exec(line)) !== null) {
+          const relTarget = match[1];
+          if (relTarget && relTarget.startsWith("..")) {
+            const resolved = toPosixPath(join(fileDir, relTarget));
+            const relToSubproject = toPosixPath(relative(subproject, resolved));
+            if (relToSubproject.startsWith("..")) {
+              violations.push({
+                file: posixFile,
+                subproject,
+                importTarget: relTarget,
+                resolvedTarget: resolved,
+                line: lineIdx + 1,
+                language: "rust",
+                reason: `Cross-Crate Boundary Violation: Rust file "${posixFile}" in crate "${subproject}" uses path attribute "${relTarget}" escaping crate root.`,
+              });
+            }
+          }
+        }
+      }
+
+      // 4. Python relative imports escaping package
+      if (isPython) {
+        let match;
+        pyRelImportRegex.lastIndex = 0;
+        while ((match = pyRelImportRegex.exec(line)) !== null) {
+          const dots = match[1];
+          const dotCount = (dots.match(/\./g) || []).length;
+          // Count depth from subproject to fileDir
+          const depth = fileDir === subproject ? 0 : fileDir.slice(subproject.length + 1).split("/").length;
+          if (dotCount > depth + 1) {
+            violations.push({
+              file: posixFile,
+              subproject,
+              importTarget: dots,
+              resolvedTarget: "<parent-package>",
+              line: lineIdx + 1,
+              language: "python",
+              reason: `Cross-Package Boundary Violation: Python file "${posixFile}" in package "${subproject}" uses relative import with ${dotCount} dots, escaping package root.`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Discovers monorepo packages and detects circular dependencies.
+ */
+export function detectCircularDependencies(root = process.cwd()) {
+  const packageMap = new Map(); // name -> { path, deps: [] }
+  const searchDirs = ["packages", "apps", "crates", "services", "libs", "modules", "backend", "frontend", "cli", "."];
+
+  for (const dir of searchDirs) {
+    const fullDir = join(root, dir);
+    if (!existsSync(fullDir)) continue;
+
+    const subDirs = dir === "." ? ["."] : [];
+    try {
+      if (dir !== ".") {
+        const entries = readdirSync(fullDir, { withFileTypes: true });
+        for (const e of entries) {
+          if (e.isDirectory()) subDirs.push(`${dir}/${e.name}`);
+        }
+      }
+    } catch (_) {}
+
+    for (const subDir of subDirs) {
+      const fullSubDir = join(root, subDir);
+      // 1. JS/TS package.json
+      const pkgJsonPath = join(fullSubDir, "package.json");
+      if (existsSync(pkgJsonPath)) {
+        try {
+          const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
+          if (pkg.name) {
+            const allDeps = {
+              ...(pkg.dependencies || {}),
+              ...(pkg.devDependencies || {}),
+              ...(pkg.peerDependencies || {}),
+            };
+            packageMap.set(pkg.name, {
+              name: pkg.name,
+              path: subDir,
+              type: "npm",
+              deps: Object.keys(allDeps),
+            });
+          }
+        } catch (_) {}
+      }
+
+      // 2. Rust Cargo.toml
+      const cargoPath = join(fullSubDir, "Cargo.toml");
+      if (existsSync(cargoPath)) {
+        try {
+          const content = readFileSync(cargoPath, "utf-8");
+          const nameMatch = content.match(/\[package\][\s\S]*?name\s*=\s*["']([^"']+)["']/);
+          if (nameMatch) {
+            const crateName = nameMatch[1];
+            const deps = [];
+            const depMatches = content.matchAll(/([a-zA-Z0-9_-]+)\s*=\s*\{[^}]*?path\s*=\s*["']([^"']+)["']/g);
+            for (const dm of depMatches) {
+              deps.push(dm[1]);
+            }
+            packageMap.set(crateName, {
+              name: crateName,
+              path: subDir,
+              type: "cargo",
+              deps,
+            });
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
+  // Filter dependencies to only workspace internal packages
+  const knownNames = new Set(packageMap.keys());
+  const graph = new Map();
+  for (const [name, info] of packageMap.entries()) {
+    graph.set(name, info.deps.filter((d) => knownNames.has(d)));
+  }
+
+  // Cycle detection via DFS
+  const cycles = [];
+  const visited = new Set();
+  const recStack = new Set();
+  const path = [];
+
+  function dfs(node) {
+    visited.add(node);
+    recStack.add(node);
+    path.push(node);
+
+    const neighbors = graph.get(node) || [];
+    for (const neighbor of neighbors) {
+      if (!visited.has(neighbor)) {
+        dfs(neighbor);
+      } else if (recStack.has(neighbor)) {
+        const cycleStartIndex = path.indexOf(neighbor);
+        const cycle = path.slice(cycleStartIndex).concat(neighbor);
+        cycles.push(cycle.join(" -> "));
+      }
+    }
+
+    path.pop();
+    recStack.delete(node);
+  }
+
+  for (const node of graph.keys()) {
+    if (!visited.has(node)) {
+      dfs(node);
+    }
+  }
+
+  return {
+    hasCycles: cycles.length > 0,
+    cycles,
+    packages: Array.from(packageMap.values()),
+  };
+}
+
+/**
  * Resolves workspace boundaries in polyglot monorepos by mapping changed files to subprojects.
  */
-export function resolveWorkspaceBoundary(changedFiles = [], root = process.cwd()) {
+export function resolveWorkspaceBoundary(changedFiles = [], root = process.cwd(), options = {}) {
   const rootStack = detectPolyglotStack(root);
+  const boundaryViolations = detectCrossPackageBoundaryViolations(changedFiles, root, options);
+  const circular = detectCircularDependencies(root);
+
   if (!changedFiles || changedFiles.length === 0) {
-    return { isMonorepo: false, globalFallback: false, projects: [{ path: ".", ...rootStack }], testCmd: rootStack.testCmd, buildCmd: rootStack.buildCmd };
+    return {
+      isMonorepo: circular.packages.length > 1,
+      globalFallback: false,
+      projects: [{ path: ".", ...rootStack }],
+      testCmd: rootStack.testCmd,
+      buildCmd: rootStack.buildCmd,
+      boundaryViolations,
+      circularDependencies: circular.cycles,
+    };
   }
 
   const sharedTriggers = new Set(["openapi.yaml", "openapi.json", "schema.graphql", "docker-compose.yml", "Makefile", "turbo.json", "pnpm-workspace.yaml", "nx.json"]);
   for (const file of changedFiles) {
-    const baseName = file.split(sep).pop();
+    const baseName = toPosixPath(file).split("/").pop();
     if (sharedTriggers.has(baseName) || file.startsWith(".agent/") || file.startsWith(".github/")) {
-      return { isMonorepo: true, globalFallback: true, projects: [{ path: ".", ...rootStack }], testCmd: rootStack.testCmd, buildCmd: rootStack.buildCmd };
+      return {
+        isMonorepo: true,
+        globalFallback: true,
+        projects: [{ path: ".", ...rootStack }],
+        testCmd: rootStack.testCmd,
+        buildCmd: rootStack.buildCmd,
+        boundaryViolations,
+        circularDependencies: circular.cycles,
+      };
     }
   }
 
   const projectMap = new Map();
   for (const file of changedFiles) {
-    const parts = file.split(sep);
-    let resolved = false;
-
-    for (let i = parts.length - 1; i >= 1; i--) {
-      const subDir = parts.slice(0, i).join("/");
+    const subDir = findSubprojectRoot(file, root);
+    if (subDir !== ".") {
       const subStack = detectPolyglotStack(join(root, subDir));
-      if (subStack.stack !== "unknown" && subStack.triggerFile) {
-        if (!projectMap.has(subDir)) {
-          projectMap.set(subDir, { path: subDir, ...subStack });
-        }
-        resolved = true;
-        break;
+      if (!projectMap.has(subDir)) {
+        projectMap.set(subDir, { path: subDir, ...subStack });
       }
-    }
-
-    if (!resolved && !projectMap.has(".")) {
-      projectMap.set(".", { path: ".", ...rootStack });
+    } else {
+      if (!projectMap.has(".")) {
+        projectMap.set(".", { path: ".", ...rootStack });
+      }
     }
   }
 
@@ -278,11 +599,13 @@ export function resolveWorkspaceBoundary(changedFiles = [], root = process.cwd()
     .map((p) => (p.path === "." ? p.buildCmd : `(cd ${p.path} && ${p.buildCmd})`));
 
   return {
-    isMonorepo: projects.length > 1,
+    isMonorepo: projects.length > 1 || circular.packages.length > 1,
     globalFallback: false,
     projects,
     testCmd: testCmds.join(" && ") || rootStack.testCmd,
     buildCmd: buildCmds.join(" && ") || rootStack.buildCmd,
+    boundaryViolations,
+    circularDependencies: circular.cycles,
   };
 }
 

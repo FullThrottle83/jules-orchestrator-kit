@@ -2,6 +2,7 @@ import { openSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, ex
 import { dirname, join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import { normalizePath } from "./config.mjs";
+import { detectCrossPackageBoundaryViolations } from "./stack-detector.mjs";
 
 export const HIGH_CONFIDENCE_PATTERNS = [
   /\bghp_[A-Za-z0-9_]{36,255}\b/g,
@@ -287,6 +288,50 @@ export function checkEdgeRuntimeImports(diffOrText = "", options = {}) {
   };
 }
 
+export function checkCrossPackageImports(diffOrText = "", root = process.cwd(), options = {}) {
+  if (!diffOrText || typeof diffOrText !== "string") return { ok: true, violations: [] };
+
+  const violations = [];
+
+  if (diffOrText.includes("+++ b/")) {
+    const lines = diffOrText.split("\n");
+    let currentFile = null;
+    let currentAdded = [];
+
+    const flushFile = () => {
+      if (currentFile && currentAdded.length > 0) {
+        const fileViolations = detectCrossPackageBoundaryViolations([currentFile], root, {
+          fileContents: { [currentFile]: currentAdded.join("\n") },
+          ...options,
+        });
+        violations.push(...fileViolations);
+      }
+    };
+
+    for (const line of lines) {
+      if (line.startsWith("+++ b/")) {
+        flushFile();
+        currentFile = line.slice(6).trim();
+        currentAdded = [];
+      } else if (line.startsWith("+") && !line.startsWith("+++")) {
+        currentAdded.push(line.slice(1));
+      }
+    }
+    flushFile();
+  } else if (options.file) {
+    const fileViolations = detectCrossPackageBoundaryViolations([options.file], root, {
+      fileContents: { [options.file]: diffOrText },
+      ...options,
+    });
+    violations.push(...fileViolations);
+  }
+
+  return {
+    ok: violations.length === 0,
+    violations,
+  };
+}
+
 export function scanDiff(diffTextStr = "", options = {}) {
   if (!diffTextStr) return { ok: true, findings: [] };
   const addedLines = diffTextStr
@@ -312,8 +357,17 @@ export function scanDiff(diffTextStr = "", options = {}) {
     }
   }
 
+  const root = options.root || process.cwd();
+  const crossPkgRes = checkCrossPackageImports(diffTextStr, root, options);
+  if (!crossPkgRes.ok) {
+    for (const v of crossPkgRes.violations) {
+      findings.push({ severity: "HIGH", type: "CROSS_PACKAGE_BOUNDARY_VIOLATION", description: v.reason });
+    }
+  }
+
   return {
-    ok: !hasHigh && !hasLow && edgeRes.ok,
+    ok: !hasHigh && !hasLow && edgeRes.ok && crossPkgRes.ok,
     findings,
   };
 }
+

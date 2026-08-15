@@ -185,9 +185,23 @@ export function detectPackageManager(root = process.cwd(), pkg = {}) {
   return "npm";
 }
 
-import { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo } from "./stack-detector.mjs";
+import {
+  detectPolyglotStack,
+  resolveWorkspaceBoundary,
+  bootstrapZeroTestRepo,
+  findSubprojectRoot,
+  detectCrossPackageBoundaryViolations,
+  detectCircularDependencies,
+} from "./stack-detector.mjs";
 
-export { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo };
+export {
+  detectPolyglotStack,
+  resolveWorkspaceBoundary,
+  bootstrapZeroTestRepo,
+  findSubprojectRoot,
+  detectCrossPackageBoundaryViolations,
+  detectCircularDependencies,
+};
 
 /**
  * Autodetects verification test/build commands across 24+ polyglot tech stacks.

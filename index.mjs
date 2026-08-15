@@ -13,6 +13,8 @@ export {
   matchesGlob,
   checkScope,
   scanDiff,
+  checkEdgeRuntimeImports,
+  checkCrossPackageImports,
 } from "./src/security.mjs";
 export { sanitizeUntrustedData, buildAgentEnvelope } from "./src/prompt-guard.mjs";
 export { isolateMcpStdout, writeMcpFrame } from "./src/mcp.mjs";
@@ -29,7 +31,14 @@ export {
   ProviderSchemaError,
   parseRetryAfter,
 } from "./src/provider.mjs";
-export { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo } from "./src/stack-detector.mjs";
+export {
+  detectPolyglotStack,
+  resolveWorkspaceBoundary,
+  bootstrapZeroTestRepo,
+  findSubprojectRoot,
+  detectCrossPackageBoundaryViolations,
+  detectCircularDependencies,
+} from "./src/stack-detector.mjs";
 export {
   appendLedger,
   readLedger,

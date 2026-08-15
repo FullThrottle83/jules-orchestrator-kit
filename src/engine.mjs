@@ -187,8 +187,8 @@ export async function gate(opts = {}) {
     return { ok: false, code: 5, phases };
   }
 
-  // Phase 3: Diff Secret Scanner
-  const secretResult = scanDiff(diffStr);
+  // Phase 3: Diff Secret Scanner & Security Checks
+  const secretResult = scanDiff(diffStr, { root });
   phases.push({ phase: "secrets", ok: secretResult.ok, findings: secretResult.findings });
   appendTelemetry(root, "gate_phase", { phase: "secrets", ok: secretResult.ok });
   if (progressBus && progressToken) {
