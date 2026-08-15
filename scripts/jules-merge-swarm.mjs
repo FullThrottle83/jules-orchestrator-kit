@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { classifyRiskTier, RISK_TIERS } from "../src/risk.mjs";
-import { changedFiles, git, resolveBase } from "../src/git.mjs";
+import { git, resolveBase } from "../src/git.mjs";
 import { normalizePath } from "../src/config.mjs";
 
 export const EXIT = Object.freeze({
