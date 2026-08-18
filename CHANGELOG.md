@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.4] - 2026-08-18
+### Architecture Directives, Type III Situational Awareness & Roadmap Alignment
+- **Type III Situational Awareness & Silence Governor Alignment (`ROADMAP_V1.md`, `PRIOR_ART.md`)**: Documented architectural roadmap for Google Labs `/code` Type III agentic paradigm ("Silence is an explicit, strategic decision") including Interruption Budgeting, quiet-by-default digest mode in `src/webhook.mjs`, and proactive local telemetry ingestion.
+- **Documentation & Version Synchronization (`README.md`, `bin/agentctl.mjs`, `package.json`)**: Synchronized semantic version to `v0.32.4` across CLI binaries, help menus, and documentation descriptors.
+
 ## [0.32.3] - 2026-08-15
 ### Queue Hygiene, Swarm Gate Hardening & Documentation Synchronization
 - **Queue Runtime Hygiene & Git Sterilisation (`.gitignore`)**: Untracked historical local task execution files and tightened `.gitignore` rules to guarantee an empty, clean `.agent/jules-queue/` on fresh clones.

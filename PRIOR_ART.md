@@ -28,6 +28,9 @@ This documentation lists the projects in the AI agent ecosystem that inspired th
 - **Inspiration (`jules-me`):** Priority-based 3-bucket status classification.
 - **Our Difference:** Native `categorizeTaskStatus()` in `scripts/jules-status.mjs` grouping active tasks into *🚨 Action Required*, *⏳ In Progress*, and *✅ Completed*.
 
+- **Inspiration (Google Labs `/code` *Situationally Aware Agents* / Type III Taxonomy):** Deep telemetry ingestion and treating silence as an explicit, strategic decision to preserve developer focus.
+- **Our Difference:** Zero-dependency, local sidecar state management (`.agent/jules-queue/*.state.json`) and quiet-by-default interruption budgeting directly in the orchestrator kernel, avoiding external surveillance SaaS or heavyweight daemons.
+
 ## What makes jules-orchestrator-kit unique?
 
 The honest answer to what *this* kit does that the others don't is **the gate**:

@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.32.3 (Current Stable) ──► v0.33.0 ──► v1.0.0 (Production Kernel)
+ v0.32.4 (Current Stable) ──► v0.33.0 ──► v1.0.0 (Production Kernel)
  (Web, UX & Bridge)        (Monorepos) (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.32.3)
+## ✅ Shipped Milestones (v0.20.0 – v0.32.4)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -39,7 +39,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **Verification Lifecycle Sandbox** — `verify.setup` / `verify.teardown` process-group isolation for migrations.
 - [x] **IDE Native MCP Config Scaffolder (`agentctl mcp init`)** — 1-command config generation for Cursor, VS Code, and Claude Desktop.
 
-### v0.32.0 – v0.32.3: Real-Time HITL, Web Templates & Memory Engine
+### v0.32.0 – v0.32.4: Real-Time HITL, Web Templates & Memory Engine
 - [x] **Human-in-the-Loop Escalation Bridge & Session Resumption (`agentctl escalate`, `agentctl resume`)** — Webhook dispatch and multi-turn warm session resumption via `POST /v1alpha/sessions/{id}:sendMessage`.
 - [x] **SPORE Memory Engine & System Learnings (`agentctl hydrate`, `agentctl harvest`, `agentctl learning add`)** — Cross-session institutional learning ledger.
 - [x] **Universal Edge-Runtime Import Guard** — Static AST security gate blocking Node.js built-ins in Edge contexts (Cloudflare Workers, Vercel Edge, Netlify).
@@ -54,6 +54,8 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 - [x] **Monorepo Architecture & Cross-Package Import Guard**:
   - Extend `resolveWorkspaceBoundary` to detect illegal cross-package imports and circular dependencies in TypeScript, Go, and Rust monorepos before running CI.
+- [ ] **Type III Silence Governor & Interruption Budgeting**:
+  - Configurable digest mode for escalation webhooks (`src/webhook.mjs`), suppressing non-critical notifications to protect developer focus until context shifts or critical manual intervention thresholds.
 - [ ] **Dynamic Complexity & Cost Router**:
   - Heuristic classifier that routes trivial tasks (typos, linter fixes, lockfile bumps) to fast/local providers while reserving Google Jules for complex multi-file refactors.
 - [ ] **Automated Flaky Test Healing Swarm**:
@@ -77,6 +79,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ## 🔮 Post-1.0 Long-Term Horizon (v1.x+)
 
+- **Proactive Telemetry Ingestion (Type III Situational Awareness)**: Ingest dev-server crash logs, APM traces, and Playwright test artifacts into auto-synthesized task envelopes for background diagnosis.
 - **Cross-Repository Swarm Orchestration**: Orchestrate breaking API contract changes across multiple distinct git repositories with atomic synchronization.
 - **Multimodal Visual Verification Loop**: Direct integration with headless browser video/screenshot streams for autonomous visual regression repairs.
 - **Wasm-Powered Structural AST Invariant Engine**: In-memory WebAssembly tree-sitter bindings (zero npm dependencies) for deep multi-language semantic AST verification.
