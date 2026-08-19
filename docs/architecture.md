@@ -10,36 +10,20 @@ The Google Jules Orchestrator Kit is built to safely and automatically execute t
 sequenceDiagram
     autonumber
     
-    box rgb(244,244,244) "Client Edge"
-        actor Trigger as Client (CLI / CI / SDK)
-    end
-    
-    box rgb(232,244,248) "Control Plane"
-        participant Orc as Orchestrator Core
-        participant Gate as Self-Audit Gatekeeper
-    end
-    
-    box rgb(254,243,242) "Worker & Local Workspace"
-        participant API as Google Jules API
-        participant Tree as Git Worktree (Local)
-    end
+    actor Trigger as Client (CLI / CI / SDK)
+    participant Orc as Orchestrator Core
+    participant API as Google Jules API
+    participant Tree as Git Worktree (Local)
+    participant Gate as Self-Audit Gatekeeper
+    participant Remote as GitHub Remote
 
-    box rgb(245,243,255) "Remote SCM"
-        participant Remote as GitHub Remote
-    end
-
-    %% Phase 1: Security & Provisioning
-    rect rgb(248, 249, 250)
     note over Trigger,Remote: Phase 1: Security Redaction & Worktree Provisioning
     Trigger->>Orc: Dispatch Task Payload
     Orc->>Orc: Redact Secrets (Entropy > 3.6) & Enforce Dynamic Guardrails
     Orc->>Tree: Provision Isolated Worktree (git worktree add)
     Tree-->>Orc: Worktree Ready
-    end
 
-    %% Phase 2-4: OODA Repair Cycle
     loop OODA Repair Cycle (Max 3 Attempts)
-        rect rgb(255, 253, 245)
         note over Orc,Tree: Phase 2: Agent Execution & Dispatch
         Orc->>API: Dispatch Task + Guardrails & Scope Bounds
         
@@ -50,40 +34,35 @@ sequenceDiagram
             API->>Tree: Apply Proposed Code Changes
             Tree-->>API: Patch Applied to Worktree
             API-->>Orc: Execution Completed
-        end
-        end
+            
+            note over Orc,Gate: Phase 3: 4-Tier Verification Gate (origin/main rules)
+            Orc->>Gate: Trigger Audit
+            Gate->>Tree: Run Tiers 1-3 (Scope Bounds, Diff < 75KB, Secret Scan)
+            Tree-->>Gate: Scope & Security Audit Results
+            Gate->>Tree: Run Tier 4: Trusted testCmd & buildCmd (NetGuard Sandbox)
+            Tree-->>Gate: Execution Exit Code + stdout / stderr
+            Gate-->>Orc: Audit Verdict (Pass or Failure Trace)
 
-        rect rgb(240, 249, 255)
-        note over Orc,Tree: Phase 3: 4-Tier Verification Gate (Rules from origin/main)
-        Orc->>Gate: Trigger Audit
-        Gate->>Tree: Run Tiers 1-3 (Scope Bounds, Diff < 75KB, Secret Scan)
-        Tree-->>Gate: Scope & Security Audit Results
-        Gate->>Tree: Run Tier 4: Trusted testCmd & buildCmd (NetGuard Sandbox)
-        Tree-->>Gate: Execution Exit Code + stdout / stderr
-        Gate-->>Orc: Audit Verdict (Pass or Failure Trace)
-        end
-
-        rect rgb(245, 255, 245)
-        note over Orc,Remote: Phase 4: Resolution / PR or Escalated Auto-Repair
-        alt Gate Violation (Tier 1 Scope / Tier 2 Diff > 75KB / Tier 3 Secret)
-            Orc-->>Trigger: Abort Immediate (Exit 3 / Exit 5 / Exit 6)
-            Orc->>Tree: Teardown Worktree Sandbox
-        else Verification Passed (100% Green) & Empty Diff
-            Orc-->>Trigger: Abort PR - Diff is Empty (Exit 0)
-            Orc->>Tree: Teardown Worktree Sandbox
-        else Verification Passed (100% Green) & Changes Present
-            Orc->>Tree: Commit Verified Changes
-            Orc->>Remote: Push Branch & Open Pull Request
-            Remote-->>Orc: PR Created (#123)
-            Orc->>Orc: Record Telemetry Chain
-            Orc-->>Trigger: Dispatch Succeeded (Exit 0)
-            Orc->>Tree: Teardown Worktree Sandbox
-        else Tests Failed & Retries Remaining (< 3)
-            Orc->>Orc: Redact Stderr Trace & Formulate Escalated Repair Prompt
-        else Tests Failed & Max Retries Exceeded (3/3)
-            Orc-->>Trigger: Abort & Log Diagnostic Feedback (Exit 4)
-            Orc->>Tree: Teardown Worktree Sandbox
-        end
+            note over Orc,Remote: Phase 4: Resolution / PR or Escalated Auto-Repair
+            alt Gate Violation (Tier 1 Scope / Tier 2 Diff > 75KB / Tier 3 Secret)
+                Orc-->>Trigger: Abort Immediate (Exit 3 / Exit 5 / Exit 6)
+                Orc->>Tree: Teardown Worktree Sandbox
+            else Verification Passed (100% Green) & Empty Diff
+                Orc-->>Trigger: Abort PR - Diff is Empty (Exit 0)
+                Orc->>Tree: Teardown Worktree Sandbox
+            else Verification Passed (100% Green) & Changes Present
+                Orc->>Tree: Commit Verified Changes
+                Orc->>Remote: Push Branch & Open Pull Request
+                Remote-->>Orc: PR Created (#123)
+                Orc->>Orc: Record Telemetry Chain
+                Orc-->>Trigger: Dispatch Succeeded (Exit 0)
+                Orc->>Tree: Teardown Worktree Sandbox
+            else Tests Failed & Retries Remaining (< 3)
+                Orc->>Orc: Redact Stderr Trace & Formulate Escalated Repair Prompt
+            else Tests Failed & Max Retries Exceeded (3/3)
+                Orc-->>Trigger: Abort & Log Diagnostic Feedback (Exit 4)
+                Orc->>Tree: Teardown Worktree Sandbox
+            end
         end
     end
 ```
