@@ -24,7 +24,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 3);
     assert.equal(Array.isArray(res.result.tools), true);
-    assert.equal(res.result.tools.length, 7);
+    assert.equal(res.result.tools.length, 8);
     assert.deepEqual(res.result.tools, MCP_TOOLS);
     const names = res.result.tools.map((t) => t.name);
     assert.deepEqual(names, [
@@ -35,6 +35,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
       "telemetry_tail",
       "optimize_jules_prompt",
       "get_web_task_template",
+      "record_system_learning",
     ]);
   });
 
@@ -67,6 +68,26 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     const parsed = JSON.parse(res.result.content[0].text);
     assert.equal(parsed.version, "0.29.1");
     assert.equal(typeof parsed.budget.used, "number");
+  });
+
+  await t.test("executes record_system_learning tool call", async () => {
+    const res = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 55,
+      method: "tools/call",
+      params: {
+        name: "record_system_learning",
+        arguments: {
+          trigger: "Vercel Edge Buffer crash",
+          solution: "Use Uint8Array instead of Buffer in Edge runtime",
+          category: "EDGE",
+        },
+      },
+    });
+    assert.equal(res.jsonrpc, "2.0");
+    assert.equal(res.id, 55);
+    const parsed = JSON.parse(res.result.content[0].text);
+    assert.equal(parsed.ok, true);
   });
 
   await t.test("returns error for unknown method", async () => {

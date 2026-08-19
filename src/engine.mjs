@@ -11,10 +11,41 @@ import { createHash } from "node:crypto";
 import { appendTelemetry as appendTelemetryUnsafe } from "./telemetry.mjs";
 
 import { spawn } from "node:child_process";
-import { resolveAffectedTests } from "./dag-engine.mjs";
+import { resolveAffectedTests, executeQueueDag } from "./dag-engine.mjs";
 import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory } from "./remediation.mjs";
+import { hydratePrompt, harvestFailure } from "./memory.mjs";
+import { resolveRolePrompt } from "./wizard-task.mjs";
 
-export { recordVerifyRun, readVerifyRuns, flakyVerdict, sanitizeUntrustedData, resolveAffectedTests, recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory, isConcurrencyGroupLocked };
+import {
+  computeDirectoryHash,
+  generateEvidenceManifest,
+  writeEvidenceManifest,
+  verifyEvidenceManifest,
+  generateEvidenceMarkdown,
+  sha256,
+} from "./evidence.mjs";
+
+export {
+  recordVerifyRun,
+  readVerifyRuns,
+  flakyVerdict,
+  sanitizeUntrustedData,
+  resolveAffectedTests,
+  executeQueueDag,
+  recordRemediation,
+  queryRemediations,
+  harvestFailureRecord,
+  hydrateMemory,
+  hydratePrompt,
+  harvestFailure,
+  resolveRolePrompt,
+  isConcurrencyGroupLocked,
+  computeDirectoryHash,
+  generateEvidenceManifest,
+  writeEvidenceManifest,
+  verifyEvidenceManifest,
+  generateEvidenceMarkdown,
+};
 
 
 function appendTelemetry(root, kind, fields = {}) {
@@ -146,9 +177,16 @@ export async function gate(opts = {}) {
       if (parsed.verify || parsed.test_cmd || parsed.build_cmd) {
         trustedVerify = {
           setup: parsed.verify?.setup || config.verify.setup,
+          lint: parsed.verify?.lint || parsed.lint_cmd || config.verify.lint,
           test: parsed.verify?.test || parsed.test_cmd || config.verify.test,
+          unit: parsed.verify?.unit || config.verify.unit || parsed.verify?.test || parsed.test_cmd || config.verify.test,
+          fuzz: parsed.verify?.fuzz || parsed.fuzz_cmd || config.verify.fuzz,
+          invariant: parsed.verify?.invariant || parsed.invariant_cmd || config.verify.invariant,
+          e2e: parsed.verify?.e2e || parsed.e2e_cmd || config.verify.e2e,
           teardown: parsed.verify?.teardown || config.verify.teardown,
           build: parsed.verify?.build || parsed.build_cmd || config.verify.build,
+          stages: parsed.verify?.stages || config.verify.stages,
+          policy: parsed.verify?.policy || config.verify.policy,
           timeoutMs: parsed.verify?.timeoutMs || parsed.verify?.timeout_ms || config.verify.timeoutMs,
         };
       }
@@ -200,11 +238,16 @@ export async function gate(opts = {}) {
     return { ok: false, code: 6, phases };
   }
 
+  // Pre-verification: compute test directory integrity hash
+  const preTestHashResult = computeDirectoryHash(root, { testOnly: true });
+  const preTestHash = preTestHashResult.treeHash;
+  const executionRecords = [];
+
   // Phase 4: Automated Test & Build Verification (Uses trusted verify commands only)
-  const testCmd = trustedVerify.test;
-  const buildCmd = trustedVerify.build;
   let testResult = { ok: true, status: 0 };
   let buildResult = { ok: true, status: 0 };
+  let serverResult = { ok: true, status: 0 };
+  let failingCmd = null;
 
   const existingNodeOptions = process.env.NODE_OPTIONS || "";
   const netGuardUrl = new URL("./preload-net-guard.mjs", import.meta.url).href;
@@ -219,100 +262,178 @@ export async function gate(opts = {}) {
   };
 
   let flakyVerdictResult = null;
+  const verifyTimeout = trustedVerify.timeoutMs || 60000;
 
-  if (testCmd) {
-    const setupCmd = trustedVerify.setup;
-    const teardownCmd = trustedVerify.teardown;
-    const verifyTimeout = trustedVerify.timeoutMs;
+  // Build sequential execution pipeline (Setup -> Lint -> Test/Unit -> Fuzz -> Invariant -> E2E -> Build -> Server -> Teardown)
+  const stagesToRun = [];
+  if (Array.isArray(trustedVerify.stages) && trustedVerify.stages.length > 0) {
+    stagesToRun.push(...trustedVerify.stages);
+  } else {
+    if (trustedVerify.setup) {
+      stagesToRun.push({ id: "setup", kind: "setup", cmd: trustedVerify.setup, required: true, networkAccess: "allow" });
+    }
+    if (trustedVerify.lint) {
+      stagesToRun.push({ id: "lint", kind: "lint", cmd: trustedVerify.lint, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
+    }
+    if (trustedVerify.test || trustedVerify.unit) {
+      stagesToRun.push({ id: "unit", kind: "test", cmd: trustedVerify.test || trustedVerify.unit, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
+    }
+    if (trustedVerify.fuzz) {
+      stagesToRun.push({ id: "fuzz", kind: "fuzz", cmd: trustedVerify.fuzz, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
+    }
+    if (trustedVerify.invariant) {
+      stagesToRun.push({ id: "invariant", kind: "invariant", cmd: trustedVerify.invariant, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
+    }
+    if (trustedVerify.e2e) {
+      stagesToRun.push({ id: "e2e", kind: "e2e", cmd: trustedVerify.e2e, required: true, networkAccess: "allow" });
+    }
+    if (trustedVerify.build) {
+      stagesToRun.push({ id: "build", kind: "build", cmd: trustedVerify.build, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
+    }
+  }
 
-    try {
-      if (setupCmd) {
-        const setupRes = runCmd(setupCmd, { cwd: root, ignoreError: true, env: testEnv, timeout: verifyTimeout });
-        if (setupRes.status !== 0) {
-          testResult = {
-            ok: false,
-            status: setupRes.status,
-            stdout: redactSecrets(setupRes.stdout || ""),
-            stderr: redactSecrets(setupRes.stderr || ""),
-            command: setupCmd,
-            phase: "setup",
-          };
-        }
-      }
+  try {
+    for (const stage of stagesToRun) {
+      if (!stage.cmd) continue;
+      const startTime = Date.now();
+      const stageEnv = stage.networkAccess === "forbidden" || trustedVerify.policy?.offline
+        ? { ...testEnv, JULES_SANDBOX_OFFLINE: "1" }
+        : testEnv;
 
-      if (testResult.ok) {
-        const startTime = Date.now();
-        const res = runCmd(testCmd, { cwd: root, ignoreError: true, env: testEnv, timeout: verifyTimeout });
-        const durationMs = Date.now() - startTime;
-        testResult = {
-          ok: res.status === 0,
-          status: res.status,
-          stdout: redactSecrets(res.stdout || ""),
-          stderr: redactSecrets(res.stderr || ""),
-          command: testCmd,
-        };
+      const res = runCmd(stage.cmd, { cwd: root, ignoreError: true, env: stageEnv, timeout: stage.timeoutMs || verifyTimeout });
+      const durationMs = Date.now() - startTime;
+      const stdoutRedacted = redactSecrets(res.stdout || "");
+      const stderrRedacted = redactSecrets(res.stderr || "");
+      const stageOk = res.status === 0;
 
-        const fingerprint = !testResult.ok ? fingerprintFailureState(testResult, root) : null;
-        recordVerifyRun(root, testCmd, testResult.ok, fingerprint, durationMs);
+      executionRecords.push({
+        id: stage.id || stage.kind,
+        kind: stage.kind,
+        cmd: stage.cmd,
+        exitCode: res.status,
+        durationMs,
+        networkAccess: stage.networkAccess || "allow",
+        stdoutHash: "sha256:" + sha256(stdoutRedacted),
+        stderrHash: "sha256:" + sha256(stderrRedacted),
+      });
 
-        if (!testResult.ok) {
-          const runs = readVerifyRuns(root, testCmd);
+      if (stage.kind === "test" || stage.kind === "unit") {
+        testResult = { ok: stageOk, status: res.status, stdout: stdoutRedacted, stderr: stderrRedacted, command: stage.cmd };
+        const fingerprint = !stageOk ? fingerprintFailureState(testResult, root) : null;
+        recordVerifyRun(root, stage.cmd, stageOk, fingerprint, durationMs);
+        if (!stageOk) {
+          const runs = readVerifyRuns(root, stage.cmd);
           flakyVerdictResult = flakyVerdict(runs);
           if (flakyVerdictResult.verdict === "QUARANTINED") {
-            phases.push({ phase: "verify", ok: false, testResult, buildResult, flakyVerdict: flakyVerdictResult });
+            phases.push({ phase: "verify", ok: false, testResult, buildResult, flakyVerdict: flakyVerdictResult, executionRecords });
             appendTelemetry(root, "gate_phase", { phase: "verify", ok: false, quarantined: true });
             appendTelemetry(root, "gate_finished", { ok: false, code: 8 });
             return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult };
           }
         }
+      } else if (stage.kind === "build") {
+        buildResult = { ok: stageOk, status: res.status, stdout: stdoutRedacted, stderr: stderrRedacted, command: stage.cmd };
       }
-    } finally {
-      if (teardownCmd) {
-        try {
-          runCmd(teardownCmd, { cwd: root, ignoreError: true, env: testEnv });
-        } catch (_) {}
+
+      if (!stageOk && stage.required !== false) {
+        failingCmd = {
+          ok: false,
+          status: res.status,
+          stdout: stdoutRedacted,
+          stderr: stderrRedacted,
+          command: stage.cmd,
+          phase: stage.kind,
+        };
+        break;
       }
+    }
+  } finally {
+    if (trustedVerify.teardown) {
+      try {
+        runCmd(trustedVerify.teardown, { cwd: root, ignoreError: true, env: testEnv });
+      } catch (_) {}
     }
   }
 
-  if (testResult.ok && buildCmd) {
-    const res = runCmd(buildCmd, { cwd: root, ignoreError: true, env: testEnv });
-    buildResult = {
-      ok: res.status === 0,
-      status: res.status,
-      stdout: redactSecrets(res.stdout || ""),
-      stderr: redactSecrets(res.stderr || ""),
-      command: buildCmd,
-    };
-  }
-
-  let serverResult = { ok: true, status: 0 };
-  if (testResult.ok && buildResult.ok && trustedVerify.server && trustedVerify.server.command) {
+  if (!failingCmd && trustedVerify.server && trustedVerify.server.command) {
     serverResult = await probeDevServer(trustedVerify.server, root);
+    if (!serverResult.ok) {
+      failingCmd = serverResult;
+    }
   }
 
-  const verifyOk = testResult.ok && buildResult.ok && serverResult.ok;
-  const failingCmd = !testResult.ok ? testResult : !buildResult.ok ? buildResult : !serverResult.ok ? serverResult : null;
-  phases.push({ phase: "verify", ok: verifyOk, testResult, buildResult, serverResult });
+  // Post-verification test integrity check (No Test Weakening Invariant)
+  const postTestHashResult = computeDirectoryHash(root, { testOnly: true });
+  const postTestHash = postTestHashResult.treeHash;
+  let testTampered = false;
+  if (config.evidence?.strictTestLock && !opts.allowTestModifications && preTestHashResult.fileCount > 0) {
+    const changedTestFile = files.find((f) => {
+      const lower = f.toLowerCase();
+      return lower.startsWith("test/") || lower.startsWith("tests/") || lower.includes(".test.") || lower.includes(".spec.");
+    });
+    if (changedTestFile && preTestHash !== postTestHash) {
+      testTampered = true;
+    }
+  }
+
+  // Generate & persist Evidence Manifest
+  const evidenceManifest = generateEvidenceManifest(root, {
+    preTestHash,
+    executionRecords,
+    secretScanOk: secretResult.ok,
+    diffKb: Math.round(bytes / 1024),
+    maxDiffKb: config.limits.diffKb || 75,
+    protectedScopeOk: scopeResult.ok,
+    repository: config.provider || "jules",
+  });
+  if (testTampered) {
+    evidenceManifest.testIntegrity.tamperDetected = true;
+  }
+  let evidencePath = null;
+  try {
+    evidencePath = writeEvidenceManifest(root, evidenceManifest);
+  } catch (_) {}
+
+  const verifyOk = !failingCmd && !testTampered;
+  phases.push({
+    phase: "verify",
+    ok: verifyOk,
+    testResult,
+    buildResult,
+    serverResult,
+    executionRecords,
+    testIntegrity: {
+      preTestHash,
+      postTestHash,
+      tamperDetected: testTampered,
+    },
+  });
+  phases.push({
+    phase: "evidence",
+    ok: !testTampered,
+    manifestPath: evidencePath,
+    evidenceHash: evidenceManifest.evidenceHash,
+  });
+
   appendTelemetry(root, "gate_phase", { phase: "verify", ok: verifyOk });
   if (progressBus && progressToken) {
-    progressBus.reportProgress(progressToken, 100, 100, "Phase 4/4: Automated Test & Build Verification complete");
+    progressBus.reportProgress(progressToken, 100, 100, "Phase 4/4: Automated Tiered Verification complete");
   }
 
-  if (!verifyOk && opts.fix) {
+  if (!verifyOk && opts.fix && failingCmd) {
     const repairs = await repair(failingCmd, { config, root, signal: opts.signal, progressBus, progressToken });
     const finalOk = repairs.ok;
     const finalCode = repairs.ok ? 0 : 4;
     appendTelemetry(root, "gate_finished", { ok: finalOk, code: finalCode, repaired: true });
     if (repairs.ok) {
-      return { ok: true, code: 0, phases, repairs };
+      return { ok: true, code: 0, phases, repairs, evidence: evidenceManifest };
     }
-    return { ok: false, code: 4, phases, repairs };
+    return { ok: false, code: 4, phases, repairs, evidence: evidenceManifest };
   }
 
-  const code = verifyOk ? 0 : 4;
+  const code = verifyOk ? 0 : testTampered ? 3 : 4;
   appendTelemetry(root, "gate_finished", { ok: verifyOk, code });
-  return { ok: verifyOk, code, phases };
+  return { ok: verifyOk, code, phases, evidence: evidenceManifest };
 }
 
 /**
@@ -483,6 +604,15 @@ export async function repair(failure, opts = {}) {
     targetFiles: currentFailure.targetFiles || [],
   });
 
+  try {
+    harvestFailure(root, {
+      exitCode: 4,
+      diffText: diffText(root) || "",
+      taskId: failure?.taskId || "ooda-repair",
+      logPath: failure?.logPath,
+    });
+  } catch (_) {}
+
   return { ok: false, attempts, finalStatus: "OODA_EXHAUSTED" };
 
 }
@@ -573,7 +703,20 @@ export async function dispatch(task = {}, opts = {}) {
   }
 
   // Redact secrets in prompt before dispatching
-  const cleanPrompt = redactSecrets(task.prompt || "");
+  let cleanPrompt = redactSecrets(task.prompt || "");
+
+  // Specialist Role resolution (if role is set and not already present in prompt)
+  if (task.role && !cleanPrompt.includes("Protocol - ")) {
+    const roleObj = resolveRolePrompt(root, task.role);
+    if (roleObj) {
+      cleanPrompt = `${roleObj.content}\n\n${cleanPrompt}`.trim();
+    }
+  }
+
+  // SPORE Memory Hydration (auto-hydrate platform quirks & system learnings)
+  if (!cleanPrompt.includes("<ACTIVE_SYSTEM_LEARNINGS>")) {
+    cleanPrompt = hydratePrompt(root, cleanPrompt);
+  }
 
   // Wire Prompt Guard, Memory Hydration & Envelope to wrap raw task arguments
   const taskInstructions = task.taskInstructions || cleanPrompt || task.title || "Autonomous Task Execution";
@@ -629,6 +772,15 @@ export async function run(tasksOrOpts = {}, opts = {}) {
   const requestedConcurrency = Number(options.concurrency ?? config.limits.concurrency ?? 1);
   const concurrency = Number.isInteger(requestedConcurrency) && requestedConcurrency > 0 ? requestedConcurrency : 1;
   const isDry = options.dryRun !== undefined ? options.dryRun : (process.env.JULES_DRY_RUN === "true" || process.env.JULES_DRY_RUN === "1");
+
+  if (options.dag || options.useDag) {
+    return await executeQueueDag(root, {
+      concurrency,
+      dryRun: isDry,
+      config,
+    });
+  }
+
   const queueDir = getQueueDir(root);
   const completedDir = join(queueDir, "completed");
   ensureDir(completedDir);
@@ -713,6 +865,10 @@ export function synthesizePrDescription(session = {}, gateResult = {}, options =
 
   const kbDiff = ((payloadPhase.bytes || 0) / 1024).toFixed(1);
   const kbLimit = ((payloadPhase.limitBytes || 76800) / 1024).toFixed(0);
+  const evidenceManifest = gateResult.evidence || (options.evidence ? options.evidence : null);
+  const evidenceSection = evidenceManifest
+    ? `\n### 🛡️ Cryptographic Evidence Manifest\n- **Manifest ID:** \`${evidenceManifest.manifestId}\`\n- **Signature:** \`${evidenceManifest.evidenceHash?.slice(0, 16)}...\`\n- **Test Integrity:** ${evidenceManifest.testIntegrity?.tamperDetected ? "❌ Tampered" : "✅ Verified (0 test weakening)"}\n`
+    : "";
 
   const modifiedFiles = options.modifiedFiles || [];
   const affectedTests = resolveAffectedTests(modifiedFiles, options);
@@ -724,7 +880,7 @@ export function synthesizePrDescription(session = {}, gateResult = {}, options =
 - **OODA Turns:** \`${attemptsCount}/${maxAttempts}\`
 - **Warm Resumption:** ${isWarm ? "✅ Active Context Stream" : "Cold Start"}
 - **Execution Latency:** \`${durationSec}s\`
-
+${evidenceSection}
 ### 🛡️ Zero-Trust Security Audit Matrix
 - **Scope Guard:** ${scopePhase.ok ? "✅ PASS (0 protected path violations)" : "❌ FAIL"}
 - **Diff Payload Governor:** ${payloadPhase.ok ? `✅ PASS (${kbDiff} KB / ${kbLimit} KB limit)` : "❌ EXCEEDED"}

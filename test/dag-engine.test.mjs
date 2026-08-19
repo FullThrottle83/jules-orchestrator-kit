@@ -301,5 +301,48 @@ describe("DagExecutor & Interface Fingerprinting", () => {
     });
     assert.deepEqual(affected, ["test/auth.test.mjs"]);
   });
+
+  it("executeQueueDag processes queued tasks honoring dependsOn dependency tree", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    // Task 1: Setup DB (no dependencies)
+    const task1Content = `<!-- JULES_TASK_ENVELOPE: {"version":1,"id":"TASK-01","title":"Setup DB"} -->
+# Setup DB
+[TASK INSTRUCTIONS]
+Run database migration
+[VERIFICATION ORACLE]
+Test/Verification Command: npm test
+`;
+    writeFileSync(join(queueDir, "TASK-01.md"), task1Content);
+
+    // Task 2: Seed Data (depends on TASK-01)
+    const task2Content = `<!-- JULES_TASK_ENVELOPE: {"version":1,"id":"TASK-02","title":"Seed Data","dependsOn":["TASK-01"]} -->
+# Seed Data
+[TASK INSTRUCTIONS]
+Seed user accounts
+[VERIFICATION ORACLE]
+Test/Verification Command: npm test
+`;
+    writeFileSync(join(queueDir, "TASK-02.md"), task2Content);
+
+    const executionLog = [];
+    const mockDispatch = async (task) => {
+      executionLog.push(task.id);
+      return { id: `session-${task.id}`, ok: true };
+    };
+
+    const res = await executeQueueDag(testDir, {
+      concurrency: 2,
+      dispatchFn: mockDispatch,
+    });
+
+    assert.equal(res.processed, 2);
+    assert.deepEqual(executionLog, ["TASK-01", "TASK-02"]);
+    assert.equal(existsSync(join(queueDir, "completed", "TASK-01.md")), true);
+    assert.equal(existsSync(join(queueDir, "completed", "TASK-02.md")), true);
+  });
 });
+
 

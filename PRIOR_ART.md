@@ -31,6 +31,9 @@ This documentation lists the projects in the AI agent ecosystem that inspired th
 - **Inspiration (Google Labs `/code` *Situationally Aware Agents* / Type III Taxonomy):** Deep telemetry ingestion and treating silence as an explicit, strategic decision to preserve developer focus.
 - **Our Difference:** Zero-dependency, local sidecar state management (`.agent/jules-queue/*.state.json`) and quiet-by-default interruption budgeting directly in the orchestrator kernel, avoiding external surveillance SaaS or heavyweight daemons.
 
+- **Inspiration (`TrueForge`, `DeepAgents`, `Claude Managed Agents`):** Self-hosted Agent Runtime Harnesses offering multi-provider model gateways, dynamic remote sandboxing (Daytona), context compaction ("Code Mode"), and embeddable web chat UIs.
+- **Our Difference:** TrueForge builds heavy runtime infrastructure (Postgres, Redis, Docker, SaaS gateways) to turn raw LLMs into agents. In contrast, `jules-orchestrator-kit` is a sovereign **Zero-Dependency Governor & Orchestrator** for already-harnessed autonomous workers (Google Jules). We enforce terminal-first execution, strict payload limits (< 75 KB), local OODA auto-repair loops, and atomic secret/scope gates using only Node.js standard libraries.
+
 ## What makes jules-orchestrator-kit unique?
 
 The honest answer to what *this* kit does that the others don't is **the gate**:

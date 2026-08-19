@@ -98,6 +98,7 @@ export const MCP_TOOLS = [
       properties: {
         title: { type: "string", description: "Short descriptive title for the task" },
         prompt: { type: "string", description: "Detailed task instructions and prompt" },
+        role: { type: "string", description: "Specialist agent role (overseer | bolt | sentinel | janitor)" },
       },
       required: ["prompt"],
     },
@@ -178,6 +179,20 @@ export const MCP_TOOLS = [
       },
     },
   },
+  {
+    name: "record_system_learning",
+    description: "Record a persistent system learning or platform quirk into .agent/SYSTEM_LEARNINGS.md (SPORE Memory).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        trigger: { type: "string", description: "Trigger condition or symptom (e.g. 'Cloudflare Workers SSR')" },
+        solution: { type: "string", description: "Mandatory rule or resolution (e.g. 'Do not use node:fs in edge runtime')" },
+        agent: { type: "string", description: "Agent name (defaults to 'agent')" },
+        category: { type: "string", description: "Category (e.g. 'EDGE', 'DATABASE', 'GENERAL')" },
+      },
+      required: ["trigger", "solution"],
+    },
+  },
 ];
 
 export async function handleMcpRequest(request, opts = {}) {
@@ -220,7 +235,7 @@ export async function handleMcpRequest(request, opts = {}) {
     try {
       if (toolName === "dispatch_jules_task") {
         const session = await dispatch(
-          { title: args.title || "MCP Task Dispatch", prompt: args.prompt },
+          { title: args.title || "MCP Task Dispatch", prompt: args.prompt, role: args.role },
           { root, config }
         );
         return {
@@ -228,6 +243,23 @@ export async function handleMcpRequest(request, opts = {}) {
           id,
           result: {
             content: [{ type: "text", text: JSON.stringify({ ok: true, session }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "record_system_learning") {
+        const { recordLearning } = await import("./memory.mjs");
+        const result = recordLearning(root, {
+          trigger: args.trigger,
+          solution: args.solution,
+          agent: args.agent || "mcp-agent",
+          category: args.category || "GENERAL",
+        });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, ...result }, null, 2) }],
           },
         };
       }

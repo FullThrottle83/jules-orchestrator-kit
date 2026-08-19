@@ -21,9 +21,9 @@ export function printHelp() {
 Usage: agentctl <command> [options]
 
 Commands:
-  dispatch | create     Dispatch a single task to an AI agent
+  dispatch | create     Dispatch a single task to an AI agent (--role <name>)
   gate | audit          Run CI security and verification gate against current branch
-  queue                 Run pending task queue
+  queue                 Run pending task queue (--dag, --concurrency <n>)
   swarm                 Run parallel task swarm
   mcp                   Start stdio Model Context Protocol (MCP) server
   clean                 Clean stale branches, worktrees, locks, and ledgers
@@ -33,7 +33,7 @@ Commands:
   review-repair         Parse PR review comments and synthesize OODA repair tasks
   dashboard             Start local HTTP telemetry and audit dashboard
   init                  Scaffold .agent/ config and run onboarding wizard
-  task create           Interactively author and scope a Jules task envelope (--template <name>)
+  task create           Interactively author and scope a Jules task envelope (--template <name>, --role <name>)
   task optimize         Linter & optimizer for Jules task prompts (--fix, --json, --web)
   task template         List and generate web development task templates (--list, --json)
   test-gen              Scaffold & run automated TDD Red-to-Green test cycle (--run)
@@ -45,9 +45,12 @@ Commands:
   hydrate [prompt]      Prepend active system learnings and baton-pass state to a prompt
   harvest               Harvest failure traces and record/quarantine resolution rules
   learning add          Record a system learning rule into .agent/knowledge/
+  evidence <action>     Manage cryptographic audit evidence (generate | verify | show)
   version               Output agentctl version
 
 Options:
+  --role, -r            Specify specialist agent role (overseer | bolt | sentinel | janitor)
+  --dag                 Execute queue tasks via DAG dependency resolution
   --dry-run, -d         Simulate action without making API calls or modifying git
   --mode, -m            Gate evaluation mode (working-tree | committed | staged)
   --repoless            Dispatch task in repoless execution mode
@@ -83,6 +86,7 @@ async function main() {
           title: { type: "string", short: "t" },
           prompt: { type: "string", short: "p" },
           "prompt-file": { type: "string", short: "f" },
+          role: { type: "string", short: "r" },
           source: { type: "string", short: "s" },
           branch: { type: "string", short: "b" },
           repoless: { type: "boolean" },
@@ -111,6 +115,7 @@ async function main() {
       const task = {
         title: values.title || "CLI Dispatch Task",
         prompt: promptContent,
+        role: values.role,
         source: values.source,
         branch: values.branch,
         repoless: values.repoless,
@@ -202,17 +207,34 @@ async function main() {
     }
 
     case "queue": {
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          dag: { type: "boolean" },
+          concurrency: { type: "string", short: "c" },
+          "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
       const queueDir = getQueueDir(root);
       const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
       console.log(`Found ${files.length} queued task(s) in .agent/queue/`);
       if (files.length > 0) {
-        const tasks = files.map((f) => ({
-          id: f,
-          title: f.replace(/\.md$/, ""),
-          prompt: readFileSync(join(queueDir, f), "utf-8"),
-        }));
-        const results = await run(tasks, { root, config });
-        console.log(`\nProcessed ${results.length} tasks.`);
+        const concurrency = values.concurrency ? Number(values.concurrency) : undefined;
+        const results = await run(null, {
+          root,
+          config,
+          dag: values.dag,
+          concurrency,
+          dryRun: values["dry-run"],
+        });
+        if (values.json) {
+          console.log(JSON.stringify(results, null, 2));
+        } else {
+          console.log(`\nProcessed ${results.processed || results.results?.length || 0} task(s).`);
+        }
       }
       process.exit(0);
       break;
@@ -374,7 +396,10 @@ async function main() {
           options: {
             title: { type: "string", short: "t" },
             prompt: { type: "string", short: "p" },
+            role: { type: "string", short: "r" },
             template: { type: "string" },
+            depends: { type: "string" },
+            "depends-on": { type: "string" },
             "verify-cmd": { type: "string", short: "v" },
             "auto-pr": { type: "boolean" },
             "require-plan-approval": { type: "boolean" },
@@ -388,7 +413,9 @@ async function main() {
         const res = await runTaskCreateWizard(root, {
           title: values.title,
           prompt: values.prompt,
+          role: values.role,
           template: values.template,
+          dependsOn: values["depends-on"] || values.depends,
           verifyCmd: values["verify-cmd"],
           autoPr: values["auto-pr"],
           requirePlanApproval: values["require-plan-approval"],
@@ -401,6 +428,8 @@ async function main() {
           console.log(`✅ Task synthesized & queued at ${res.taskFile}`);
           console.log(`   Task ID  : ${res.plan.taskId}`);
           console.log(`   Title    : ${res.plan.title}`);
+          if (res.plan.role) console.log(`   Role     : ${res.plan.role}`);
+          if (res.plan.dependsOn && res.plan.dependsOn.length > 0) console.log(`   DependsOn: ${res.plan.dependsOn.join(", ")}`);
           console.log(`   Auto-PR  : ${res.plan.flags.autoPr}`);
         }
         process.exit(0);
@@ -748,6 +777,77 @@ async function main() {
       }
       console.error('Usage: agentctl learning add "<trigger/symptom>" "<solution>"');
       process.exit(1);
+    }
+
+    case "evidence": {
+      const subAction = args[1] || "show";
+      const { planEvidenceGenerate, planEvidenceVerify, planEvidenceShow } = await import("../src/ops/evidence-actions.mjs");
+      const { values } = parseArgs({
+        args: args.slice(2),
+        options: {
+          output: { type: "string", short: "o" },
+          manifest: { type: "string", short: "m" },
+          markdown: { type: "string" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      if (subAction === "generate" || subAction === "create") {
+        const res = planEvidenceGenerate(root, {
+          output: values.output,
+          markdownOutput: values.markdown,
+        });
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`\n🛡️ Cryptographic Evidence Manifest Generated!`);
+          console.log(`   Manifest ID : ${res.manifest.manifestId}`);
+          console.log(`   Signature   : ${res.manifest.evidenceHash}`);
+          console.log(`   Location    : ${res.manifestPath}`);
+          console.log(`   Test Files  : ${res.manifest.testIntegrity.testFileCount}`);
+          console.log(`   Tampered    : ${res.manifest.testIntegrity.tamperDetected ? "YES (FAILED)" : "NO (VERIFIED)"}\n`);
+        }
+        process.exit(res.manifest.testIntegrity.tamperDetected ? 1 : 0);
+      } else if (subAction === "verify" || subAction === "check") {
+        const res = planEvidenceVerify(root, {
+          manifest: values.manifest,
+        });
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          if (res.ok) {
+            console.log(`\n✅ Evidence Verification PASSED`);
+            console.log(`   Manifest ID : ${res.manifestId}`);
+            console.log(`   Signature   : ${res.evidenceHash}\n`);
+          } else {
+            console.error(`\n❌ Evidence Verification FAILED`);
+            console.error(`   Reason      : ${res.reason}`);
+            if (res.details) {
+              console.error(`   Details     : ${JSON.stringify(res.details)}\n`);
+            }
+          }
+        }
+        process.exit(res.ok ? 0 : 1);
+      } else if (subAction === "show" || subAction === "print") {
+        const res = planEvidenceShow(root, {
+          manifest: values.manifest,
+        });
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          if (res.ok) {
+            console.log(`\n${res.markdown}\n`);
+          } else {
+            console.error(`\n❌ Failed to show evidence: ${res.reason}\n`);
+          }
+        }
+        process.exit(res.ok ? 0 : 1);
+      } else {
+        console.error(`Unknown evidence subaction: ${subAction}. Use generate | verify | show.`);
+        process.exit(1);
+      }
+      break;
     }
 
     default:

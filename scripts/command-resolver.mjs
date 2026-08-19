@@ -22,7 +22,13 @@ export function parseYamlConfig(root = process.cwd()) {
         if (parsed && (parsed.test_cmd || parsed.build_cmd || parsed.verify)) {
           return {
             testCmd: parsed.verify?.test || parsed.test_cmd || "",
+            lintCmd: parsed.verify?.lint || parsed.lint_cmd || "",
+            fuzzCmd: parsed.verify?.fuzz || parsed.fuzz_cmd || "",
+            invariantCmd: parsed.verify?.invariant || parsed.invariant_cmd || "",
+            e2eCmd: parsed.verify?.e2e || parsed.e2e_cmd || "",
             buildCmd: parsed.verify?.build || parsed.build_cmd || "",
+            policy: parsed.verify?.policy || { networkAccess: "allow", offline: false },
+            stages: parsed.verify?.stages || null,
             source: configPath.endsWith("jules.yml") ? ".agent/jules.yml" : ".agent/config.yml",
           };
         }
@@ -50,8 +56,16 @@ export function detectFrameworkCommands(root = process.cwd()) {
   const res = detectStack(root);
   return {
     testCmd: res.testCmd,
+    lintCmd: res.fmtCmd || "",
+    fuzzCmd: res.fuzzCmd || "",
+    invariantCmd: res.invariantCmd || "",
+    e2eCmd: res.e2eCmd || "",
     buildCmd: res.buildCmd,
-    source: `package.json (${res.stack})`,
+    policy: {
+      networkAccess: res.stack === "foundry" ? "forbidden" : "allow",
+      offline: res.stack === "foundry",
+    },
+    source: `${res.triggerFile || "stack"} (${res.stack})`,
   };
 }
 

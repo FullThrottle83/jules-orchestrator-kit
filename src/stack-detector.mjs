@@ -155,6 +155,31 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
     return { ...container, stack: "make", testCmd: "make test", buildCmd: "make build", triggerFile: "Makefile" };
   }
 
+  // 4b. Web3 / Solidity / Foundry & Hardhat
+  if (existsSync(join(projectRoot, "foundry.toml")) || existsSync(join(projectRoot, "remappings.txt"))) {
+    const triggerFile = existsSync(join(projectRoot, "foundry.toml")) ? "foundry.toml" : "remappings.txt";
+    return {
+      ...container,
+      stack: "foundry",
+      testCmd: "forge test --offline",
+      buildCmd: "forge build --offline",
+      fmtCmd: "forge fmt --check",
+      fuzzCmd: "forge test --offline --match-test testFuzz",
+      invariantCmd: "forge test --offline --match-test invariant",
+      triggerFile,
+    };
+  }
+  if (existsSync(join(projectRoot, "hardhat.config.js")) || existsSync(join(projectRoot, "hardhat.config.ts"))) {
+    const triggerFile = existsSync(join(projectRoot, "hardhat.config.ts")) ? "hardhat.config.ts" : "hardhat.config.js";
+    return {
+      ...container,
+      stack: "hardhat",
+      testCmd: "npx hardhat test",
+      buildCmd: "npx hardhat compile",
+      triggerFile,
+    };
+  }
+
   // 5. Python / Django / Elixir / Ruby / Java
   if (existsSync(join(projectRoot, "manage.py"))) {
     return { ...container, stack: "django", testCmd: "python manage.py test --keepdb", buildCmd: "python manage.py check", triggerFile: "manage.py" };
@@ -247,6 +272,9 @@ export function findSubprojectRoot(fileRelPath = "", root = process.cwd()) {
 
   const manifestFiles = [
     "package.json",
+    "foundry.toml",
+    "hardhat.config.js",
+    "hardhat.config.ts",
     "Cargo.toml",
     "go.mod",
     "pyproject.toml",

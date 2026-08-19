@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { planTaskCreate, runTaskCreateWizard } from "../src/wizard-task.mjs";
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCmd } from "../src/git.mjs";
@@ -152,4 +152,33 @@ test("Guided Task Authoring Subsystem", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("planTaskCreate resolves role from .agent/prompts/ and attaches to envelope", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-task-role-"));
+    try {
+      const promptsDir = join(tmpDir, ".agent", "prompts");
+      mkdirSync(promptsDir, { recursive: true });
+      writeFileSync(
+        join(promptsDir, "Bolt.md"),
+        "# Bolt Protocol - Micro-Performance Specialist\nOptimize hotspot performance."
+      );
+
+      const plan = planTaskCreate(tmpDir, {
+        title: "Optimize JSON parsing",
+        prompt: "Refactor string parsing loop",
+        role: "bolt",
+        dependsOn: ["TASK-01", "TASK-02"],
+        verifyCmd: "npm test",
+      });
+
+      assert.equal(plan.role, "Bolt");
+      assert.deepEqual(plan.dependsOn, ["TASK-01", "TASK-02"]);
+      assert.ok(plan.fullPrompt.includes("Bolt Protocol"));
+      assert.ok(plan.taskFileContent.includes('"role":"Bolt"'));
+      assert.ok(plan.taskFileContent.includes('"dependsOn":["TASK-01","TASK-02"]'));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
+

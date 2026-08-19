@@ -109,9 +109,24 @@ export { synthesizePrDescription, probeDevServer } from "./src/engine.mjs";
 // Automated TDD Red-to-Green Harness
 export { scaffoldTddTest, runTddCycle, TddError } from "./src/ops/tdd-generator.mjs";
 
+// SPORE Memory & System Learnings
+export { recordLearning, loadLearnings, hydratePrompt, harvestFailure, getLearningsPath, getSystemLearningsMdPath } from "./src/memory.mjs";
+
+// Specialist Role Resolution & DAG Queue Execution
+export { resolveRolePrompt } from "./src/wizard-task.mjs";
+export { executeQueueDag, resolveAffectedTests } from "./src/dag-engine.mjs";
+
 // IDE Native MCP Scaffolder
 export { scaffoldIdeConfig, IdeScaffoldError } from "./src/ops/ide-scaffold.mjs";
 
-
-
-
+// Cryptographic Evidence & Test Integrity Manifests
+export {
+  computeFileHash,
+  computeDirectoryHash,
+  generateEvidenceManifest,
+  writeEvidenceManifest,
+  loadEvidenceManifest,
+  verifyEvidenceManifest,
+  generateEvidenceMarkdown,
+  computeEvidenceHash,
+} from "./src/evidence.mjs";

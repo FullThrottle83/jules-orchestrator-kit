@@ -406,3 +406,118 @@ export function resolveAffectedTests(modifiedFiles = [], options = {}) {
   return affected.size > 0 ? Array.from(affected) : null;
 }
 
+/**
+ * Loads tasks from the queue directory and executes them via DagExecutor.
+ * Supports task files with metadata (JSON or Markdown envelopes with dependsOn).
+ * @param {string} [root=process.cwd()]
+ * @param {Object} [options]
+ * @param {number} [options.concurrency=1]
+ * @param {boolean} [options.dryRun=false]
+ * @param {Function} [options.dispatchFn]
+ * @param {Object} [options.config]
+ * @returns {Promise<{ processed: number, results: Array<any> }>}
+ */
+export async function executeQueueDag(root = process.cwd(), options = {}) {
+  const { readdirSync, renameSync, mkdirSync } = await import("node:fs");
+  const { join, basename } = await import("node:path");
+
+  const queueDir = join(root, ".agent", "jules-queue");
+  const fallbackQueueDir = join(root, ".agent", "queue");
+  const actualQueueDir = existsSync(queueDir) ? queueDir : (existsSync(fallbackQueueDir) ? fallbackQueueDir : queueDir);
+  const completedDir = join(actualQueueDir, "completed");
+
+  if (!existsSync(actualQueueDir)) {
+    return { processed: 0, results: [] };
+  }
+  if (!existsSync(completedDir)) {
+    try {
+      mkdirSync(completedDir, { recursive: true });
+    } catch (_) {}
+  }
+
+  const files = readdirSync(actualQueueDir).filter((f) => {
+    if (f === "completed" || f.startsWith(".")) return false;
+    return f.endsWith(".md") || f.endsWith(".json") || f.endsWith(".task");
+  });
+
+  if (files.length === 0) {
+    return { processed: 0, results: [] };
+  }
+
+  const executor = new DagExecutor({ concurrency: options.concurrency || 1 });
+  const taskMap = new Map();
+  const results = [];
+
+  for (const file of files) {
+    if (basename(file) !== file) continue;
+    const fullPath = join(actualQueueDir, file);
+    const content = readFileSync(fullPath, "utf-8");
+    let taskId = file.replace(/\.(md|json|task)$/, "");
+    let dependsOn = [];
+    let title = taskId;
+    let prompt = content;
+    let role = undefined;
+
+    // Check envelope header
+    const match = content.match(/<!--\s*JULES_TASK_ENVELOPE:\s*({[\s\S]*?})\s*-->/);
+    if (match) {
+      try {
+        const meta = JSON.parse(match[1]);
+        if (meta.id) taskId = meta.id;
+        if (meta.title) title = meta.title;
+        if (meta.role) role = meta.role;
+        if (Array.isArray(meta.dependsOn)) dependsOn = meta.dependsOn;
+        else if (typeof meta.dependsOn === "string") dependsOn = meta.dependsOn.split(",").map((s) => s.trim()).filter(Boolean);
+      } catch (_) {}
+    } else if (file.endsWith(".json")) {
+      try {
+        const parsed = JSON.parse(content);
+        if (parsed.id) taskId = parsed.id;
+        if (parsed.title) title = parsed.title;
+        if (parsed.prompt) prompt = parsed.prompt;
+        if (parsed.role) role = parsed.role;
+        if (Array.isArray(parsed.dependsOn)) dependsOn = parsed.dependsOn;
+        else if (typeof parsed.dependsOn === "string") dependsOn = parsed.dependsOn.split(",").map((s) => s.trim()).filter(Boolean);
+      } catch (_) {}
+    }
+
+    taskMap.set(taskId, { file, fullPath, taskId, title, prompt, role, dependsOn });
+  }
+
+  // Register each task with its dependencies that are part of this queue run
+  for (const [taskId, t] of taskMap.entries()) {
+    const validDeps = t.dependsOn.filter((dep) => taskMap.has(dep));
+    executor.addTask({
+      id: taskId,
+      dependsOn: validDeps,
+      runner: async () => {
+        const srcPath = t.fullPath;
+        const taskObj = { id: t.taskId, title: t.title, prompt: t.prompt, role: t.role };
+        let session;
+        if (typeof options.dispatchFn === "function") {
+          session = await options.dispatchFn(taskObj, { root, config: options.config, dryRun: options.dryRun });
+        } else {
+          const { dispatch } = await import("./engine.mjs");
+          session = await dispatch(taskObj, { root, config: options.config, dryRun: options.dryRun });
+        }
+
+        if (session && session.ok === false) {
+          results.push({ file: t.file, taskId: t.taskId, ok: false, status: session.status, error: session.error, session });
+          throw new Error(`DAG Task '${t.taskId}' failed: ${session.error || session.status || "Unknown error"}`);
+        } else {
+          const dstPath = join(completedDir, t.file);
+          if (existsSync(srcPath)) {
+            if (!existsSync(dstPath)) {
+              renameSync(srcPath, dstPath);
+            }
+          }
+          results.push({ file: t.file, taskId: t.taskId, ok: true, session });
+        }
+      },
+    });
+  }
+
+  await executor.execute({ concurrency: options.concurrency || 1, root });
+  return { processed: results.length, results };
+}
+

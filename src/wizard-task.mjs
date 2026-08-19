@@ -1,5 +1,5 @@
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { writeFileSync, readFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
+import { resolve, join } from "node:path";
 import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
 import { scanDiff, shannonEntropy } from "./security.mjs";
@@ -22,8 +22,37 @@ HARD CONSTRAINTS:
 const TRIVIAL_ORACLES = new Set(["true", "echo", ":", "false", "exit 0", "exit 1", "echo ok"]);
 
 /**
+ * Resolves specialist agent role markdown prompt from .agent/prompts/
+ * @param {string} [root=process.cwd()]
+ * @param {string} [roleName=""]
+ * @returns {{ role: string, path: string, content: string } | null}
+ */
+export function resolveRolePrompt(root = process.cwd(), roleName = "") {
+  if (!roleName || typeof roleName !== "string") return null;
+  const cleanName = roleName.trim().toLowerCase();
+  const promptsDir = join(root, ".agent", "prompts");
+  if (!existsSync(promptsDir)) return null;
+
+  try {
+    const files = readdirSync(promptsDir);
+    const matched = files.find(
+      (f) => f.toLowerCase() === `${cleanName}.md` || f.toLowerCase() === cleanName
+    );
+    if (matched) {
+      const fullPath = join(promptsDir, matched);
+      return {
+        role: matched.replace(/\.md$/i, ""),
+        path: fullPath,
+        content: readFileSync(fullPath, "utf-8").trim(),
+      };
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
  * Pure planning core for task creation & envelope synthesis.
- * Supports web task templates, exploration budgets, and critic agent steering.
+ * Supports web task templates, specialist roles, exploration budgets, and critic agent steering.
  * @param {string} root
  * @param {object} inputObj
  * @returns {{
@@ -33,6 +62,8 @@ const TRIVIAL_ORACLES = new Set(["true", "echo", ":", "false", "exit 0", "exit 1
  *   prompt: string,
  *   fullPrompt: string,
  *   verifyCmd: string,
+ *   role?: string,
+ *   dependsOn?: string[],
  *   flags: { autoPr: boolean, requirePlanApproval: boolean, repoless: boolean, startingBranch: string },
  *   secretFindings: Array<any>,
  *   taskFileContent: string
@@ -45,7 +76,22 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
   let rawPrompt = inputObj.prompt || "";
   let verifyCmd = (inputObj.verifyCmd || config.verify.test || config.verify.build || "").trim();
 
-  // 0. Process Template if specified
+  // 0a. Process Specialist Role if specified
+  let resolvedRole = null;
+  if (inputObj.role) {
+    resolvedRole = resolveRolePrompt(root, inputObj.role);
+    if (!resolvedRole) {
+      throw new Error(
+        `Unknown agent role '${inputObj.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Overseer, Bolt, Sentinel, Janitor).`
+      );
+    }
+    rawPrompt = `${resolvedRole.content}\n\n${rawPrompt}`.trim();
+    if (!title || title === "Agent Task") {
+      title = `${resolvedRole.role}: ${inputObj.title || "Specialist Task"}`;
+    }
+  }
+
+  // 0b. Process Template if specified
   if (inputObj.template) {
     const tpl = getWebTemplate(inputObj.template);
     if (!tpl) {
@@ -57,7 +103,7 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
       criticGuidance: inputObj.criticGuidance
     });
     rawPrompt = rawPrompt ? `${rawPrompt}\n\n${synthesized.prompt}` : synthesized.fullEnvelope;
-    if (!title) title = synthesized.title;
+    if (!title || title === "Agent Task") title = synthesized.title;
     if (!verifyCmd) verifyCmd = synthesized.verifyCmd;
   }
 
@@ -123,12 +169,21 @@ ${GUARDRAIL_FOOTER}`;
 
   const promptAnalysis = scorePromptFalsifiability(rawPrompt, { rootDir: root, verifyCmd });
 
+  const rawDepends = inputObj.dependsOn || inputObj.depends;
+  const dependsOn = Array.isArray(rawDepends)
+    ? rawDepends
+    : typeof rawDepends === "string"
+    ? rawDepends.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
   const envelopeMetadata = {
     version: 1,
     id: taskId,
     title,
     flags,
     verifyCmd,
+    role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
+    dependsOn,
     falsifiabilityScore: promptAnalysis.score,
     grade: promptAnalysis.grade,
   };
@@ -148,6 +203,8 @@ ${fullPrompt}
     prompt: rawPrompt,
     fullPrompt,
     verifyCmd,
+    role: envelopeMetadata.role,
+    dependsOn,
     flags,
     secretFindings,
     promptAnalysis,

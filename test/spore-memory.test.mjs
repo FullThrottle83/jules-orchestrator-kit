@@ -93,4 +93,54 @@ describe("SPORE Memory Engine", () => {
     assert.equal(res.status, "HARVESTED");
     assert.match(res.candidate.trigger, /\[OODA Exit 4\]/);
   });
+
+  test("dispatch auto-hydrates system learnings and resolves specialist roles", async () => {
+    const { dispatch } = await import("../src/engine.mjs");
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+
+    // Setup prompts dir with Overseer role
+    const promptsDir = join(tmpDir, ".agent", "prompts");
+    mkdirSync(promptsDir, { recursive: true });
+    writeFileSync(
+      join(promptsDir, "Overseer.md"),
+      "# Overseer Protocol - Codebase Audit Specialist\nScan physical directory tree for tech debt."
+    );
+
+    // Record a system learning
+    recordLearning(tmpDir, {
+      trigger: "SSR crashes on Cloudflare Workers",
+      solution: "Avoid node:fs in edge runtime.",
+    });
+
+    let capturedTask = null;
+    const mockProvider = {
+      name: "mock",
+      dispatch: async (task) => {
+        capturedTask = task;
+        return { id: "mock-session-123", ok: true };
+      },
+    };
+
+    const config = {
+      _root: tmpDir,
+      provider: mockProvider,
+      limits: { promptKb: 50, dailyTasks: 100 },
+      verify: { test: "npm test" },
+    };
+
+    await dispatch(
+      {
+        title: "Audit task",
+        prompt: "Check SSR crashes on Cloudflare Workers",
+        role: "overseer",
+      },
+      { root: tmpDir, config, dryRun: true }
+    );
+
+    assert.ok(capturedTask);
+    assert.match(capturedTask.prompt, /Overseer Protocol/);
+    assert.match(capturedTask.prompt, /<ACTIVE_SYSTEM_LEARNINGS>/);
+    assert.match(capturedTask.prompt, /Avoid node:fs in edge runtime/);
+  });
 });
+

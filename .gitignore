@@ -11,5 +11,6 @@ node_modules/
 .agent/jules-queue/*.json
 .agent/sync-manifest.json
 !.agent/jules-queue/README.md
+.agent/evidence/
 
 

@@ -214,9 +214,19 @@ export function resolveVerify(root = process.cwd(), userVerify = {}) {
   const s = detectStack(root);
   return {
     setup: userVerify.setup ?? s.setupCmd ?? "",
+    lint: userVerify.lint ?? s.fmtCmd ?? "",
     test: userVerify.test ?? s.testCmd ?? "",
+    unit: userVerify.unit ?? userVerify.test ?? s.testCmd ?? "",
+    fuzz: userVerify.fuzz ?? s.fuzzCmd ?? "",
+    invariant: userVerify.invariant ?? s.invariantCmd ?? "",
+    e2e: userVerify.e2e ?? s.e2eCmd ?? "",
     teardown: userVerify.teardown ?? s.teardownCmd ?? "",
     build: userVerify.build ?? s.buildCmd ?? "",
+    policy: {
+      networkAccess: userVerify.policy?.networkAccess || (s.stack === "foundry" ? "forbidden" : "allow"),
+      offline: userVerify.policy?.offline ?? (s.stack === "foundry"),
+    },
+    stages: Array.isArray(userVerify.stages) ? userVerify.stages : null,
     server: userVerify.server ? {
       command: userVerify.server.command || "",
       url: userVerify.server.url || "http://localhost:3000",
@@ -273,6 +283,10 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
 
   const setupCmd = parsed.setup_cmd || parsed.verify?.setup || "";
   const testCmd = parsed.test_cmd || parsed.verify?.test || "";
+  const lintCmd = parsed.lint_cmd || parsed.verify?.lint || "";
+  const fuzzCmd = parsed.fuzz_cmd || parsed.verify?.fuzz || "";
+  const invariantCmd = parsed.invariant_cmd || parsed.verify?.invariant || "";
+  const e2eCmd = parsed.e2e_cmd || parsed.verify?.e2e || "";
   const teardownCmd = parsed.teardown_cmd || parsed.verify?.teardown || "";
   const buildCmd = parsed.build_cmd || parsed.verify?.build || "";
   const verifyTimeoutMs = parsed.verify?.timeoutMs ?? parsed.verify?.timeout_ms ?? 60000;
@@ -303,10 +317,21 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     tier: activeTier,
     verify: {
       setup: setupCmd || autoVerify.setup || "",
+      lint: lintCmd || autoVerify.lint || "",
       test: testCmd || autoVerify.test,
+      unit: parsed.verify?.unit || testCmd || autoVerify.unit || autoVerify.test,
+      fuzz: fuzzCmd || autoVerify.fuzz || "",
+      invariant: invariantCmd || autoVerify.invariant || "",
+      e2e: e2eCmd || autoVerify.e2e || "",
       teardown: teardownCmd || autoVerify.teardown || "",
       build: buildCmd || autoVerify.build,
+      stages: parsed.verify?.stages || autoVerify.stages || null,
+      policy: parsed.verify?.policy || autoVerify.policy,
       timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 60000,
+    },
+    evidence: {
+      enabled: parsed.evidence?.enabled ?? true,
+      strictTestLock: parsed.evidence?.strict_test_lock ?? parsed.evidence?.strictTestLock ?? true,
     },
     scope: normalizeScope(parsed),
     limits: {
