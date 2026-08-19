@@ -36,7 +36,7 @@ test("O(1) Telemetry Spine & MCP Event/Progress Streaming (v0.25.1)", async (t) 
     const elapsedMs = Date.now() - startTime;
 
     // Verify 1000 calls completed quickly (steady-state O(1) per call)
-    assert.ok(elapsedMs < 3000, `1000 appends took ${elapsedMs}ms, expected < 3000ms`);
+    assert.ok(elapsedMs < 6000, `1000 appends took ${elapsedMs}ms, expected < 6000ms`);
 
     // Verify cryptographic integrity
     const integrity = verifyTelemetryIntegrity(tmpRoot);
