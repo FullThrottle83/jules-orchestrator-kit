@@ -1,0 +1,216 @@
+#!/usr/bin/env node
+
+/**
+ * Documentation / version consistency gate.
+ *
+ * Implements the `doc-sync-sentinel` preset advertised in src/wizard-init.mjs:
+ * asserts that package.json, bin/agentctl.mjs, README.md, ROADMAP_V1.md and
+ * CHANGELOG.md all agree on the current version, and that README's advertised
+ * test counts match what the suite actually reports.
+ *
+ * Runs as a blocking step in scripts/release.mjs. Standalone usage:
+ *   node scripts/doc-sync-check.mjs                 # runs the suite for counts
+ *   node scripts/doc-sync-check.mjs --tests 429 --suites 59
+ *   node scripts/doc-sync-check.mjs --json
+ *
+ * Exit codes: 0 = in sync, 1 = drift detected.
+ */
+
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { execSync } from "node:child_process";
+import { resolveRoot } from "../src/config.mjs";
+
+/**
+ * Runs the unit suite and extracts the authoritative counts.
+ *
+ * README advertises *passing* tests, so `pass` — not `tests` — is the number
+ * the documentation claim is compared against. The two diverge as soon as the
+ * adversarial suite records a `todo` probe for a known gap.
+ *
+ * @param {string} root
+ * @returns {{ tests: number|null, pass: number|null, suites: number|null, todo: number|null }}
+ */
+export function measureTestCounts(root = process.cwd()) {
+  let out = "";
+  try {
+    out = execSync("npm test", { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    // A failing suite still prints its summary; parse whatever we got.
+    out = `${err.stdout || ""}${err.stderr || ""}`;
+  }
+  return parseTestCounts(out);
+}
+
+/**
+ * Parses node:test summary counters out of an already-captured run.
+ * Accepts both the spec reporter ("ℹ tests 452") and tap ("# tests 452").
+ * @param {string} out
+ * @returns {{ tests: number|null, pass: number|null, suites: number|null, todo: number|null }}
+ */
+export function parseTestCounts(out = "") {
+  const num = (key) => {
+    const m = String(out).match(new RegExp(`^[^\\n]*?(?:ℹ|#)\\s*${key}\\s+(\\d+)\\s*$`, "m"));
+    return m ? Number(m[1]) : null;
+  };
+  return { tests: num("tests"), pass: num("pass"), suites: num("suites"), todo: num("todo") };
+}
+
+function readIfExists(path) {
+  return existsSync(path) ? readFileSync(path, "utf-8") : null;
+}
+
+/**
+ * Verifies documentation is in sync with package.json and the real test counts.
+ * @param {string} [root]
+ * @param {object} [opts]
+ * @param {number} [opts.tests] Actual passing test count (measured if omitted).
+ * @param {number} [opts.suites] Actual suite count (measured if omitted).
+ * @returns {{ ok: boolean, version: string, checks: Array<{name: string, ok: boolean, detail: string}> }}
+ */
+export function checkDocSync(root = process.cwd(), opts = {}) {
+  const checks = [];
+  const add = (name, ok, detail) => checks.push({ name, ok, detail });
+
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+  const version = pkg.version;
+
+  // 1. bin/agentctl.mjs — VERSION const, help banner, `version` command output.
+  const cli = readIfExists(join(root, "bin", "agentctl.mjs"));
+  if (cli === null) {
+    add("agentctl present", false, "bin/agentctl.mjs not found");
+  } else {
+    const constMatch = cli.match(/export const VERSION\s*=\s*"([^"]+)"/);
+    add(
+      "agentctl VERSION const",
+      constMatch?.[1] === version,
+      constMatch ? `found "${constMatch[1]}", expected "${version}"` : "no `export const VERSION` found"
+    );
+
+    const stale = [...cli.matchAll(/agentctl v(\d+\.\d+\.\d+)/g)].map((m) => m[1]).filter((v) => v !== version);
+    add(
+      "agentctl banner/version strings",
+      stale.length === 0,
+      stale.length ? `stale version string(s): ${[...new Set(stale)].join(", ")}` : `all reference v${version}`
+    );
+  }
+
+  // 2. ROADMAP_V1.md — milestone header must name the shipped version, and no
+  //    already-released version may still be labelled "(Unreleased)".
+  const roadmap = readIfExists(join(root, "ROADMAP_V1.md"));
+  if (roadmap === null) {
+    add("ROADMAP present", false, "ROADMAP_V1.md not found");
+  } else {
+    const current = roadmap.match(/v(\d+\.\d+\.\d+)\s*\(Current Stable\)/);
+    add(
+      "ROADMAP Current Stable",
+      current?.[1] === version,
+      current ? `found v${current[1]}, expected v${version}` : "no `(Current Stable)` marker found"
+    );
+
+    const shipped = roadmap.match(/Shipped Milestones\s*\(v[\d.]+\s*[–-]\s*v(\d+\.\d+\.\d+)\)/);
+    add(
+      "ROADMAP Shipped range",
+      shipped?.[1] === version,
+      shipped ? `ends at v${shipped[1]}, expected v${version}` : "no `Shipped Milestones (…)` range found"
+    );
+
+    const unreleased = [...roadmap.matchAll(/v(\d+\.\d+\.\d+)\s*\(Unreleased\)/g)]
+      .map((m) => m[1])
+      .filter((v) => compareSemver(v, version) <= 0);
+    add(
+      "ROADMAP no stale (Unreleased)",
+      unreleased.length === 0,
+      unreleased.length
+        ? `v${unreleased.join(", v")} marked (Unreleased) but <= shipped v${version}`
+        : "no released version left marked (Unreleased)"
+    );
+  }
+
+  // 3. CHANGELOG.md — a released version needs a matching entry (release.mjs
+  //    extracts its notes from here, and silently falls back if it is missing).
+  const changelog = readIfExists(join(root, "CHANGELOG.md"));
+  if (changelog === null) {
+    add("CHANGELOG present", false, "CHANGELOG.md not found");
+  } else {
+    add(
+      "CHANGELOG entry",
+      changelog.includes(`## [${version}]`),
+      changelog.includes(`## [${version}]`) ? `## [${version}] found` : `no "## [${version}]" section`
+    );
+  }
+
+  // 4. README.md — advertised test counts and roadmap-table release labels.
+  const readme = readIfExists(join(root, "README.md"));
+  if (readme === null) {
+    add("README present", false, "README.md not found");
+  } else {
+    const claim = readme.match(/(\d+)\s+unit tests across\s+(\d+)\s+suites/);
+    const claimedTests = claim ? Number(claim[1]) : null;
+    const claimedSuites = claim ? Number(claim[2]) : null;
+
+    let { tests, suites } = opts;
+    if (tests === undefined || suites === undefined) {
+      const measured = measureTestCounts(root);
+      tests = tests ?? measured.pass;
+      suites = suites ?? measured.suites;
+    }
+
+    if (claimedTests === null) {
+      add("README test count", false, "no `N unit tests across M suites` claim found");
+    } else if (tests === null || suites === null) {
+      add("README test count", false, "could not measure actual test counts");
+    } else {
+      add(
+        "README test count",
+        claimedTests === tests && claimedSuites === suites,
+        `README claims ${claimedTests}/${claimedSuites} passing, suite reports ${tests}/${suites}`
+      );
+    }
+
+    const unreleasedRows = (readme.match(/\|\s*\*\*Unreleased\*\*\s*\*\(main\)\*\s*\|/g) || []).length;
+    add(
+      "README roadmap table labels",
+      unreleasedRows === 0,
+      unreleasedRows ? `${unreleasedRows} row(s) still labelled "Unreleased (main)"` : "no stale Unreleased rows"
+    );
+  }
+
+  return { ok: checks.every((c) => c.ok), version, checks };
+}
+
+function compareSemver(a, b) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  }
+  return 0;
+}
+
+// ---- CLI ----
+const isMain = process.argv[1] && process.argv[1].endsWith("doc-sync-check.mjs");
+if (isMain) {
+  const argv = process.argv.slice(2);
+  const flag = (name) => {
+    const i = argv.indexOf(`--${name}`);
+    return i !== -1 && argv[i + 1] ? Number(argv[i + 1]) : undefined;
+  };
+
+  const root = resolveRoot();
+  const res = checkDocSync(root, { tests: flag("tests"), suites: flag("suites") });
+
+  if (argv.includes("--json")) {
+    console.log(JSON.stringify(res, null, 2));
+  } else {
+    console.log(`\n📐 Documentation Sync Gate (v${res.version})`);
+    console.log("-------------------------------------------------------");
+    for (const c of res.checks) {
+      console.log(`  ${c.ok ? "✅" : "❌"} ${c.name.padEnd(32)} ${c.detail}`);
+    }
+    console.log("-------------------------------------------------------");
+    console.log(res.ok ? "✅ Documentation is in sync.\n" : "❌ DOC SYNC GATE FAIL: documentation has drifted from package.json / test suite.\n");
+  }
+
+  process.exit(res.ok ? 0 : 1);
+}

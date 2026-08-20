@@ -26,14 +26,35 @@ const tagName = `v${version}`;
 console.log(`🚀 Automated Release Pipeline for ${pkg.name} (${tagName})`);
 console.log("-------------------------------------------------------");
 
-// 1. Verify test suite
+// 1. Verify test suite. Output is captured (not inherited) so the doc-sync gate
+//    below can reuse the counts instead of running the suite a second time.
 console.log("1. Running unit test verification suite...");
+let testOutput = "";
 try {
-  execSync("npm test", { cwd: root, stdio: "inherit" });
+  testOutput = execSync("npm test", { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const summary = testOutput.match(/^[^\n]*?ℹ\s*(?:tests|suites|pass|fail|todo)\s+\d+\s*$/gm) || [];
+  summary.forEach((l) => console.log(`   ${l.trim()}`));
   console.log("   ✅ Test suite passed cleanly.\n");
 } catch (err) {
+  console.error(`${err.stdout || ""}${err.stderr || ""}`);
   console.error("❌ Release Aborted: Test suite failed.");
   process.exit(1);
+}
+
+// 1b. Documentation / version consistency gate (blocking).
+console.log("1b. Verifying documentation is in sync with package.json & test suite...");
+{
+  const { checkDocSync, parseTestCounts } = await import("./doc-sync-check.mjs");
+  const counts = parseTestCounts(testOutput);
+  const docRes = checkDocSync(root, { tests: counts.pass, suites: counts.suites });
+  for (const c of docRes.checks) {
+    console.log(`   ${c.ok ? "✅" : "❌"} ${c.name.padEnd(32)} ${c.detail}`);
+  }
+  if (!docRes.ok) {
+    console.error("\n❌ Release Aborted: documentation has drifted. Fix the ❌ rows above and re-run.");
+    process.exit(1);
+  }
+  console.log("   ✅ Documentation is in sync.\n");
 }
 
 // 2. Extract release notes from CHANGELOG.md

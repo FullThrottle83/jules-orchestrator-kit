@@ -49,17 +49,22 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ---
 
-### v0.32.5 (Unreleased): DAG Task Execution, Specialist Roles & Evidence Ledger
+### v0.32.5: DAG Task Execution, Specialist Roles, Evidence Ledger & Cost Router
 - [x] **DAG-Ordered Queue Execution** (`src/dag-engine.mjs`, `agentctl queue --dag`) — Kahn's-algorithm dependency resolution with cycle detection and per-task timeout, replacing strict FIFO queue order for tasks declared with `--depends-on`.
 - [x] **Specialist Agent Roles** (`agentctl dispatch --role`, `agentctl task create --role`) — Binds a task to a pre-defined specialist prompt persona (`overseer`, `bolt`, `sentinel`, `janitor`) resolved from `.agent/prompts/`.
 - [x] **Cryptographic Evidence Manifest** (`src/evidence.mjs`, `agentctl evidence generate|verify|show`) — SHA-256 manifest of changed files and test-file hashes with tamper detection; a foundational building block toward the v1.0.0 SOC2 audit exporter below.
 - [x] **Tiered Verification Stages & Offline Execution Policy** (`src/config.mjs` `verify.stages`/`verify.policy`) — Optional lint/unit/fuzz/invariant/e2e stage pipeline and network-access policy (used to enforce `--offline` for Web3/Solidity stacks).
 - [x] **Web3 / Solidity Stack Detection** (`src/stack-detector.mjs`) — Foundry (`forge test/build/fmt --offline`) and Hardhat auto-detection.
 
-### v0.32.6 (Unreleased): Dynamic Complexity & Cost Router
-- [x] **Provider-Agnostic Cost Router** (`src/router.mjs`, `router:` block in `.agent/config.yml`, opt-in/disabled by default) — Zero-dependency heuristic classifier routing trivial tasks to a fast/cheap provider and complex or safety-sensitive tasks to the primary provider. See the v0.33.0 milestone entry above for full details.
+- [x] **Provider-Agnostic Cost Router** (`src/router.mjs`, `router:` block in `.agent/config.yml`, opt-in/disabled by default) — Zero-dependency heuristic classifier routing trivial tasks to a fast/cheap provider and complex or safety-sensitive tasks to the primary provider. See the v0.33.0 milestone entry below for full details.
 - [x] **Gemini CLI Fast-Tier Preset** (`src/provider.mjs` `gemini-flash`) — Headless Gemini CLI exec preset (`gemini-3.6-flash`, `--approval-mode=yolo`) usable as `router.fast`, or swapped for any other provider.
 - [x] **`--tier fast|complex` Override** (`agentctl dispatch`, `agentctl task create`, MCP `dispatch_jules_task`) — Explicit routing override that bypasses the heuristic classifier.
+- [x] **Provider URL Token Leakage Guard** (`src/provider.mjs`) — `createProvider()` rejects custom HTTP specs with `{token}` in `url`/`sendMessageUrl`; credentials are isolated to `headerData` so they cannot reach URL paths, query strings, or access logs.
+
+### v0.32.6 (Unreleased): Documentation Sync Gate & Adversarial Self-Audit
+- [x] **Documentation Sync Gate** (`scripts/doc-sync-check.mjs`, blocking step `1b` in `scripts/release.mjs`) — Implements the `doc-sync-sentinel` preset advertised in `src/wizard-init.mjs`. Blocks any release whose `package.json`, CLI version strings, README test counts, ROADMAP milestone markers or CHANGELOG entry have drifted apart.
+- [x] **Adversarial Red-Team Suite** (`test/adversarial-claims.test.mjs`) — Additive, `src/`-read-only probes that attempt to falsify the safety guarantees in `README.md`. Confirmed gaps are recorded as `node:test` `todo` probes: visible in every run, non-blocking for CI.
+- [ ] **Close the recorded canonicalisation gaps** — `normalizePath()` should resolve `.`/`..` and case-fold before deny matching (reachable via `validateEnvelope()` `allowed_paths`); `extractPathTokens()` should accept `\` as a separator; the secret scanner should strip zero-width characters and scan concatenation-joined added lines.
 
 ---
 

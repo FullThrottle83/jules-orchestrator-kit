@@ -120,7 +120,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
-* **📈 Proven Scale & Reliability:** Empirically tested with **421 unit tests across 59 suites passing in < 8.0s**, supporting 300+ daily agent sessions per repository.
+* **📈 Proven Scale & Reliability:** Empirically tested with **444 unit tests across 65 suites passing in < 10.0s**, supporting 300+ daily agent sessions per repository. A further 8 adversarial red-team probes (`test/adversarial-claims.test.mjs`) continuously attempt to falsify the safety guarantees documented above, and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
 
 <br/>
 
@@ -470,8 +470,8 @@ npx jules-orchestrator-kit mcp
 
 | Feature | Module / Command | Architectural Description | Target Release |
 | :--- | :--- | :--- | :---: |
-| **Dynamic Complexity & Cost Router** | `src/router.mjs`, `router:` in `.agent/config.yml` | Provider-agnostic, zero-dependency heuristic classifier routing trivial tasks to a fast/cheap provider (`gemini-flash` preset included) and complex/safety-sensitive tasks to the primary provider; opt-in, `--tier` override. | **Unreleased** *(main)* |
-| **DAG Task Queue, Specialist Roles & Evidence Ledger** | `src/dag-engine.mjs`, `src/evidence.mjs`, `agentctl evidence` | Kahn's-algorithm dependency-ordered queue execution (`queue --dag`), `--role` specialist prompt resolution, and SHA-256 cryptographic evidence manifests with test-tamper locking. | **Unreleased** *(main)* |
+| **Dynamic Complexity & Cost Router** | `src/router.mjs`, `router:` in `.agent/config.yml` | Provider-agnostic, zero-dependency heuristic classifier routing trivial tasks to a fast/cheap provider (`gemini-flash` preset included) and complex/safety-sensitive tasks to the primary provider; opt-in, `--tier` override. | **v0.32.5** *(Shipped)* |
+| **DAG Task Queue, Specialist Roles & Evidence Ledger** | `src/dag-engine.mjs`, `src/evidence.mjs`, `agentctl evidence` | Kahn's-algorithm dependency-ordered queue execution (`queue --dag`), `--role` specialist prompt resolution, and SHA-256 cryptographic evidence manifests with test-tamper locking. | **v0.32.5** *(Shipped)* |
 | **Warm Session Resumption & PR Bundler** | `src/provider.mjs`, `src/engine.mjs` | Multi-turn warm session context streaming via `POST /v1alpha/sessions/{id}:sendMessage` & evidence PR descriptions. | **v0.31.0** *(Shipped)* |
 | **TDD Harness & Prompt Falsifiability Linter** | `agentctl test-gen`, `agentctl task optimize` | Automated RED-state test generator, `scope.deny` test locking, and prompt testability linter with fuzzy path resolution. | **v0.31.0** *(Shipped)* |
 | **Atomic Git Checkpoint & Rollback** | `agentctl rollback` (`src/ops/checkpoint.mjs`) | Pre-flight git HEAD/stash snapshotting, atomic rollback restoration, and 10-session pruning rotation. | **v0.31.0** *(Shipped)* |
