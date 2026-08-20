@@ -89,9 +89,9 @@ describe("src/engine.mjs", () => {
     const { execSync } = await import("node:child_process");
     try {
       execSync("git init -b main", { cwd: tmpDir, stdio: "ignore" });
-      execSync("git config user.name 'Test'", { cwd: tmpDir, stdio: "ignore" });
-      execSync("git config user.email 'test@test.com'", { cwd: tmpDir, stdio: "ignore" });
-      execSync("git commit --allow-empty -m 'initial'", { cwd: tmpDir, stdio: "ignore" });
+      execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "ignore" });
+      execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "ignore" });
+      execSync('git commit --allow-empty -m "initial"', { cwd: tmpDir, stdio: "ignore" });
       const setupFile = join(tmpDir, "setup.flag");
       const testFile = join(tmpDir, "test.flag");
       const teardownFile = join(tmpDir, "teardown.flag");

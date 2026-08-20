@@ -108,13 +108,13 @@ verify:
       mkdirSync(join(tmp, "test"), { recursive: true });
       writeFileSync(join(tmp, "test", "dummy.test.js"), "assert.ok(true);", "utf-8");
 
-      const step1Flag = join(tmp, "step1.done");
-      const step2Flag = join(tmp, "step2.done");
+      const step1Flag = join(tmp, "step1.done").replace(/\\/g, "/");
+      const step2Flag = join(tmp, "step2.done").replace(/\\/g, "/");
 
       const yaml = `
 verify:
-  lint: node -e 'require("fs").writeFileSync("${step1Flag}", "ok")'
-  unit: node -e 'require("fs").writeFileSync("${step2Flag}", "ok")'
+  lint: node -e "require('fs').writeFileSync('${step1Flag}', 'ok')"
+  unit: node -e "require('fs').writeFileSync('${step2Flag}', 'ok')"
   policy:
     networkAccess: "forbidden"
 `;
