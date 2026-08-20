@@ -1,7 +1,7 @@
 import { openSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, existsSync, lstatSync, unlinkSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
-import { normalizePath } from "./config.mjs";
+import { canonicalizePath } from "./config.mjs";
 import { detectCrossPackageBoundaryViolations } from "./stack-detector.mjs";
 
 export const HIGH_CONFIDENCE_PATTERNS = [
@@ -165,12 +165,28 @@ export function anonymizePii(text) {
   return sanitized;
 }
 
-export function matchesGlob(filePath, globPattern) {
+/**
+ * Glob matcher.
+ *
+ * `caseInsensitive` exists because the same repository is checked out on
+ * Linux, macOS and Windows. On APFS and NTFS, `.GitHub/` and `.github/` are
+ * the *same directory*, but git records whichever case was committed — so a
+ * case-sensitive deny rule can be walked straight past on two of the three
+ * target platforms. Deny and protect matching therefore folds case; allow
+ * matching deliberately does not, so that a case mismatch fails closed
+ * (unmatched by allow = violation) rather than opening a hole.
+ *
+ * @param {string} filePath
+ * @param {string} globPattern
+ * @param {{ caseInsensitive?: boolean }} [opts]
+ */
+export function matchesGlob(filePath, globPattern, opts = {}) {
   if (!filePath || !globPattern) return false;
-  const file = normalizePath(filePath);
-  const pattern = normalizePath(globPattern);
+  const file = canonicalizePath(filePath);
+  const pattern = canonicalizePath(globPattern);
+  const flags = opts.caseInsensitive ? "i" : "";
 
-  if (file === pattern) return true;
+  if (opts.caseInsensitive ? file.toLowerCase() === pattern.toLowerCase() : file === pattern) return true;
 
   const parts = pattern.split("/");
   const regexParts = parts.map((part) => {
@@ -188,16 +204,16 @@ export function matchesGlob(filePath, globPattern) {
     .replace(/___GLOBSTAR___/g, ".*");
 
   try {
-    return new RegExp(`^${regexStr}$`).test(file);
+    return new RegExp(`^${regexStr}$`, flags).test(file);
   } catch (_) {
     return false;
   }
 }
 
 export function isForbiddenPath(filePath, config = {}) {
-  const normFile = normalizePath(filePath);
+  const normFile = canonicalizePath(filePath);
   const forbidden = config.scope?.deny || config.forbidden_paths || [];
-  return forbidden.some((pattern) => matchesGlob(normFile, pattern));
+  return forbidden.some((pattern) => matchesGlob(normFile, pattern, { caseInsensitive: true }));
 }
 
 export function checkScope(files = [], scope = {}, opts = {}) {
@@ -207,14 +223,27 @@ export function checkScope(files = [], scope = {}, opts = {}) {
   const protect = scope.protect || [];
 
   for (const rawFile of files) {
-    const file = normalizePath(rawFile);
+    // Canonicalised so that "./x", "a/../x" and "a//x" cannot present the same
+    // file under a spelling the deny patterns do not literally match.
+    const file = canonicalizePath(rawFile);
 
-    const matchedDeny = deny.find((pat) => matchesGlob(file, pat));
+    // A path that climbs out of the repository root can never be legitimate and
+    // must not be silently pattern-matched against repo-relative rules.
+    if (file === ".." || file.startsWith("../") || file.startsWith("/")) {
+      violations.push({ file, reason: "Path escapes the repository root", rule: "deny", pattern: "<traversal>" });
+      continue;
+    }
+
+    // Deny folds case: on macOS/Windows ".GitHub/" resolves to the same
+    // directory as ".github/", so a case-sensitive deny is bypassable there.
+    const matchedDeny = deny.find((pat) => matchesGlob(file, pat, { caseInsensitive: true }));
     if (matchedDeny) {
       violations.push({ file, reason: `Forbidden path restriction matched pattern "${matchedDeny}"`, rule: "deny", pattern: matchedDeny });
       continue;
     }
 
+    // Allow stays case-sensitive on purpose: a case mismatch here yields "not
+    // allowed" (a violation), which is the fail-closed direction.
     if (allow.length > 0) {
       const isExplicitlyAllowed = allow.some((pat) => matchesGlob(file, pat));
       if (!isExplicitlyAllowed) {
@@ -224,7 +253,7 @@ export function checkScope(files = [], scope = {}, opts = {}) {
     }
 
     if (!opts.allowProtected) {
-      const matchedProtect = protect.find((pat) => matchesGlob(file, pat));
+      const matchedProtect = protect.find((pat) => matchesGlob(file, pat, { caseInsensitive: true }));
       if (matchedProtect) {
         violations.push({ file, reason: `Protected file modification restriction matched pattern "${matchedProtect}"`, rule: "protect", pattern: matchedProtect });
       }
@@ -332,6 +361,29 @@ export function checkCrossPackageImports(diffOrText = "", root = process.cwd(), 
   };
 }
 
+// Zero-width and bidi-control characters. Inserting one mid-token defeats a
+// regex without changing how the value renders, copies, or authenticates.
+const INVISIBLE_CHARS = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\uFEFF]/g;
+
+// A credential split across a source-level string concatenation is invisible to
+// a line-oriented scanner. This is not only an evasion technique — formatters
+// wrap long string literals exactly this way, so it also happens by accident.
+const STRING_CONCAT_JOIN = /(["'`])\s*\+\s*(["'`])/g;
+
+/**
+ * Produces the variants of the added-line text that secret patterns are run
+ * against: as-written, with invisible characters stripped, and with
+ * source-level string concatenation collapsed.
+ * @param {string} addedLines
+ * @returns {string[]}
+ */
+function secretScanVariants(addedLines) {
+  const stripped = addedLines.replace(INVISIBLE_CHARS, "");
+  // Collapse `"AAA" +\n  "BBB"` into `"AAABBB"` before matching.
+  const dejoined = stripped.replace(/\s*\n\s*/g, " ").replace(STRING_CONCAT_JOIN, "");
+  return [...new Set([addedLines, stripped, dejoined])];
+}
+
 export function scanDiff(diffTextStr = "", options = {}) {
   if (!diffTextStr) return { ok: true, findings: [] };
   const addedLines = diffTextStr
@@ -340,8 +392,9 @@ export function scanDiff(diffTextStr = "", options = {}) {
     .map((line) => line.slice(1))
     .join("\n");
 
-  const hasHigh = hasHighConfidenceSecret(addedLines);
-  const hasLow = !hasHigh && hasLowConfidenceSecret(addedLines);
+  const variants = secretScanVariants(addedLines);
+  const hasHigh = variants.some((v) => hasHighConfidenceSecret(v));
+  const hasLow = !hasHigh && variants.some((v) => hasLowConfidenceSecret(v));
   const findings = [];
 
   if (hasHigh) {

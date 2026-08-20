@@ -8,6 +8,12 @@
  * reports them without failing the run, so CI stays green while the hole stays
  * visible. Do not "fix" a todo by weakening its assertion — either close the
  * gap in src/ and promote it to a normal test, or leave it red.
+ *
+ * Probes that read "HOLDS" were once todo gaps and are now closed; they remain
+ * here as regression tests. Several encode cross-platform behaviour that cannot
+ * be observed on Linux alone — the same repository is checked out on macOS and
+ * Windows, where the filesystem is case-insensitive and paths are written with
+ * backslashes, so the gate must hold under the most permissive of the three.
  */
 
 import { describe, it } from "node:test";
@@ -18,6 +24,7 @@ import { join } from "node:path";
 import { execSync } from "node:child_process";
 
 import { checkScope, scanDiff } from "../src/security.mjs";
+import { canonicalizePath } from "../src/config.mjs";
 import { classifyTaskComplexity } from "../src/router.mjs";
 import { createProvider } from "../src/provider.mjs";
 import { validateEnvelope } from "../src/envelope.mjs";
@@ -61,26 +68,26 @@ describe("CLAIM: Fail-closed scope guard evaluates Deny before Allow", () => {
 });
 
 describe("CLAIM: deny patterns are matched against canonical paths", () => {
-  // GAP: normalizePath() only swaps separators. It does not resolve `.`/`..`
-  // segments nor apply case folding, so deny matching is done on the raw
-  // string. Reachable with non-git-derived input — see the envelope test below.
+  // canonicalizePath() resolves `.`/`..` and collapses separators before
+  // matching, and deny/protect fold case. Allow deliberately does not fold
+  // case, so a case mismatch there yields "not allowed" — the safe direction.
 
-  it("relative-dot prefix must not evade a deny rule", { todo: "normalizePath() does not strip a leading './'" }, () => {
+  it("HOLDS — a relative-dot prefix cannot evade a deny rule", () => {
     const res = checkScope(["./.github/workflows/ci.yml"], { deny: DENY });
     assert.equal(res.ok, false);
   });
 
-  it("parent traversal must not evade a deny rule", { todo: "normalizePath() does not resolve '..' segments" }, () => {
+  it("HOLDS — parent traversal cannot evade a deny rule", () => {
     const res = checkScope(["src/../.github/workflows/ci.yml"], { deny: DENY });
     assert.equal(res.ok, false);
   });
 
-  it("case variation must not evade a deny rule on case-insensitive filesystems", { todo: "matchesGlob() is case-sensitive; .GITHUB/ is the same dir on macOS/Windows" }, () => {
+  it("HOLDS — case variation cannot evade a deny rule (macOS/Windows parity)", () => {
     const res = checkScope([".GITHUB/workflows/ci.yml"], { deny: DENY });
     assert.equal(res.ok, false);
   });
 
-  it("REACHABILITY — agent-authored envelope allowed_paths reach checkScope unsanitised", { todo: "same canonicalisation gap, reachable via validateEnvelope()" }, () => {
+  it("HOLDS — agent-authored envelope allowed_paths are canonicalised before matching", () => {
     const res = validateEnvelope(
       {
         id: "T1",
@@ -92,6 +99,60 @@ describe("CLAIM: deny patterns are matched against canonical paths", () => {
     );
     const leaked = !(res.errors || []).some((e) => /protected scope/i.test(e));
     assert.equal(leaked, false, "envelope must not smuggle a denied path past the gate via './'");
+  });
+});
+
+describe("CROSS-PLATFORM: the gate must hold under the most permissive filesystem", () => {
+  // A repository authored on Linux is checked out on macOS (APFS) and Windows
+  // (NTFS), where paths are case-insensitive. The gate cannot assume the
+  // semantics of the host it happens to be running on.
+
+  it("canonicalizePath reduces every spelling of the same path to one form", () => {
+    for (const variant of [
+      ".github/workflows/ci.yml",
+      "./.github/workflows/ci.yml",
+      ".github//workflows/ci.yml",
+      ".github/./workflows/ci.yml",
+      "src/../.github/workflows/ci.yml",
+      ".github\\workflows\\ci.yml",
+      "./src/../.github//workflows/./ci.yml",
+    ]) {
+      assert.equal(canonicalizePath(variant), ".github/workflows/ci.yml", variant);
+    }
+  });
+
+  it("canonicalizePath preserves escaping traversal so callers can reject it", () => {
+    assert.equal(canonicalizePath("../../etc/passwd"), "../../etc/passwd");
+    assert.equal(canonicalizePath("a/../../b"), "../b");
+  });
+
+  it("a path escaping the repository root is rejected outright, not pattern-matched", () => {
+    const res = checkScope(["../../etc/passwd"], { deny: DENY });
+    assert.equal(res.ok, false);
+    assert.equal(res.violations[0].pattern, "<traversal>");
+  });
+
+  it("deny folds case for every segment, not just the first", () => {
+    for (const variant of [".GITHUB/workflows/ci.yml", ".GitHub/Workflows/CI.yml", "KEYS/prod.PEM"]) {
+      assert.equal(checkScope([variant], { deny: DENY }).ok, false, variant);
+    }
+  });
+
+  it("allow does NOT fold case, so a case mismatch fails closed", () => {
+    const res = checkScope(["src/Foo.mjs"], { deny: [], allow: ["src/foo.mjs"] });
+    assert.equal(res.ok, false, "an unmatched allow must be a violation, never an implicit pass");
+    assert.equal(res.violations[0].rule, "allow");
+  });
+
+  it("mixed separators in a single path still canonicalise", () => {
+    assert.equal(checkScope(["src\\..\\.github/workflows\\ci.yml"], { deny: DENY }).ok, false);
+  });
+
+  it("a Windows-style sensitive path in a prompt forces the primary provider", () => {
+    const cfg = { provider: "jules", scope: { deny: [] }, router: { enabled: true, threshold: 0 } };
+    for (const p of ["src\\auth\\session.mjs", "db\\migrations\\001.sql", "keys\\prod.pem"]) {
+      assert.equal(classifyTaskComplexity({ prompt: `Fix a typo in ${p}.` }, cfg).tier, "complex", p);
+    }
   });
 });
 
@@ -151,12 +212,12 @@ describe("CLAIM: secret scanner blocks credentials pre-dispatch", () => {
     assert.equal(res.ok, false, "the real added line must still be scanned");
   });
 
-  it("a key split across two added lines must still be flagged", { todo: "scanner joins added lines with \\n; regexes cannot span the boundary" }, () => {
+  it("HOLDS — a key split across two added lines is flagged", () => {
     const res = scanDiff(`+const k = "AKIA" +\n+  "IOSFODNN7EXAMPLE";`);
     assert.equal(res.ok, false);
   });
 
-  it("a key with zero-width characters injected must still be flagged", { todo: "no unicode normalisation / zero-width stripping before matching" }, () => {
+  it("HOLDS — a key with zero-width characters injected is flagged", () => {
     const res = scanDiff(`+const k = "AKIA​IOSFODNN7EXAMPLE";`);
     assert.equal(res.ok, false);
   });
@@ -193,7 +254,7 @@ describe("CLAIM: router force-routes sensitive paths to the primary provider", (
     }
   });
 
-  it("a backslash auth path written in the prompt must force the primary provider", { todo: "extractPathTokens() only recognises '/' as a separator, unlike the targetFiles path" }, () => {
+  it("HOLDS — a backslash auth path in the prompt forces the primary provider (Windows parity)", () => {
     const res = classifyTaskComplexity({ prompt: "Fix a typo in src\\auth\\session.mjs." }, cfg);
     assert.equal(res.tier, "complex");
   });

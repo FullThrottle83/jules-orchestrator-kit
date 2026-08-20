@@ -12,11 +12,11 @@ import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 const args = process.argv.slice(2);
 const command = args[0];
 
-export const VERSION = "0.32.5";
+export const VERSION = "0.32.6";
 
 export function printHelp() {
   console.log(`
-🚀 agentctl v0.32.5 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.32.6 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -69,7 +69,7 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.32.5");
+    console.log("agentctl v0.32.6");
     process.exit(0);
   }
 

@@ -102,7 +102,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`). Zero third-party npm packages mean zero supply-chain CVE risk.
 
-* **🛡️ Fail-Closed Security Gatekeeper:** Unconditionally evaluates explicit Deny rules *before* Allow rules, redacts high-entropy secrets and PII from dry-runs and git diffs, blocks unsupported Node.js native module imports in Edge environments (Cloudflare Workers, Vercel Edge, Netlify Edge), and rejects PRs exceeding the 75 KB Diff Payload governor.
+* **🛡️ Fail-Closed Security Gatekeeper:** Unconditionally evaluates explicit Deny rules *before* Allow rules, matching against **canonicalised, case-folded paths** so `./`, `..`, mixed separators or a `.GitHub/` spelling cannot walk past a rule (the same repo is checked out on case-insensitive macOS and Windows filesystems). Redacts high-entropy secrets and PII from dry-runs and git diffs, blocks unsupported Node.js native module imports in Edge environments (Cloudflare Workers, Vercel Edge, Netlify Edge), and rejects PRs exceeding the 75 KB Diff Payload governor.
 
 * **🔄 Autonomous OODA Self-Healing:** Captures test stderr/stdout, normalizes failure fingerprints, and feeds structured error contexts back into repair iterations (up to 3 automatic attempts) before human escalation.
 
@@ -120,7 +120,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
-* **📈 Proven Scale & Reliability:** Empirically tested with **444 unit tests across 65 suites passing in < 10.0s**, supporting 300+ daily agent sessions per repository. A further 8 adversarial red-team probes (`test/adversarial-claims.test.mjs`) continuously attempt to falsify the safety guarantees documented above, and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
+* **📈 Proven Scale & Reliability:** Empirically tested with **458 unit tests across 66 suites passing in < 10.0s**, supporting 300+ daily agent sessions per repository. An adversarial red-team suite (`test/adversarial-claims.test.mjs`) continuously attempts to falsify the safety guarantees documented above — including cross-platform probes for the case-insensitive filesystems on macOS and Windows — and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
 
 <br/>
 

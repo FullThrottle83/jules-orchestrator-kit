@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.32.5 (Current Stable) ──► v0.33.0 ──► v1.0.0 (Production Kernel)
+ v0.32.6 (Current Stable) ──► v0.33.0 ──► v1.0.0 (Production Kernel)
  (Web, UX & Bridge)        (Monorepos) (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.32.5)
+## ✅ Shipped Milestones (v0.20.0 – v0.32.6)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -61,12 +61,15 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **`--tier fast|complex` Override** (`agentctl dispatch`, `agentctl task create`, MCP `dispatch_jules_task`) — Explicit routing override that bypasses the heuristic classifier.
 - [x] **Provider URL Token Leakage Guard** (`src/provider.mjs`) — `createProvider()` rejects custom HTTP specs with `{token}` in `url`/`sendMessageUrl`; credentials are isolated to `headerData` so they cannot reach URL paths, query strings, or access logs.
 
-### v0.32.6 (Unreleased): Documentation Sync Gate & Adversarial Self-Audit
+### v0.32.6: Documentation Sync Gate, Adversarial Self-Audit & Cross-Platform Scope Hardening
 - [x] **Documentation Sync Gate** (`scripts/doc-sync-check.mjs`, blocking step `1b` in `scripts/release.mjs`) — Implements the `doc-sync-sentinel` preset advertised in `src/wizard-init.mjs`. Blocks any release whose `package.json`, CLI version strings, README test counts, ROADMAP milestone markers or CHANGELOG entry have drifted apart.
 - [x] **Adversarial Red-Team Suite** (`test/adversarial-claims.test.mjs`) — Additive, `src/`-read-only probes that attempt to falsify the safety guarantees in `README.md`. Confirmed gaps are recorded as `node:test` `todo` probes: visible in every run, non-blocking for CI.
 - [x] **Agent Rule Budget Enforcement** — Wired the previously-unrun `scripts/rules-lint.mjs` into the doc-sync gate; `AGENTS.md` had silently exceeded its 10k character budget, where host truncation drops trailing directives without error.
 - [x] **Canonical Command Harmonisation** (`AGENTS.md`, `JULES_RULES_TEMPLATE.md`) — Authoritative `agentctl` command reference that supersedes stale `scripts/*.mjs` paths held in agent memories; fixed the deleted `lock-manager.mjs` invocation still shipping to npm consumers.
-- [ ] **Close the recorded canonicalisation gaps** — `normalizePath()` should resolve `.`/`..` and case-fold before deny matching (reachable via `validateEnvelope()` `allowed_paths`); `extractPathTokens()` should accept `\` as a separator; the secret scanner should strip zero-width characters and scan concatenation-joined added lines.
+- [x] **Cross-Platform Path Canonicalisation** (`canonicalizePath()` in `src/config.mjs`, `checkScope()`/`matchesGlob()` in `src/security.mjs`) — Deny and protect matching now runs against a lexically canonical path (`./` stripped, `..` resolved, separators normalised, duplicate slashes collapsed) and folds case. The same repository is checked out on macOS (APFS) and Windows (NTFS) where `.GitHub/` and `.github/` are the *same directory*, so a case-sensitive deny rule was bypassable on two of three target platforms. Allow matching stays case-sensitive so a case mismatch fails closed. Paths escaping the repository root are now rejected outright rather than pattern-matched.
+- [x] **Secret Scanner Evasion Hardening** (`src/security.mjs`) — `scanDiff()` now matches against three variants of the added-line text: as-written, with invisible characters stripped (zero-width, soft hyphen, bidi controls), and with source-level string concatenation collapsed. The concatenation case is not purely adversarial — formatters wrap long string literals exactly that way, so a credential could evade the gate by accident.
+- [x] **Router Windows-Path Parity** (`src/router.mjs`) — `collectReferencedPaths()` normalises separators before path extraction, so a sensitive path written `src\auth\session.mjs` by a Windows author still force-routes to the primary provider instead of the cheap tier.
+- [ ] **Base64-encoded credential detection** — `scanDiff()` still does not decode base64 blobs before matching. Deliberately deferred: decoding every base64-looking candidate in a large diff carries a false-positive and performance cost that needs measuring first. Tracked as the single remaining `todo` probe in `test/adversarial-claims.test.mjs`.
 
 ---
 

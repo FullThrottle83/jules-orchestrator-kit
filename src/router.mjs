@@ -73,7 +73,12 @@ const SENSITIVE_PATH_PATTERNS = [
 ];
 
 function collectReferencedPaths(task) {
-  const fromPrompt = extractPathTokens(task.prompt || "");
+  // extractPathTokens only recognises "/" as a separator, but a Windows author
+  // naturally writes "src\auth\session.mjs" in a prompt. Without this the
+  // sensitive-path guard below never sees the path and the task can be routed
+  // to the cheap tier. targetFiles are separately normalised by normalizePath.
+  const promptText = String(task.prompt || "").replace(/\\/g, "/");
+  const fromPrompt = extractPathTokens(promptText);
   const explicit = Array.isArray(task.targetFiles)
     ? task.targetFiles
     : Array.isArray(task.referenced_paths)

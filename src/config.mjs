@@ -68,6 +68,41 @@ export function normalizePath(p) {
   return p.split(sep).join("/").replace(/\\/g, "/");
 }
 
+/**
+ * Reduces a repo-relative path to a canonical form for pattern matching:
+ * separators normalised, duplicate slashes collapsed, `.` segments dropped,
+ * `..` segments resolved, and any leading `./` or trailing `/` removed.
+ *
+ * Purely lexical — it never touches the filesystem, because the paths being
+ * matched may not exist locally (they can come from a diff or a task envelope).
+ * Leading `..` segments that would escape the repo root are preserved so the
+ * caller can still recognise and reject them.
+ *
+ * @param {string} p
+ * @returns {string}
+ */
+export function canonicalizePath(p) {
+  const normalized = normalizePath(p).replace(/\/+/g, "/");
+  if (!normalized) return "";
+
+  const isAbsolutePosix = normalized.startsWith("/");
+  const out = [];
+  for (const segment of normalized.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (out.length > 0 && out[out.length - 1] !== "..") {
+        out.pop();
+      } else if (!isAbsolutePosix) {
+        out.push("..");
+      }
+      continue;
+    }
+    out.push(segment);
+  }
+
+  return (isAbsolutePosix ? "/" : "") + out.join("/");
+}
+
 export function resolveRoot(cwd = process.cwd()) {
   try {
     return execSync("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
