@@ -249,14 +249,14 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
     pkg.scripts = pkg.scripts || {};
     let updated = false;
     const julesScripts = {
-      "jules:dispatch": "npx agentctl dispatch",
-      "jules:queue": "npx agentctl queue",
-      "jules:create": "npx agentctl create",
-      "jules:status": "npx agentctl status",
-      "jules:audit": "npx agentctl gate",
-      "jules:scan": "npx agentctl scan",
-      "jules:swarm": "npx agentctl swarm",
-      "jules:nightly": "npx agentctl clean"
+      "jules:dispatch": "agentctl dispatch",
+      "jules:queue": "agentctl queue",
+      "jules:create": "agentctl task create",
+      "jules:status": "agentctl status",
+      "jules:audit": "agentctl gate",
+      "jules:scan": "agentctl scan",
+      "jules:swarm": "agentctl swarm",
+      "jules:nightly": "agentctl clean"
     };
 
     for (const [key, val] of Object.entries(julesScripts)) {

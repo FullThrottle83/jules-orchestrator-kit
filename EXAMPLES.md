@@ -1,17 +1,17 @@
 # Production Examples & Deployment Patterns
 
-This document details 6 production-grade deployment patterns for `jules-orchestrator-kit`. All patterns follow our strict **Zero External Runtime Dependencies** policy.
+This document details production deployment patterns for `jules-orchestrator-kit`. All patterns follow our strict **Zero External Runtime Dependencies** policy.
 
 ---
 
-## Pattern 1: Automated Nightly TODO / FIXME Remediation
+## Pattern 1: Automated Nightly Task Remediation
 
-Scan your codebase for technical debt comments every night, generate structured tasks, and process them automatically using Jules:
+Scan your codebase for technical debt markers, generate structured task envelopes, and process them automatically:
 
 ### GitHub Actions Workflow (`.github/workflows/jules-nightly-remediation.yml`)
 
 ```yaml
-name: Nightly TODO Remediation
+name: Nightly Code Remediation
 
 on:
   schedule:
@@ -35,22 +35,22 @@ jobs:
           JULES_TIER: pro
         run: |
           # 1. Scan codebase for TODO/FIXME markers
-          npx agentctl scan
+          npx jules-orchestrator-kit scan
 
           # 2. Process pending tasks from queue
-          npx agentctl queue
+          npx jules-orchestrator-kit queue
 ```
 
 ---
 
-## Pattern 2: Zero-Trust CI Security & Safety Gatekeeper
+## Pattern 2: CI Security & Safety Gatekeeper
 
-Block untrusted PRs containing secret leaks, scope violations, oversized diff payloads, or test regressions before they touch `main`:
+Block PRs containing secret leaks, scope violations, oversized diff payloads, or test regressions before merging to `main`:
 
 ### GitHub Actions Workflow (`.github/workflows/jules-pr-gate.yml`)
 
 ```yaml
-name: Security & Safety Gatekeeper
+name: Security & Verification Gatekeeper
 
 on:
   pull_request:
@@ -68,18 +68,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run 4-Phase Safety Audit
+      - name: Run Safety & Verification Audit
         run: |
-          npx agentctl gate --base ${{ github.event.pull_request.base.ref || 'main' }}
+          npx jules-orchestrator-kit gate --base ${{ github.event.pull_request.base.ref || 'main' }}
 ```
 
 ---
 
-## Pattern 3: Multi-Agent Parallel Swarm Refactoring
+## Pattern 3: Multi-Agent Parallel Swarm Execution
 
 ![Multi-Agent Parallel Swarm Topology](docs/assets/swarm-topology.svg?v=3)
 
-Execute multi-task refactoring batches concurrently across isolated git worktrees with zero branch collision:
+Execute multi-task batches concurrently across isolated git worktrees:
 
 ### CLI Swarm Command
 
@@ -101,28 +101,28 @@ cat << 'EOF' > .agent/jules-queue/swarm-batch.json
 EOF
 
 # 2. Launch parallel swarm execution
-JULES_SWARM_CONCURRENCY=2 npx agentctl swarm
+JULES_SWARM_CONCURRENCY=2 agentctl swarm
 
-# 3. Perform 3-way structural merge on completed swarm PRs
-npx agentctl merge-swarm
+# 3. Perform structural merge on completed swarm PRs
+agentctl merge-swarm
 ```
 
 ---
 
-## Pattern 4: Self-Healing OODA Loop with Auto-Fix
+## Pattern 4: Automated Verification Loop with Auto-Fix
 
-![Self-Healing OODA Loop](docs/assets/ooda-loop-cycle.svg?v=3)
+![Autonomous Verification Loop](docs/assets/ooda-loop-cycle.svg?v=3)
 
-Execute autonomous repair loops with sliding-window thrash detection ($A \rightarrow B \rightarrow A \rightarrow B$) to preserve API token budgets:
+Execute repair loops with thrash detection to preserve API quotas:
 
 ```bash
 # Dispatch task with automatic test verification and auto-repair
-JULES_DRY_RUN=0 npx agentctl dispatch \
+JULES_DRY_RUN=0 agentctl dispatch \
   --title "Fix Security Sanitizer" \
-  --prompt "Sanitize user inputs in src/security.mjs and ensure all npm tests pass cleanly"
+  --prompt "Sanitize user inputs in src/security.mjs and ensure all tests pass cleanly"
 ```
 
-If tests fail, the orchestrator feeds `stderr` back into Jules up to 3 times (`limits.repairAttempts`), aborting early on deterministic regressions (`Exit Code 4`).
+If tests fail, the orchestrator feeds `stderr` back into repair attempts (up to `limits.repairAttempts`), aborting early on persistent regressions (`Exit Code 4`).
 
 ---
 
@@ -150,41 +150,41 @@ Connect `jules-orchestrator-kit` directly as a stdio Model Context Protocol serv
 
 ---
 
-## Pattern 6: Specialist Agent Swarm Roster
+## Pattern 6: Specialist Agent Roles
 
-Leverage pre-configured specialist prompts from `.agent/prompts/`:
+Leverage pre-configured specialist role prompts from `.agent/prompts/`:
 
 ```bash
-# Dispatch performance profiling task using Bolt preset
-npx agentctl dispatch \
-  --prompt "$(cat .agent/prompts/Bolt.md) Optimize JSON parser throughput in src/mcp.mjs"
+# Dispatch performance optimization using Bolt role
+agentctl dispatch --role bolt \
+  --prompt "Optimize JSON parser throughput in src/mcp.mjs"
 
-# Dispatch security vulnerability patch using Sentinel preset
-npx agentctl dispatch \
-  --prompt "$(cat .agent/prompts/Sentinel.md) Audit and fix prototype pollution risks in src/state.mjs"
+# Dispatch security vulnerability patch using Sentinel role
+agentctl dispatch --role sentinel \
+  --prompt "Audit and fix prototype pollution risks in src/state.mjs"
 
-# Dispatch tech debt cleanup using Janitor preset
-npx agentctl dispatch \
-  --prompt "$(cat .agent/prompts/Janitor.md) Remove dead code and unused imports in src/utils.mjs"
+# Dispatch tech debt cleanup using Janitor role
+agentctl dispatch --role janitor \
+  --prompt "Remove dead code and unused imports in src/utils.mjs"
 ```
 
 ---
 
-## Pattern 7: Web Development Task Envelopes & Exploration Budget
+## Pattern 7: Web Development Task Envelopes
 
-Leverage specialized web envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`) with Google Labs 3-Phase Discovery Protocols:
+Leverage specialized web envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`):
 
 ```bash
 # 1. List available web development templates
-npx agentctl task template --list
+agentctl task template --list
 
 # 2. Synthesize a Core Web Vitals & Lighthouse envelope
-npx agentctl task template web-cwv
+agentctl task template web-cwv
 
 # 3. Create and queue a WCAG 2.2 accessibility audit task
-npx agentctl task create --template web-wcag
+agentctl task create --template web-wcag
 
-# 4. Optimize a raw frontend prompt with automated Exploration Budget & Critic focus
-npx agentctl task optimize "Audit Core Web Vitals and optimize LCP in src/dashboard.mjs" --fix
+# 4. Optimize a frontend prompt with structured verification probes
+agentctl task optimize "Audit Core Web Vitals and optimize LCP in src/dashboard.mjs" --fix
 ```
 
