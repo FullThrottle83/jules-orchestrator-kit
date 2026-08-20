@@ -80,8 +80,30 @@ Options:
 
 
 async function main() {
-  if (!command || command === "--help" || command === "-h") {
+  if (command === "--help" || command === "-h") {
     printHelp();
+    process.exit(0);
+  }
+
+  // Bare `agentctl` answers "what do I do next" rather than dumping thirty
+  // commands. The help text is a reference for people who already know the
+  // tool; a newcomer cannot tell which entry is step one, and guessing wrong
+  // costs them a confusing failure instead of a hint.
+  if (!command) {
+    const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
+    const cwd = process.cwd();
+    let budgetLine = "";
+    let where = cwd;
+    try {
+      const nextRoot = resolveRoot();
+      where = nextRoot;
+      budgetLine = formatBudgetLine(budgetStatus(loadConfig(nextRoot), nextRoot));
+    } catch (_) {
+      // Outside a repository there is no root to load a config from; the
+      // next step below is `git init`, which does not need one.
+    }
+    const next = resolveNextStep(where);
+    console.log(renderNextStep({ version: VERSION, root: where, next, budgetLine: next.blocking ? "" : budgetLine }));
     process.exit(0);
   }
 
@@ -329,6 +351,24 @@ async function main() {
     }
 
     case "doctor": {
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: { json: { type: "boolean", short: "j" } },
+        allowPositionals: true,
+        strict: false,
+      });
+
+      // runDoctorChecks() and its seven checks existed but nothing rendered
+      // them: this command printed a hand-written summary, so findings like a
+      // git-tracked .env were computed, tested, and never shown to anyone.
+      const { runDoctorChecks } = await import("../src/ops/doctor-registry.mjs");
+      const report = await runDoctorChecks({ root });
+
+      if (values.json) {
+        console.log(JSON.stringify(report, null, 2));
+        process.exit(report.summary.fail > 0 ? 1 : 0);
+      }
+
       console.log(`\n🔍 agentctl System Diagnostics (v${VERSION})`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
@@ -336,10 +376,22 @@ async function main() {
       console.log(`  Detected Stack   : ${detectStack(root).stack}`);
       console.log(`  Test Command     : ${config.verify.test || "(None)"}`);
       console.log(`  Build Command    : ${config.verify.build || "(None)"}`);
-      const budget = budgetStatus(config, root);
-      console.log(`  Daily Budget     : ${formatBudgetLine(budget)}`);
-      console.log(`--------------------------------------------------\n`);
-      process.exit(0);
+      console.log(`  Daily Budget     : ${formatBudgetLine(budgetStatus(config, root))}`);
+      console.log(`--------------------------------------------------`);
+
+      const icon = { pass: "✅", warn: "⚠️ ", fail: "❌", skip: "⏭️ ", unknown: "❔" };
+      for (const r of report.results) {
+        console.log(`  ${icon[r.status] || "•"} ${r.title}`);
+        if (r.status !== "pass") {
+          console.log(`       ${r.summary}`);
+          for (const fix of r.remediation || []) console.log(`       → ${fix.summary}`);
+        }
+      }
+
+      const { pass, warn, fail } = report.summary;
+      console.log(`--------------------------------------------------`);
+      console.log(`  ${pass} passed, ${warn} warning(s), ${fail} failure(s)\n`);
+      process.exit(fail > 0 ? 1 : 0);
       break;
     }
 

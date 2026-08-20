@@ -16,7 +16,7 @@
  * Exit codes: 0 = in sync, 1 = drift detected.
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { resolveRoot } from "../src/config.mjs";
@@ -61,6 +61,33 @@ function readIfExists(path) {
 }
 
 /**
+ * Version numbers that appear in shipped sources but do not describe this kit.
+ * Kept as an explicit, justified list rather than a looser pattern, so a real
+ * drift can never slip through by resembling one of these.
+ */
+const FOREIGN_VERSIONS = [
+  { file: "src/ops/doctor-registry.mjs", value: "20.0.0", why: "minimum supported Node.js runtime" },
+  { file: "src/ops/ide-scaffold.mjs", value: "2.0.0", why: "VS Code tasks.json schema version" },
+  { file: "src/version.mjs", value: "0.0.0", why: "documented fallback when package.json is absent" },
+];
+
+function isForeignVersion(relPath, value) {
+  return FOREIGN_VERSIONS.some((f) => f.file === relPath && f.value === value);
+}
+
+/** Every .mjs under `dir`, recursively. */
+function listSourceFiles(dir, acc = []) {
+  if (!existsSync(dir)) return acc;
+  for (const entry of readdirSync(dir)) {
+    if (entry.startsWith(".") || entry === "node_modules") continue;
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) listSourceFiles(full, acc);
+    else if (entry.endsWith(".mjs")) acc.push(full);
+  }
+  return acc;
+}
+
+/**
  * Verifies documentation is in sync with package.json and the real test counts.
  * @param {string} [root]
  * @param {object} [opts]
@@ -80,18 +107,52 @@ export function checkDocSync(root = process.cwd(), opts = {}) {
   if (cli === null) {
     add("agentctl present", false, "bin/agentctl.mjs not found");
   } else {
+    // Either the version is derived from the manifest — which cannot drift —
+    // or it is a literal, which must match. The derived form is preferred;
+    // this check exists to stop a literal creeping back in unnoticed.
+    const derived = /export const VERSION\s*=\s*KIT_VERSION/.test(cli);
     const constMatch = cli.match(/export const VERSION\s*=\s*"([^"]+)"/);
-    add(
-      "agentctl VERSION const",
-      constMatch?.[1] === version,
-      constMatch ? `found "${constMatch[1]}", expected "${version}"` : "no `export const VERSION` found"
-    );
+    if (derived) {
+      const versionModule = readIfExists(join(root, "src", "version.mjs"));
+      const readsManifest = Boolean(versionModule && /package\.json/.test(versionModule));
+      add(
+        "agentctl VERSION const",
+        readsManifest,
+        readsManifest ? "derived from package.json via src/version.mjs" : "VERSION derives from KIT_VERSION but src/version.mjs does not read package.json"
+      );
+    } else {
+      add(
+        "agentctl VERSION const",
+        constMatch?.[1] === version,
+        constMatch ? `found "${constMatch[1]}", expected "${version}"` : "no `export const VERSION` found"
+      );
+    }
 
-    const stale = [...cli.matchAll(/agentctl v(\d+\.\d+\.\d+)/g)].map((m) => m[1]).filter((v) => v !== version);
+    // Scan everything shipped, not just the CLI: the MCP server, dashboard and
+    // init wizard each hardcoded a version and sat three minor releases behind
+    // while this gate only ever looked at bin/agentctl.mjs and stayed green.
+    const shipped = [
+      ...listSourceFiles(join(root, "src")),
+      join(root, "bin", "agentctl.mjs"),
+    ];
+    const stale = [];
+    for (const file of shipped) {
+      const text = readIfExists(file);
+      if (text === null) continue;
+      const rel = file.replace(root + "/", "");
+      for (const m of text.matchAll(/\bv?(\d+\.\d+\.\d+)\b/g)) {
+        if (m[1] === version) continue;
+        // Only flag figures presented as *this kit's* version.
+        const context = text.slice(Math.max(0, m.index - 60), m.index).toLowerCase();
+        if (!/version|agentctl|orchestrator kit|kit config/.test(context)) continue;
+        if (isForeignVersion(rel, m[1], context)) continue;
+        stale.push(`${rel}: ${m[1]}`);
+      }
+    }
     add(
       "agentctl banner/version strings",
       stale.length === 0,
-      stale.length ? `stale version string(s): ${[...new Set(stale)].join(", ")}` : `all reference v${version}`
+      stale.length ? `stale version string(s): ${[...new Set(stale)].join(", ")}` : `all shipped sources reference v${version}`
     );
   }
 

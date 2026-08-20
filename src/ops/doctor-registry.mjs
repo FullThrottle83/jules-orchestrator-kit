@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 /**
  * @typedef {"pass" | "warn" | "fail" | "skip" | "unknown"} DiagnosticStatus
@@ -393,16 +393,21 @@ export async function runDoctorChecks(options = {}) {
   }
 
   // 7. Jules Provider Key Check
-  const hasApiKey = Boolean(process.env.JULES_API_KEY || process.env.GEMINI_API_KEY);
-  if (hasApiKey) {
+  const keyVar = process.env.JULES_API_KEY ? "JULES_API_KEY" : process.env.GEMINI_API_KEY ? "GEMINI_API_KEY" : "";
+  if (keyVar) {
     addResult({
       id: "provider.key",
       category: "Jules",
       title: "Jules Provider API Key",
       status: "pass",
       severity: "info",
-      summary: "API key environment variable detected",
-      evidence: [{ label: "keyConfigured", value: true, sensitive: false }],
+      // Naming the variable, not the value: an operator who wonders which key a
+      // dispatch will use should not have to echo a secret to find out.
+      summary: `API key supplied via ${keyVar} (environment only — never written to config or sent anywhere but the provider)`,
+      evidence: [
+        { label: "keyConfigured", value: true, sensitive: false },
+        { label: "keySource", value: keyVar, sensitive: false },
+      ],
     });
   } else {
     addResult({
@@ -412,7 +417,47 @@ export async function runDoctorChecks(options = {}) {
       status: "warn",
       severity: "high",
       summary: "Neither JULES_API_KEY nor GEMINI_API_KEY environment variable is set",
+      remediation: [
+        {
+          summary: "Export JULES_API_KEY in your shell profile, or place it in a git-ignored .env",
+          risk: "low",
+          automatic: false,
+          requiresProbe: false,
+        },
+      ],
       evidence: [{ label: "keyConfigured", value: false, sensitive: false }],
+    });
+  }
+
+  // 7b. A .env holding the key must not be tracked by git.
+  const envFile = join(root, ".env");
+  if (existsSync(envFile)) {
+    let tracked = false;
+    try {
+      const res = spawnSync("git", ["ls-files", "--error-unmatch", ".env"], { cwd: root, encoding: "utf-8" });
+      tracked = res.status === 0;
+    } catch (_) {}
+
+    addResult({
+      id: "provider.key.dotenv",
+      category: "Jules",
+      title: "Local .env secrecy",
+      status: tracked ? "fail" : "pass",
+      severity: tracked ? "critical" : "info",
+      summary: tracked
+        ? ".env is tracked by git — an API key committed here is disclosed to everyone with repository access"
+        : ".env is present and untracked",
+      evidence: [{ label: "gitTracked", value: tracked, sensitive: false }],
+      remediation: tracked
+        ? [
+            {
+              summary: "Run: git rm --cached .env && echo '.env' >> .gitignore, then rotate the key",
+              risk: "low",
+              automatic: false,
+              requiresProbe: false,
+            },
+          ]
+        : [],
     });
   }
 

@@ -155,7 +155,7 @@ export const COMMAND_REGISTRY = [
       "agentctl init --tier pro --yes",
     ],
     flags: [
-      { name: "tier", type: "string", description: "Target configuration tier (free, pro, enterprise)" },
+      { name: "tier", type: "string", description: "Target configuration tier (free, pro, ultra, enterprise)" },
       { name: "interactive", type: "boolean", description: "Launch interactive onboarding wizard" },
       { name: "yes", type: "boolean", description: "Accept auto-detected Stack Oracle defaults" },
     ],
