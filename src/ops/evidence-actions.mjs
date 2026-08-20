@@ -6,7 +6,7 @@ import {
   generateEvidenceMarkdown,
 } from "../evidence.mjs";
 import { resolveRoot } from "../config.mjs";
-import { existsSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**

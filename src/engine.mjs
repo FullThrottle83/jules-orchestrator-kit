@@ -2,6 +2,7 @@ import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
 import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
+import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked } from "./state.mjs";
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
@@ -694,7 +695,15 @@ export async function dispatch(task = {}, opts = {}) {
   }
   const root = opts.config?._root || opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
-  const provider = createProvider(config.provider, config);
+  const { provider, routed, classification } = resolveRoutedProvider(task, config);
+  if (routed && classification) {
+    appendTelemetry(root, "router_decision", {
+      tier: classification.tier,
+      forced: classification.forced,
+      reason: classification.reason,
+      score: classification.score,
+    });
+  }
 
   // Enforce prompt size limit
   const promptKb = (config.limits.promptKb || 50) * 1024;
@@ -731,11 +740,12 @@ export async function dispatch(task = {}, opts = {}) {
   const cleanTask = { ...task, prompt: envelopedPrompt };
 
   try {
-    return await withBudget(
+    const session = await withBudget(
       () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun }),
       root,
       config.limits.dailyTasks
     );
+    return classification ? { ...session, _routeTier: classification.tier, _routeReason: classification.reason } : session;
   } catch (err) {
     if (err instanceof ProviderRateLimitError || err instanceof ProviderUnavailableError) {
       if (err.reservationId && !err.budgetReservationRolledBack) {

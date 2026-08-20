@@ -333,6 +333,12 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       enabled: parsed.evidence?.enabled ?? true,
       strictTestLock: parsed.evidence?.strict_test_lock ?? parsed.evidence?.strictTestLock ?? true,
     },
+    router: {
+      enabled: parsed.router?.enabled ?? false,
+      fast: parsed.router?.fast || "gemini-flash",
+      complex: parsed.router?.complex || "",
+      threshold: Number.isFinite(Number(parsed.router?.threshold)) ? Number(parsed.router.threshold) : 0,
+    },
     scope: normalizeScope(parsed),
     limits: {
       ...DEFAULTS.limits,

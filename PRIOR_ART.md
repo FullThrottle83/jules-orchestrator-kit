@@ -34,6 +34,9 @@ This documentation lists the projects in the AI agent ecosystem that inspired th
 - **Inspiration (`TrueForge`, `DeepAgents`, `Claude Managed Agents`):** Self-hosted Agent Runtime Harnesses offering multi-provider model gateways, dynamic remote sandboxing (Daytona), context compaction ("Code Mode"), and embeddable web chat UIs.
 - **Our Difference:** TrueForge builds heavy runtime infrastructure (Postgres, Redis, Docker, SaaS gateways) to turn raw LLMs into agents. In contrast, `jules-orchestrator-kit` is a sovereign **Zero-Dependency Governor & Orchestrator** for already-harnessed autonomous workers (Google Jules). We enforce terminal-first execution, strict payload limits (< 75 KB), local OODA auto-repair loops, and atomic secret/scope gates using only Node.js standard libraries.
 
+- **Inspiration (`RouteLLM`, `LiteLLM`, `OpenRouter`, agent-router SaaS gateways):** Complexity-aware LLM routing — classifying a query's difficulty and dispatching it to the cheapest model that can still handle it, cutting inference cost 40–85% with near-identical quality.
+- **Our Difference:** Those tools route raw chat completions through a hosted gateway. `agentctl`'s router (`src/router.mjs`, `router:` in `.agent/config.yml`, opt-in and disabled by default) routes whole *autonomous coding tasks* between locally-installed, already-harnessed agent CLIs (Jules, Claude Code, Codex, Gemini CLI) using a zero-dependency rule-based heuristic — no ML classifier, no third-party gateway, no data leaving the machine except to the provider the user already configured. Safety-sensitive paths (`auth/**`, `migrations/**`, secrets, `.github/**`) and the `sentinel` role always force the primary provider regardless of score, and any provider is user-swappable — the kit is not tied to Gemini, Jules, or any single vendor.
+
 ## What makes jules-orchestrator-kit unique?
 
 The honest answer to what *this* kit does that the others don't is **the gate**:

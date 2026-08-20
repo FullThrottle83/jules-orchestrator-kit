@@ -22,7 +22,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
 - [x] **L9 Kernel Hardening** (`src/state.mjs`, `src/journal.mjs`) — VFS directory mutex, PID recycling protection, atomic budget ledger.
-- [x] **Universal Polyglot Stack Detector** (`src/stack-detector.mjs`) — 24+ ecosystems auto-detected (.NET, Rust, Go, Python, PHP, Java, JS/TS, Flutter).
+- [x] **Universal Polyglot Stack Detector** (`src/stack-detector.mjs`) — 26+ ecosystems auto-detected (.NET, Rust, Go, Python, PHP, Java, JS/TS, Flutter, Solidity/Foundry/Hardhat).
 - [x] **Scoped Monorepo Boundary Resolver** (`resolveWorkspaceBoundary`) — Isolated subshell test execution.
 - [x] **Zero-Test Bootstrapping** (`agentctl bootstrap`) — Instant verification oracle synthesis (`php -l`, `compileall`, `dotnet build`).
 - [x] **Statistical Flaky Test Quarantine** (`src/flaky-ledger.mjs`) — Wilson-score oscillation tracking (Exit Code 8).
@@ -49,6 +49,20 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ---
 
+### v0.32.5 (Unreleased): DAG Task Execution, Specialist Roles & Evidence Ledger
+- [x] **DAG-Ordered Queue Execution** (`src/dag-engine.mjs`, `agentctl queue --dag`) — Kahn's-algorithm dependency resolution with cycle detection and per-task timeout, replacing strict FIFO queue order for tasks declared with `--depends-on`.
+- [x] **Specialist Agent Roles** (`agentctl dispatch --role`, `agentctl task create --role`) — Binds a task to a pre-defined specialist prompt persona (`overseer`, `bolt`, `sentinel`, `janitor`) resolved from `.agent/prompts/`.
+- [x] **Cryptographic Evidence Manifest** (`src/evidence.mjs`, `agentctl evidence generate|verify|show`) — SHA-256 manifest of changed files and test-file hashes with tamper detection; a foundational building block toward the v1.0.0 SOC2 audit exporter below.
+- [x] **Tiered Verification Stages & Offline Execution Policy** (`src/config.mjs` `verify.stages`/`verify.policy`) — Optional lint/unit/fuzz/invariant/e2e stage pipeline and network-access policy (used to enforce `--offline` for Web3/Solidity stacks).
+- [x] **Web3 / Solidity Stack Detection** (`src/stack-detector.mjs`) — Foundry (`forge test/build/fmt --offline`) and Hardhat auto-detection.
+
+### v0.32.6 (Unreleased): Dynamic Complexity & Cost Router
+- [x] **Provider-Agnostic Cost Router** (`src/router.mjs`, `router:` block in `.agent/config.yml`, opt-in/disabled by default) — Zero-dependency heuristic classifier routing trivial tasks to a fast/cheap provider and complex or safety-sensitive tasks to the primary provider. See the v0.33.0 milestone entry above for full details.
+- [x] **Gemini CLI Fast-Tier Preset** (`src/provider.mjs` `gemini-flash`) — Headless Gemini CLI exec preset (`gemini-3.6-flash`, `--approval-mode=yolo`) usable as `router.fast`, or swapped for any other provider.
+- [x] **`--tier fast|complex` Override** (`agentctl dispatch`, `agentctl task create`, MCP `dispatch_jules_task`) — Explicit routing override that bypasses the heuristic classifier.
+
+---
+
 ## 🎯 Target Milestone v0.33.0: Monorepo Swarms, Dynamic Routing & Code Intelligence
 *Focus: Multi-agent coordination, cost optimization, and monorepo architectural integrity.*
 
@@ -56,8 +70,11 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
   - Extend `resolveWorkspaceBoundary` to detect illegal cross-package imports and circular dependencies in TypeScript, Go, and Rust monorepos before running CI.
 - [ ] **Type III Silence Governor & Interruption Budgeting**:
   - Configurable digest mode for escalation webhooks (`src/webhook.mjs`), suppressing non-critical notifications to protect developer focus until context shifts or critical manual intervention thresholds.
-- [ ] **Dynamic Complexity & Cost Router**:
-  - Heuristic classifier that routes trivial tasks (typos, linter fixes, lockfile bumps) to fast/local providers while reserving Google Jules for complex multi-file refactors.
+- [x] **Dynamic Complexity & Cost Router** (`src/router.mjs`, `router:` in `.agent/config.yml`, opt-in):
+  - Zero-dependency heuristic classifier (`classifyTaskComplexity`) that routes trivial tasks (typos, linter fixes, lockfile bumps, single-file changes) to a fast/cheap provider while reserving the primary provider for complex multi-file refactors — provider-agnostic and user-configurable, not tied to any single vendor.
+  - Ships with a `gemini-flash` exec preset (`src/provider.mjs`, Gemini CLI headless mode) as a batteries-included fast tier; any exec/HTTP provider spec works as `router.fast`/`router.complex`.
+  - Safety-first: tasks touching `scope.deny` or sensitive paths (`auth/**`, `migrations/**`, secrets, `.github/**`), or using the `sentinel` role, always force-route to the primary provider regardless of score. FAST-tier dispatch cascades to the primary provider on rate-limit/5xx via `createFailoverProvider`.
+  - `--tier fast|complex` CLI/MCP override on `dispatch`, `task create`, and `dispatch_jules_task` for explicit control.
 - [ ] **Automated Flaky Test Healing Swarm**:
   - Background worker that consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness prompt templates to repair timing and race conditions.
 
@@ -68,6 +85,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 - [ ] **Cryptographic Compliance & SOC2 Audit Exporter (`agentctl audit export`)**:
   - Export tamper-evident, signed JSON-LD / SPDX receipts of all agent activities linked to the SHA-256 telemetry ledger.
+  - *Foundation shipped:* `agentctl evidence generate|verify|show` (`src/evidence.mjs`) already produces SHA-256 evidence manifests with test-tamper locking — this item extends it to signed JSON-LD/SPDX export.
 - [ ] **Zero-Dependency Core Freezing & Stability Guarantee**:
   - 100% API stability for `index.mjs` SDK exports, CLI exit codes (0–8), and configuration schema (`.agent/config.yml`).
 - [ ] **High-Concurrency Swarm Benchmarking (500+ Daily Sessions)**:

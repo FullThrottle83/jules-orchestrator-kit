@@ -37,6 +37,19 @@ export const CODEX_PRESET = {
   promptViaStdin: false,
 };
 
+// Google Gemini CLI (`npm i -g @google/gemini-cli`), headless mode. Reads the
+// prompt from stdin (non-TTY input triggers headless mode without needing a
+// dangling `-p` flag), auto-approves file/shell actions, and defaults to the
+// Gemini 3.6 Flash model — a cheap, fast tier suited for trivial/mechanical
+// tasks routed by src/router.mjs. Auth via GEMINI_API_KEY (env, not CLI arg).
+export const GEMINI_PRESET = {
+  name: "gemini-flash",
+  type: "exec",
+  command: "gemini",
+  args: ["--model", "gemini-3.6-flash", "--approval-mode=yolo", "--output-format", "json"],
+  promptViaStdin: true,
+};
+
 export class MissingApiKeyError extends Error {
   constructor(message = "JULES_API_KEY environment variable is required for Google Jules API dispatch.") {
     super(message);
@@ -105,13 +118,19 @@ function interpolateDeep(node, data) {
 /**
  * Creates an HTTP or Exec provider adapter based on spec/config.
  */
+const NAMED_PRESETS = {
+  jules: JULES_PRESET,
+  "claude-code": CLAUDE_PRESET,
+  codex: CODEX_PRESET,
+  "gemini-flash": GEMINI_PRESET,
+  "gemini-cli": GEMINI_PRESET,
+};
+
 export function createProvider(spec = "jules", config = {}) {
   if (spec && typeof spec === "object" && typeof spec.dispatch === "function") {
     return spec;
   }
-  const providerSpec = typeof spec === "string"
-    ? (spec === "claude-code" ? CLAUDE_PRESET : spec === "codex" ? CODEX_PRESET : JULES_PRESET)
-    : spec || JULES_PRESET;
+  const providerSpec = typeof spec === "string" ? (NAMED_PRESETS[spec] || JULES_PRESET) : spec || JULES_PRESET;
 
   if (!providerSpec || typeof providerSpec !== "object") {
     throw new TypeError("Provider specification must be a string or object");

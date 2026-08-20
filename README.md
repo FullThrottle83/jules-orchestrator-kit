@@ -108,13 +108,19 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **💻 Native Interactive UX & Command Palette (`v0.30.0`):** Features a zero-dependency full-screen Terminal Engine (`capabilities`, `key-decoder`, `renderer`, `layout`, `widgets`), interactive diagnostic matrix (`agentctl doctor`), task queue/swarm managers (`agentctl queue`, `agentctl swarm`), and a searchable Command Palette.
 
-* **🌐 Universal Polyglot Spine:** Natively auto-detects 24+ tech stacks (PHP/Laravel/WordPress, .NET/C#, Python, Go, Rust, C/C++, Flutter/Swift, Node/Deno/Bun) and transparently wraps verification suites in Docker Compose or Devcontainer sandboxes.
+* **🌐 Universal Polyglot Spine:** Natively auto-detects 26+ tech stacks (PHP/Laravel/WordPress, .NET/C#, Python, Go, Rust, C/C++, Flutter/Swift, Node/Deno/Bun, Solidity/Foundry/Hardhat) and transparently wraps verification suites in Docker Compose or Devcontainer sandboxes.
+
+* **🧩 DAG-Ordered Task Queue & Specialist Agent Roles:** `agentctl queue --dag` resolves inter-task dependencies via Kahn's algorithm with cycle detection instead of linear FIFO order, and `--role <overseer|bolt|sentinel|janitor>` binds a task to a pre-defined specialist prompt persona resolved from `.agent/prompts/`.
+
+* **🔏 Cryptographic Evidence Ledger (`agentctl evidence`):** Generates a SHA-256 manifest of changed files, test-file hashes, and tamper-detection locks for every verified task — a portable, offline-verifiable audit trail toward the roadmap's SOC2 compliance exporter.
+
+* **💸 Dynamic Complexity & Cost Router (`router:` in `.agent/config.yml`, opt-in):** A zero-dependency, rule-based heuristic classifier (`src/router.mjs`) routes trivial tasks (typos, lint fixes, single-file lockfile bumps) to a cheap/fast provider — e.g. the built-in `gemini-flash` (Gemini CLI, headless mode) preset — while reserving your primary provider for complex, multi-file, or safety-sensitive work. Tasks touching `scope.deny`, `auth/**`, `migrations/**`, secrets, or using the `sentinel` role always force the primary provider regardless of score. Fully provider-agnostic: swap in any exec/HTTP provider spec for `router.fast`/`router.complex`, and override per-task with `--tier fast|complex`.
 
 * **📂 Scoped Monorepo Boundary Resolver:** Statically maps changed files up directory ancestry to invoke isolated subshell test suites (`(cd backend && pytest) && (cd cli && cargo test)`), eliminating global test thrashing.
 
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
-* **📈 Proven Scale & Reliability:** Empirically tested with **368 unit tests across 52 suites passing in < 3.0s**, supporting 300+ daily agent sessions per repository.
+* **📈 Proven Scale & Reliability:** Empirically tested with **421 unit tests across 59 suites passing in < 8.0s**, supporting 300+ daily agent sessions per repository.
 
 <br/>
 
@@ -166,7 +172,7 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 | **Self-Healing Loop** | ❌ None (Crashes on test error) | ❌ None (Fails build; notifies human) | ✅ **Autonomous OODA Loop** (Max 3 repair turns with error fingerprinting) |
 | **Interactive UX Engine**| ❌ Raw unformatted CLI dumps | ❌ Non-interactive log outputs | ✅ **Native TUI Engine & Command Palette** (Zero-dependency alternate-screen TUI) |
 | **Scope Isolation** | ❌ None (Can modify CI files or lockfiles) | 🟡 Post-commit branch rules only | ✅ **Fail-Closed Scope Guard** (Deny-first evaluation; blocks protected paths) |
-| **Polyglot Stack Detection**| ❌ Manual prompt instructions | 🟡 Hardcoded YAML workflow steps | ✅ **Universal 24+ Stack Detector** (`src/config.mjs`) |
+| **Polyglot Stack Detection**| ❌ Manual prompt instructions | 🟡 Hardcoded YAML workflow steps | ✅ **Universal 26+ Stack Detector** (`src/config.mjs`) |
 | **Flaky Test Quarantine** | ❌ Fails session randomly | ❌ Breaks CI pipeline randomly | ✅ **Wilson-Score Statistical Quarantine** (Oscillation ≥ 0.40 quarantined automatically) |
 | **Monorepo Scoping** | ❌ Runs full global test suite | 🟡 Requires custom Nx/Turbo scripting | ✅ **Scoped Subshell Boundary Resolver** (`resolveWorkspaceBoundary`) |
 | **Zero-Test Bootstrapping**| ❌ Halts without verification oracle | ❌ Fails build if no tests exist | ✅ **Instant Oracle Synthesis** (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`) |
@@ -227,7 +233,7 @@ npx jules-orchestrator-kit queue --interactive
 <br/>
 
 <details>
-<summary><b>🔍 View All 24+ Supported Ecosystems & Stack Triggers</b></summary>
+<summary><b>🔍 View All 26+ Supported Ecosystems & Stack Triggers</b></summary>
 
 <br/>
 
@@ -242,6 +248,8 @@ Ecosystems Natively Supported by src/config.mjs:
 ├── Systems / Rust Cargo (Cargo.toml)
 ├── Systems / Go (go.mod)
 ├── Systems / Make (Makefile)
+├── Web3 / Solidity Foundry (foundry.toml, remappings.txt) — offline-enforced forge test/build/fmt
+├── Web3 / Solidity Hardhat (hardhat.config.js, hardhat.config.ts)
 ├── Python / FastAPI / Django (pyproject.toml, requirements.txt, setup.py)
 ├── Elixir / Phoenix (mix.exs)
 ├── Ruby / Rails (Gemfile)
@@ -269,7 +277,7 @@ Ecosystems Natively Supported by src/config.mjs:
 # .agent/config.yml — Universal Orchestrator Configuration
 
 version: 1
-provider: "jules"        # Provider key ("jules" | "claude-code" | "local")
+provider: "jules"        # Provider key ("jules" | "claude-code" | "codex" | "gemini-flash")
 baseBranch: "main"       # Default target base branch
 branchPrefix: "agent/"   # Prefix for task branches
 
@@ -292,6 +300,15 @@ limits:
   dailyTasks: 300        # Daily task session quota limit
   repairAttempts: 3      # Maximum OODA repair iterations
   concurrency: 1         # Worker slot concurrency limit
+
+# Dynamic Complexity & Cost Router — opt-in, disabled by default.
+# Provider-agnostic: "fast"/"complex" accept any provider key ("jules" |
+# "claude-code" | "codex" | "gemini-flash") or an inline custom provider spec.
+router:
+  enabled: false
+  fast: "gemini-flash"    # Trivial/mechanical tasks (score <= threshold)
+  complex: "jules"        # Complex/multi-file/safety-sensitive tasks; defaults to `provider`
+  threshold: 0            # Heuristic score above which a task escalates to `complex`
 ```
 
 <br/>
@@ -369,15 +386,15 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | Command | Usage | Description | Exit Codes |
 | :--- | :--- | :--- | :--- |
 | `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack oracle inspector generating `.agent/config.yml`. | `0` (Created) |
-| `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing & preflight gate checks. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
+| `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>] [--role <name>] [--tier fast\|complex] [--depends-on <id,...>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing, preflight gate checks, specialist role resolution, DAG dependency wiring, and an optional Cost Router tier override. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
 | `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes specialized web task envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`). | `0` (Synthesized/Listed) |
 | `task optimize` | `agentctl task optimize "<prompt>" [--fix] [--web] [--json]` | Linter & optimizer injecting Google Labs 3-phase exploration budgets, critic steering, and web oracles. | `0` (Scored/Fixed) |
 | `test-gen` | `agentctl test-gen --title <t> --spec <s> [--run]` | Scaffolds falsifiable unit tests, verifies **RED** failure state, and locks test in `scope.deny`. | `0` (Scaffolded/Red) |
 | `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
 | `resume` | `agentctl resume <sessionId> --response "<reply>"` | Streams engineer response back into active Google Jules warm session context window. | `0` (Resumed), `1` (Error) |
-| `dispatch` | `agentctl dispatch --title <t> --prompt <p>` | Dispatches a single task to an AI agent in an isolated worktree. | `0` (Success), `1` (Arg error), `2` (429 Rate limit), `3` (Scope deny), `4` (OODA exhausted), `5` (Diff > 75KB), `6` (Secret leak) |
+| `dispatch` | `agentctl dispatch --title <t> --prompt <p> [--role <name>] [--tier fast\|complex]` | Dispatches a single task to an AI agent in an isolated worktree, optionally binding a specialist role prompt (`overseer`\|`bolt`\|`sentinel`\|`janitor`) and/or overriding the Cost Router tier. | `0` (Success), `1` (Arg error), `2` (429 Rate limit), `3` (Scope deny), `4` (OODA exhausted), `5` (Diff > 75KB), `6` (Secret leak) |
 | `doctor` | `agentctl doctor [--interactive] [--fix safe]` | Diagnostic DAG check runner & automated transactional repair planner. | `0` (Healthy) |
-| `queue` | `agentctl queue [--interactive] [--json]` | Consumes, inspects, and executes task envelopes in `.agent/jules-queue/` (supports `--json`). | `0` (Complete) |
+| `queue` | `agentctl queue [--interactive] [--dag] [--concurrency <n>] [--json]` | Consumes, inspects, and executes task envelopes in `.agent/jules-queue/`; `--dag` resolves inter-task dependencies via Kahn's algorithm with cycle detection instead of linear FIFO order (supports `--json`). | `0` (Complete) |
 | `swarm` | `agentctl swarm [--interactive] [--json]` | Runs parallel multi-agent swarm across worker slots with process PID liveness detection (supports `--json`). | `0` (Complete) |
 | `scan` | `agentctl scan` | Scans codebase for TODO/FIXME annotations to seed task authoring. | `0` (Scanned) |
 | `review-repair`| `agentctl review-repair <pr-comments.json>`| Parses GitHub PR review comments and synthesizes actionable OODA repair tasks. | `0` (Parsed), `1` (Missing file) |
@@ -386,6 +403,7 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `bootstrap` | `agentctl bootstrap [--force] [--json]` | Inspects an untested repository and synthesizes `.agent/config.yml` with a zero-test verification oracle (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`). | `0` (Bootstrapped / Existing) |
 | `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
+| `evidence` | `agentctl evidence <generate\|verify\|show> [--manifest <path>] [--json]` | Generates, verifies, or prints a SHA-256 cryptographic evidence manifest (changed-file hashes + test-file tamper lock) for audit trails. | `0` (Verified/Generated), `1` (Tamper detected / Verification failed) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
 | `mcp init` | `agentctl mcp init [--target cursor\|vscode\|claude\|all]` | 1-click scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | `0` (Scaffolded) |
 | `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.32.4`). | `0` |
@@ -419,7 +437,23 @@ const result = await provider.dispatch(
 );
 ```
 
-### 3. Model Context Protocol (MCP) Server
+### 3. Dynamic Complexity & Cost Router (`resolveRoutedProvider`)
+Opt-in, config-driven routing between a cheap/fast provider and your primary provider — see [Configuration Reference](#configuration) for the `router:` block. Programmatic usage mirrors `createFailoverProvider`:
+
+```javascript
+import { resolveRoutedProvider, loadConfig } from "jules-orchestrator-kit";
+
+const config = loadConfig(process.cwd()); // router.enabled must be true in .agent/config.yml
+const { provider, classification } = resolveRoutedProvider(
+  { title: "Fix typo", prompt: "Fix a typo in the README." },
+  config
+);
+console.log(classification.tier); // "fast" | "complex"
+```
+
+Ships with a `gemini-flash` preset (Gemini CLI headless mode, `gemini-3.6-flash`) as a batteries-included fast tier, but any provider key or custom spec works for `router.fast`/`router.complex` — the router is provider-agnostic by design, not tied to any single vendor.
+
+### 4. Model Context Protocol (MCP) Server
 Expose orchestrator gates and queue controls over stdio to client tools (Antigravity, Claude, Cursor):
 ```bash
 npx jules-orchestrator-kit mcp
@@ -436,6 +470,8 @@ npx jules-orchestrator-kit mcp
 
 | Feature | Module / Command | Architectural Description | Target Release |
 | :--- | :--- | :--- | :---: |
+| **Dynamic Complexity & Cost Router** | `src/router.mjs`, `router:` in `.agent/config.yml` | Provider-agnostic, zero-dependency heuristic classifier routing trivial tasks to a fast/cheap provider (`gemini-flash` preset included) and complex/safety-sensitive tasks to the primary provider; opt-in, `--tier` override. | **Unreleased** *(main)* |
+| **DAG Task Queue, Specialist Roles & Evidence Ledger** | `src/dag-engine.mjs`, `src/evidence.mjs`, `agentctl evidence` | Kahn's-algorithm dependency-ordered queue execution (`queue --dag`), `--role` specialist prompt resolution, and SHA-256 cryptographic evidence manifests with test-tamper locking. | **Unreleased** *(main)* |
 | **Warm Session Resumption & PR Bundler** | `src/provider.mjs`, `src/engine.mjs` | Multi-turn warm session context streaming via `POST /v1alpha/sessions/{id}:sendMessage` & evidence PR descriptions. | **v0.31.0** *(Shipped)* |
 | **TDD Harness & Prompt Falsifiability Linter** | `agentctl test-gen`, `agentctl task optimize` | Automated RED-state test generator, `scope.deny` test locking, and prompt testability linter with fuzzy path resolution. | **v0.31.0** *(Shipped)* |
 | **Atomic Git Checkpoint & Rollback** | `agentctl rollback` (`src/ops/checkpoint.mjs`) | Pre-flight git HEAD/stash snapshotting, atomic rollback restoration, and 10-session pruning rotation. | **v0.31.0** *(Shipped)* |

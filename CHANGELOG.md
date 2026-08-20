@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Dynamic Complexity & Cost Router
+- **Provider-Agnostic Cost Router (`src/router.mjs`, `router:` in `.agent/config.yml`)**: New zero-dependency, rule-based `classifyTaskComplexity()` heuristic and `resolveRoutedProvider()` resolver. Opt-in via `router.enabled` (default `false`, zero behavior change for existing users). Routes trivial/mechanical tasks to a fast/cheap provider and complex, multi-file, or safety-sensitive tasks to the primary provider.
+- **Safety-First Routing**: Tasks touching `config.scope.deny` or built-in sensitive path patterns (`auth/**`, `migrations/**`, `pricing/**`, `secrets/**`, `*.pem`, `*.key`, `.github/**`) always force the primary provider, as does the `sentinel` role — these overrides cannot be downgraded by prompt wording. `janitor`/`bolt` roles nudge toward the fast tier; explicit `task.tier`/`--tier` always wins outright.
+- **Gemini CLI Fast-Tier Preset (`src/provider.mjs` `GEMINI_PRESET` / `gemini-flash`)**: Headless Gemini CLI exec preset (`gemini-3.6-flash`, `--approval-mode=yolo`, prompt via stdin), refactored `createProvider()`'s preset lookup into a `NAMED_PRESETS` map to accommodate it cleanly. Any provider spec (built-in or custom) works as `router.fast`/`router.complex` — not tied to Gemini or any single vendor.
+- **Cascade-on-Failure**: FAST-tier dispatch wraps `[fast, complex]` in the existing `createFailoverProvider`, so a rate-limited or unavailable fast provider automatically falls through to the primary provider — no new failover logic needed.
+- **`--tier fast|complex` Override**: Added to `agentctl dispatch`, `agentctl task create` (persisted in the task envelope and threaded through `agentctl queue --dag`), and the `dispatch_jules_task` MCP tool.
+- **Unit Test Coverage (`test/router.test.mjs`)**: 14 new tests covering classification heuristics, forced overrides, threshold tuning, and `engine.mjs` dispatch integration, bringing total passing unit tests to 421 across 59 test suites.
+
+### DAG Task Execution, Specialist Agent Roles & Cryptographic Evidence Ledger
+- **DAG-Ordered Queue Execution (`src/dag-engine.mjs`, `agentctl queue --dag`)**: Added `DagExecutor` with Kahn's-algorithm dependency resolution, cycle detection (`DagCycleError`), per-task timeout wrapping, and `--concurrency <n>` worker slot control, driven by `--depends-on` on `agentctl task create`.
+- **Specialist Agent Roles (`agentctl dispatch --role`, `agentctl task create --role`)**: Tasks can now bind to a pre-defined specialist prompt persona (`overseer` | `bolt` | `sentinel` | `janitor`) resolved from `.agent/prompts/` and attached to the task envelope; exposed via the `role` MCP parameter.
+- **Cryptographic Evidence Manifest (`src/evidence.mjs`, `src/ops/evidence-actions.mjs`, `agentctl evidence generate|verify|show`)**: New SHA-256 manifest generator hashing changed files and test files, with tamper detection and Markdown summary export — a foundational building block toward the roadmap's SOC2 audit exporter.
+- **Tiered Verification Stages & Offline Execution Policy (`src/config.mjs`)**: `verify.stages` (lint/unit/fuzz/invariant/e2e) and `verify.policy.{networkAccess,offline}` config fields, enabling stack-specific offline enforcement.
+- **Web3 / Solidity Stack Detection (`src/stack-detector.mjs`)**: Foundry (`foundry.toml`/`remappings.txt`, `forge test/build/fmt --offline`) and Hardhat (`hardhat.config.js`/`.ts`) auto-detection, bringing supported ecosystems to 26+.
+- **Documentation**: Synchronized `README.md` (CLI table, ecosystem list, feature roadmap) and `ROADMAP_V1.md` with the above; corrected stale test-suite count (368/52 → 407/56).
+
 ## [0.32.4] - 2026-08-18
 ### Architecture Directives, Type III Situational Awareness & Roadmap Alignment
 - **Type III Situational Awareness & Silence Governor Alignment (`ROADMAP_V1.md`, `PRIOR_ART.md`)**: Documented architectural roadmap for Google Labs `/code` Type III agentic paradigm ("Silence is an explicit, strategic decision") including Interruption Budgeting, quiet-by-default digest mode in `src/webhook.mjs`, and proactive local telemetry ingestion.

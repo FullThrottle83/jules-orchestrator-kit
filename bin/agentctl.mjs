@@ -21,7 +21,7 @@ export function printHelp() {
 Usage: agentctl <command> [options]
 
 Commands:
-  dispatch | create     Dispatch a single task to an AI agent (--role <name>)
+  dispatch | create     Dispatch a single task to an AI agent (--role <name>, --tier fast|complex)
   gate | audit          Run CI security and verification gate against current branch
   queue                 Run pending task queue (--dag, --concurrency <n>)
   swarm                 Run parallel task swarm
@@ -33,7 +33,7 @@ Commands:
   review-repair         Parse PR review comments and synthesize OODA repair tasks
   dashboard             Start local HTTP telemetry and audit dashboard
   init                  Scaffold .agent/ config and run onboarding wizard
-  task create           Interactively author and scope a Jules task envelope (--template <name>, --role <name>)
+  task create           Interactively author and scope a Jules task envelope (--template <name>, --role <name>, --tier fast|complex)
   task optimize         Linter & optimizer for Jules task prompts (--fix, --json, --web)
   task template         List and generate web development task templates (--list, --json)
   test-gen              Scaffold & run automated TDD Red-to-Green test cycle (--run)
@@ -50,6 +50,7 @@ Commands:
 
 Options:
   --role, -r            Specify specialist agent role (overseer | bolt | sentinel | janitor)
+  --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:
   --dag                 Execute queue tasks via DAG dependency resolution
   --dry-run, -d         Simulate action without making API calls or modifying git
   --mode, -m            Gate evaluation mode (working-tree | committed | staged)
@@ -87,6 +88,7 @@ async function main() {
           prompt: { type: "string", short: "p" },
           "prompt-file": { type: "string", short: "f" },
           role: { type: "string", short: "r" },
+          tier: { type: "string" },
           source: { type: "string", short: "s" },
           branch: { type: "string", short: "b" },
           repoless: { type: "boolean" },
@@ -116,6 +118,7 @@ async function main() {
         title: values.title || "CLI Dispatch Task",
         prompt: promptContent,
         role: values.role,
+        tier: values.tier === "fast" || values.tier === "complex" ? values.tier : undefined,
         source: values.source,
         branch: values.branch,
         repoless: values.repoless,
@@ -138,6 +141,9 @@ async function main() {
           console.log(`\n✅ Task Dispatched Successfully!`);
           console.log(`   Session ID  : ${session.id}`);
           console.log(`   Session URL : ${session.url || "N/A"}`);
+          if (session._routeTier) {
+            console.log(`   Router Tier : ${session._routeTier} (${session._routeReason || "n/a"})`);
+          }
         }
         process.exit(0);
       } catch (err) {
@@ -397,6 +403,7 @@ async function main() {
             title: { type: "string", short: "t" },
             prompt: { type: "string", short: "p" },
             role: { type: "string", short: "r" },
+            tier: { type: "string" },
             template: { type: "string" },
             depends: { type: "string" },
             "depends-on": { type: "string" },
@@ -414,6 +421,7 @@ async function main() {
           title: values.title,
           prompt: values.prompt,
           role: values.role,
+          tier: values.tier,
           template: values.template,
           dependsOn: values["depends-on"] || values.depends,
           verifyCmd: values["verify-cmd"],
@@ -429,6 +437,7 @@ async function main() {
           console.log(`   Task ID  : ${res.plan.taskId}`);
           console.log(`   Title    : ${res.plan.title}`);
           if (res.plan.role) console.log(`   Role     : ${res.plan.role}`);
+          if (res.plan.tier) console.log(`   Tier     : ${res.plan.tier} (routing override)`);
           if (res.plan.dependsOn && res.plan.dependsOn.length > 0) console.log(`   DependsOn: ${res.plan.dependsOn.join(", ")}`);
           console.log(`   Auto-PR  : ${res.plan.flags.autoPr}`);
         }

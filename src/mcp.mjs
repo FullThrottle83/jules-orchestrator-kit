@@ -99,6 +99,7 @@ export const MCP_TOOLS = [
         title: { type: "string", description: "Short descriptive title for the task" },
         prompt: { type: "string", description: "Detailed task instructions and prompt" },
         role: { type: "string", description: "Specialist agent role (overseer | bolt | sentinel | janitor)" },
+        tier: { type: "string", description: "Force the Cost Router tier when router.enabled (fast | complex); omit to let the heuristic classifier decide" },
       },
       required: ["prompt"],
     },
@@ -235,7 +236,12 @@ export async function handleMcpRequest(request, opts = {}) {
     try {
       if (toolName === "dispatch_jules_task") {
         const session = await dispatch(
-          { title: args.title || "MCP Task Dispatch", prompt: args.prompt, role: args.role },
+          {
+            title: args.title || "MCP Task Dispatch",
+            prompt: args.prompt,
+            role: args.role,
+            tier: args.tier === "fast" || args.tier === "complex" ? args.tier : undefined,
+          },
           { root, config }
         );
         return {

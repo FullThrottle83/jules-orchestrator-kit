@@ -457,6 +457,7 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
     let title = taskId;
     let prompt = content;
     let role = undefined;
+    let tier = undefined;
 
     // Check envelope header
     const match = content.match(/<!--\s*JULES_TASK_ENVELOPE:\s*({[\s\S]*?})\s*-->/);
@@ -466,6 +467,7 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
         if (meta.id) taskId = meta.id;
         if (meta.title) title = meta.title;
         if (meta.role) role = meta.role;
+        if (meta.tier) tier = meta.tier;
         if (Array.isArray(meta.dependsOn)) dependsOn = meta.dependsOn;
         else if (typeof meta.dependsOn === "string") dependsOn = meta.dependsOn.split(",").map((s) => s.trim()).filter(Boolean);
       } catch (_) {}
@@ -476,12 +478,13 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
         if (parsed.title) title = parsed.title;
         if (parsed.prompt) prompt = parsed.prompt;
         if (parsed.role) role = parsed.role;
+        if (parsed.tier) tier = parsed.tier;
         if (Array.isArray(parsed.dependsOn)) dependsOn = parsed.dependsOn;
         else if (typeof parsed.dependsOn === "string") dependsOn = parsed.dependsOn.split(",").map((s) => s.trim()).filter(Boolean);
       } catch (_) {}
     }
 
-    taskMap.set(taskId, { file, fullPath, taskId, title, prompt, role, dependsOn });
+    taskMap.set(taskId, { file, fullPath, taskId, title, prompt, role, tier, dependsOn });
   }
 
   // Register each task with its dependencies that are part of this queue run
@@ -492,7 +495,7 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
       dependsOn: validDeps,
       runner: async () => {
         const srcPath = t.fullPath;
-        const taskObj = { id: t.taskId, title: t.title, prompt: t.prompt, role: t.role };
+        const taskObj = { id: t.taskId, title: t.title, prompt: t.prompt, role: t.role, tier: t.tier };
         let session;
         if (typeof options.dispatchFn === "function") {
           session = await options.dispatchFn(taskObj, { root, config: options.config, dryRun: options.dryRun });

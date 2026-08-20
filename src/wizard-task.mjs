@@ -176,6 +176,8 @@ ${GUARDRAIL_FOOTER}`;
     ? rawDepends.split(",").map((s) => s.trim()).filter(Boolean)
     : undefined;
 
+  const tier = inputObj.tier === "fast" || inputObj.tier === "complex" ? inputObj.tier : undefined;
+
   const envelopeMetadata = {
     version: 1,
     id: taskId,
@@ -184,6 +186,7 @@ ${GUARDRAIL_FOOTER}`;
     verifyCmd,
     role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
     dependsOn,
+    tier,
     falsifiabilityScore: promptAnalysis.score,
     grade: promptAnalysis.grade,
   };
@@ -205,6 +208,7 @@ ${fullPrompt}
     verifyCmd,
     role: envelopeMetadata.role,
     dependsOn,
+    tier,
     flags,
     secretFindings,
     promptAnalysis,

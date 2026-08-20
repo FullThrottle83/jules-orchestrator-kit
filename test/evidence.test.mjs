@@ -18,7 +18,6 @@ import {
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execSync } from "node:child_process";
 
 describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
   it("computeFileHash returns null for non-existent files and valid sha256 for real files", () => {

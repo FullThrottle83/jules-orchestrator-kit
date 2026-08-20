@@ -14,7 +14,6 @@ import {
 import { join, resolve, relative, isAbsolute, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
-import { redactSecrets } from "./security.mjs";
 
 /**
  * Normalizes file path to POSIX slashes.
