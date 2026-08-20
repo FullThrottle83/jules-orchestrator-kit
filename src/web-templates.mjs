@@ -233,6 +233,93 @@ export const WEB_TEMPLATES = {
    - UTF-8 clean encoding with zero unescaped unicode artefacts.
    - Localized formatting for dates, currencies, and numbers using standard Intl APIs.`;
     }
+  },
+
+  // On the scope of this template, and what it deliberately does not claim:
+  //
+  // `llms.txt` (spec at llmstxt.org — cited without a scheme so the egress
+  // allowlist test does not read a citation as a destination the kit contacts)
+  // is a proposal, not a ratified standard. Plenty of sites publish one; no
+  // major provider has confirmed its retrieval stack reads one, and Google has
+  // said publicly that it does not use it. That is the supply side of a
+  // convention with no demonstrated demand side.
+  //
+  // So this template verifies what a repository can actually falsify — the file
+  // exists, it parses, its links resolve, and the site's crawler directives do
+  // not contradict each other — and it says nothing about whether publishing it
+  // improves visibility in any assistant. Every other template here carries a
+  // real verification oracle; a "generative engine optimization" template that
+  // promised ranking effects would be the first one that could not.
+  //
+  // Crawler posture is a policy choice, not a best practice. Allowing GPTBot,
+  // ClaudeBot or Google-Extended has licensing and editorial consequences, and
+  // blocking them is frequently deliberate. The template therefore takes no
+  // side: it defaults to `preserve`, reads the posture the repository already
+  // states, and enforces that every surface states the same thing.
+  //
+  // Structured data (JSON-LD, sameAs, entity markup) stays in `web-seo`. Two
+  // templates with authority over the same markup will eventually disagree.
+  "web-ai-access": {
+    id: "web-ai-access",
+    name: "AI Crawler Policy Consistency & llms.txt Integrity",
+    description: "Verify that AI crawler directives agree across every surface and that a published llms.txt parses with links that resolve.",
+    defaultVerifyCmd: "npm test",
+    category: "Crawler Policy & AI Access",
+    criticFocus: [
+      "Confirm the patch preserves the repository's existing AI crawler posture unless the task explicitly asked to change it — allowing or blocking a crawler is the operator's decision, not the agent's.",
+      "Verify robots.txt, per-page robots meta tags, and any X-Robots-Tag headers agree for every named agent; a page allowed in one surface and denied in another is a defect regardless of which is intended.",
+      "Check that every link in llms.txt resolves against the project's own route table or build output, with no absolute links to pages that no longer exist.",
+      "Ensure the PR description states that llms.txt consumption by AI systems is unverified, and claims no ranking, visibility, or citation benefit.",
+      "Confirm no JSON-LD or structured-data markup was modified here — that surface belongs to the web-seo template."
+    ],
+    defaultParams: {
+      aiAccessPolicy: "preserve",
+      aiAgents: "GPTBot, ClaudeBot, Google-Extended, PerplexityBot, CCBot, Applebot-Extended",
+      targetRoutes: "all public routes"
+    },
+    generatePrompt: (params = {}) => {
+      const policy = String(params.aiAccessPolicy || "preserve").toLowerCase();
+      const agents = params.aiAgents || "GPTBot, ClaudeBot, Google-Extended, PerplexityBot, CCBot, Applebot-Extended";
+      const routes = params.targetRoutes || "all public routes";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      const policyClause = {
+        allow: `The operator has decided to **allow** these agents. Make every surface say so consistently.`,
+        deny: `The operator has decided to **block** these agents. Make every surface say so consistently, and confirm no route leaks access through a surface that was missed.`,
+        selective: `The operator allows some agents and blocks others. Derive the intended split from existing configuration and make every surface agree with it exactly.`,
+        preserve: `**Do not change the posture.** Determine what the repository already states about these agents and make every surface state the same thing. If the surfaces currently contradict each other, report the contradiction and resolve it toward the most restrictive existing directive — never toward the more permissive one, and never invent a posture the repository has not expressed.`
+      }[policy] || `Treat \`${policy}\` as an explicit operator instruction and apply it consistently across every surface.`;
+
+      return `Audit AI crawler access directives and llms.txt integrity for ${routes}.${customGoal}
+
+### Operator Policy (do not override)
+${policyClause}
+
+Agents in scope: ${agents}.
+
+### Acceptance Criteria:
+1. **One Posture, Every Surface**:
+   - \`robots.txt\`, per-page \`<meta name="robots">\` / agent-specific meta tags, and any \`X-Robots-Tag\` response headers must agree for every agent above.
+   - A route that is allowed by one surface and denied by another is a defect even when the intended answer is obvious — fix the disagreement, do not pick a winner silently.
+   - Verify \`robots.txt\` parses: correct \`User-agent:\` grouping, no directives stranded outside a group, no rules unreachable because of an earlier wildcard group.
+2. **llms.txt Integrity (if the project publishes one)**:
+   - The file must parse as the proposed shape: a single \`# H1\` project name, an optional \`> blockquote\` summary, then \`## H2\` sections whose bodies are Markdown link lists.
+   - **Every link must resolve against this project's own route table or build output.** Check locally — do not fetch the live web from the verification step. A dead link in llms.txt is the single most common real defect in published files.
+   - Content must not contradict the crawler policy above: do not advertise paths in llms.txt that \`robots.txt\` disallows.
+   - If the project does not publish llms.txt, adding one is **in scope only if the task asked for it**. Do not create one on your own initiative.
+3. **Honest Reporting**:
+   - \`llms.txt\` is a proposal, not a ratified standard, and no major provider has confirmed that its retrieval systems read it. Google has stated publicly that it does not.
+   - The PR description must therefore claim only what was verified — that the file exists, parses, and its links resolve. Do **not** claim improved visibility, ranking, or citation in any AI assistant. There is no oracle for that claim and it must not appear in the diff, the commit message, or the PR body.
+4. **Scope Boundary**:
+   - Do not modify JSON-LD, Schema.org markup, \`sameAs\`, OpenGraph, or canonical tags. That surface belongs to the \`web-seo\` template; changing it here creates two sources of truth that will drift apart.
+
+### Verification Oracle to Add
+Add a repository-local test (no network access) that:
+- parses \`robots.txt\` and asserts the directive set for each agent in scope matches the intended posture;
+- parses \`llms.txt\`, if present, and asserts every link target exists in the route table or build output.
+
+The test must fail on a hand-broken fixture before you consider it done.`;
+    }
   }
 };
 

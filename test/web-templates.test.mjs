@@ -11,7 +11,7 @@ import { handleMcpRequest } from "../src/mcp.mjs";
 test("listWebTemplates returns all registered web templates", () => {
   const templates = listWebTemplates();
   assert.ok(Array.isArray(templates));
-  assert.ok(templates.length >= 6);
+  assert.ok(templates.length >= 7);
   const ids = templates.map((t) => t.id);
   assert.ok(ids.includes("web-cwv"));
   assert.ok(ids.includes("web-wcag"));
@@ -19,6 +19,7 @@ test("listWebTemplates returns all registered web templates", () => {
   assert.ok(ids.includes("web-playwright"));
   assert.ok(ids.includes("web-flaky-heal"));
   assert.ok(ids.includes("web-i18n"));
+  assert.ok(ids.includes("web-ai-access"));
 });
 
 test("getWebTemplate retrieves specific template by id case-insensitively", () => {
@@ -34,8 +35,60 @@ test("getWebTemplate retrieves specific template by id case-insensitively", () =
   assert.equal(i18n.category, "Internationalization & SEO");
   assert.ok(i18n.criticFocus.length > 0);
 
+  const aiAccess = getWebTemplate("WEB-AI-ACCESS");
+  assert.ok(aiAccess);
+  assert.equal(aiAccess.id, "web-ai-access");
+  assert.equal(aiAccess.category, "Crawler Policy & AI Access");
+  assert.ok(aiAccess.criticFocus.length > 0);
+
   const nonExistent = getWebTemplate("invalid-template");
   assert.equal(nonExistent, null);
+});
+
+test("web-ai-access defaults to preserving the operator's existing crawler posture", () => {
+  // Allowing or blocking GPTBot has licensing and editorial consequences, and
+  // blocking is frequently deliberate. A universal template must not ship a
+  // default that quietly opens a site up — so the unparameterised envelope has
+  // to instruct the agent to leave the posture alone.
+  const env = synthesizeWebEnvelope("web-ai-access", {});
+  assert.match(env.prompt, /Do not change the posture/);
+  assert.match(env.prompt, /most restrictive existing directive/);
+  assert.doesNotMatch(
+    env.prompt,
+    /has decided to \*\*allow\*\*/,
+    "the default envelope must not assert an allow decision the operator never made"
+  );
+
+  const deny = synthesizeWebEnvelope("web-ai-access", { aiAccessPolicy: "deny" });
+  assert.match(deny.prompt, /has decided to \*\*block\*\*/);
+
+  const allow = synthesizeWebEnvelope("web-ai-access", { aiAccessPolicy: "allow" });
+  assert.match(allow.prompt, /has decided to \*\*allow\*\*/);
+});
+
+test("web-ai-access refuses to promise unverifiable AI visibility gains", () => {
+  // Every other template carries a real verification oracle. This one governs a
+  // convention whose consumption by AI systems is unconfirmed, so the envelope
+  // must forbid the agent from writing a ranking claim it cannot falsify — that
+  // is the whole reason the template is scoped to file integrity instead of
+  // "generative engine optimization".
+  const env = synthesizeWebEnvelope("web-ai-access", {});
+  assert.match(env.prompt, /proposal, not a ratified standard/);
+  assert.match(env.prompt, /Do \*\*not\*\* claim improved visibility, ranking, or citation/);
+  assert.match(env.prompt, /do not fetch the live web from the verification step/);
+
+  // Structured data stays with web-seo; two owners of the same markup drift.
+  assert.match(env.prompt, /belongs to the `web-seo` template/);
+});
+
+test("web-ai-access cites the llms.txt spec without a fetchable scheme", async () => {
+  // The egress allowlist test treats any https?://host literal in src/ as a
+  // destination the kit might contact. A citation is not a destination, and a
+  // previous release tripped this exact guard, so pin the schemeless form.
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../src/web-templates.mjs", import.meta.url), "utf-8");
+  assert.match(source, /llmstxt\.org/, "the spec should still be cited for a reader");
+  assert.doesNotMatch(source, /https?:\/\/llmstxt\.org/, "but never as a resolvable URL literal");
 });
 
 test("synthesizeWebEnvelope generates structured envelope with exploration budget & critic focus", () => {

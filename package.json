@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.35.2",
+  "version": "0.36.0",
   "description": "Orchestration kit for running Google Jules autonomous agents.",
   "repository": {
     "type": "git",

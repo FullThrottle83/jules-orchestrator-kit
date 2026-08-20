@@ -122,7 +122,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
-* **📈 Proven Scale & Reliability:** Empirically tested with **529 unit tests across 79 suites passing in < 10.0s**. An adversarial red-team suite (`test/adversarial-claims.test.mjs`) continuously attempts to falsify the safety guarantees documented above — including cross-platform probes for the case-insensitive filesystems on macOS and Windows — and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
+* **📈 Proven Scale & Reliability:** Empirically tested with **532 unit tests across 79 suites passing in < 10.0s**. An adversarial red-team suite (`test/adversarial-claims.test.mjs`) continuously attempts to falsify the safety guarantees documented above — including cross-platform probes for the case-insensitive filesystems on macOS and Windows — and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
 
 <br/>
 
@@ -389,7 +389,7 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | :--- | :--- | :--- | :--- |
 | `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack oracle inspector generating `.agent/config.yml`. | `0` (Created) |
 | `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>] [--role <name>] [--tier fast\|complex] [--depends-on <id,...>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing, preflight gate checks, specialist role resolution, DAG dependency wiring, and an optional Cost Router tier override. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
-| `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes specialized web task envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`). | `0` (Synthesized/Listed) |
+| `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes specialized web task envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`, `web-ai-access`). | `0` (Synthesized/Listed) |
 | `task optimize` | `agentctl task optimize "<prompt>" [--fix] [--web] [--json]` | Linter & optimizer injecting Google Labs 3-phase exploration budgets, critic steering, and web oracles. | `0` (Scored/Fixed) |
 | `test-gen` | `agentctl test-gen --title <t> --spec <s> [--run]` | Scaffolds falsifiable unit tests, verifies **RED** failure state, and locks test in `scope.deny`. | `0` (Scaffolded/Red) |
 | `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |

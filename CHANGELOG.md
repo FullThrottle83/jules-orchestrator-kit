@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.36.0] - 2026-08-20
+### Universal AI Crawler Policy & llms.txt Integrity Template
+
+#### Added
+- **`web-ai-access` Task Envelope Template (`src/web-templates.mjs`, `agentctl task template web-ai-access`)**:
+  - Verifies that AI crawler directives agree across every surface — `robots.txt`, per-page robots meta tags, and `X-Robots-Tag` headers — for `GPTBot`, `ClaudeBot`, `Google-Extended`, `PerplexityBot`, `CCBot` and `Applebot-Extended`. A route allowed by one surface and denied by another is reported as a defect regardless of which answer was intended.
+  - Verifies `llms.txt` integrity where a project publishes one: that it parses as the proposed shape, that it does not advertise paths `robots.txt` disallows, and that **every link resolves against the project's own route table or build output**, checked locally with no network access from the verification step. Dead links are the most common real defect in published files.
+  - **Takes no side on crawler posture.** Allowing or blocking these agents carries licensing and editorial consequences and is frequently a deliberate decision, so `aiAccessPolicy` defaults to `preserve`: the agent determines what the repository already states, makes every surface state the same thing, and resolves any existing contradiction toward the most restrictive directive — never toward the more permissive one. `allow`, `deny` and `selective` are available when the operator has actually made the call.
+  - **Claims nothing it cannot falsify.** `llms.txt` is a proposal, not a ratified standard, and no major provider has confirmed that its retrieval systems read one — Google has stated publicly that it does not. The envelope forbids the agent from asserting improved visibility, ranking or citation in any assistant, in the diff, the commit message or the PR body, and scopes the task to file integrity rather than "generative engine optimization". Every other template in the kit carries a real verification oracle; this one is scoped so that it can too.
+  - Structured data stays out of scope: JSON-LD, Schema.org, `sameAs`, OpenGraph and canonical tags remain owned by `web-seo`, so the two templates cannot drift into disagreeing about the same markup.
+
 ## [0.35.2] - 2026-08-20
 ### The Silence Governor Now Actually Governs
 

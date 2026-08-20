@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.35.2 (Current Stable) ──► v1.0.0 (Production Kernel)
+ v0.36.0 (Current Stable) ──► v1.0.0 (Production Kernel)
  (Universal i18n & Swarm)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.35.2)
+## ✅ Shipped Milestones (v0.20.0 – v0.36.0)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -97,6 +97,9 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **The governor engages on a default install** (`src/webhook.mjs`, `src/config.mjs`) — `AWAITING_USER_FEEDBACK` was both the fallback reason and a critical-bypass reason, so digest mode, silent mode and the interruption budget were unreachable without hand-written config. Critical is now limited to events where delay widens the damage.
 - [x] **A preview has no side effects** (`src/webhook.mjs`) — `--dry-run` no longer spends the hourly interruption budget, and `--dry-run --flush` no longer discards the buffered digest it was asked to preview.
 - [x] **A flush cannot lose incidents** (`src/webhook.mjs`) — batched at `DIGEST_BATCH_LIMIT` (10) to what Slack and Discord actually render, remainder left buffered, buffer emptied only on a delivery that succeeded.
+
+### v0.36.0: Universal AI Crawler Policy & llms.txt Integrity Template
+- [x] **Universal `web-ai-access` Task Envelope Template** (`src/web-templates.mjs`) — Cross-surface consistency for AI crawler directives (`robots.txt`, robots meta tags, `X-Robots-Tag`) and `llms.txt` integrity with locally-resolved links. Defaults to `preserve`: crawler posture is an operator policy decision, not a best practice, so the template enforces whatever the repository already states rather than opening it up. Scoped to verifiable file integrity — it claims no visibility or ranking effect, because none can be falsified.
 
 ---
 
