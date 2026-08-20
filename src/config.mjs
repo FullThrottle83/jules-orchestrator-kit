@@ -281,35 +281,63 @@ export function resolveVerify(root = process.cwd(), userVerify = {}) {
  * guess — see `isTierGuess()` and the learned-ceiling logic in src/state.mjs.
  * An explicit `limits.daily_tasks` in .agent/config.yml always wins.
  */
+/**
+ * Per-tier defaults, with the vendor's own ceiling recorded alongside them.
+ *
+ * `maxConcurrency` is what the plan allows; `concurrency` is what the kit will
+ * start by using. They differ on purpose, for the same reason the daily count
+ * is a lower bound: this ledger sees one checkout, while the account's slots
+ * are also taken by the web UI, the CLI and other machines. A default sitting
+ * on the ceiling would collide with every session the kit cannot see.
+ *
+ * The defaults used to sit at 1/2/3 against ceilings of 3/15/60 — a Pro
+ * account running two workers where it could run fifteen. Raising them is the
+ * single largest throughput change available; leaving headroom is what keeps
+ * it from being reckless. An operator who knows their account is theirs alone
+ * can state `limits.concurrency` up to the ceiling.
+ *
+ * Ceilings verified against the vendor's published limits page
+ * (jules.google/docs/usage-limits, 2026-08-20). They are a vendor number and
+ * may change without notice. The URL is written without a scheme on purpose:
+ * test/egress-allowlist.test.mjs treats every host literal in shipped source
+ * as a destination this kit might contact, and a citation is not one.
+ */
 export const TIER_PRESETS = {
   free: {
     dailyTasks: 15,
     repairAttempts: 1,
-    concurrency: 1,
+    // The whole allowance is 15 tasks a day; there is no headroom worth
+    // reserving, so the default is the ceiling.
+    concurrency: 3,
+    maxConcurrency: 3,
     staggerMs: 3000,
     diffKb: 50,
   },
   pro: {
     dailyTasks: 100,
     repairAttempts: 2,
-    concurrency: 2,
+    concurrency: 8,
+    maxConcurrency: 15,
     staggerMs: 1500,
     diffKb: 75,
   },
   ultra: {
     dailyTasks: 300,
     repairAttempts: 3,
-    concurrency: 3,
+    concurrency: 15,
+    maxConcurrency: 60,
     staggerMs: 1000,
     diffKb: 75,
   },
   // Not a vendor plan: a self-hosted/pooled profile for operators who front
   // several accounts. Defined here so `tier: enterprise` resolves to what the
-  // wizard writes instead of silently collapsing onto the ultra preset.
+  // wizard writes instead of silently collapsing onto the ultra preset. Its
+  // ceiling is whatever the pool adds up to, so the kit does not claim one.
   enterprise: {
     dailyTasks: 1000,
     repairAttempts: 3,
     concurrency: 10,
+    maxConcurrency: 0,
     staggerMs: 500,
     diffKb: 100,
   },
@@ -420,6 +448,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
           : normalizedLimits.dailyTasks !== undefined
             ? "config"
             : "tier",
+      concurrency: normalizedLimits.concurrency !== undefined ? "config" : "tier",
     },
     isolation: parsed.isolation || DEFAULTS.isolation,
     runner: parsed.runner || DEFAULTS.runner,

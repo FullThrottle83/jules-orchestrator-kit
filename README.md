@@ -120,7 +120,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
-* **📈 Proven Scale & Reliability:** Empirically tested with **498 unit tests across 75 suites passing in < 10.0s**. An adversarial red-team suite (`test/adversarial-claims.test.mjs`) continuously attempts to falsify the safety guarantees documented above — including cross-platform probes for the case-insensitive filesystems on macOS and Windows — and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
+* **📈 Proven Scale & Reliability:** Empirically tested with **510 unit tests across 77 suites passing in < 10.0s**. An adversarial red-team suite (`test/adversarial-claims.test.mjs`) continuously attempts to falsify the safety guarantees documented above — including cross-platform probes for the case-insensitive filesystems on macOS and Windows — and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
 
 <br/>
 
@@ -297,9 +297,9 @@ scope:
 limits:
   diffKb: 75             # 75 KB Diff Payload Governor limit
   promptKb: 50           # Maximum prompt payload size
-  dailyTasks: 300        # Daily task session quota limit
+  dailyTasks: 300        # Task quota per rolling 24h window (not per calendar day)
   repairAttempts: 3      # Maximum OODA repair iterations
-  concurrency: 1         # Worker slot concurrency limit
+  concurrency: 15        # Worker slots; the ultra plan allows up to 60
 
 # Dynamic Complexity & Cost Router — opt-in, disabled by default.
 # Provider-agnostic: "fast"/"complex" accept any provider key ("jules" |

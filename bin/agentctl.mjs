@@ -9,7 +9,7 @@ import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.
 import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
-import { budgetStatus, listOpenReservations, releaseOpenReservations } from "../src/budget.mjs";
+import { budgetStatus, listOpenReservations, releaseOpenReservations, resolveConcurrency } from "../src/budget.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -21,11 +21,14 @@ export const VERSION = KIT_VERSION;
  * counter. The ledger counts what *this checkout* dispatched; sessions started
  * from the web UI or another machine spend the same quota unseen, so a bare
  * "N / M used" invites the reader to trust a figure that cannot be complete.
+ * "last 24h", not "today": the provider's allowance resets on a rolling
+ * window, so a figure labelled by the calendar day would be a different number
+ * from the one being enforced.
  * @param {{ used: number, limit: number, source: string, certain: boolean }} b
  */
 export function formatBudgetLine(b) {
-  const scope = `${b.used} / ${b.limit} used (this repo)`;
-  if (b.source === "learned") return `${scope} — provider refused further work today`;
+  const scope = `${b.used} / ${b.limit} used in the last 24h (this repo)`;
+  if (b.source === "learned") return `${scope} — provider refused further work`;
   if (b.certain) return `${scope} — limit from ${b.source === "env" ? "JULES_DAILY_BUDGET" : "config"}`;
   return `${scope} — limit estimated from tier "${b.tier || "?"}", not enforced`;
 }
@@ -57,7 +60,7 @@ Commands:
   rollback              Restore git state & working tree to atomic pre-flight checkpoint
   resume                Resume warm session with human response (--response "<text>")
   status                Display queue and system status summary
-  budget                Show today's task budget and its provenance (reset --yes to reconcile)
+  budget                Show the 24h task budget, worker slots and their provenance (reset --yes)
   scan                  Scan codebase for TODO/FIXME task candidates
   hydrate [prompt]      Prepend active system learnings and baton-pass state to a prompt
   harvest               Harvest failure traces and record/quarantine resolution rules
@@ -333,7 +336,7 @@ async function main() {
         const confirmed = args.includes("--yes") || args.includes("-y");
         if (!dryRun && !confirmed) {
           const open = listOpenReservations(root);
-          console.log(`Would release ${open.length} open reservation(s) from today's ledger.`);
+          console.log(`Would release ${open.length} open reservation(s) from the last 24 hours.`);
           console.log("This rewrites nothing — it appends `budget_released` entries.");
           console.log("Re-run with --yes to confirm, or --dry-run for detail.");
           process.exit(0);
@@ -353,9 +356,15 @@ async function main() {
         process.exit(0);
       }
 
-      console.log(`Daily Budget : ${formatBudgetLine(b)}`);
+      const slots = resolveConcurrency(config);
+      console.log(`Task Budget  : ${formatBudgetLine(b)}`);
       console.log(`  ${b.note}`);
-      console.log(`  Open reservations today: ${listOpenReservations(root).length}`);
+      console.log(`  Window opened at ${b.windowStart} — the quota resets ${b.windowHours}h after each task,`);
+      console.log("  not at midnight, so this count spans yesterday's ledger too.");
+      console.log(`  Open reservations in the window: ${listOpenReservations(root).length}`);
+      console.log("");
+      console.log(`Worker Slots : ${slots.concurrency} concurrent`);
+      console.log(`  ${slots.note}`);
       console.log("");
       console.log("The ledger counts this checkout only — sessions started from the Jules");
       console.log("web UI or another machine spend the same quota without appearing here.");

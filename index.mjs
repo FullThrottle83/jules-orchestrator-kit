@@ -49,6 +49,9 @@ export {
   rollbackBudgetReservation,
   withBudget,
   checkDailyBudget,
+  scanBudgetWindow,
+  getLedgerPathsInWindow,
+  ROLLING_WINDOW_MS,
   acquireLock,
   releaseLock,
   lockStatus,
@@ -140,6 +143,7 @@ export {
   isDailyQuotaRejection,
   listOpenReservations,
   releaseOpenReservations,
+  resolveConcurrency,
   CEILING_FILE,
 } from "./src/budget.mjs";
 export { KIT_VERSION } from "./src/version.mjs";

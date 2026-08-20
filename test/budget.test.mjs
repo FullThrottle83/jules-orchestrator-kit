@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import {
   resolveDailyLimit,
   readObservedCeiling,
@@ -12,6 +13,7 @@ import {
   budgetStatus,
   listOpenReservations,
   releaseOpenReservations,
+  resolveConcurrency,
   CEILING_FILE,
 } from "../src/budget.mjs";
 import { loadConfig, TIER_PRESETS } from "../src/config.mjs";
@@ -23,8 +25,11 @@ import {
   commitBudgetReservation,
   rollbackBudgetReservation,
   getDailyLedgerPath,
+  getLedgerPathsInWindow,
+  scanBudgetWindow,
   verifyLedgerIntegrity,
   appendLedger,
+  ROLLING_WINDOW_MS,
 } from "../src/state.mjs";
 import { reserveDailyBudget } from "../scripts/utils.mjs";
 
@@ -37,6 +42,45 @@ function makeRoot(prefix) {
 
 function writeConfig(root, yaml) {
   writeFileSync(join(root, ".agent", "config.yml"), yaml, "utf-8");
+}
+
+/**
+ * Seed a ledger file with backdated entries, hash-chained exactly as
+ * appendLedger would have written them.
+ *
+ * Backdating is the whole point: the rolling window can only be tested across a
+ * day boundary, and waiting for one is not a test.
+ *
+ * @param {string} root
+ * @param {Array<{ at: string, payload: object }>} entries - `at` is an ISO timestamp.
+ */
+function seedLedger(root, entries) {
+  /** @type {Map<string, string[]>} */
+  const byDay = new Map();
+  /** @type {Map<string, string>} */
+  const chainHead = new Map();
+
+  for (const { at, payload } of entries) {
+    const day = at.split("T")[0];
+    const prevHash = chainHead.get(day) || "0".repeat(64);
+    const raw = { timestamp: at, ...payload, prevHash };
+    const hash = createHash("sha256").update(JSON.stringify(raw)).digest("hex");
+    chainHead.set(day, hash);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(JSON.stringify({ ...raw, hash }));
+  }
+
+  for (const [day, lines] of byDay) {
+    writeFileSync(join(root, ".agent", "state", `ledger-${day}.jsonl`), lines.join("\n") + "\n", "utf-8");
+  }
+}
+
+/** Shorthand for a reservation `n` hours before `now`. */
+function reservedHoursAgo(now, hours, reservationId) {
+  return {
+    at: new Date(now - hours * 3600000).toISOString(),
+    payload: reservationId ? { event: "budget_reserved", reservationId } : { event: "budget_reserved" },
+  };
 }
 
 describe("src/budget.mjs — limit provenance", () => {
@@ -424,6 +468,223 @@ describe("legacy reservations written without an id", () => {
       const res = reserveDailyBudget(100, "k", root);
       assert.ok(res.reservationId, "every reservation must be nameable to be releasable");
       assert.equal(listOpenReservations(root).every((r) => r.reservationId), true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("src/state.mjs — the rolling 24-hour window", () => {
+  // Jules resets the daily allowance on a rolling 24-hour window, not at
+  // midnight. The ledger's `ledger-<date>.jsonl` rotation invites counting per
+  // calendar day, which is wrong in both directions — these tests pin both.
+  const NOW = Date.parse("2026-05-10T00:30:00.000Z");
+
+  it("counts a reservation from 23 hours ago, even though it lives in yesterday's file", () => {
+    const root = makeRoot("jok-window-yesterday-");
+    try {
+      seedLedger(root, [reservedHoursAgo(NOW, 23, "res-old")]);
+      const scan = scanBudgetWindow(root, { now: NOW });
+
+      assert.equal(scan.used, 1, "23 hours ago is inside a 24-hour window");
+      assert.equal(scan.open[0].reservationId, "res-old");
+      assert.equal(
+        existsSync(join(root, ".agent", "state", "ledger-2026-05-09.jsonl")),
+        true,
+        "the entry really is in a different file from today's"
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("stops counting a reservation once it ages past the window", () => {
+    const root = makeRoot("jok-window-expired-");
+    const now = Date.parse("2026-05-10T12:00:00.000Z");
+    try {
+      seedLedger(root, [
+        reservedHoursAgo(now, 30, "res-expired"),
+        reservedHoursAgo(now, 23, "res-live"),
+      ]);
+      const scan = scanBudgetWindow(root, { now });
+
+      assert.equal(scan.used, 1, "only the reservation inside the window is still spent");
+      assert.deepEqual(scan.open.map((r) => r.reservationId), ["res-live"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not hand back a fresh allowance at midnight for a batch dispatched at 23:00", () => {
+    // The regression this whole change exists for. Counting per calendar day,
+    // an operator who spent their quota at 23:00 saw a clean slate at 00:01 and
+    // dispatched again into a provider that refused every one.
+    const root = makeRoot("jok-window-midnight-");
+    try {
+      seedLedger(root, [
+        { at: "2026-05-09T23:00:00.000Z", payload: { event: "budget_reserved", reservationId: "res-a" } },
+        { at: "2026-05-09T23:05:00.000Z", payload: { event: "budget_reserved", reservationId: "res-b" } },
+        { at: "2026-05-09T23:10:00.000Z", payload: { event: "budget_reserved", reservationId: "res-c" } },
+      ]);
+
+      const check = checkDailyBudget(root, 3, { now: NOW });
+      assert.equal(check.used, 3, "the allowance is still spent 90 minutes later");
+      assert.equal(check.ok, false);
+      assert.equal(check.remaining, 0);
+      assert.equal(
+        existsSync(join(root, ".agent", "state", "ledger-2026-05-10.jsonl")),
+        false,
+        "today's file is empty — a calendar-day count would have reported zero used"
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a reservation when yesterday's tasks already fill the window", () => {
+    const root = makeRoot("jok-window-refuse-");
+    try {
+      seedLedger(root, [reservedHoursAgo(NOW, 2, "res-a"), reservedHoursAgo(NOW, 1, "res-b")]);
+      assert.throws(() => reserveBudget(root, 2, { now: NOW }), BudgetError);
+
+      // The same ledger a day later must let the work through again.
+      const later = NOW + 25 * 3600000;
+      const res = reserveBudget(root, 2, { now: later });
+      assert.equal(res.ok, true);
+      assert.equal(res.used, 1, "the earlier pair has aged out; only this one is spent");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an anonymous release paired to the reservation it cancelled", () => {
+    // Legacy id-less reservations can only be matched by position. Recording
+    // the released timestamp stops the pair drifting apart when the window
+    // advances past the reservation but not yet past its release, which would
+    // otherwise silently discount an unrelated, still-live reservation.
+    const root = makeRoot("jok-window-anon-pair-");
+    try {
+      const old = new Date(NOW - 23 * 3600000).toISOString();
+      seedLedger(root, [
+        { at: old, payload: { event: "budget_reserved" } },
+        { at: new Date(NOW - 1 * 3600000).toISOString(), payload: { event: "budget_reserved" } },
+        {
+          at: new Date(NOW - 30 * 60000).toISOString(),
+          payload: { event: "budget_released", releasedTimestamp: old },
+        },
+      ]);
+
+      assert.equal(scanBudgetWindow(root, { now: NOW }).used, 1, "the named one is released, the other is not");
+
+      // Two hours on, the released reservation has aged out but its release has
+      // not. Without the pairing the release would subtract from the survivor.
+      const later = NOW + 2 * 3600000;
+      assert.equal(scanBudgetWindow(root, { now: later }).used, 1, "the surviving reservation stays charged");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("releaseOpenReservations records that pairing for id-less reservations", () => {
+    const root = makeRoot("jok-window-anon-write-");
+    try {
+      appendLedger({ event: "budget_reserved" }, root);
+      const res = releaseOpenReservations({ root });
+
+      assert.equal(res.anonymous, 1);
+      const lines = readFileSync(getDailyLedgerPath(root), "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      const release = lines.find((l) => l.event === "budget_released");
+      assert.equal(release.releasedTimestamp, lines[0].timestamp);
+      assert.equal(checkDailyBudget(root, 10).used, 0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads only the files the window can touch", () => {
+    const root = makeRoot("jok-window-files-");
+    try {
+      seedLedger(root, [
+        { at: "2026-05-01T10:00:00.000Z", payload: { event: "budget_reserved", reservationId: "ancient" } },
+        reservedHoursAgo(NOW, 23, "res-old"),
+      ]);
+      const paths = getLedgerPathsInWindow(root, NOW).map((p) => p.split(/[\\/]/).pop());
+
+      assert.deepEqual(paths, ["ledger-2026-05-09.jsonl"], "oldest first, and nothing older than the window");
+      assert.equal(scanBudgetWindow(root, { now: NOW }).used, 1, "the ancient file is never even opened");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("expires a learned ceiling 24 hours after the refusal, not at midnight", () => {
+    const root = makeRoot("jok-window-ceiling-");
+    try {
+      const observedAt = new Date(NOW - 23 * 3600000).toISOString();
+      writeFileSync(
+        join(root, ".agent", "state", CEILING_FILE),
+        JSON.stringify({ ceiling: 7, day: observedAt.split("T")[0], observedAt, source: "provider-rejection" })
+      );
+
+      // 23 hours old and on the previous calendar day: the old rule called this
+      // stale and would have unblocked an operator the provider still refuses.
+      const live = readObservedCeiling(root, NOW);
+      assert.equal(live.stale, false);
+      assert.equal(readActiveCeiling(root, NOW).ceiling, 7);
+      assert.equal(live.expiresAt, new Date(Date.parse(observedAt) + ROLLING_WINDOW_MS).toISOString());
+
+      const afterExpiry = readObservedCeiling(root, NOW + 2 * 3600000);
+      assert.equal(afterExpiry.stale, true, "25 hours on, the refusal says nothing about the current window");
+      assert.equal(readActiveCeiling(root, NOW + 2 * 3600000), null);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("src/budget.mjs — concurrency against the plan ceiling", () => {
+  it("reports the tier default as a default, and names the ceiling it holds back from", () => {
+    const root = makeRoot("jok-conc-tier-");
+    try {
+      writeConfig(root, "version: 1\ntier: pro\n");
+      const slots = resolveConcurrency(loadConfig(root));
+
+      assert.equal(slots.concurrency, TIER_PRESETS.pro.concurrency);
+      assert.equal(slots.ceiling, 15);
+      assert.equal(slots.source, "tier");
+      assert.equal(slots.overCeiling, false);
+      assert.match(slots.note, /allows up to 15/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an operator figure above the plan ceiling without refusing it", () => {
+    // The provider enforces its own slot limit, and a pooled account
+    // legitimately exceeds any single plan's. Warning is the kit's business;
+    // blocking is not.
+    const root = makeRoot("jok-conc-over-");
+    try {
+      writeConfig(root, "version: 1\ntier: pro\nlimits:\n  concurrency: 40\n");
+      const slots = resolveConcurrency(loadConfig(root));
+
+      assert.equal(slots.concurrency, 40, "the stated figure is preserved, not clamped");
+      assert.equal(slots.source, "config");
+      assert.equal(slots.overCeiling, true);
+      assert.match(slots.note, /exceeds what the "pro" plan allows \(15\)/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("claims no ceiling for the non-vendor enterprise profile", () => {
+    const root = makeRoot("jok-conc-ent-");
+    try {
+      writeConfig(root, "version: 1\ntier: enterprise\nlimits:\n  concurrency: 40\n");
+      const slots = resolveConcurrency(loadConfig(root));
+
+      assert.equal(slots.ceiling, 0);
+      assert.equal(slots.overCeiling, false, "a pool the kit cannot size cannot be exceeded");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

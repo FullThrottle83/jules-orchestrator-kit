@@ -2,6 +2,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
+import { loadConfig } from "../config.mjs";
+import { resolveConcurrency } from "../budget.mjs";
 
 /**
  * @typedef {"pass" | "warn" | "fail" | "skip" | "unknown"} DiagnosticStatus
@@ -259,6 +261,41 @@ export async function runDoctorChecks(options = {}) {
         },
       ],
     });
+  }
+
+  // 3b. Worker slots against the plan's ceiling.
+  //
+  // A warning, never a failure: the kit cannot see the account, only the
+  // config. Pooled accounts legitimately exceed a single plan's ceiling, and
+  // the provider refuses what it will not allow regardless of what we think.
+  try {
+    const cfg = loadConfig(root);
+    const slots = resolveConcurrency(cfg);
+    addResult({
+      id: "limits.concurrency",
+      category: "Config",
+      title: "Worker Slots vs Plan Ceiling",
+      status: slots.overCeiling ? "warn" : "pass",
+      severity: slots.overCeiling ? "medium" : "info",
+      summary: `${slots.concurrency} concurrent worker(s) — ${slots.note}`,
+      evidence: [
+        { label: "concurrency", value: slots.concurrency, sensitive: false },
+        { label: "planCeiling", value: slots.ceiling, sensitive: false },
+        { label: "source", value: slots.source, sensitive: false },
+      ],
+      remediation: slots.overCeiling
+        ? [
+            {
+              summary: `Set limits.concurrency to ${slots.ceiling} or lower in .agent/config.yml, unless this account pools several plans`,
+              risk: "low",
+              automatic: false,
+              requiresProbe: false,
+            },
+          ]
+        : [],
+    });
+  } catch (_) {
+    // A config the loader rejects is already reported by config.present.
   }
 
   // 4. Verification Oracle Checks

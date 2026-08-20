@@ -60,10 +60,15 @@ export function tierOptions() {
   return order.map((name) => {
     const p = TIER_PRESETS[name];
     const worker = p.concurrency === 1 ? "worker" : "workers";
+    // The ceiling is shown next to the default so the number the wizard writes
+    // reads as a starting point rather than as the plan's limit.
+    const slots = p.maxConcurrency > p.concurrency
+      ? `${p.concurrency} ${worker} (plan allows ${p.maxConcurrency})`
+      : `${p.concurrency} ${worker}`;
     return {
       label: TIER_LABELS[name] || name,
       value: name,
-      description: `${p.concurrency} ${worker}, ~${p.dailyTasks} daily tasks, ${p.diffKb} KB diff limit`,
+      description: `${slots}, ~${p.dailyTasks} daily tasks, ${p.diffKb} KB diff limit`,
     };
   });
 }

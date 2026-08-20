@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.34.0] - 2026-08-20
+### Rolling 24-Hour Quota Window & Real Plan Concurrency
+
+Both changes come from the same discovery: the kit's model of a Jules account
+disagreed with the account. It counted quota by the calendar day when the
+provider resets on a rolling window, and it dispatched 1–3 workers against
+plans that allow 3–60.
+
+#### Fixed
+- **The daily budget reset at local midnight instead of on the provider's rolling 24-hour window.** The ledger rotates per calendar day (`ledger-<date>.jsonl`) and the count never looked past today's file, so the kit was wrong in both directions: a batch dispatched at 23:00 stopped being counted at 00:01 while the provider still refused on it, and yesterday's last hours vanished from a count that should still have included them. Counting is now a rolling window (`scanBudgetWindow()` in `src/state.mjs`) that spans whatever ledger files it touches and filters on entry timestamps; rotation stays per day, because that is a storage concern and not a counting one. `checkDailyBudget()`, `reserveBudgetAtomic()` and `listOpenReservations()` all read through it.
+- **A learned ceiling expired at midnight too.** A refusal observed at 23:00 was discarded an hour later, unblocking an operator the provider was still refusing; one observed at 00:30 kept them blocked for a full extra day. `readObservedCeiling()` now expires a refusal 24 hours after it happened and reports `expiresAt`/`msRemaining`. Records written before this release carry only a day and keep the old comparison. The status note no longer claims the quota "resets tomorrow".
+- **An anonymous `budget_released` entry could drift away from the reservation it cancelled.** Id-less reservations can only be matched by position, so once the window advanced past a released reservation but not yet past its release, the release began discounting an unrelated, still-live one. `releaseOpenReservations()` now records `releasedTimestamp`, pinning the pair.
+
+#### Changed
+- **Concurrency presets raised toward what the plans actually allow.** Free 1 → 3, Pro 2 → 8, Ultra 3 → 15, against published ceilings of 3 / 15 / 60. A Pro account was running two workers where fifteen were available. The defaults deliberately stay below the ceiling for every tier but free: this ledger sees one checkout, while the account's slots are also taken by the web UI, the CLI and other machines, so a default sitting on the ceiling would collide with sessions the kit cannot see.
+- **`TIER_PRESETS` now records `maxConcurrency`** — the vendor's ceiling — separately from `concurrency`, the kit's default. Same provenance rule the daily limit already followed: a figure the operator states is authoritative, a preset is a guess. `resolveConcurrency()` reports an overrun but never blocks it, because the provider enforces its own slot limit and a pooled account legitimately exceeds any single plan's.
+
+#### Added
+- **`agentctl doctor` check `limits.concurrency`** — warns when a stated concurrency exceeds the plan ceiling, with the ceiling and the provenance as evidence. A warning, never a failure.
+- **`agentctl budget` reports worker slots alongside the task count**, and labels the count "in the last 24h" rather than "today", so the figure cannot be read as a calendar-day total.
+
 ## [0.33.0] - 2026-08-20
 ### Plan-Agnostic Budgeting, Limit Provenance & Guided First Use
 

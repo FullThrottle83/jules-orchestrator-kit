@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.33.0 (Current Stable) ──► v0.34.0 ──► v1.0.0 (Production Kernel)
- (Plan-Agnostic Budgeting)  (Monorepos) (Enterprise Hardened)
+ v0.34.0 (Current Stable) ──► v0.35.0 ──► v1.0.0 (Production Kernel)
+ (Rolling Quota Window)     (Swarm Autonomy) (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.33.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.34.0)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -73,7 +73,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ### v0.33.0: Plan-Agnostic Budgeting, Limit Provenance & Guided First Use
 - [x] **Limit Provenance** (`src/budget.mjs`, `resolveDailyLimit()`) — The kit records *where* a daily limit came from: stated by the operator (`limits.daily_tasks` / `JULES_DAILY_BUDGET`), demonstrated by the provider refusing work, or guessed from a tier preset. Only the first two may hard-block; a guess warns and lets the dispatch through, because refusing work the provider would have accepted is a worse failure than an over-count.
-- [x] **Day-Scoped Learned Ceiling** — A daily-quota refusal records "stop for today", not "this is your allowance". Deliberately not permanent: the local ledger cannot see sessions started from the Jules web UI or another machine, so the count at the moment of refusal is a lower bound on the real quota, and treating it as the quota would lock the operator below their own plan.
+- [x] **Short-Lived Learned Ceiling** — A daily-quota refusal records "stop asking for now", not "this is your allowance". Deliberately not permanent: the local ledger cannot see sessions started from the Jules web UI or another machine, so the count at the moment of refusal is a lower bound on the real quota, and treating it as the quota would lock the operator below their own plan. *(Scoped to the calendar day when shipped; corrected to the rolling window in v0.34.0.)*
 - [x] **Unified Tier Table** (`TIER_PRESETS` in `src/config.mjs`) — The wizard's separate table had drifted, scaffolding free-tier repos with double their real allowance. The wizard now projects the runtime table and generates its menu from it, so advertised and enforced numbers cannot disagree.
 - [x] **Ledger Reconciliation** (`agentctl budget`, `agentctl budget reset`) — Corrects a local count the operator knows is wrong by *appending* `budget_released` entries. The hash-chained ledger is corrected forwards, never edited or truncated, so the audit trail survives the correction.
 - [x] **CI-Enforced Egress Allowlist** (`test/egress-allowlist.test.mjs`) — Pins every host any shipped source may contact, requires webhook URLs to stay operator-supplied via environment, asserts zero runtime dependencies, and fails if a credential ever appears in a URL. In a kit that asks for an API key, this is what a reader can verify instead of a promise.
@@ -81,9 +81,14 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **Single-Source Version** (`src/version.mjs`) — Four modules hardcoded the kit version and had drifted three minor releases apart; all now read `package.json`.
 - [x] **Monorepo Architecture & Cross-Package Import Guard** — `resolveWorkspaceBoundary` detects illegal cross-package imports and circular dependencies in TypeScript, Go, and Rust monorepos before running CI.
 
+### v0.34.0: Rolling Quota Window & Real Plan Concurrency
+- [x] **Rolling 24-Hour Quota Window** (`scanBudgetWindow()` in `src/state.mjs`) — Jules resets the daily allowance on a rolling window, not at midnight, and the kit was counting per calendar day. It was wrong in both directions: a batch dispatched at 23:00 stopped being counted at 00:01 while the provider still refused on it, and yesterday's last hours vanished from a count that should have included them. Counting now spans whatever ledger files the window touches and filters on entry timestamps; files stay day-scoped, because rotation is a storage concern and counting is not.
+- [x] **Time-Boxed Learned Ceiling** — A provider refusal now ages out 24 hours after it happened rather than at midnight, matching the window the quota itself resets on, and reports when it expires. Pre-0.34 records carry only a day and keep the old comparison.
+- [x] **Real Plan Concurrency** (`TIER_PRESETS` in `src/config.mjs`) — Defaults raised from 1/2/3 to 3/8/15 against published ceilings of 3/15/60; a Pro account had been running two workers where fifteen were available. The vendor ceiling is now recorded as `maxConcurrency`, separate from the kit's default, and `resolveConcurrency()` applies the same provenance rule the daily limit already used: an operator-stated figure is authoritative, a preset is a guess. An overrun is reported by `agentctl doctor`, never blocked — the provider enforces its own slot limit, and a pooled account legitimately exceeds any single plan's.
+
 ---
 
-## 🎯 Target Milestone v0.34.0: Swarm Autonomy & Interruption Budgeting
+## 🎯 Target Milestone v0.35.0: Swarm Autonomy & Interruption Budgeting
 *Focus: Multi-agent coordination and protecting developer attention.*
 
 - [ ] **Type III Silence Governor & Interruption Budgeting**:

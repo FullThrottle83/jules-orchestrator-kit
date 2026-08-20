@@ -1,25 +1,32 @@
 import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { resolveRoot } from "./config.mjs";
-import { getStateDir, getDailyLedgerPath, ensureDir, appendLedger, checkDailyBudget } from "./state.mjs";
+import {
+  getStateDir,
+  ensureDir,
+  appendLedger,
+  checkDailyBudget,
+  scanBudgetWindow,
+  ROLLING_WINDOW_MS,
+} from "./state.mjs";
 
 /**
  * Where the observed quota ceiling lives, outside the ledger so it survives
  * rotation.
  *
- * Deliberately scoped to the day it was observed. The local ledger only counts
- * tasks dispatched from *this* checkout, while the account's quota is also
- * spent from the web UI and other machines, so the local count at the moment of
- * a refusal is a lower bound on the real allowance — not the allowance. Treated
- * as permanent it would hard-block the operator below their own quota, which is
- * the exact failure this whole mechanism exists to prevent.
+ * Deliberately short-lived. The local ledger only counts tasks dispatched from
+ * *this* checkout, while the account's quota is also spent from the web UI and
+ * other machines, so the local count at the moment of a refusal is a lower
+ * bound on the real allowance — not the allowance. Treated as permanent it
+ * would hard-block the operator below their own quota, which is the exact
+ * failure this whole mechanism exists to prevent.
  *
- * What it does mean is precise and useful: *today* the provider has started
- * refusing, so stop asking until tomorrow.
+ * What it does mean is precise and useful: within the last 24 hours the
+ * provider started refusing, so stop asking until that refusal ages out.
  */
 export const CEILING_FILE = "budget-ceiling.json";
 
-/** Local calendar day, matching the ledger's own rotation key. */
+/** Local calendar day, retained as the fallback key for pre-0.34 records. */
 function today() {
   return new Date().toISOString().split("T")[0];
 }
@@ -67,10 +74,17 @@ function writeAtomic(filePath, content) {
 
 /**
  * Read the stored ceiling, whenever it was observed.
+ *
+ * A refusal expires 24 hours after it happened, matching the window the quota
+ * itself resets on. Expiring it at midnight instead — as this did before —
+ * either freed the operator hours before the provider would, or kept them
+ * blocked hours after it already had.
+ *
  * @param {string} [root]
- * @returns {{ ceiling: number, day: string, observedAt: string, source: string, stale: boolean } | null}
+ * @param {number} [now] - Epoch ms; injectable for tests.
+ * @returns {{ ceiling: number, day: string, observedAt: string, source: string, stale: boolean, expiresAt: string, msRemaining: number } | null}
  */
-export function readObservedCeiling(root = resolveRoot()) {
+export function readObservedCeiling(root = resolveRoot(), now = Date.now()) {
   const filePath = join(getStateDir(root), CEILING_FILE);
   if (!existsSync(filePath)) return null;
   try {
@@ -78,12 +92,24 @@ export function readObservedCeiling(root = resolveRoot()) {
     if (!parsed || typeof parsed.ceiling !== "number" || !Number.isFinite(parsed.ceiling)) return null;
     if (parsed.ceiling < 0) return null;
     const day = typeof parsed.day === "string" ? parsed.day : String(parsed.observedAt || "").slice(0, 10);
+    const observedAt = typeof parsed.observedAt === "string" ? parsed.observedAt : "";
+
+    // Records written before 0.34.0 carry only a day. Falling back to the old
+    // calendar comparison keeps them honest rather than reviving a ceiling
+    // whose age cannot be established.
+    const observedMs = Date.parse(observedAt);
+    const dated = Number.isFinite(observedMs);
+    const age = dated ? now - observedMs : Number.POSITIVE_INFINITY;
+    const stale = dated ? age >= ROLLING_WINDOW_MS : day !== today();
+
     return {
       ceiling: Math.floor(parsed.ceiling),
       day,
-      observedAt: typeof parsed.observedAt === "string" ? parsed.observedAt : "",
+      observedAt,
       source: typeof parsed.source === "string" ? parsed.source : "provider-rejection",
-      stale: day !== today(),
+      stale,
+      expiresAt: dated ? new Date(observedMs + ROLLING_WINDOW_MS).toISOString() : "",
+      msRemaining: dated ? Math.max(0, ROLLING_WINDOW_MS - age) : 0,
     };
   } catch (_) {
     return null;
@@ -94,14 +120,14 @@ export function readObservedCeiling(root = resolveRoot()) {
  * The ceiling only if it still applies — i.e. observed today.
  * @param {string} [root]
  */
-export function readActiveCeiling(root = resolveRoot()) {
-  const rec = readObservedCeiling(root);
+export function readActiveCeiling(root = resolveRoot(), now = Date.now()) {
+  const rec = readObservedCeiling(root, now);
   return rec && !rec.stale ? rec : null;
 }
 
 /**
  * Record that the provider refused further work after `usedAtRejection` tasks
- * were dispatched locally today.
+ * were dispatched locally inside the current window.
  *
  * Zero is a legitimate value: it means the quota was already spent elsewhere
  * (the web UI, another machine) before this checkout dispatched anything.
@@ -166,16 +192,17 @@ export function resolveDailyLimit(config, root = resolveRoot()) {
     };
   }
 
-  // Only today's observation may enforce. Yesterday's refusal says nothing
-  // about today's remaining quota, and carrying it forward would keep the
-  // operator locked out after the quota reset.
+  // Only a refusal from the last 24 hours may enforce. An older one says
+  // nothing about the remaining quota, and carrying it forward would keep the
+  // operator locked out after the window had already reset.
   const learned = readActiveCeiling(root);
   if (learned) {
+    const hours = Math.max(1, Math.round(learned.msRemaining / 3600000));
     return {
       limit: learned.ceiling,
       source: "learned",
       certain: true,
-      note: `the provider refused further work today after ${learned.ceiling} local task(s); resets tomorrow`,
+      note: `the provider refused further work after ${learned.ceiling} local task(s); that refusal ages out in ~${hours}h`,
     };
   }
 
@@ -189,71 +216,61 @@ export function resolveDailyLimit(config, root = resolveRoot()) {
 }
 
 /**
- * List reservations that today's ledger still counts as spent.
+ * Resolve how many workers may run at once, and against what ceiling.
+ *
+ * The same provenance rule as {@link resolveDailyLimit}: a figure the operator
+ * stated is authoritative, a tier preset is a default. The difference is that
+ * exceeding this one is not the kit's call to refuse — the provider enforces
+ * its own slot limit, and an operator pooling several accounts legitimately
+ * runs past any single plan's ceiling. So an overrun is reported, never
+ * blocked.
+ *
+ * @param {object} config - A config from loadConfig().
+ * @returns {{ concurrency: number, ceiling: number, source: "config"|"tier", overCeiling: boolean, note: string }}
+ */
+export function resolveConcurrency(config) {
+  const concurrency = Math.max(1, Math.floor(Number(config?.limits?.concurrency) || 1));
+  const ceiling = Math.floor(Number(config?.limits?.maxConcurrency) || 0);
+  const source = config?.provenance?.concurrency === "config" ? "config" : "tier";
+  const overCeiling = ceiling > 0 && concurrency > ceiling;
+  const tier = config?.tier || "unknown";
+
+  let note;
+  if (overCeiling) {
+    note = `${concurrency} workers exceeds what the "${tier}" plan allows (${ceiling}); sessions past the ${ceiling}th will be refused unless the account pools several plans`;
+  } else if (source === "config") {
+    note = ceiling > 0 ? `set in .agent/config.yml (plan allows up to ${ceiling})` : "set in .agent/config.yml";
+  } else {
+    note = ceiling > 0
+      ? `tier default for "${tier}" — the plan allows up to ${ceiling}, held back to leave slots for sessions this ledger cannot see`
+      : `tier default for "${tier}"`;
+  }
+  return { concurrency, ceiling, source, overCeiling, note };
+}
+
+/**
+ * List reservations the rolling 24-hour window still counts as spent.
  *
  * A reservation is open until a `budget_rolled_back` or `budget_released` entry
  * names it. `budget_committed` deliberately does not close one — a committed
  * dispatch really did consume quota — so the open set is "everything reserved
- * today that was not given back".
+ * inside the window that was not given back".
  *
- * Anonymous reservations (no `reservationId`, as older kit versions and
- * scripts/utils.mjs wrote them) are counted too, as records with
- * `reservationId: null`. They must be, or a reconcile would silently leave them
- * charged against the day: `checkDailyBudget` counts them, and with no id there
- * is nothing a targeted release could name. They are matched by count, the same
- * way the counter itself treats them.
+ * Anonymous reservations (no `reservationId`, as older kit versions wrote them)
+ * appear as records with `reservationId: null`. They must, or a reconcile would
+ * silently leave them charged: the counter counts them, and with no id there is
+ * nothing a targeted release could name.
  *
  * @param {string} [root]
+ * @param {object} [opts] - Forwarded to scanBudgetWindow (`now`, `windowMs`).
  * @returns {{ reservationId: string|null, timestamp: string, committed: boolean }[]}
  */
-export function listOpenReservations(root = resolveRoot()) {
-  const filePath = getDailyLedgerPath(root);
-  if (!existsSync(filePath)) return [];
-
-  /** @type {Map<string, { reservationId: string, timestamp: string, committed: boolean }>} */
-  const open = new Map();
-  /** @type {{ reservationId: null, timestamp: string, committed: boolean }[]} */
-  const anonymous = [];
-  let raw = "";
-  try {
-    raw = readFileSync(filePath, "utf-8");
-  } catch (_) {
-    return [];
-  }
-
-  for (const line of raw.split("\n").filter(Boolean)) {
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch (_) {
-      continue;
-    }
-    if (!entry || !entry.event) continue;
-
-    if (entry.event === "budget_reserved") {
-      if (entry.reservationId) {
-        open.set(entry.reservationId, {
-          reservationId: entry.reservationId,
-          timestamp: entry.timestamp || "",
-          committed: false,
-        });
-      } else {
-        anonymous.push({ reservationId: null, timestamp: entry.timestamp || "", committed: false });
-      }
-    } else if (entry.event === "budget_committed") {
-      const rec = entry.reservationId ? open.get(entry.reservationId) : null;
-      if (rec) rec.committed = true;
-    } else if (entry.event === "budget_rolled_back" || entry.event === "budget_released") {
-      if (entry.reservationId) open.delete(entry.reservationId);
-      else anonymous.pop();
-    }
-  }
-
-  return [...open.values(), ...anonymous];
+export function listOpenReservations(root = resolveRoot(), opts = {}) {
+  return scanBudgetWindow(root, opts).open;
 }
 
 /**
- * Give today's open reservations back, by appending `budget_released` entries.
+ * Give the window's open reservations back, by appending `budget_released` entries.
  *
  * The ledger is append-only and hash-chained, so a miscounted day is corrected
  * forwards — never by editing or deleting the file, which would break the chain
@@ -286,10 +303,16 @@ export function releaseOpenReservations(opts = {}) {
 
   for (const rec of openRecords) {
     const entry = { event: "budget_released", reason: opts.reason || "operator-reconcile" };
-    // An anonymous reservation is released by an equally anonymous entry: the
-    // counter decrements those by count, so naming an id here would leave the
-    // original charged and subtract from someone else's total instead.
-    if (rec.reservationId) entry.reservationId = rec.reservationId;
+    if (rec.reservationId) {
+      entry.reservationId = rec.reservationId;
+    } else {
+      // An anonymous reservation is released by an equally anonymous entry —
+      // naming an id here would leave the original charged and subtract from
+      // someone else's total instead. The timestamp pins which one it cancels,
+      // so the pair does not drift apart as the rolling window advances past
+      // the reservation but not yet past its release.
+      entry.releasedTimestamp = rec.timestamp;
+    }
     appendLedger(entry, root);
   }
   return result;
@@ -311,6 +334,10 @@ export function budgetStatus(config, root = resolveRoot()) {
     source: resolved.source,
     certain: resolved.certain,
     note: resolved.note,
+    // The count is a rolling 24h window, not a calendar day — surfaced so a
+    // caller reporting "used today" cannot quietly mean something else.
+    windowStart: check.windowStart || "",
+    windowHours: ROLLING_WINDOW_MS / 3600000,
     // Only a limit we actually know may stop a dispatch.
     enforced: resolved.certain,
     exhausted: check.used >= resolved.limit,

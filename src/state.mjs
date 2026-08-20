@@ -55,6 +55,129 @@ export function getDailyLedgerPath(rootOrOpts = resolveRoot()) {
   return join(getStateDir(root), `ledger-${dateStr}.jsonl`);
 }
 
+/**
+ * How far back a task still counts against the allowance.
+ *
+ * The provider's daily quota resets on a rolling 24-hour window, not at
+ * midnight. Counting per calendar day — which the ledger's `ledger-<date>`
+ * rotation invites — is wrong in both directions: a batch dispatched at 23:00
+ * stops being counted at 00:01 while the provider still refuses on it, and
+ * yesterday's last hours vanish from a count that should still include them.
+ *
+ * The files stay day-scoped, because rotation is a storage concern. Counting
+ * is not: it spans whatever files the window touches and filters on entry
+ * timestamps.
+ */
+export const ROLLING_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Ledger files that can hold entries inside the rolling window, oldest first.
+ *
+ * One day wider than the window itself: an entry timestamped 23:59 UTC sits in
+ * that day's file, and a window opening moments later still has to see it.
+ *
+ * @param {string} [root]
+ * @param {number} [now] - Epoch ms; injectable so tests need not wait a day.
+ * @param {number} [windowMs]
+ * @returns {string[]}
+ */
+export function getLedgerPathsInWindow(root = resolveRoot(), now = Date.now(), windowMs = ROLLING_WINDOW_MS) {
+  const stateDir = getStateDir(root);
+  const spanDays = Math.ceil(windowMs / DAY_MS) + 1;
+  const paths = [];
+  for (let i = spanDays - 1; i >= 0; i--) {
+    const dateStr = new Date(now - i * DAY_MS).toISOString().split("T")[0];
+    const filePath = join(stateDir, `ledger-${dateStr}.jsonl`);
+    if (!paths.includes(filePath) && existsSync(filePath)) paths.push(filePath);
+  }
+  return paths;
+}
+
+/**
+ * Replay the budget events in the rolling window and report what is still spent.
+ *
+ * Reservations carrying a `reservationId` are matched by name. Legacy id-less
+ * ones — written by older kit versions — can only be matched by position, so a
+ * release without a `releasedTimestamp` consumes the oldest still-open
+ * anonymous reservation. `releaseOpenReservations` records that timestamp
+ * precisely so the pairing survives the window boundary: without it, an
+ * anonymous release could outlive the reservation it cancelled and start
+ * subtracting from a later one instead.
+ *
+ * Entries whose timestamp will not parse are counted. A budget event the kit
+ * cannot place in time is safer treated as spent than as free.
+ *
+ * @param {string} [root]
+ * @param {object} [opts]
+ * @param {number} [opts.now]
+ * @param {number} [opts.windowMs]
+ * @returns {{ used: number, open: { reservationId: string|null, timestamp: string, committed: boolean }[], windowStart: string }}
+ */
+export function scanBudgetWindow(root = resolveRoot(), opts = {}) {
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+  const windowMs = Number.isFinite(opts.windowMs) ? opts.windowMs : ROLLING_WINDOW_MS;
+  const cutoff = now - windowMs;
+
+  /** @type {Map<string, { reservationId: string, timestamp: string, committed: boolean, inWindow: boolean }>} */
+  const byId = new Map();
+  /** @type {{ reservationId: null, timestamp: string, committed: boolean, inWindow: boolean }[]} */
+  const anonymous = [];
+
+  const inWindow = (timestamp) => {
+    const ts = Date.parse(timestamp || "");
+    return Number.isFinite(ts) ? ts >= cutoff : true;
+  };
+
+  for (const filePath of getLedgerPathsInWindow(root, now, windowMs)) {
+    let raw = "";
+    try {
+      raw = readFileSync(filePath, "utf-8");
+    } catch (_) {
+      continue;
+    }
+    for (const line of raw.split("\n")) {
+      if (!line) continue;
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch (_) {
+        continue;
+      }
+      if (!entry || !entry.event) continue;
+      const timestamp = entry.timestamp || "";
+
+      if (entry.event === "budget_reserved") {
+        const record = { timestamp, committed: false, inWindow: inWindow(timestamp) };
+        if (entry.reservationId) byId.set(entry.reservationId, { reservationId: entry.reservationId, ...record });
+        else anonymous.push({ reservationId: null, ...record });
+      } else if (entry.event === "budget_committed") {
+        // A commit does not free the slot — the task really ran — it only marks
+        // the reservation as having reached the provider.
+        const record = entry.reservationId ? byId.get(entry.reservationId) : null;
+        if (record) record.committed = true;
+      } else if (entry.event === "budget_rolled_back" || entry.event === "budget_released") {
+        if (entry.reservationId) {
+          byId.delete(entry.reservationId);
+        } else if (entry.releasedTimestamp) {
+          const idx = anonymous.findIndex((r) => r.timestamp === entry.releasedTimestamp);
+          if (idx !== -1) anonymous.splice(idx, 1);
+        } else {
+          anonymous.shift();
+        }
+      }
+    }
+  }
+
+  const open = [...byId.values(), ...anonymous].filter((r) => r.inWindow);
+  return {
+    used: open.length,
+    open: open.map(({ reservationId, timestamp, committed }) => ({ reservationId, timestamp, committed })),
+    windowStart: new Date(cutoff).toISOString(),
+  };
+}
+
 export class MutexTimeoutError extends Error {
   constructor(message = "Failed to acquire VFS mutex lock within timeout") {
     super(message);
@@ -187,43 +310,24 @@ export function readLedger(filePath) {
   }
 }
 
-export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300) {
+/**
+ * Tasks still counted against the allowance, over the rolling 24-hour window.
+ *
+ * The name is kept for compatibility; "daily" here means the provider's day,
+ * which is the last 24 hours rather than the calendar one.
+ */
+export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300, opts = {}) {
   let root = typeof arg1 === "string" ? arg1 : resolveRoot();
   let limit = typeof arg1 === "number" ? arg1 : typeof arg2 === "number" ? arg2 : 300;
 
-  const filePath = getDailyLedgerPath(root);
-  if (!existsSync(filePath)) {
-    return { ok: true, used: 0, budget: limit, remaining: limit };
-  }
   try {
-    const content = readFileSync(filePath, "utf-8");
-    const lines = content.split("\n").filter(Boolean);
-    let count = 0;
-    const activeIds = new Set();
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry && entry.event === "budget_reserved") {
-          if (entry.reservationId) {
-            activeIds.add(entry.reservationId);
-          } else {
-            count++;
-          }
-        } else if (entry && (entry.event === "budget_rolled_back" || entry.event === "budget_released")) {
-          if (entry.reservationId) {
-            activeIds.delete(entry.reservationId);
-          } else {
-            count = Math.max(0, count - 1);
-          }
-        }
-      } catch (_) {}
-    }
-    const used = count + activeIds.size;
+    const scan = scanBudgetWindow(root, opts);
     return {
-      ok: used < limit,
-      used,
+      ok: scan.used < limit,
+      used: scan.used,
       budget: limit,
-      remaining: Math.max(0, limit - used),
+      remaining: Math.max(0, limit - scan.used),
+      windowStart: scan.windowStart,
     };
   } catch (_) {
     return { ok: true, used: 0, budget: limit, remaining: limit };
@@ -244,42 +348,32 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
   const mutexDir = join(stateDir, ".budget.mutex");
 
   return withVfsMutex(mutexDir, () => {
-    const dateStr = new Date().toISOString().split("T")[0];
+    const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+    const dateStr = new Date(now).toISOString().split("T")[0];
     const filePath = join(stateDir, `ledger-${dateStr}.jsonl`);
 
-    let count = 0;
-    const activeIds = new Set();
+    // The count spans the rolling window; the hash chain does not. A chain is
+    // per file, so the new entry links to today's last hash even when the
+    // reservations it is counted against were written yesterday.
+    const used = scanBudgetWindow(root, { ...opts, now }).used;
     let prevHash = "0".repeat(64);
 
     if (existsSync(filePath)) {
       try {
         const raw = readFileSync(filePath, "utf-8");
         const lines = raw.split("\n").filter(Boolean);
-        for (const line of lines) {
+        for (let i = lines.length - 1; i >= 0; i--) {
           try {
-            const entry = JSON.parse(line);
-            if (entry && entry.event === "budget_reserved") {
-              if (entry.reservationId) {
-                activeIds.add(entry.reservationId);
-              } else {
-                count++;
-              }
-            } else if (entry && (entry.event === "budget_rolled_back" || entry.event === "budget_released")) {
-              if (entry.reservationId) {
-                activeIds.delete(entry.reservationId);
-              } else {
-                count = Math.max(0, count - 1);
-              }
-            }
+            const entry = JSON.parse(lines[i]);
             if (entry && entry.hash) {
               prevHash = entry.hash;
+              break;
             }
           } catch (_) {}
         }
       } catch (_) {}
     }
 
-    const used = count + activeIds.size;
     // `enforce: false` marks a limit the kit only guessed (a tier preset rather
     // than a stated or provider-demonstrated figure). Blocking on a guess would
     // refuse work the provider would happily have accepted, so an uncertain
@@ -289,8 +383,8 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
       throw new BudgetError(`Daily budget exhausted (${used}/${limit} tasks executed)`);
     }
 
-    const timestamp = new Date().toISOString();
-    const reservationId = `res-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const timestamp = new Date(now).toISOString();
+    const reservationId = `res-${now}-${Math.random().toString(36).substring(2, 8)}`;
     const rawPayload = { timestamp, event: "budget_reserved", reservationId, budget: limit, prevHash };
     const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
     const payload = { ...rawPayload, hash };

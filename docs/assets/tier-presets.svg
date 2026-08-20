@@ -17,7 +17,7 @@
     <rect width="275" height="134" rx="10" fill="#0f172a" stroke="#94a3b8" stroke-width="2" />
     <text x="18" y="28" fill="#cbd5e1" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="800">🌱 Free Tier</text>
     <text x="18" y="46" fill="#94a3b8" font-family="monospace" font-size="11.5" font-weight="600">export JULES_TIER=free</text>
-    <text x="18" y="72" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="700">15 Sessions / day  |  1 Concurrency</text>
+    <text x="18" y="72" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="700">15 Sessions / 24h  |  3 Slots (max 3)</text>
     <text x="18" y="92" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11.5" font-weight="600">3000 ms Stagger  |  1 Repair Attempt</text>
     <text x="18" y="114" fill="#cbd5e1" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="600">Target: Hobby / Individual Developers</text>
   </g>
@@ -27,7 +27,7 @@
     <rect width="275" height="134" rx="10" fill="#0f172a" stroke="#38bdf8" stroke-width="2.5" />
     <text x="18" y="28" fill="#38bdf8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="800">🚀 Pro Tier</text>
     <text x="18" y="46" fill="#7dd3fc" font-family="monospace" font-size="11.5" font-weight="600">export JULES_TIER=pro</text>
-    <text x="18" y="72" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="700">100 Sessions / day  |  2 Concurrency</text>
+    <text x="18" y="72" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="700">100 Sessions / 24h  |  8 Slots (max 15)</text>
     <text x="18" y="92" fill="#7dd3fc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11.5" font-weight="600">1500 ms Stagger  |  2 Repair Attempts</text>
     <text x="18" y="114" fill="#bae6fd" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="600">Target: Everyday Work &amp; Dev Teams</text>
   </g>
@@ -37,7 +37,7 @@
     <rect width="275" height="134" rx="10" fill="#1e1b4b" stroke="#a855f7" stroke-width="2.5" />
     <text x="18" y="28" fill="#f0abfc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="800">⚡ Ultra Tier (Default)</text>
     <text x="18" y="46" fill="#e9d5ff" font-family="monospace" font-size="11.5" font-weight="600">export JULES_TIER=ultra</text>
-    <text x="18" y="72" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="700">300 Sessions / day  |  3 Concurrency</text>
+    <text x="18" y="72" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="700">300 Sessions / 24h  |  15 Slots (max 60)</text>
     <text x="18" y="92" fill="#e9d5ff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11.5" font-weight="600">1000 ms Stagger  |  3 Repair Attempts</text>
     <text x="18" y="114" fill="#f5d0fe" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="600">Target: High-Volume Swarms &amp; CI/CD</text>
   </g>
