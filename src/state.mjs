@@ -13,6 +13,7 @@ import {
 import { join, basename } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
+import { execFileSync } from "node:child_process";
 import { resolveRoot } from "./config.mjs";
 import { redactSecrets } from "./security.mjs";
 
@@ -478,11 +479,17 @@ export function getProcessStartTime(pid) {
       return parseProcStat(stat);
     } catch (_) {}
   }
+  if (process.platform === "darwin") {
+    try {
+      const out = execFileSync("ps", ["-p", String(pid), "-o", "lstart="], { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] });
+      return out.trim() || null;
+    } catch (_) {}
+  }
   return null;
 }
 
 /**
- * Checks if a PID is alive with PID-recycling start time validation on Linux.
+ * Checks if a PID is alive with PID-recycling start time validation on Linux and macOS.
  */
 export function isPidAlive(pid, expectedStartTime = null) {
   if (!pid || typeof pid !== "number") return false;
@@ -492,10 +499,10 @@ export function isPidAlive(pid, expectedStartTime = null) {
     if (err?.code !== "EPERM") return false;
   }
 
-  if (expectedStartTime !== null && expectedStartTime !== undefined && process.platform === "linux") {
+  if (expectedStartTime !== null && expectedStartTime !== undefined) {
     try {
       const actualStartTime = getProcessStartTime(pid);
-      if (!actualStartTime || String(actualStartTime) !== String(expectedStartTime)) {
+      if (actualStartTime && String(actualStartTime) !== String(expectedStartTime)) {
         return false;
       }
     } catch (_) {

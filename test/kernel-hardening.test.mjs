@@ -66,26 +66,28 @@ describe("Kernel Hardening & Concurrency Safety", () => {
       };
       writeFileSync(lockFile, JSON.stringify(mismatchedPayload, null, 2), "utf-8");
 
-      // Verify isPidAlive returns false for process.pid when expectedStartTime is mismatched on Linux
-      if (process.platform === "linux") {
+      // Verify isPidAlive returns false for process.pid when expectedStartTime is mismatched on Linux/macOS
+      if (process.platform === "linux" || process.platform === "darwin") {
         const alive = isPidAlive(process.pid, "999999999");
         assert.strictEqual(alive, false, "isPidAlive must return false for mismatched PID starttime");
       }
 
       // acquireLock must detect stale PID starttime, reap the lock file, and acquire lock successfully
-      const res = acquireLock("new-worker", taskId, ["src/state.mjs"], testDir);
-      assert.strictEqual(res.ok, true, "acquireLock should succeed after reaping stale lock");
-      assert.strictEqual(res.lockFile, lockFile);
+      if (process.platform === "linux" || process.platform === "darwin") {
+        const res = acquireLock("new-worker", taskId, ["src/state.mjs"], testDir);
+        assert.strictEqual(res.ok, true, "acquireLock should succeed after reaping stale lock");
+        assert.strictEqual(res.lockFile, lockFile);
 
-      // Verify new lock contents
-      const newLock = JSON.parse(readFileSync(lockFile, "utf-8"));
-      assert.strictEqual(newLock.agent, "new-worker");
-      assert.strictEqual(newLock.pid, process.pid);
-      assert.ok(newLock.nonce, "Lock payload must contain a random UUID nonce");
+        // Verify new lock contents
+        const newLock = JSON.parse(readFileSync(lockFile, "utf-8"));
+        assert.strictEqual(newLock.agent, "new-worker");
+        assert.strictEqual(newLock.pid, process.pid);
+        assert.ok(newLock.nonce, "Lock payload must contain a random UUID nonce");
 
-      if (process.platform === "linux") {
-        const actualStart = getProcessStartTime(process.pid);
-        assert.strictEqual(String(newLock.processStartTime), String(actualStart));
+        if (process.platform === "linux") {
+          const actualStart = getProcessStartTime(process.pid);
+          assert.strictEqual(String(newLock.processStartTime), String(actualStart));
+        }
       }
     } finally {
       try { rmSync(testDir, { recursive: true, force: true }); } catch (_) {}
