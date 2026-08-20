@@ -429,6 +429,21 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       complex: parsed.router?.complex || "",
       threshold: Number.isFinite(Number(parsed.router?.threshold)) ? Number(parsed.router.threshold) : 0,
     },
+    notifications: {
+      mode: parsed.notifications?.mode || "immediate",
+      threshold: Number.isFinite(Number(parsed.notifications?.threshold)) ? Number(parsed.notifications.threshold) : 5,
+      windowMs: Number.isFinite(Number(parsed.notifications?.window_ms ?? parsed.notifications?.windowMs))
+        ? Number(parsed.notifications.window_ms ?? parsed.notifications.windowMs)
+        : 300000,
+      budgetPerHour: Number.isFinite(Number(parsed.notifications?.budget_per_hour ?? parsed.notifications?.budgetPerHour))
+        ? Number(parsed.notifications.budget_per_hour ?? parsed.notifications.budgetPerHour)
+        : 3,
+      criticalReasons: Array.isArray(parsed.notifications?.critical_reasons)
+        ? parsed.notifications.critical_reasons
+        : ["R3_GATE_VIOLATION", "AWAITING_USER_FEEDBACK", "OODA_REPAIR_EXHAUSTED", "SECRET_LEAK_DETECTED", "CRITICAL_FAILURE"],
+      slackWebhookUrl: parsed.notifications?.slack_webhook_url || parsed.notifications?.slackWebhookUrl || "",
+      discordWebhookUrl: parsed.notifications?.discord_webhook_url || parsed.notifications?.discordWebhookUrl || "",
+    },
     scope: normalizeScope(parsed),
     limits: {
       ...DEFAULTS.limits,

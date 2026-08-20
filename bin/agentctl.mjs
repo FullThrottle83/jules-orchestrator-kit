@@ -59,6 +59,8 @@ Commands:
   mcp init              Scaffold IDE integration config (cursor | vscode | claude | all)
   rollback              Restore git state & working tree to atomic pre-flight checkpoint
   resume                Resume warm session with human response (--response "<text>")
+  escalate              Dispatch or manage webhook escalation incidents (--flush, --status, --clear)
+  flaky                 Manage Wilson-quarantined tests and dispatch healing swarm (status | heal | reset)
   status                Display queue and system status summary
   budget                Show the 24h task budget, worker slots and their provenance (reset --yes)
   scan                  Scan codebase for TODO/FIXME task candidates
@@ -776,6 +778,244 @@ async function main() {
         console.error(`❌ Resume Failed: ${err.message}`);
         process.exit(1);
       }
+      break;
+    }
+
+    case "escalate": {
+      const {
+        dispatchEscalation,
+        flushEscalationDigest,
+        getEscalationDigestStatus,
+        clearEscalationDigest,
+      } = await import("../src/webhook.mjs");
+
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          reason: { type: "string", short: "r", default: "AWAITING_USER_FEEDBACK" },
+          branch: { type: "string", short: "b", default: config.baseBranch || "main" },
+          logs: { type: "string", short: "l" },
+          "log-file": { type: "string" },
+          critical: { type: "boolean" },
+          flush: { type: "boolean" },
+          status: { type: "boolean" },
+          clear: { type: "boolean" },
+          "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      if (values.status) {
+        const st = getEscalationDigestStatus(root, config);
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, status: st }, null, 2));
+        } else {
+          console.log(`\n🔇 Type III Silence Governor Status (v${VERSION})`);
+          console.log(`--------------------------------------------------`);
+          console.log(`  Notification Mode     : ${st.mode.toUpperCase()}`);
+          console.log(`  Pending Digest Count  : ${st.pendingCount} / ${st.threshold}`);
+          console.log(`  Interruption Budget   : ${st.recentInterruptions} / ${st.budgetPerHour} per hour (Available: ${st.budgetAvailable})`);
+          if (st.createdAt) {
+            console.log(`  Oldest Buffered Item  : ${st.createdAt}`);
+          }
+          if (st.incidents.length > 0) {
+            console.log(`\n  Buffered Incidents (${st.incidents.length}):`);
+            st.incidents.forEach((inc) => {
+              console.log(`   - [${inc.reason}] Session ${inc.sessionId} (${inc.branch})`);
+            });
+          }
+          console.log(`--------------------------------------------------\n`);
+        }
+        process.exit(0);
+      }
+
+      if (values.clear) {
+        const res = clearEscalationDigest(root);
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`✅ Cleared pending escalation digest buffer.`);
+        }
+        process.exit(0);
+      }
+
+      if (values.flush) {
+        const res = await flushEscalationDigest(config, { root, dryRun: values["dry-run"] });
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          if (res.flushed) {
+            console.log(`\n📢 Flushed Escalation Digest (${res.count} incidents)`);
+            console.log(`   Slack   : ${res.slack ? "✅ Delivered" : "❌ Skipped/Failed"}`);
+            console.log(`   Discord : ${res.discord ? "✅ Delivered" : "❌ Skipped/Failed"}\n`);
+          } else {
+            console.log(`ℹ️ Nothing to flush: ${res.reason}`);
+          }
+        }
+        process.exit(0);
+      }
+
+      const sessionId = positionals[0] || values.session;
+      if (!sessionId) {
+        console.error("Error: Session ID is required for agentctl escalate <sessionId> (or use --flush / --status).");
+        process.exit(1);
+      }
+
+      let logContent = values.logs || "";
+      if (values["log-file"] && existsSync(values["log-file"])) {
+        logContent = readFileSync(values["log-file"], "utf-8");
+      }
+
+      const incident = {
+        sessionId,
+        branch: values.branch,
+        reason: values.reason,
+        logs: logContent,
+        critical: values.critical,
+      };
+
+      const res = await dispatchEscalation(incident, {
+        root,
+        config,
+        dryRun: values["dry-run"],
+      });
+
+      if (values.json) {
+        console.log(JSON.stringify({ ok: true, result: res }, null, 2));
+      } else {
+        if (res.buffered) {
+          console.log(`\n🔇 Incident buffered by Silence Governor (${res.reason})`);
+          console.log(`   Session ID   : ${sessionId}`);
+          console.log(`   Digest Count : ${res.digestCount || 1}`);
+          console.log(`   (Use 'agentctl escalate --flush' to deliver immediately)\n`);
+        } else if (res.dispatched) {
+          console.log(`\n🚨 Incident Escalation Dispatched!`);
+          console.log(`   Session ID : ${sessionId}`);
+          console.log(`   Reason     : ${values.reason}`);
+          console.log(`   Slack      : ${res.slack ? "✅ Sent" : "N/A"}`);
+          console.log(`   Discord    : ${res.discord ? "✅ Sent" : "N/A"}\n`);
+        } else {
+          console.log(`⚠️ Escalation not dispatched: ${res.reason}`);
+        }
+      }
+      process.exit(0);
+      break;
+    }
+
+    case "flaky": {
+      const {
+        listQuarantinedTests,
+        clearFlakyLedger,
+        runFlakyHealingSwarm,
+        synthesizeFlakyHealingTask,
+      } = await import("../src/flaky-ledger.mjs");
+
+      const subAction = args[1] || "status";
+      const { values, positionals } = parseArgs({
+        args: args.slice(2),
+        options: {
+          dispatch: { type: "boolean" },
+          role: { type: "string", short: "r", default: "janitor" },
+          "test-cmd": { type: "string", short: "t" },
+          "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      if (subAction === "status" || subAction === "list") {
+        const quarantined = listQuarantinedTests(root);
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, quarantined, count: quarantined.length }, null, 2));
+        } else {
+          console.log(`\n🧪 Statistical Flaky Test Quarantine (v${VERSION})`);
+          console.log(`--------------------------------------------------`);
+          if (quarantined.length === 0) {
+            console.log(`  ✅ Zero quarantined tests. All suites stable.`);
+          } else {
+            console.log(`  Found ${quarantined.length} test suite(s) quarantined (Exit Code 8):\n`);
+            quarantined.forEach((q, idx) => {
+              const oscPct = Math.round(q.oscillation * 100);
+              console.log(`  ${idx + 1}. \`${q.testCmd}\``);
+              console.log(`     Oscillation: ${oscPct}% (${q.fails} fails / ${q.passes} passes in last ${q.n} runs)`);
+              console.log(`     Wilson CI  : [${q.wilson.lower.toFixed(2)}, ${q.wilson.upper.toFixed(2)}]`);
+              console.log(`     Last Run   : ${q.lastRunTimestamp}\n`);
+            });
+            console.log(`  👉 To dispatch auto-healing swarm, run: agentctl flaky heal`);
+          }
+          console.log(`--------------------------------------------------\n`);
+        }
+        process.exit(0);
+      }
+
+      if (subAction === "heal") {
+        const targetCmd = positionals[0] || values["test-cmd"];
+        let res;
+        if (targetCmd) {
+          const taskPlan = synthesizeFlakyHealingTask({ testCmd: targetCmd }, { role: values.role });
+          if (values.dispatch && !values["dry-run"]) {
+            const { dispatch } = await import("../src/engine.mjs");
+            try {
+              const session = await dispatch(
+                { title: taskPlan.title, prompt: taskPlan.prompt, role: taskPlan.role },
+                { root, config }
+              );
+              taskPlan.session = session;
+              taskPlan.dispatched = true;
+            } catch (err) {
+              taskPlan.dispatchError = err.message;
+              taskPlan.dispatched = false;
+            }
+          } else if (!values["dry-run"]) {
+            const { writeFileSync } = await import("node:fs");
+            const queueDir = getQueueDir(root);
+            const filePath = join(queueDir, `${taskPlan.taskId}.md`);
+            writeFileSync(filePath, taskPlan.fullEnvelope, "utf-8");
+            taskPlan.taskFile = filePath;
+            taskPlan.queued = true;
+          }
+          res = { count: 1, tasks: [taskPlan], dryRun: values["dry-run"] };
+        } else {
+          res = await runFlakyHealingSwarm(root, {
+            dispatch: values.dispatch,
+            dryRun: values["dry-run"],
+            role: values.role,
+          });
+        }
+
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, ...res }, null, 2));
+        } else {
+          if (res.count === 0) {
+            console.log(`ℹ️ ${res.message || "No quarantined tests to heal."}`);
+          } else {
+            console.log(`\n🩹 Flaky Test Healing Swarm (${res.count} task${res.count > 1 ? "s" : ""})`);
+            console.log(`--------------------------------------------------`);
+            res.tasks.forEach((t) => {
+              console.log(`  • ${t.title}`);
+              if (t.taskFile) console.log(`    Queued: ${t.taskFile}`);
+              if (t.session) console.log(`    Dispatched Session: ${t.session.id}`);
+            });
+            console.log(`--------------------------------------------------\n`);
+          }
+        }
+        process.exit(0);
+      }
+
+      if (subAction === "reset" || subAction === "clear") {
+        const targetCmd = positionals[0] || values["test-cmd"] || null;
+        const res = clearFlakyLedger(root, targetCmd);
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`✅ Flaky test ledger reset (${targetCmd ? `command: ${targetCmd}` : "all tests"}).`);
+        }
+        process.exit(0);
+      }
+
+      console.error(`Unknown flaky subaction: '${subAction}'. Supported: agentctl flaky status | heal | reset`);
+      process.exit(1);
       break;
     }
 

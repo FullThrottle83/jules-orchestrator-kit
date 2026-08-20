@@ -1,0 +1,6 @@
+# GitHub Linguist Overrides
+# De-indexes and collapses internal agent definitions, state directories, test suites, and generated data
+.agent/** linguist-vendored linguist-generated=true
+test/** linguist-vendored
+docs/** linguist-documentation
+*.jsonl linguist-generated=true

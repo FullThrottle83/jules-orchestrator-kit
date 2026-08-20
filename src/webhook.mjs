@@ -1,5 +1,420 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import { getStateDir } from "./state.mjs";
+import { resolveRoot } from "./config.mjs";
+import { redactSecrets } from "./security.mjs";
+
+export const DEFAULT_CRITICAL_REASONS = [
+  "R3_GATE_VIOLATION",
+  "AWAITING_USER_FEEDBACK",
+  "OODA_REPAIR_EXHAUSTED",
+  "SECRET_LEAK_DETECTED",
+  "CRITICAL_FAILURE",
+];
+
+export function getDigestFilePath(root = resolveRoot()) {
+  return join(getStateDir(root), "escalation-digest.json");
+}
+
+export function getInterruptionLedgerPath(root = resolveRoot()) {
+  return join(getStateDir(root), "interruption-ledger.json");
+}
+
+export function loadEscalationDigest(root = resolveRoot()) {
+  const file = getDigestFilePath(root);
+  if (!existsSync(file)) return { incidents: [], createdAt: null, updatedAt: null };
+  try {
+    const raw = readFileSync(file, "utf-8");
+    const data = JSON.parse(raw);
+    return {
+      incidents: Array.isArray(data.incidents) ? data.incidents : [],
+      createdAt: data.createdAt || null,
+      updatedAt: data.updatedAt || null,
+    };
+  } catch (_) {
+    return { incidents: [], createdAt: null, updatedAt: null };
+  }
+}
+
+export function saveEscalationDigest(root = resolveRoot(), digestData = {}) {
+  const file = getDigestFilePath(root);
+  const data = {
+    incidents: digestData.incidents || [],
+    createdAt: digestData.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  writeFileSync(file, JSON.stringify(data, null, 2), "utf-8");
+  return data;
+}
+
+export function clearEscalationDigest(root = resolveRoot()) {
+  const file = getDigestFilePath(root);
+  if (existsSync(file)) {
+    try {
+      unlinkSync(file);
+    } catch (_) {
+      writeFileSync(file, JSON.stringify({ incidents: [], createdAt: null, updatedAt: null }), "utf-8");
+    }
+  }
+  return { ok: true, cleared: true };
+}
+
+export function bufferEscalationIncident(incident = {}, root = resolveRoot()) {
+  const current = loadEscalationDigest(root);
+  const rawLogs = incident.logs || incident.error || "";
+  const scrubbedLogs = rawLogs ? redactSecrets(String(rawLogs)) : "";
+  const entry = {
+    id: incident.sessionId || `incident-${Date.now()}`,
+    sessionId: incident.sessionId || "unknown-session",
+    taskId: incident.taskId || "agent-task",
+    branch: incident.branch || "main",
+    reason: incident.reason || "NON_CRITICAL_EVENT",
+    logs: scrubbedLogs.split("\n").slice(-10).join("\n"),
+    timestamp: incident.timestamp || new Date().toISOString(),
+  };
+  const updatedIncidents = [...current.incidents, entry];
+  saveEscalationDigest(root, {
+    incidents: updatedIncidents,
+    createdAt: current.createdAt || new Date().toISOString(),
+  });
+  return {
+    buffered: true,
+    count: updatedIncidents.length,
+    incident: entry,
+  };
+}
+
+export function loadInterruptionLedger(root = resolveRoot()) {
+  const file = getInterruptionLedgerPath(root);
+  if (!existsSync(file)) return [];
+  try {
+    const raw = readFileSync(file, "utf-8");
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+export function recordInterruption(root = resolveRoot()) {
+  const file = getInterruptionLedgerPath(root);
+  const now = Date.now();
+  const entries = loadInterruptionLedger(root).filter((ts) => now - ts < 3600000); // 1 hour sliding window
+  entries.push(now);
+  writeFileSync(file, JSON.stringify(entries), "utf-8");
+  return entries.length;
+}
+
+export function countRecentInterruptions(root = resolveRoot(), windowMs = 3600000) {
+  const now = Date.now();
+  const entries = loadInterruptionLedger(root);
+  return entries.filter((ts) => now - ts < windowMs).length;
+}
+
+export function getEscalationDigestStatus(root = resolveRoot(), config = {}) {
+  const digest = loadEscalationDigest(root);
+  const notifications = config.notifications || {};
+  const budgetPerHour = notifications.budgetPerHour ?? 3;
+  const recentInterruptions = countRecentInterruptions(root);
+
+  return {
+    pendingCount: digest.incidents.length,
+    incidents: digest.incidents,
+    createdAt: digest.createdAt,
+    updatedAt: digest.updatedAt,
+    budgetPerHour,
+    recentInterruptions,
+    budgetAvailable: Math.max(0, budgetPerHour - recentInterruptions),
+    mode: notifications.mode || "immediate",
+    threshold: notifications.threshold || 5,
+  };
+}
+
+export async function flushEscalationDigest(config = {}, options = {}) {
+  const root = options.root || resolveRoot();
+  const digest = loadEscalationDigest(root);
+  if (digest.incidents.length === 0) {
+    return { flushed: false, count: 0, reason: "No pending incidents in digest" };
+  }
+
+  const notifications = config.notifications || {};
+  const slackUrl = process.env.SLACK_WEBHOOK_URL || notifications.slackWebhookUrl || config.slackWebhookUrl || "";
+  const discordUrl = process.env.DISCORD_WEBHOOK_URL || notifications.discordWebhookUrl || config.discordWebhookUrl || "";
+  const dryRun = options.dryRun || config.dryRun || false;
+
+  const count = digest.incidents.length;
+  const results = { flushed: true, count, slack: false, discord: false, dryRun };
+
+  if (dryRun) {
+    if (!options.preserve) clearEscalationDigest(root);
+    return {
+      ...results,
+      payload: {
+        count,
+        incidents: digest.incidents,
+      },
+    };
+  }
+
+  if (!slackUrl && !discordUrl) {
+    return { flushed: false, count, slack: false, discord: false, reason: "No webhook URL configured" };
+  }
+
+  // Format Slack digest
+  if (slackUrl) {
+    try {
+      const summaryText = digest.incidents
+        .map((inc) => `• *\`${inc.sessionId}\`* on \`${inc.branch}\` [${inc.reason}]: \`agentctl resume ${inc.sessionId}\``)
+        .join("\n");
+
+      const slackBody = {
+        text: `📋 *Jules Escalation Digest* (${count} batched incident${count > 1 ? "s" : ""})`,
+        blocks: [
+          {
+            type: "header",
+            text: { type: "plain_text", text: `📋 Jules Escalation Digest (${count} incidents)` },
+          },
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: summaryText.slice(0, 2500) },
+          },
+          {
+            type: "context",
+            elements: [
+              { type: "mrkdwn", text: `Aggregated by Type III Silence Governor · Oldest: ${digest.createdAt || "N/A"}` },
+            ],
+          },
+        ],
+      };
+
+      const res = await fetch(slackUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(slackBody),
+      });
+      results.slack = res.ok;
+    } catch (_) {
+      results.slack = false;
+    }
+  }
+
+  // Format Discord digest
+  if (discordUrl) {
+    try {
+      const fields = digest.incidents.slice(0, 10).map((inc) => ({
+        name: `Session \`${inc.sessionId}\` [${inc.reason}]`,
+        value: `Branch: \`${inc.branch}\`\n\`agentctl resume ${inc.sessionId} --response "<answer>"\``,
+        inline: false,
+      }));
+
+      const discordBody = {
+        content: `📋 **Jules Escalation Digest** (${count} batched incident${count > 1 ? "s" : ""})`,
+        embeds: [
+          {
+            title: `Escalation Digest (${count} incidents)`,
+            color: 3447003,
+            fields,
+            footer: { text: `Aggregated by Type III Silence Governor · Total: ${count}` },
+          },
+        ],
+      };
+
+      const res = await fetch(discordUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(discordBody),
+      });
+      results.discord = res.ok;
+    } catch (_) {
+      results.discord = false;
+    }
+  }
+
+  if (results.slack || results.discord) {
+    if (!options.preserve) {
+      clearEscalationDigest(root);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Dispatches an asynchronous escalation incident payload to configured Slack and/or Discord webhooks,
+ * governed by the Type III Silence Governor and interruption budget.
+ * @param {object} incident - Incident details
+ * @param {string} incident.sessionId
+ * @param {string} [incident.taskId]
+ * @param {string} [incident.branch]
+ * @param {string} [incident.reason] - AWAITING_USER_FEEDBACK | OODA_REPAIR_EXHAUSTED | R3_GATE_VIOLATION
+ * @param {string} [incident.logs] - Last 20 lines of compiler/test output
+ * @param {boolean} [incident.critical] - Force immediate alert
+ * @param {object} [config]
+ * @returns {Promise<object>} Dispatch status
+ */
+export async function dispatchEscalation(incident = {}, config = {}) {
+  const root = config.root || resolveRoot();
+  const notifications = config.notifications || {};
+  const mode = (notifications.mode || config.notificationMode || "immediate").toLowerCase();
+  const threshold = notifications.threshold || 5;
+  const budgetPerHour = notifications.budgetPerHour ?? 3;
+  const criticalReasons = notifications.criticalReasons || DEFAULT_CRITICAL_REASONS;
+
+  const reason = incident.reason || "AWAITING_USER_FEEDBACK";
+  const isCritical = incident.critical === true || criticalReasons.includes(reason) || config.forceImmediate === true;
+
+  // Non-critical governance
+  if (!isCritical) {
+    if (mode === "silent") {
+      bufferEscalationIncident(incident, root);
+      return {
+        dispatched: false,
+        buffered: true,
+        silent: true,
+        reason: "SILENT_MODE",
+      };
+    }
+
+    if (mode === "digest" || mode === "threshold") {
+      const bufferRes = bufferEscalationIncident(incident, root);
+      if (bufferRes.count >= threshold) {
+        return await flushEscalationDigest(config, { root, dryRun: config.dryRun });
+      }
+      return {
+        dispatched: false,
+        buffered: true,
+        digestCount: bufferRes.count,
+        reason: "BUFFERED_IN_DIGEST",
+      };
+    }
+
+    // mode === "immediate" with interruption budget
+    const recentCount = countRecentInterruptions(root);
+    if (recentCount >= budgetPerHour) {
+      const bufferRes = bufferEscalationIncident(incident, root);
+      return {
+        dispatched: false,
+        buffered: true,
+        digestCount: bufferRes.count,
+        reason: "INTERRUPTION_BUDGET_EXCEEDED",
+      };
+    }
+  }
+
+  // If immediate/critical dispatch:
+  if (!isCritical) {
+    recordInterruption(root);
+  }
+
+  const slackUrl = process.env.SLACK_WEBHOOK_URL || notifications.slackWebhookUrl || config.slackWebhookUrl || "";
+  const discordUrl = process.env.DISCORD_WEBHOOK_URL || notifications.discordWebhookUrl || config.discordWebhookUrl || "";
+
+  if (!slackUrl && !discordUrl && !config.dryRun) {
+    return { dispatched: false, slack: false, discord: false, reason: "No webhook URL configured" };
+  }
+
+  const sessionId = incident.sessionId || "unknown-session";
+  const taskId = incident.taskId || "agent-task";
+  const branch = incident.branch || "main";
+  const rawLogs = incident.logs || incident.error || "No error log attached.";
+
+  // Normalize last 20 lines of logs with secret scrubbing
+  const scrubbedLogs = redactSecrets(String(rawLogs));
+  const logLines = scrubbedLogs.split("\n").slice(-20).join("\n");
+  const resumeCmd = `agentctl resume ${sessionId} --response "<your-answer>"`;
+
+  const results = { dispatched: true, slack: false, discord: false };
+
+  if (config.dryRun) {
+    return {
+      ...results,
+      dryRun: true,
+      payload: {
+        sessionId,
+        taskId,
+        reason,
+        resumeCmd,
+        logLines,
+      },
+    };
+  }
+
+  // Dispatch to Slack
+  if (slackUrl) {
+    try {
+      const slackBody = {
+        text: `🚨 *Jules Agent Escalation* [${reason}]: Session ${sessionId}`,
+        blocks: [
+          {
+            type: "header",
+            text: { type: "plain_text", text: `🚨 Jules Escalation: ${reason}` },
+          },
+          {
+            type: "section",
+            fields: [
+              { type: "mrkdwn", text: `*Session ID:*\n\`${sessionId}\`` },
+              { type: "mrkdwn", text: `*Branch:*\n\`${branch}\`` },
+            ],
+          },
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: `*Recent Log Output:*\n\`\`\`${logLines.slice(0, 1000)}\`\`\`` },
+          },
+          {
+            type: "context",
+            elements: [
+              { type: "mrkdwn", text: `👉 *To resume session run:* \`${resumeCmd}\`` },
+            ],
+          },
+        ],
+      };
+
+      const res = await fetch(slackUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(slackBody),
+      });
+      results.slack = res.ok;
+    } catch (_) {
+      results.slack = false;
+    }
+  }
+
+  // Dispatch to Discord
+  if (discordUrl) {
+    try {
+      const discordBody = {
+        content: `🚨 **Jules Agent Escalation** [${reason}] for session \`${sessionId}\``,
+        embeds: [
+          {
+            title: `Escalation Reason: ${reason}`,
+            color: 15158332, // Red
+            fields: [
+              { name: "Session ID", value: `\`${sessionId}\``, inline: true },
+              { name: "Branch", value: `\`${branch}\``, inline: true },
+              { name: "Resume Command", value: `\`${resumeCmd}\`` },
+            ],
+            description: `\`\`\`\n${logLines.slice(0, 1000)}\n\`\`\``,
+          },
+        ],
+      };
+
+      const res = await fetch(discordUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(discordBody),
+      });
+      results.discord = res.ok;
+    } catch (_) {
+      results.discord = false;
+    }
+  }
+
+  return results;
+}
+
 
 /**
  * Verify GitHub webhook HMAC SHA-256 signature against request payload.
@@ -184,124 +599,5 @@ export function createWebhookServer({ _port = 8787, secret = process.env.JULES_W
   });
 
   return server;
-}
-
-/**
- * Dispatches an asynchronous escalation incident payload to configured Slack and/or Discord webhooks.
- * @param {object} incident - Incident details
- * @param {string} incident.sessionId
- * @param {string} [incident.taskId]
- * @param {string} [incident.branch]
- * @param {string} [incident.reason] - AWAITING_USER_FEEDBACK | OODA_REPAIR_EXHAUSTED | R3_GATE_VIOLATION
- * @param {string} [incident.logs] - Last 20 lines of compiler/test output
- * @param {object} [config]
- * @returns {Promise<object>} Dispatch status { dispatched: boolean, slack: boolean, discord: boolean }
- */
-export async function dispatchEscalation(incident = {}, config = {}) {
-  const slackUrl = process.env.SLACK_WEBHOOK_URL || config.slackWebhookUrl || "";
-  const discordUrl = process.env.DISCORD_WEBHOOK_URL || config.discordWebhookUrl || "";
-
-  if (!slackUrl && !discordUrl && !config.dryRun) {
-    return { dispatched: false, slack: false, discord: false, reason: "No webhook URL configured" };
-  }
-
-  const sessionId = incident.sessionId || "unknown-session";
-  const taskId = incident.taskId || "agent-task";
-  const branch = incident.branch || "main";
-  const reason = incident.reason || "AWAITING_USER_FEEDBACK";
-  const rawLogs = incident.logs || incident.error || "No error log attached.";
-
-  // Normalize last 20 lines of logs
-  const logLines = String(rawLogs).split("\n").slice(-20).join("\n");
-  const resumeCmd = `agentctl resume ${sessionId} --response "<your-answer>"`;
-
-  const results = { dispatched: true, slack: false, discord: false };
-
-  if (config.dryRun) {
-    return {
-      ...results,
-      dryRun: true,
-      payload: {
-        sessionId,
-        taskId,
-        reason,
-        resumeCmd,
-        logLines,
-      },
-    };
-  }
-
-  // Dispatch to Slack
-  if (slackUrl) {
-    try {
-      const slackBody = {
-        text: `🚨 *Jules Agent Escalation* [${reason}]: Session ${sessionId}`,
-        blocks: [
-          {
-            type: "header",
-            text: { type: "plain_text", text: `🚨 Jules Escalation: ${reason}` },
-          },
-          {
-            type: "section",
-            fields: [
-              { type: "mrkdwn", text: `*Session ID:*\n\`${sessionId}\`` },
-              { type: "mrkdwn", text: `*Branch:*\n\`${branch}\`` },
-            ],
-          },
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: `*Recent Log Output:*\n\`\`\`${logLines.slice(0, 1000)}\`\`\`` },
-          },
-          {
-            type: "context",
-            elements: [
-              { type: "mrkdwn", text: `👉 *To resume session run:* \`${resumeCmd}\`` },
-            ],
-          },
-        ],
-      };
-
-      const res = await fetch(slackUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(slackBody),
-      });
-      results.slack = res.ok;
-    } catch (_) {
-      results.slack = false;
-    }
-  }
-
-  // Dispatch to Discord
-  if (discordUrl) {
-    try {
-      const discordBody = {
-        content: `🚨 **Jules Agent Escalation** [${reason}] for session \`${sessionId}\``,
-        embeds: [
-          {
-            title: `Escalation Reason: ${reason}`,
-            color: 15158332, // Red
-            fields: [
-              { name: "Session ID", value: `\`${sessionId}\``, inline: true },
-              { name: "Branch", value: `\`${branch}\``, inline: true },
-              { name: "Resume Command", value: `\`${resumeCmd}\`` },
-            ],
-            description: `\`\`\`\n${logLines.slice(0, 1000)}\n\`\`\``,
-          },
-        ],
-      };
-
-      const res = await fetch(discordUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(discordBody),
-      });
-      results.discord = res.ok;
-    } catch (_) {
-      results.discord = false;
-    }
-  }
-
-  return results;
 }
 

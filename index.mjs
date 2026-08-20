@@ -103,8 +103,19 @@ export { scorePromptFalsifiability, optimizeTaskPrompt, levenshteinDistance, ext
 // Atomic Git Checkpoints & Rollback
 export { createCheckpoint, restoreCheckpoint, listCheckpoints, pruneCheckpoints, CheckpointError } from "./src/ops/checkpoint.mjs";
 
-// Webhook & HITL Escalation Bridge
-export { dispatchEscalation, verifySignature, parseWebhookPayload, routeWebhookEvent, createWebhookServer } from "./src/webhook.mjs";
+// Webhook, Silence Governor & HITL Escalation Bridge
+export {
+  dispatchEscalation,
+  verifySignature,
+  parseWebhookPayload,
+  routeWebhookEvent,
+  createWebhookServer,
+  flushEscalationDigest,
+  getEscalationDigestStatus,
+  clearEscalationDigest,
+  bufferEscalationIncident,
+  DEFAULT_CRITICAL_REASONS,
+} from "./src/webhook.mjs";
 
 // PR Review Evidence Bundler & Dev Server Probe
 export { synthesizePrDescription, probeDevServer } from "./src/engine.mjs";
@@ -149,3 +160,16 @@ export {
 export { KIT_VERSION } from "./src/version.mjs";
 export { VENDOR_TIERS, FALLBACK_TIER } from "./src/config.mjs";
 export { tierOptions } from "./src/wizard-init.mjs";
+
+// Statistical Flaky Ledger & Automated Healing Swarm
+export {
+  wilsonScoreInterval,
+  computeOscillation,
+  recordVerifyRun,
+  readVerifyRuns,
+  flakyVerdict,
+  listQuarantinedTests,
+  clearFlakyLedger,
+  synthesizeFlakyHealingTask,
+  runFlakyHealingSwarm,
+} from "./src/flaky-ledger.mjs";

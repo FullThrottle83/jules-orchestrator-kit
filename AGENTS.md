@@ -47,6 +47,8 @@ Operations run **only** via `agentctl`. Standalone helper scripts were removed a
 
 - Locks: `agentctl lock acquire <agent> <task_id> <file_path...>` (positional, no `--unattended`; conflict exits `1` naming the holder) · `lock status` · `lock release <task_id>`. *(was `scripts/lock-manager.mjs`)*
 - Learnings: `agentctl learning add "<trigger>" "<solution>"` — both args required; regenerates `.agent/SYSTEM_LEARNINGS.md`, never hand-edit it. *(was `scripts/add-learning.mjs`)*
+- Flaky tests: `agentctl flaky status` · `agentctl flaky heal` · `agentctl flaky reset`
+- Escalations: `agentctl escalate <session_id>` · `agentctl escalate --status` · `agentctl escalate --flush`
 - Prompt hydration: `agentctl hydrate [prompt]` · Self-audit: `npm run jules:audit` · Doc drift: `npm run jules:doc-sync`
 - Use `JULES_DRY_RUN=1` when exercising dispatch paths so no session is spent.
 
@@ -74,16 +76,11 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 
 ### Multi-Agent Coordination, Verification Gates & Web Envelopes
 
-- **Task Envelope Premise Validator**: Validates referenced paths, allowed scope, and base freshness before dispatching tasks (`node scripts/validate-envelope.mjs <envelope.json>`). Prevents session burnout on missing files.
-- **Web Development Task Envelopes**: Pre-calibrated task templates (`agentctl task template`) for frontend excellence:
-  - `web-cwv`: Core Web Vitals & Lighthouse Budget Guard (LCP < 1.2s, CLS < 0.05, INP < 100ms).
-  - `web-wcag`: WCAG 2.2 AA/AAA semantic accessibility, modal focus traps, color contrast (>= 4.5:1), and ARIA live-regions.
-  - `web-seo`: Schema.org structured data (JSON-LD), OpenGraph/Twitter cards, canonical tags, and sitemap integrity.
-  - `web-playwright`: E2E visual regression and multi-viewport responsive testing (375px, 768px, 1440px).
-  - `web-flaky-heal`: Playwright timing & async flakiness auto-remediation (network mocking, state isolation).
-- **Stale-Base Gate Predicate**: Rejects PRs/branches whose merge-base is > 25 commits behind `origin/main` (`node scripts/stale-base-check.mjs`).
-- **Asset Integrity Gate**: Inspects binary and font assets (`.woff2`, `.png`, `.jpg`) to ensure saved HTML/text error pages never land silently (`node scripts/asset-integrity-check.mjs`).
-- **Edge-Runtime Import Guard**: Automatically detects Edge environments (Cloudflare Workers, Vercel Edge, Netlify Edge) and blocks unsupported native Node.js module imports (`node:fs`, `node:child_process`, `node:net`, `node:tls`).
+- **Task Envelope Premise Validator**: Validates paths, scope, and base freshness (`agentctl task create`).
+- **Web Development Task Envelopes**: Pre-calibrated templates (`agentctl task template`): `web-cwv` (Core Web Vitals), `web-wcag` (Accessibility), `web-seo` (Structured data), `web-playwright` (E2E visual regression), `web-flaky-heal` (Async/timing flakiness auto-remediation).
+- **Stale-Base Gate Predicate**: Rejects PRs whose merge-base is > 25 commits behind `origin/main`.
+- **Asset Integrity Gate**: Inspects assets (`.woff2`, `.png`, `.jpg`) to ensure error pages never land silently.
+- **Edge-Runtime Import Guard**: Blocks unsupported native Node imports (`node:fs`, `node:child_process`) in Edge environments.
 
 ### Standard Jules Guardrails Footer
 

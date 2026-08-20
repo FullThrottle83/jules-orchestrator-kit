@@ -151,6 +151,62 @@ The automatic OODA loop above does **not** use it: `repair()` calls `provider.di
 
 ---
 
+## Pipeline C — Type III Silence Governor & Interruption Budgeting
+
+`dispatchEscalation()` and `flushEscalationDigest()` in `src/webhook.mjs`.
+
+Protects developer attention by buffering non-critical notifications while guaranteeing zero-latency delivery for critical escalations.
+
+<p align="center">
+  <img src="assets/silence-governor.svg" alt="Type III Silence Governor Architecture" width="100%" />
+</p>
+
+1. **Critical Bypass (0ms)**: Incidents matching `DEFAULT_CRITICAL_REASONS` (`R3_GATE_VIOLATION`, `AWAITING_USER_FEEDBACK`, `OODA_REPAIR_EXHAUSTED`, `SECRET_LEAK_DETECTED`) or carrying `critical: true` are dispatched immediately to configured Slack/Discord endpoints.
+2. **Interruption Budget**: Immediate non-critical alerts are throttled to `notifications.budgetPerHour` (default 3) via a sliding 1-hour window in `.agent/state/interruption-ledger.json`.
+3. **Digest Mode & Batch Flush**: When `notifications.mode` is set to `"digest"`, non-critical incidents buffer in `.agent/state/escalation-digest.json` and auto-flush upon reaching `threshold` (default 5) or via explicit operator trigger (`agentctl escalate --flush`).
+4. **Secret Scrubbing**: All error logs are scrubbed with `redactSecrets()` before formatting webhook markdown blocks.
+
+---
+
+## Pipeline D — Statistical Flaky Test Healing Swarm
+
+`listQuarantinedTests()` and `runFlakyHealingSwarm()` in `src/flaky-ledger.mjs`.
+
+Consumes Wilson-Score quarantined test suites (Exit Code 8) and executes targeted remediation without test assertion weakening.
+
+<p align="center">
+  <img src="assets/flaky-healing-swarm.svg" alt="Automated Flaky Test Healing Swarm Architecture" width="100%" />
+</p>
+
+1. **Wilson-Score Statistical Quarantine**: When a test command oscillates across consecutive verification runs ($\ge 0.40$ state transitions) and its Wilson confidence interval is interior ($0 < \text{lower} \text{ and } \text{upper} < 1$), `flakyVerdict()` quarantines the command with Exit Code 8.
+2. **Anti-Flakiness Task Synthesis**: `synthesizeFlakyHealingTask()` creates an envelope with:
+   - **Strict Invariant: No Test Weakening**: Deleting failing assertions, commenting out checks, or adding arbitrary broad sleep calls is strictly forbidden.
+   - Specific remediations for condition-based assertions, port collisions, and clean teardown hooks.
+   - Multi-iteration verification oracle (`cmd && cmd && cmd`).
+3. **Swarm Execution**: Queues tasks into `.agent/jules-queue/flaky-heal-*.md` for swarm workers (`agentctl flaky heal`).
+
+---
+
+## Pipeline E — DAG Task Queue Execution & Dependency Resolution
+
+`executeQueueDag()` in `src/dag-engine.mjs`.
+
+Resolves inter-task dependencies for tasks authored with `--depends-on <id,...>`.
+
+```mermaid
+graph TD
+    A["Task A: Refactor DB Schema (migrations/)"] --> B["Task B: Update API Models (src/models/)"]
+    A --> C["Task C: Update Auth Middleware (src/auth/)"]
+    B --> D["Task D: Update REST Endpoints (src/routes/)"]
+    C --> D
+```
+
+1. **Kahn's Topological Sort**: Parses task frontmatter envelopes in `.agent/jules-queue/` and calculates dependency execution order.
+2. **Cycle Detection**: Automatically rejects cyclic dependencies (`DagCycleError`) before starting execution.
+3. **DAG Concurrency Slots**: Executes unblocked leaf tasks in parallel while ensuring downstream tasks wait for dependency completion.
+
+---
+
 ## Verification Gate Phases
 
 Every phase runs against `origin/<base>` rules and short-circuits on first failure.

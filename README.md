@@ -98,7 +98,9 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **⚡ AST Blast-Radius Selective Testing:** Traverses file import dependency graphs to execute only affected downstream test suites, cutting monorepo test latency from minutes to milliseconds.
 
-* **🚨 Asynchronous HITL Escalation Bridge (`agentctl escalate`):** Dispatches Slack & Discord webhook alerts when Jules needs feedback, allowing engineers to unblock agents asynchronously via `agentctl resume <id> --response "<reply>"`.
+* **🔕 Type III Silence Governor & Interruption Budgeting (`v0.35.0`):** `agentctl escalate` manages Slack and Discord webhook alerts with configurable digest modes and hourly interruption budgets, buffering non-critical notifications while guaranteeing zero-latency delivery for critical escalations.
+
+* **🩹 Automated Flaky Test Healing Swarm (`v0.35.0`):** `agentctl flaky heal` automatically consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness repair tasks to eliminate race conditions, async timing leaks, and resource collisions without weakening test assertions.
 
 * **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`). Zero third-party npm packages mean zero supply-chain CVE risk.
 
@@ -120,7 +122,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 * **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
 
-* **📈 Proven Scale & Reliability:** Empirically tested with **510 unit tests across 77 suites passing in < 10.0s**. An adversarial red-team suite (`test/adversarial-claims.test.mjs`) continuously attempts to falsify the safety guarantees documented above — including cross-platform probes for the case-insensitive filesystems on macOS and Windows — and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
+* **📈 Proven Scale & Reliability:** Empirically tested with **526 unit tests across 79 suites passing in < 10.0s**. An adversarial red-team suite (`test/adversarial-claims.test.mjs`) continuously attempts to falsify the safety guarantees documented above — including cross-platform probes for the case-insensitive filesystems on macOS and Windows — and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
 
 <br/>
 
@@ -404,9 +406,11 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
 | `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
 | `evidence` | `agentctl evidence <generate\|verify\|show> [--manifest <path>] [--json]` | Generates, verifies, or prints a SHA-256 cryptographic evidence manifest (changed-file hashes + test-file tamper lock) for audit trails. | `0` (Verified/Generated), `1` (Tamper detected / Verification failed) |
+| `escalate` | `agentctl escalate [<sessionId>] [--status] [--flush] [--clear]` | Dispatches or manages webhook escalation incidents across Slack and Discord with Type III Silence Governor and interruption budgeting. | `0` (Dispatched/Buffered) |
+| `flaky` | `agentctl flaky <status\|heal\|reset> [--dispatch] [--dry-run] [--role <name>]` | Manages Wilson-quarantined tests (Exit Code 8) and dispatches automated anti-flakiness healing swarm without assertion weakening. | `0` (Healed/Queued/Listed) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
 | `mcp init` | `agentctl mcp init [--target cursor\|vscode\|claude\|all]` | 1-click scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | `0` (Scaffolded) |
-| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.32.5`). | `0` |
+| `version` | `agentctl version` | Outputs orchestrator kit semantic version. | `0` |
 
 <br/>
 

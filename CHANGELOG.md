@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.35.0] - 2026-08-20
+### Swarm Autonomy, Silence Governor & Flaky Test Healing
+
+This release introduces the Type III Silence Governor to protect developer attention during high-throughput autonomous agent workflows, alongside an automated Flaky Test Healing Swarm to eliminate test oscillations without weakening assertions.
+
+#### Added
+- **Type III Silence Governor & Interruption Budgeting (`src/webhook.mjs`, `src/config.mjs`, `agentctl escalate`)**:
+  - Configurable notification modes (`mode: "immediate" | "digest" | "threshold" | "silent"`) via `.agent/config.yml` under `notifications:`.
+  - Sliding 1-hour interruption budget ledger (`budgetPerHour`, default 3) in `.agent/state/interruption-ledger.json` to prevent webhook fatigue.
+  - Zero-latency critical bypass for high-priority incidents (`R3_GATE_VIOLATION`, `AWAITING_USER_FEEDBACK`, `OODA_REPAIR_EXHAUSTED`, `SECRET_LEAK_DETECTED`).
+  - Buffered multi-incident digest formatting for Slack and Discord webhooks with automated credential scrubbing.
+  - CLI management: `agentctl escalate <sessionId>` (`--status`, `--flush`, `--clear`).
+- **Automated Flaky Test Healing Swarm (`src/flaky-ledger.mjs`, `agentctl flaky`)**:
+  - `listQuarantinedTests(root)` scans historical test outcomes and identifies Wilson-quarantined suites (Exit Code 8, oscillation $\ge 0.40$).
+  - `synthesizeFlakyHealingTask(item)` formats structured anti-flakiness envelopes enforcing the strict **No Test Weakening Rule** (prohibiting assertion deletion, skipped checks, or arbitrary timeouts) with multi-run verification oracles (`${testCmd} && ${testCmd} && ${testCmd}`).
+  - `runFlakyHealingSwarm(root)` queues repair tasks in `.agent/jules-queue/` or dispatches them directly to worker swarms.
+  - CLI commands: `agentctl flaky status`, `agentctl flaky heal`, `agentctl flaky reset`.
+- **Repository `.gitattributes` Linguist Overrides**:
+  - De-indexes and collapses internal agent prompt templates, state directories, test suites, and generated data from GitHub language statistics and diff search.
+
 ## [0.34.0] - 2026-08-20
 ### Rolling 24-Hour Quota Window & Real Plan Concurrency
 

@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.34.0 (Current Stable) ──► v0.35.0 ──► v1.0.0 (Production Kernel)
- (Rolling Quota Window)     (Swarm Autonomy) (Enterprise Hardened)
+ v0.35.0 (Current Stable) ──► v1.0.0 (Production Kernel)
+ (Swarm Autonomy)           (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.34.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.35.0)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -86,15 +86,9 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **Time-Boxed Learned Ceiling** — A provider refusal now ages out 24 hours after it happened rather than at midnight, matching the window the quota itself resets on, and reports when it expires. Pre-0.34 records carry only a day and keep the old comparison.
 - [x] **Real Plan Concurrency** (`TIER_PRESETS` in `src/config.mjs`) — Defaults raised from 1/2/3 to 3/8/15 against published ceilings of 3/15/60; a Pro account had been running two workers where fifteen were available. The vendor ceiling is now recorded as `maxConcurrency`, separate from the kit's default, and `resolveConcurrency()` applies the same provenance rule the daily limit already used: an operator-stated figure is authoritative, a preset is a guess. An overrun is reported by `agentctl doctor`, never blocked — the provider enforces its own slot limit, and a pooled account legitimately exceeds any single plan's.
 
----
-
-## 🎯 Target Milestone v0.35.0: Swarm Autonomy & Interruption Budgeting
-*Focus: Multi-agent coordination and protecting developer attention.*
-
-- [ ] **Type III Silence Governor & Interruption Budgeting**:
-  - Configurable digest mode for escalation webhooks (`src/webhook.mjs`), suppressing non-critical notifications to protect developer focus until context shifts or critical manual intervention thresholds.
-- [ ] **Automated Flaky Test Healing Swarm**:
-  - Background worker that consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness prompt templates to repair timing and race conditions.
+### v0.35.0: Swarm Autonomy, Silence Governor & Flaky Test Healing
+- [x] **Type III Silence Governor & Interruption Budgeting** (`src/webhook.mjs`, `agentctl escalate`) — Configurable digest mode for escalation webhooks (`mode: immediate | digest | threshold | silent`), suppressing non-critical notifications to protect developer focus until context shifts or critical manual intervention thresholds (`R3_GATE_VIOLATION`, `AWAITING_USER_FEEDBACK`, `OODA_REPAIR_EXHAUSTED`). Hourly interruption budget and secret redaction.
+- [x] **Automated Flaky Test Healing Swarm** (`src/flaky-ledger.mjs`, `agentctl flaky heal`) — Background coordinator and CLI (`agentctl flaky heal`) that consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness prompt templates and repeated verification oracles to repair timing and race conditions without test weakening.
 
 ---
 
