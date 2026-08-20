@@ -2,14 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-### Dynamic Complexity & Cost Router
-- **Provider-Agnostic Cost Router (`src/router.mjs`, `router:` in `.agent/config.yml`)**: New zero-dependency, rule-based `classifyTaskComplexity()` heuristic and `resolveRoutedProvider()` resolver. Opt-in via `router.enabled` (default `false`, zero behavior change for existing users). Routes trivial/mechanical tasks to a fast/cheap provider and complex, multi-file, or safety-sensitive tasks to the primary provider.
+## [0.32.5] - 2026-08-20
+### Provider Security Hardening, Git Test Oracle & Dynamic Complexity Router
+- **Provider URL Token Leakage Guard (`src/provider.mjs`, `test/provider-hardening.test.mjs`)**: Added strict validation in `createProvider()` rejecting custom HTTP provider specifications whose `url` or `sendMessageUrl` templates contain `{token}`. Isolated raw API credentials exclusively to HTTP request headers (`headerData`), preventing tokens from interpolating into URL paths/query strings where they could leak into access logs and HTTP referrers.
+- **Additive Git Core Test Suite (`test/git.test.mjs`)**: Created comprehensive native `node:test` suite for `src/git.mjs` verifying command execution (`runCmd`, non-zero exit codes, buffer limits `ENOBUFS`, timeouts `ETIMEDOUT`), shell escaping, git operations, worktree lifecycle management (`worktreeRemove`, `worktreePrune`), and base commit resolution.
+- **Dynamic Complexity & Cost Router (`src/router.mjs`, `router:` in `.agent/config.yml`)**: New zero-dependency, rule-based `classifyTaskComplexity()` heuristic and `resolveRoutedProvider()` resolver. Opt-in via `router.enabled` (default `false`, zero behavior change for existing users). Routes trivial/mechanical tasks to a fast/cheap provider and complex, multi-file, or safety-sensitive tasks to the primary provider.
 - **Safety-First Routing**: Tasks touching `config.scope.deny` or built-in sensitive path patterns (`auth/**`, `migrations/**`, `pricing/**`, `secrets/**`, `*.pem`, `*.key`, `.github/**`) always force the primary provider, as does the `sentinel` role — these overrides cannot be downgraded by prompt wording. `janitor`/`bolt` roles nudge toward the fast tier; explicit `task.tier`/`--tier` always wins outright.
 - **Gemini CLI Fast-Tier Preset (`src/provider.mjs` `GEMINI_PRESET` / `gemini-flash`)**: Headless Gemini CLI exec preset (`gemini-3.6-flash`, `--approval-mode=yolo`, prompt via stdin), refactored `createProvider()`'s preset lookup into a `NAMED_PRESETS` map to accommodate it cleanly. Any provider spec (built-in or custom) works as `router.fast`/`router.complex` — not tied to Gemini or any single vendor.
 - **Cascade-on-Failure**: FAST-tier dispatch wraps `[fast, complex]` in the existing `createFailoverProvider`, so a rate-limited or unavailable fast provider automatically falls through to the primary provider — no new failover logic needed.
 - **`--tier fast|complex` Override**: Added to `agentctl dispatch`, `agentctl task create` (persisted in the task envelope and threaded through `agentctl queue --dag`), and the `dispatch_jules_task` MCP tool.
-- **Unit Test Coverage (`test/router.test.mjs`)**: 14 new tests covering classification heuristics, forced overrides, threshold tuning, and `engine.mjs` dispatch integration, bringing total passing unit tests to 421 across 59 test suites.
+- **Unit Test Coverage (`test/router.test.mjs`, `test/git.test.mjs`, `test/provider-hardening.test.mjs`)**: Total passing unit tests increased to 429 across 59 test suites with 0 lint errors.
 
 ### DAG Task Execution, Specialist Agent Roles & Cryptographic Evidence Ledger
 - **DAG-Ordered Queue Execution (`src/dag-engine.mjs`, `agentctl queue --dag`)**: Added `DagExecutor` with Kahn's-algorithm dependency resolution, cycle detection (`DagCycleError`), per-task timeout wrapping, and `--concurrency <n>` worker slot control, driven by `--depends-on` on `agentctl task create`.

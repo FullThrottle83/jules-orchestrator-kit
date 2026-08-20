@@ -136,6 +136,15 @@ export function createProvider(spec = "jules", config = {}) {
     throw new TypeError("Provider specification must be a string or object");
   }
 
+  if (providerSpec.type === "http") {
+    if (typeof providerSpec.url === "string" && providerSpec.url.includes("{token}")) {
+      throw new Error("CRITICAL: Insecure token interpolation in provider URL template. API tokens must be passed via headers, not URL paths or query params.");
+    }
+    if (typeof providerSpec.sendMessageUrl === "string" && providerSpec.sendMessageUrl.includes("{token}")) {
+      throw new Error("CRITICAL: Insecure token interpolation in provider sendMessageUrl template. API tokens must be passed via headers, not URL paths or query params.");
+    }
+  }
+
   return {
     name: providerSpec.name || "custom-provider",
 
@@ -184,11 +193,12 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       if (providerSpec.type === "http") {
-        const urlData = { ...data, token: rawToken };
+        const urlData = { ...data };
         const url = interpolateString(providerSpec.url, urlData);
+        const headerData = { ...urlData, token: rawToken };
         const headers = {};
         for (const [k, v] of Object.entries(providerSpec.headers || {})) {
-          const val = interpolateString(v, urlData);
+          const val = interpolateString(v, headerData);
           if (val.includes("\r") || val.includes("\n")) {
             throw new Error(`CRITICAL: Header injection attempt detected in header "${k}"`);
           }
@@ -354,12 +364,13 @@ export function createProvider(spec = "jules", config = {}) {
 
       if (providerSpec.type === "http") {
         const sendMessageUrlTemplate = providerSpec.sendMessageUrl || `${providerSpec.url}/${sessionId}:sendMessage`;
-        const urlData = { sessionId, token: rawToken, ...ctx };
+        const urlData = { sessionId, ...ctx };
         const url = interpolateString(sendMessageUrlTemplate, urlData);
 
+        const headerData = { ...urlData, token: rawToken };
         const headers = {};
         for (const [k, v] of Object.entries(providerSpec.headers || {})) {
-          const val = interpolateString(v, urlData);
+          const val = interpolateString(v, headerData);
           if (val.includes("\r") || val.includes("\n")) {
             throw new Error(`CRITICAL: Header injection attempt detected in header "${k}"`);
           }

@@ -406,7 +406,7 @@ Native stdio server exposing task dispatch, gate verification, and risk auditing
 | `evidence` | `agentctl evidence <generate\|verify\|show> [--manifest <path>] [--json]` | Generates, verifies, or prints a SHA-256 cryptographic evidence manifest (changed-file hashes + test-file tamper lock) for audit trails. | `0` (Verified/Generated), `1` (Tamper detected / Verification failed) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
 | `mcp init` | `agentctl mcp init [--target cursor\|vscode\|claude\|all]` | 1-click scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | `0` (Scaffolded) |
-| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.32.4`). | `0` |
+| `version` | `agentctl version` | Outputs orchestrator kit semantic version (`v0.32.5`). | `0` |
 
 <br/>
 

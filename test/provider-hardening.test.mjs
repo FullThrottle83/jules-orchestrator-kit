@@ -246,5 +246,34 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
       if (server) server.close();
     }
   });
+
+  await t.test("e) Insecure {token} interpolation in URL templates is rejected with critical security error", () => {
+    assert.throws(
+      () => {
+        createProvider({
+          type: "http",
+          url: "https://api.example.com/sessions?apiKey={token}",
+        });
+      },
+      (err) => {
+        assert.match(err.message, /Insecure token interpolation in provider URL template/);
+        return true;
+      }
+    );
+
+    assert.throws(
+      () => {
+        createProvider({
+          type: "http",
+          url: "https://api.example.com/sessions",
+          sendMessageUrl: "https://api.example.com/sessions/{sessionId}?token={token}",
+        });
+      },
+      (err) => {
+        assert.match(err.message, /Insecure token interpolation in provider sendMessageUrl template/);
+        return true;
+      }
+    );
+  });
 });
 
