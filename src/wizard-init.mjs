@@ -220,11 +220,20 @@ export function loadPresets(root = process.cwd()) {
 export async function runInitWizard(root = process.cwd(), options = {}) {
   const interactive = options.interactive !== false && isTTY(options.stdin || process.stdin);
 
-  if (!interactive && !options.allowDefaults && !options.tier) {
+  // Preserve existing config if present
+  let existingConfig = {};
+  const existingConfigPath = join(root, ".agent", "config.yml");
+  if (existsSync(existingConfigPath)) {
+    try {
+      existingConfig = parseYaml(readFileSync(existingConfigPath, "utf-8")) || {};
+    } catch (_) {}
+  }
+
+  if (!interactive && !options.allowDefaults && !options.tier && !existingConfig.tier) {
     throw new Error("Non-interactive init requires explicit options or allowDefaults: true");
   }
 
-  let selectedTier = options.tier || "pro";
+  let selectedTier = options.tier || existingConfig.tier || "pro";
   let testCmd = options.testCmd;
   let buildCmd = options.buildCmd;
   let selectedPresets = options.presets;
@@ -235,28 +244,35 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
     await new Promise((resolve) => setTimeout(resolve, 300));
     sp.stop(`Detected Stack: ${oracle.stack}`);
 
+    const optionsList = tierOptions();
+    const defaultTierIdx = Math.max(0, optionsList.findIndex((t) => t.value === selectedTier));
+
     selectedTier = await select(
-      tierOptions(),
+      optionsList,
       "Which plan does your Jules account use? (limits are adjustable later)",
-      options
+      { ...options, defaultIdx: defaultTierIdx }
     );
 
     testCmd = await input("Verification Test Command", {
-      defaultValue: oracle.candidates.testCmd || "npm test",
+      defaultValue: testCmd || existingConfig.verify?.test || oracle.candidates.testCmd || "npm test",
       stdin: options.stdin,
       stdout: options.stdout,
     });
 
     buildCmd = await input("Verification Build Command", {
-      defaultValue: oracle.candidates.buildCmd || "",
+      defaultValue: buildCmd || existingConfig.verify?.build || oracle.candidates.buildCmd || "",
       stdin: options.stdin,
       stdout: options.stdout,
     });
 
+    const defaultPresetSet = new Set(
+      selectedPresets || existingConfig.presets || BUILTIN_PRESETS.map((p) => p.id)
+    );
+
     const presetOptions = BUILTIN_PRESETS.map((p) => ({
       label: p.title,
       value: p.id,
-      checked: true,
+      checked: defaultPresetSet.has(p.id),
       description: p.description,
     }));
 

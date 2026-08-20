@@ -1278,6 +1278,10 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (err.name === "WizardCancelledError" || err.code === 130 || (err instanceof Error && err.message?.includes("cancelled by user"))) {
+    console.log(`\n🛑 ${err.message || "Operation cancelled by user."}`);
+    process.exit(130);
+  }
   console.error(`[FATAL ERROR] ${err.message}`);
   const exitCode = typeof err.code === "number" ? err.code : 1;
   process.exit(exitCode);

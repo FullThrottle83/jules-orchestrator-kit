@@ -180,4 +180,50 @@ test("Native Terminal UI (TUI) Engine", async (t) => {
       }
     );
   });
+
+  await t.test("interactive TTY input throws WizardCancelledError on Ctrl+C (\\u0003)", async () => {
+    const mockStdin = new PassThrough();
+    mockStdin.isTTY = true;
+    mockStdin.setRawMode = () => {};
+    const mockStdout = new PassThrough();
+
+    const inputPromise = input("Enter something", {
+      stdin: mockStdin,
+      stdout: mockStdout,
+    });
+
+    setTimeout(() => mockStdin.write("\u0003\n"), 10);
+
+    await assert.rejects(
+      async () => {
+        await inputPromise;
+      },
+      (err) => {
+        assert.equal(err instanceof WizardCancelledError, true);
+        assert.equal(err.code, 130);
+        return true;
+      }
+    );
+  });
+
+  await t.test("interactive TTY select navigates correctly with SS3 application arrow keys (\\u001bOB)", async () => {
+    const mockStdin = new PassThrough();
+    mockStdin.isTTY = true;
+    mockStdin.setRawMode = () => {};
+    const mockStdout = new PassThrough();
+
+    const selectPromise = select(
+      [
+        { label: "Option 1", value: "opt1" },
+        { label: "Option 2", value: "opt2" },
+      ],
+      "Select an option",
+      { stdin: mockStdin, stdout: mockStdout }
+    );
+
+    // Down arrow using SS3 sequence (\u001bOB) then Enter
+    setTimeout(() => mockStdin.write("\u001bOB\r"), 10);
+    const chosen = await selectPromise;
+    assert.equal(chosen, "opt2");
+  });
 });

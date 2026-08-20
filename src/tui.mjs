@@ -200,11 +200,11 @@ export async function select(options, prompt, opts = {}) {
       }
 
       let moved = false;
-      if (key === "\u001b[A" || key === "k") {
+      if (key === "\u001b[A" || key === "\u001bOA" || key === "k") {
         // Up
         currentIdx = (currentIdx - 1 + options.length) % options.length;
         moved = true;
-      } else if (key === "\u001b[B" || key === "j") {
+      } else if (key === "\u001b[B" || key === "\u001bOB" || key === "j") {
         // Down
         currentIdx = (currentIdx + 1) % options.length;
         moved = true;
@@ -284,10 +284,10 @@ export async function multiSelect(options, prompt, opts = {}) {
       }
 
       let redraw = false;
-      if (key === "\u001b[A" || key === "k") {
+      if (key === "\u001b[A" || key === "\u001bOA" || key === "k") {
         currentIdx = (currentIdx - 1 + options.length) % options.length;
         redraw = true;
-      } else if (key === "\u001b[B" || key === "j") {
+      } else if (key === "\u001b[B" || key === "\u001bOB" || key === "j") {
         currentIdx = (currentIdx + 1) % options.length;
         redraw = true;
       } else if (key === " ") {
@@ -341,7 +341,20 @@ export async function input(prompt, opts = {}) {
     while (true) {
       const defaultHint = defaultValue ? ` ${ANSI.dim}(${defaultValue})${ANSI.reset}` : "";
       const query = `${ANSI.bold}${ANSI.cyan}?${ANSI.reset} ${ANSI.bold}${prompt}${defaultHint}: `;
-      const rawAns = await rl.question(query);
+      let rawAns;
+      try {
+        rawAns = await rl.question(query);
+      } catch (err) {
+        if (err.name === "AbortError" || err.code === "ABORT_ERR" || err.message?.includes("Ctrl+C")) {
+          stdout.write("\n");
+          throw new WizardCancelledError("Wizard operation cancelled by user (SIGINT).");
+        }
+        throw err;
+      }
+      if (rawAns.includes("\u0003") || rawAns.includes("\x03")) {
+        stdout.write("\n");
+        throw new WizardCancelledError("Wizard operation cancelled by user (SIGINT).");
+      }
       const ans = rawAns.trim() || defaultValue;
 
       const validRes = await validate(ans);

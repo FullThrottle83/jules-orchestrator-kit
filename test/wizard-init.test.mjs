@@ -106,4 +106,46 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("runInitWizard in interactive TTY mode pre-populates existing config defaults and completes flow", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-interactive-"));
+    const mockStdin = new PassThrough();
+    mockStdin.isTTY = true;
+    mockStdin.setRawMode = () => {};
+    const mockStdout = new PassThrough();
+
+    try {
+      const agentDir = join(tmpDir, ".agent");
+      mkdirSync(agentDir, { recursive: true });
+      writeFileSync(
+        join(agentDir, "config.yml"),
+        "version: 1\ntier: ultra\nverify:\n  test: echo ok\n  build: echo build\npresets:\n  - nightly-security-audit\n"
+      );
+
+      const wizardPromise = runInitWizard(tmpDir, {
+        interactive: true,
+        stdin: mockStdin,
+        stdout: mockStdout,
+      });
+
+      // 1. Select tier (confirm with Enter)
+      setTimeout(() => mockStdin.write("\r"), 400);
+      // 2. Verification test command (confirm with Enter)
+      setTimeout(() => mockStdin.write("\n"), 600);
+      // 3. Verification build command (confirm with Enter)
+      setTimeout(() => mockStdin.write("\n"), 800);
+      // 4. Presets multiSelect (confirm with Enter)
+      setTimeout(() => mockStdin.write("\r"), 1000);
+      // 5. Probe confirmation (confirm with Enter)
+      setTimeout(() => mockStdin.write("\n"), 1200);
+
+      const res = await wizardPromise;
+      assert.equal(res.ok, true);
+      assert.equal(res.plan.tier, "ultra");
+      assert.equal(res.plan.verify.test, "echo ok");
+      assert.equal(res.plan.verify.build, "echo build");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
