@@ -10,6 +10,7 @@ import { join, dirname } from "node:path";
 import { readTelemetry, verifyTelemetryIntegrity } from "./telemetry.mjs";
 import { readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import { lockStatus } from "./state.mjs";
+import { KIT_VERSION } from "./version.mjs";
 
 const pkgVersion = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf-8")).version;
 
@@ -92,7 +93,7 @@ export function createDashboardServer({ root = process.cwd(), port: _port = 4100
 
     if (url.pathname === "/api/status") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      return res.end(JSON.stringify({ ok: true, version: "0.29.1", root, ts: new Date().toISOString() }));
+      return res.end(JSON.stringify({ ok: true, version: KIT_VERSION, root, ts: new Date().toISOString() }));
     }
 
     if (url.pathname === "/api/telemetry") {

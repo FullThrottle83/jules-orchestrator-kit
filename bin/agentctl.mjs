@@ -8,15 +8,16 @@ import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir } from "../src/state.mjs";
 import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
+import { KIT_VERSION } from "../src/version.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0];
 
-export const VERSION = "0.32.8";
+export const VERSION = KIT_VERSION;
 
 export function printHelp() {
   console.log(`
-🚀 agentctl v0.32.8 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v${VERSION} — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 

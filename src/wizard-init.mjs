@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { parseYaml } from "./config.mjs";
+import { parseYaml, TIER_PRESETS, VENDOR_TIERS, FALLBACK_TIER } from "./config.mjs";
 import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
+import { KIT_VERSION } from "./version.mjs";
 
 /**
  * Write a file atomically using a temporary file and atomic rename.
@@ -21,26 +22,51 @@ function writeAtomic(filePath, content) {
   renameSync(tmpPath, filePath);
 }
 
-export const TIER_PROFILES = {
-  free: {
-    concurrency: 1,
-    daily_tasks: 30,
-    stagger_ms: 3000,
-    diff_kb: 50,
-  },
-  pro: {
-    concurrency: 3,
-    daily_tasks: 300,
-    stagger_ms: 1500,
-    diff_kb: 75,
-  },
-  enterprise: {
-    concurrency: 10,
-    daily_tasks: 1000,
-    stagger_ms: 500,
-    diff_kb: 100,
-  },
+/**
+ * Snake_case projection of {@link TIER_PRESETS} for the YAML the wizard writes.
+ * Derived rather than declared: as a second literal table it drifted out of sync
+ * with the runtime and scaffolded configs with limits nothing else agreed on.
+ */
+export const TIER_PROFILES = Object.fromEntries(
+  Object.entries(TIER_PRESETS).map(([name, p]) => [
+    name,
+    {
+      concurrency: p.concurrency,
+      daily_tasks: p.dailyTasks,
+      stagger_ms: p.staggerMs,
+      diff_kb: p.diffKb,
+    },
+  ])
+);
+
+const TIER_LABELS = {
+  free: "Free",
+  pro: "Pro",
+  ultra: "Ultra",
+  enterprise: "Custom / self-hosted pool",
 };
+
+/**
+ * Build the tier menu from {@link TIER_PRESETS} so the prompt text cannot drift
+ * from the limits actually written. The hardcoded descriptions it replaces
+ * advertised numbers no tier had, and omitted `ultra` entirely.
+ *
+ * No option is marked "recommended": picking a plan the account does not have
+ * is precisely how the budget ends up guarding the wrong ceiling.
+ * @returns {Array<{ label: string, value: string, description: string }>}
+ */
+export function tierOptions() {
+  const order = [...VENDOR_TIERS, ...Object.keys(TIER_PRESETS).filter((t) => !VENDOR_TIERS.includes(t))];
+  return order.map((name) => {
+    const p = TIER_PRESETS[name];
+    const worker = p.concurrency === 1 ? "worker" : "workers";
+    return {
+      label: TIER_LABELS[name] || name,
+      value: name,
+      description: `${p.concurrency} ${worker}, ~${p.dailyTasks} daily tasks, ${p.diffKb} KB diff limit`,
+    };
+  });
+}
 
 export const BUILTIN_PRESETS = [
   {
@@ -86,7 +112,9 @@ export const BUILTIN_PRESETS = [
 export function planInit(root = process.cwd(), options = {}) {
   const oracle = detectStackOracles(root);
   const tierName = options.tier || "pro";
-  const limits = TIER_PROFILES[tierName] || TIER_PROFILES.pro;
+  // An unrecognised name resolves the same way loadConfig() resolves it, so the
+  // scaffolded limits always match what the runtime will later enforce.
+  const limits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
 
   // Preserve existing config if present
   let existingConfig = {};
@@ -106,7 +134,7 @@ export function planInit(root = process.cwd(), options = {}) {
 
   const selectedPresets = options.presets || existingConfig.presets || ["nightly-security-audit", "flaky-test-quarantine"];
 
-  const configYaml = `# Google Jules Orchestrator Kit Config (v0.29.0)
+  const configYaml = `# Google Jules Orchestrator Kit Config (v${KIT_VERSION})
 version: 1
 provider: ${existingConfig.provider || "jules"}
 tier: ${tierName}
@@ -203,12 +231,8 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
     sp.stop(`Detected Stack: ${oracle.stack}`);
 
     selectedTier = await select(
-      [
-        { label: "Pro Tier (Recommended)", value: "pro", description: "3 parallel workers, 300 daily tasks, 75 KB diff limit" },
-        { label: "Free / Individual Tier", value: "free", description: "1 worker, 30 daily tasks, 50 KB diff limit" },
-        { label: "Custom Enterprise", value: "enterprise", description: "10 workers, 1000 daily tasks, 100 KB diff limit" },
-      ],
-      "Select Jules Orchestrator Usage Tier",
+      tierOptions(),
+      "Which plan does your Jules account use? (limits are adjustable later)",
       options
     );
 

@@ -6,10 +6,11 @@ import { checkDailyBudget, lockStatus } from "./state.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "./journal.mjs";
 import { readTelemetry } from "./telemetry.mjs";
 import { ProgressBus } from "./mcp-progress.mjs";
+import { KIT_VERSION } from "./version.mjs";
 
 export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
-  version: "0.29.1",
+  version: KIT_VERSION,
 };
 
 export const MAX_MCP_FRAME_SIZE = 4 * 1024 * 1024; // 4 MB memory safety ceiling

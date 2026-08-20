@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handleMcpRequest, startMcpServer, MCP_SERVER_INFO, MCP_TOOLS } from "../src/mcp.mjs";
 import { BudgetError } from "../src/state.mjs";
+import { KIT_VERSION } from "../src/version.mjs";
 import { PassThrough } from "node:stream";
 import { spawnSync } from "node:child_process";
 
@@ -66,7 +67,9 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 5);
     const parsed = JSON.parse(res.result.content[0].text);
-    assert.equal(parsed.version, "0.29.1");
+    // Asserted against the manifest rather than a literal: this test used to
+    // pin 0.29.1 and kept passing while the CLI banner moved on to 0.32.x.
+    assert.equal(parsed.version, KIT_VERSION);
     assert.equal(typeof parsed.budget.used, "number");
   });
 

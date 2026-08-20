@@ -270,6 +270,17 @@ export function resolveVerify(root = process.cwd(), userVerify = {}) {
   };
 }
 
+/**
+ * The single source of truth for tier defaults. `src/wizard-init.mjs` projects
+ * this into snake_case rather than keeping a second table: the two tables
+ * previously disagreed (wizard wrote free=30 while the runtime assumed 15), so
+ * a freshly initialised repo was budgeted against numbers no other code used.
+ *
+ * `dailyTasks` here is a *hint*, not a fact. Provider quotas are set by the
+ * vendor and change without notice, so these numbers are only ever a starting
+ * guess — see `isTierGuess()` and the learned-ceiling logic in src/state.mjs.
+ * An explicit `limits.daily_tasks` in .agent/config.yml always wins.
+ */
 export const TIER_PRESETS = {
   free: {
     dailyTasks: 15,
@@ -292,7 +303,23 @@ export const TIER_PRESETS = {
     staggerMs: 1000,
     diffKb: 75,
   },
+  // Not a vendor plan: a self-hosted/pooled profile for operators who front
+  // several accounts. Defined here so `tier: enterprise` resolves to what the
+  // wizard writes instead of silently collapsing onto the ultra preset.
+  enterprise: {
+    dailyTasks: 1000,
+    repairAttempts: 3,
+    concurrency: 10,
+    staggerMs: 500,
+    diffKb: 100,
+  },
 };
+
+/** Tier names that correspond to real vendor plans, in ascending order. */
+export const VENDOR_TIERS = ["free", "pro", "ultra"];
+
+/** The tier used when a config names one that does not exist. */
+export const FALLBACK_TIER = "ultra";
 
 /**
  * Loads and validates configuration from .agent/config.yml or .agent/jules.yml.
