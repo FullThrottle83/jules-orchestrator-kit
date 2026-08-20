@@ -259,6 +259,25 @@ async function main() {
         }
         console.log(`-----------------------------------------------------`);
         console.log(`Overall Result: ${res.ok ? "APPROVED (Exit 0)" : `REJECTED (Exit ${res.code})`}\n`);
+        if (!res.ok) {
+          if (res.code === 3) {
+            console.log(`💡 Remediation Hint (Exit 3 Scope Violation):`);
+            console.log(`   • To allow protected files in this run, pass: agentctl gate --allow-protected`);
+            console.log(`   • Or remove protected/denied paths from the diff before dispatching.\n`);
+          } else if (res.code === 5) {
+            console.log(`💡 Remediation Hint (Exit 5 Diff Payload Overflow):`);
+            console.log(`   • Total diff exceeds ${config.limits?.diffKb || 75} KB limit.`);
+            console.log(`   • Split the task into smaller atomic tasks using: agentctl task create\n`);
+          } else if (res.code === 6) {
+            console.log(`💡 Remediation Hint (Exit 6 Secret Leak Prevented):`);
+            console.log(`   • High-entropy credential or secret detected in patch.`);
+            console.log(`   • Scrub credential from source and rotate any exposed keys immediately.\n`);
+          } else if (res.code === 4) {
+            console.log(`💡 Remediation Hint (Exit 4 OODA Repair Exhausted):`);
+            console.log(`   • Automated self-repair could not pass tests cleanly.`);
+            console.log(`   • Review error fingerprints via: agentctl doctor\n`);
+          }
+        }
       }
 
       process.exit(typeof res.code === "number" ? res.code : 0);
