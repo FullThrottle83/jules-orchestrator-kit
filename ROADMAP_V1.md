@@ -11,8 +11,8 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.38.0 (Current Stable) ──► v1.0.0 (Production Kernel)
- (Universal i18n & Swarm)   (Enterprise Hardened)
+ v0.38.0 (Current Stable) ──► v0.40.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ (Universal i18n & Swarm)    (Guillotine & Trojan Fences)   (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
@@ -114,6 +114,31 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **macOS Darwin Process Inspection** (`src/state.mjs`) — Added BSD/Darwin `ps -p <pid> -o lstart=` support in `getProcessStartTime` for reliable PID recycling protection on macOS.
 - [x] **Windows Command Quoting & Path Normalization** (`src/git.mjs`, `test/`) — Native `child_process.execSync` for shell execution and cross-platform backslash normalization in test harnesses.
 - [x] **TUI Raw Mode & Interactive Wizard Cancellation** (`src/ux/terminal-session.mjs`, `src/tui.mjs`, `src/wizard-init.mjs`) — SS3 arrow navigation, `WizardCancelledError` (exit code 130) on Ctrl+C, and non-destructive re-init defaults preservation.
+
+---
+
+## 🎯 Intermediate Target Milestones (v0.39.0 – v0.60.0)
+
+### v0.39.0: Subshell Process Containment & Context Slicing
+- [ ] **POSIX/Win32 Process Group Guillotine (`src/engine.mjs`, `src/process.mjs`)** — Spawns subshell executions with `{ detached: true }` / new process group; implements reliable tree teardown via `process.kill(-pid, 'SIGKILL')` on POSIX and `taskkill /T /F /PID` on Windows to eliminate orphaned dev-servers, Jest/Vite watchers, and subshell zombies (preventing `EADDRINUSE` port exhaustion).
+- [ ] **Native Stdio/Stderr Sliding-Window Governor (`src/prompt-guard.mjs`, `src/ux/log-viewer.mjs`)** — Enforces bounded circular buffer limits for `stdout`/`stderr` before injecting traces into prompt envelopes, preventing V8 string length exhaustion and LLM context window overflows during verbose build/test runs.
+- [ ] **Graceful Rollback & Dirty Working Tree Hook (`src/ops/transaction.mjs`)** — Automated `git restore` and clean-up safety trap in transaction lifecycles, ensuring aborted or crashing agent runs leave zero syntax trash or fractured uncommitted states.
+
+### v0.40.0: OODA Stabilization, Semantic Oscillation & Trojan Fencing
+- [ ] **OODA Thrash Cycle Breaker (`src/dag-engine.mjs`, `src/review-repair.mjs`)** — Rolling SHA-256 state tracking over proposed diff hunks per file during automated repair loops; immediately trips circuit breaker (Exit Code 4) upon detecting semantic ping-pong ($A \to B \to A$) to halt token drain.
+- [ ] **Unicode Trojan Source & Homoglyph Fencing (`src/security.mjs`)** — Deterministic $O(n)$ token scanner using V8 Unicode Property Escapes (`\p{Script=...}`) and NFKC normalization to block invisible Bidi overrides (CVE-2021-42574), zero-width smugglings, and mixed-script homoglyphs in agent diffs.
+
+### v0.45.0: In-Memory Git Plumbing & Ephemeral Merges
+- [ ] **In-Memory 3-Way Merge Virtualizer (`src/git.mjs`, `src/dag-engine.mjs`)** — Leverages `git merge-tree --write-tree` to compute three-way merges in-memory within the Git object database without touching disk worktrees or risking `.git/index.lock` collisions across concurrent swarm workers.
+- [ ] **Ephemeral Workspace Shadow Sandboxing (`src/git.mjs`)** — Provisions isolated ephemeral Git indexes via `GIT_INDEX_FILE` for non-destructive dry-run patch verification and stage validation before touching the working branch.
+
+### v0.50.0: Test Oracle Anti-Tampering & Diff Mutation Testing
+- [ ] **Test-Assertion Tampering & Weakening Detection (`src/security.mjs`, `src/test-oracle.mjs`)** — Static diff analysis gate detecting deceptive agent passes: flags downgrades in assertion strictness (`===` to `==`, `.toStrictEqual` to `.toBeTruthy`), deleted or commented assertions, and injection of test-skip directives (`.skip`, `t.Skip()`, `@pytest.mark.skip`).
+- [ ] **Diff-Hunk Mutation Testing Harness (`src/mutation.mjs`)** — Zero-dependency localized AST/operator inverter on agent-added lines (`+` hunks) to execute affected test suites and mathematically verify that test assertions fail (kill the mutant) when agent logic is inverted.
+
+### v0.60.0: Distributed File Leases & Preemptive DAG Scheduling
+- [ ] **Atomic Filesystem Lease & Heartbeat Protocol (`src/engine.mjs`, `src/flaky-ledger.mjs`)** — Directory-mutex file leasing with heartbeat timestamps, stale-lock detection via PID liveness inspection, and tombstone rotation without third-party daemons or Redis.
+- [ ] **Preemptive Task Cancellation & Interface Fingerprints (`src/dag-engine.mjs`)** — Automatically aborts and yields downstream swarm tasks when upstream exported symbol interfaces diverge from their cryptographic SHA-256 fingerprints.
 
 ---
 

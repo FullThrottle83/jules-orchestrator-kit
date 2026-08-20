@@ -46,7 +46,7 @@ Commands:
   swarm                 Run parallel task swarm
   mcp                   Start stdio Model Context Protocol (MCP) server
   clean                 Clean stale branches, worktrees, locks, and ledgers
-  lock <action>         Manage mutex locks (acquire | release | status | cleanup)
+  lock <action>         Manage mutex locks (acquire | release | status)
   doctor                Run system diagnostics and stack resolution checks
   bootstrap             Bootstrap zero-test repository with verification oracle
   review-repair         Parse PR review comments and synthesize OODA repair tasks
