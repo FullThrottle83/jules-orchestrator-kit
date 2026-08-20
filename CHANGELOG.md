@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.35.1] - 2026-08-20
+### Universal Web Internationalization (i18n) Template
+
+#### Added
+- **`web-i18n` Task Envelope Template (`src/web-templates.mjs`, `agentctl task template web-i18n`)**:
+  - Pre-calibrated verification envelope for multi-language locale routing, bidirectional symmetric `<link rel="alternate" hreflang="...">` tags (including `x-default`), dynamic `<html lang="...">` validation, and missing translation fallback safety.
+  - Integration with the Google Labs Exploration Budget Protocol and Critic Agent steering for internationalized web applications.
+
 ## [0.35.0] - 2026-08-20
 ### Swarm Autonomy, Silence Governor & Flaky Test Healing
 

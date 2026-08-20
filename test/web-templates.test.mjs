@@ -11,13 +11,14 @@ import { handleMcpRequest } from "../src/mcp.mjs";
 test("listWebTemplates returns all registered web templates", () => {
   const templates = listWebTemplates();
   assert.ok(Array.isArray(templates));
-  assert.ok(templates.length >= 5);
+  assert.ok(templates.length >= 6);
   const ids = templates.map((t) => t.id);
   assert.ok(ids.includes("web-cwv"));
   assert.ok(ids.includes("web-wcag"));
   assert.ok(ids.includes("web-seo"));
   assert.ok(ids.includes("web-playwright"));
   assert.ok(ids.includes("web-flaky-heal"));
+  assert.ok(ids.includes("web-i18n"));
 });
 
 test("getWebTemplate retrieves specific template by id case-insensitively", () => {
@@ -26,6 +27,12 @@ test("getWebTemplate retrieves specific template by id case-insensitively", () =
   assert.equal(cwv.id, "web-cwv");
   assert.equal(cwv.category, "Performance");
   assert.ok(cwv.criticFocus.length > 0);
+
+  const i18n = getWebTemplate("WEB-I18N");
+  assert.ok(i18n);
+  assert.equal(i18n.id, "web-i18n");
+  assert.equal(i18n.category, "Internationalization & SEO");
+  assert.ok(i18n.criticFocus.length > 0);
 
   const nonExistent = getWebTemplate("invalid-template");
   assert.equal(nonExistent, null);
@@ -49,7 +56,7 @@ test("synthesizeWebEnvelope generates structured envelope with exploration budge
   assert.ok(env.fullEnvelope.includes("< 0.02"));
 });
 
-test("synthesizeWebEnvelope works for web-wcag, web-seo, web-playwright, and web-flaky-heal", () => {
+test("synthesizeWebEnvelope works for web-wcag, web-seo, web-playwright, web-flaky-heal, and web-i18n", () => {
   const wcagEnv = synthesizeWebEnvelope("web-wcag", { targetComponentOrRoute: "Navbar & Modal dialogs" });
   assert.ok(wcagEnv.fullEnvelope.includes("Navbar & Modal dialogs"));
   assert.ok(wcagEnv.fullEnvelope.includes("Accessibility Hard Invariants"));
@@ -57,6 +64,10 @@ test("synthesizeWebEnvelope works for web-wcag, web-seo, web-playwright, and web
   const seoEnv = synthesizeWebEnvelope("web-seo", { schemaType: "Product, BreadcrumbList" });
   assert.ok(seoEnv.fullEnvelope.includes("Product, BreadcrumbList"));
   assert.ok(seoEnv.fullEnvelope.includes("Structured Data (JSON-LD)"));
+
+  const i18nEnv = synthesizeWebEnvelope("web-i18n", { targetLocales: "en, sv, no, da" });
+  assert.ok(i18nEnv.fullEnvelope.includes("en, sv, no, da"));
+  assert.ok(i18nEnv.fullEnvelope.includes("Symmetric Hreflang Alternate Links"));
 
   const pwEnv = synthesizeWebEnvelope("web-playwright", { targetFeature: "Cart checkout flow" });
   assert.ok(pwEnv.fullEnvelope.includes("Cart checkout flow"));

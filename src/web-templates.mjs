@@ -193,6 +193,46 @@ export const WEB_TEMPLATES = {
 5. **Stability Verification**:
    - Test suite must pass cleanly across ${reps} consecutive runs without a single failure.`;
     }
+  },
+
+  "web-i18n": {
+    id: "web-i18n",
+    name: "Internationalization (i18n), Locale Routing & Hreflang Integrity",
+    description: "Verify multi-language routing, symmetric hreflang alternate links, html lang attributes, and translation fallback safety.",
+    defaultVerifyCmd: "npm test",
+    category: "Internationalization & SEO",
+    criticFocus: [
+      "Confirm that hreflang alternate tags are fully bidirectional and symmetric across all locale variants.",
+      "Check that the <html> tag dynamically renders the correct ISO 639-1 / BCP 47 lang attribute for the active route.",
+      "Verify that localized URL slugs and route parameters handle non-ASCII unicode characters cleanly without encoding errors.",
+      "Ensure missing translation keys resolve to configured fallback locales rather than displaying raw placeholder strings or throwing runtime exceptions."
+    ],
+    defaultParams: {
+      targetLocales: "en, sv, de, fr",
+      defaultLocale: "en",
+      targetRoutes: "all public routes"
+    },
+    generatePrompt: (params = {}) => {
+      const locales = params.targetLocales || "en, sv, de, fr";
+      const defaultLoc = params.defaultLocale || "en";
+      const routes = params.targetRoutes || "all public routes";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Implement and verify comprehensive Internationalization (i18n) and locale routing integrity for ${routes}.${customGoal}
+
+### i18n & Hreflang Acceptance Criteria:
+1. **Symmetric Hreflang Alternate Links**:
+   - Every page across target locales (${locales}) must render bidirectional \`<link rel="alternate" hreflang="..." href="...">\` tags pointing to all counterparts, including self and \`hreflang="x-default"\` (pointing to ${defaultLoc}).
+2. **HTML Root & Metadata Localization**:
+   - The root \`<html lang="...">\` attribute must accurately match the active page locale.
+   - Page \`<title>\`, \`<meta name="description">\`, and OpenGraph (\`og:locale\` / \`og:locale:alternate\`) tags must be fully localized.
+3. **Locale Routing & Missing Translation Fallback**:
+   - Clean URL routing for all supported locales with zero redirect loops or 404 dead-ends.
+   - Missing translation keys must gracefully fall back to default locale (\`${defaultLoc}\`) without runtime panics or raw string delimiters.
+4. **Encoding & Number/Date Formats**:
+   - UTF-8 clean encoding with zero unescaped unicode artefacts.
+   - Localized formatting for dates, currencies, and numbers using standard Intl APIs.`;
+    }
   }
 };
 

@@ -77,7 +77,7 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 ### Multi-Agent Coordination, Verification Gates & Web Envelopes
 
 - **Task Envelope Premise Validator**: Validates paths, scope, and base freshness (`agentctl task create`).
-- **Web Development Task Envelopes**: Pre-calibrated templates (`agentctl task template`): `web-cwv` (Core Web Vitals), `web-wcag` (Accessibility), `web-seo` (Structured data), `web-playwright` (E2E visual regression), `web-flaky-heal` (Async/timing flakiness auto-remediation).
+- **Web Development Task Envelopes**: Pre-calibrated templates (`agentctl task template`): `web-cwv` (Core Web Vitals), `web-wcag` (Accessibility), `web-seo` (Structured data), `web-playwright` (E2E visual regression), `web-flaky-heal` (Async/timing flakiness auto-remediation), `web-i18n` (Hreflang & locale routing).
 - **Stale-Base Gate Predicate**: Rejects PRs whose merge-base is > 25 commits behind `origin/main`.
 - **Asset Integrity Gate**: Inspects assets (`.woff2`, `.png`, `.jpg`) to ensure error pages never land silently.
 - **Edge-Runtime Import Guard**: Blocks unsupported native Node imports (`node:fs`, `node:child_process`) in Edge environments.

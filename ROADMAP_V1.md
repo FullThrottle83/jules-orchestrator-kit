@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.35.0 (Current Stable) ──► v1.0.0 (Production Kernel)
- (Swarm Autonomy)           (Enterprise Hardened)
+ v0.35.1 (Current Stable) ──► v1.0.0 (Production Kernel)
+ (Universal i18n & Swarm)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.35.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.35.1)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -89,6 +89,9 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ### v0.35.0: Swarm Autonomy, Silence Governor & Flaky Test Healing
 - [x] **Type III Silence Governor & Interruption Budgeting** (`src/webhook.mjs`, `agentctl escalate`) — Configurable digest mode for escalation webhooks (`mode: immediate | digest | threshold | silent`), suppressing non-critical notifications to protect developer focus until context shifts or critical manual intervention thresholds (`R3_GATE_VIOLATION`, `AWAITING_USER_FEEDBACK`, `OODA_REPAIR_EXHAUSTED`). Hourly interruption budget and secret redaction.
 - [x] **Automated Flaky Test Healing Swarm** (`src/flaky-ledger.mjs`, `agentctl flaky heal`) — Background coordinator and CLI (`agentctl flaky heal`) that consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness prompt templates and repeated verification oracles to repair timing and race conditions without test weakening.
+
+### v0.35.1: Universal Web Internationalization (i18n) Template
+- [x] **Universal `web-i18n` Task Envelope Template** (`src/web-templates.mjs`) — Standardized verification envelope for multi-language locale routing, bidirectional symmetric `<link rel="alternate" hreflang="...">` integrity (including self & `x-default`), dynamic `<html lang="...">` validation, and missing translation fallback resilience.
 
 ---
 
