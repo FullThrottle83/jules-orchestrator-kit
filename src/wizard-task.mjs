@@ -1,5 +1,5 @@
-import { writeFileSync, readFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
 import { scanDiff, shannonEntropy } from "./security.mjs";
