@@ -11,28 +11,24 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20native-blue.svg)](https://nodejs.org)
+[![Platform: Linux | macOS | Windows](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blueviolet.svg)](https://nodejs.org)
 
 <br/>
 
 <p align="center">
-  <b>The zero-dependency safety gatekeeper and self-healing engineering kernel for autonomous coding agent swarms.</b>
+  <b>The zero-dependency safety gatekeeper and self-healing engineering kernel for autonomous coding agent swarms.</b><br/>
   Transforms single-turn AI chat assistants into production-grade engineering swarms running 300+ daily sessions across any language or monorepo.
 </p>
 
 <br/>
 
 <p align="center">
+  <a href="#quickstart">⚡&nbsp;Quickstart</a> &nbsp;•&nbsp;
   <a href="#what-is-kit">💡&nbsp;What&nbsp;is&nbsp;Kit?</a> &nbsp;•&nbsp;
   <a href="#who-is-it-for">👥&nbsp;Who&nbsp;Is&nbsp;It&nbsp;For?</a> &nbsp;•&nbsp;
-  <a href="#quickstart">⚡&nbsp;Quickstart</a> &nbsp;•&nbsp;
   <a href="#triage-guidelines">🎯&nbsp;Triage</a> &nbsp;•&nbsp;
-  <a href="#matrix">📊&nbsp;Matrix</a>
-  <br/>
-  <a href="#configuration">⚙️&nbsp;Configuration</a> &nbsp;•&nbsp;
-  <a href="#architecture">🏛️&nbsp;Architecture</a> &nbsp;•&nbsp;
   <a href="#cli-docs">🛠️&nbsp;CLI&nbsp;Docs</a> &nbsp;•&nbsp;
-  <a href="#providers">🔌&nbsp;Providers</a> &nbsp;•&nbsp;
-  <a href="#roadmap">🗺️&nbsp;Roadmap</a>
+  <a href="#deep-dives">🔍&nbsp;Deep&nbsp;Dives</a>
 </p>
 
 </div>
@@ -49,86 +45,52 @@
 
 <br/>
 
-<a id="what-is-kit"></a>
-## 💡 2-Sentence Mental Model
+<a id="quickstart"></a>
+## ⚡ 30-Second Quickstart
+
+Get running in any codebase in 3 simple commands (zero config required):
+
+```bash
+# 1. Initialize orchestrator in your project (auto-detects Python, Rust, Go, Node, PHP, etc.)
+npx jules-orchestrator-kit init
+
+# 2. Author a scoped, verified task envelope with guardrails & secret scrubbing
+npx jules-orchestrator-kit task create
+
+# 3. Inspect repository health & diagnostic status
+npx jules-orchestrator-kit doctor
+```
 
 > [!TIP]
-> **Think of `jules-orchestrator-kit` as an automated Engineering Manager for AI coding agents.**  
-> It hands out clear tasks, runs your tests in an isolated sandbox, fixes broken code automatically, and only opens a Pull Request when 100% of your tests pass.
+> **Prefer a global CLI?**  
+> Run `npm install -g jules-orchestrator-kit` to unlock the global `agentctl` command everywhere:
+> ```bash
+> agentctl init && agentctl task create && agentctl queue
+> ```
 
 <br/>
 
 ---
+
+<br/>
+
+<a id="what-is-kit"></a>
+## 💡 What is `jules-orchestrator-kit`?
+
+> **Think of `jules-orchestrator-kit` as an automated Engineering Manager for AI coding agents.**  
+> It drafts falsifiable task envelopes, executes verification tests in an isolated sandbox, automatically repairs broken builds through autonomous OODA feedback loops, and only approves PRs when 100% of tests pass cleanly.
 
 <br/>
 
 <a id="who-is-it-for"></a>
-## 👥 Who Is It For?
+### 👥 Who Is It For?
 
-Whether you are trying your first AI coding session or running enterprise monorepo swarms, `jules-orchestrator-kit` scales with your workflow:
-
-<br/>
-
-| Role | Primary Value Proposition | Key Commands |
+| Role | Value Proposition | Everyday Commands |
 | :--- | :--- | :--- |
-| **🌱 Beginners & Solo Developers** | Safely experiment with AI agents without risking broken code, leaked API keys, or ruined git history. | `agentctl init`<br/>`agentctl task create` |
-| **📦 Single-Repo Maintainers** | Automate bug fixes, dependency updates, and PR reviews with automated OODA test verification. | `agentctl gate`<br/>`agentctl queue` |
+| **🌱 Beginners & Solo Developers** | Safely experiment with autonomous AI coding without risking broken code, leaked API keys, or ruined git history. | `agentctl init`<br/>`agentctl task create` |
+| **📦 Single-Repo Maintainers** | Automate bug fixes, dependency bumps, and PR reviews with self-healing OODA test loops. | `agentctl gate`<br/>`agentctl queue` |
 | **🏗️ Monorepo Engineering Teams** | Isolate subproject verification (`backend/`, `frontend/`, `cli/`) so agent edits never thrash global test suites. | `agentctl swarm`<br/>`agentctl lock` |
-| **🛡️ Platform & Security Engineers** | Enforce zero-trust security policies, pre-commit secret scrubbing, and strict 75 KB diff payload limits. | `agentctl doctor`<br/>`agentctl dashboard` |
-
-<br/>
-
----
-
-<br/>
-
-## 🎯 Why `jules-orchestrator-kit`?
-
-Autonomous coding agents can write software at 100× human speed—but unconstrained agents introduce silent regressions, leak API keys, hallucinate test assertions, and thrash shared monorepos.
-
-`jules-orchestrator-kit` provides the missing **Safety, Orchestration, and Verification Kernel** for high-reliability AI agent deployments:
-
-* **🔥 Warm Multi-Turn Session Resumption (`v0.31.0`):** `agentctl resume <sessionId> --response "<reply>"` streams an engineer's reply directly into an active Google Jules session via `POST /v1alpha/sessions/{id}:sendMessage`, preserving reasoning context instead of paying to rebuild it, with fail-soft cold-dispatch fallback on HTTP 400/404. This is the asynchronous HITL unblocking path; the automatic OODA repair loop currently opens a fresh session per attempt (see [architecture.md](docs/architecture.md#on-warm-session-resumption)).
-
-* **🧪 Automated TDD Red-to-Green Harness (`agentctl test-gen`):** Scaffolds falsifiable unit tests from bug specs, verifies **RED** failure state, locks the test file in `scope.deny`, and tasks Jules with making it pass (**GREEN** state).
-
-* **🛡️ 1-Click Atomic Git Checkpoint & Rollback (`agentctl rollback`):** Snapshots working tree state, git diffs, and stashes before every session, enabling instant 1-command git restoration.
-
-* **🌐 Verification Sandbox & SSR Hydration Prober (`verify.server`):** Executes deterministic `setup`/`teardown` hooks for databases and boots dev servers to intercept React/Next.js SSR hydration panics before approving PRs.
-
-* **⚡ AST Blast-Radius Selective Testing:** Traverses file import dependency graphs to execute only affected downstream test suites, cutting monorepo test latency from minutes to milliseconds.
-
-* **🔕 Type III Silence Governor & Interruption Budgeting (`v0.35.0`):** `agentctl escalate` manages Slack and Discord webhook alerts with configurable digest modes and hourly interruption budgets, buffering non-critical notifications while guaranteeing zero-latency delivery for critical escalations.
-
-* **🩹 Automated Flaky Test Healing Swarm (`v0.35.0`):** `agentctl flaky heal` automatically consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness repair tasks to eliminate race conditions, async timing leaks, and resource collisions without weakening test assertions.
-
-* **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`). Zero third-party npm packages mean zero supply-chain CVE risk.
-
-* **🛡️ Fail-Closed Security Gatekeeper:** Unconditionally evaluates explicit Deny rules *before* Allow rules, matching against **canonicalised, case-folded paths** so `./`, `..`, mixed separators or a `.GitHub/` spelling cannot walk past a rule (the same repo is checked out on case-insensitive macOS and Windows filesystems). Redacts high-entropy secrets and PII from dry-runs and git diffs — **including credentials wrapped in base64**, so a key inside a Kubernetes `Secret` manifest is not invisible to a line-oriented scanner — blocks unsupported Node.js native module imports in Edge environments (Cloudflare Workers, Vercel Edge, Netlify Edge), and rejects PRs exceeding the 75 KB Diff Payload governor.
-
-* **🔄 Autonomous OODA Self-Healing:** Captures test stderr/stdout, normalizes failure fingerprints, and feeds structured error contexts back into repair iterations (up to 3 automatic attempts) before human escalation.
-
-* **💻 Native Interactive UX & Command Palette (`v0.30.0`):** Features a zero-dependency full-screen Terminal Engine (`capabilities`, `key-decoder`, `renderer`, `layout`, `widgets`), interactive diagnostic matrix (`agentctl doctor`), task queue/swarm managers (`agentctl queue`, `agentctl swarm`), and a searchable Command Palette.
-
-* **🌐 Universal Polyglot Spine:** Natively auto-detects 26+ tech stacks (PHP/Laravel/WordPress, .NET/C#, Python, Go, Rust, C/C++, Flutter/Swift, Node/Deno/Bun, Solidity/Foundry/Hardhat) and transparently wraps verification suites in Docker Compose or Devcontainer sandboxes.
-
-* **🧩 DAG-Ordered Task Queue & Specialist Agent Roles:** `agentctl queue --dag` resolves inter-task dependencies via Kahn's algorithm with cycle detection instead of linear FIFO order, and `--role <overseer|bolt|sentinel|janitor>` binds a task to a pre-defined specialist prompt persona resolved from `.agent/prompts/`.
-
-* **🔏 Cryptographic Evidence Ledger (`agentctl evidence`):** Generates a SHA-256 manifest of changed files, test-file hashes, and tamper-detection locks for every verified task — a portable, offline-verifiable audit trail toward the roadmap's SOC2 compliance exporter.
-
-* **💸 Dynamic Complexity & Cost Router (`router:` in `.agent/config.yml`, opt-in):** A zero-dependency, rule-based heuristic classifier (`src/router.mjs`) routes trivial tasks (typos, lint fixes, single-file lockfile bumps) to a cheap/fast provider — e.g. the built-in `gemini-flash` (Gemini CLI, headless mode) preset — while reserving your primary provider for complex, multi-file, or safety-sensitive work. Tasks touching `scope.deny`, `auth/**`, `migrations/**`, secrets, or using the `sentinel` role always force the primary provider regardless of score. Fully provider-agnostic: swap in any exec/HTTP provider spec for `router.fast`/`router.complex`, and override per-task with `--tier fast|complex`.
-
-* **📂 Scoped Monorepo Boundary Resolver:** Statically maps changed files up directory ancestry to invoke isolated subshell test suites (`(cd backend && pytest) && (cd cli && cargo test)`), eliminating global test thrashing.
-
-* **🚀 Zero-Test Bootstrapping (`agentctl bootstrap`):** Synthesizes deterministic syntax-check and smoke-test verification oracles for untested legacy repositories so agents always operate against a falsifiable feedback loop.
-
-* **📈 Proven Scale & Reliability:** Empirically tested with **555 unit tests across 81 suites passing in < 10.0s**. An adversarial red-team suite (`test/adversarial-claims.test.mjs`) continuously attempts to falsify the safety guarantees documented above — every probe in it currently holds, with no open gaps — including cross-platform probes for the case-insensitive filesystems on macOS and Windows — and a documentation-sync gate (`scripts/doc-sync-check.mjs`) blocks any release whose docs have drifted from the code.
-
-<br/>
-
-<p align="center">
-  <img src="docs/assets/security-shield.svg" alt="Zero-Trust Security & Reliability Guarantees" width="100%" />
-</p>
+| **🛡️ Platform & Security Engineers** | Enforce fail-closed security policies, pre-commit secret scrubbing (including base64), and strict 75 KB diff governors. | `agentctl doctor`<br/>`agentctl dashboard` |
 
 <br/>
 
@@ -137,28 +99,22 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 <br/>
 
 <a id="triage-guidelines"></a>
-## 🎯 Triage Guidelines: When to Use vs. When NOT to Use
+## 🎯 Triage Guidelines: When to Use Autonomous Swarms
 
-To ensure maximum merge success, dispatch tasks according to our deterministic triage boundaries:
+To maximize PR merge rates, dispatch tasks according to deterministic boundaries:
 
-<br/>
+### 🟢 Ideal Tasks (High Hit Rate)
+* ✅ **Scoped Bug Fixes & Code Changes:** Mechanically verifiable via unit tests (`pytest`, `npm test`, `cargo test`, `dotnet test`, `go test`).
+* ✅ **Type & Linter Migrations:** Strict mode conversions, type annotations, and dead code elimination.
+* ✅ **Dependency Bumps & CVE Patches:** Upgrading vulnerable lockfile dependencies with hermetic test validation.
+* ✅ **Backend Refactoring:** Modularizing route controllers, API handlers, or database schemas.
+* ✅ **Headless E2E / Playwright Tests:** UI changes verified by automated visual snapshots (`npx playwright test`).
 
-### 🟢 Ideal Tasks for Autonomous Swarms
-
-* ✅ **Scoped Code Changes & Bug Fixes:** Well-defined objectives mechanically verifiable via unit tests (`npm test`, `pytest`, `cargo test`, `dotnet test`).
-* ✅ **Type & Linter Migrations:** TypeScript strict mode fixes, PHP 8.3 type hint additions, or Python MyPy type annotation passes.
-* ✅ **Dependency Bumps & Security Audits:** Remediating CVEs in lockfiles (`package.json`, `Cargo.toml`, `composer.json`) with hermetic test verification.
-* ✅ **Refactoring Legacy Codebases:** Modularizing backend routes, API controllers, or database query layers.
-* ✅ **Visual & E2E Testing (via Playwright):** UI changes paired with automated headless Playwright snapshot tests (`npx playwright test`).
-
-<br/>
-
-### 🔴 When NOT to Use (Out of Scope)
-
-* ❌ **Unverifiable Visual UI Tweaks:** Pixel-perfect CSS/Tailwind adjustments lacking automated visual regression tests (agents cannot "see" raw browser output without Playwright).
-* ❌ **Closed Proprietary Platforms Without CLI:** Systems lacking local CLI tools or git repositories (e.g., Salesforce, Webflow, closed SAP backends).
-* ❌ **Unmocked Live Cloud Systems:** Code requiring live connections to 10+ external cloud APIs without local emulators or mocks.
-* ❌ **Protected Infrastructure Paths:** Direct edits to `.github/workflows/`, production deployment keys, or agent security gate rules (enforced fail-closed by `Agent Scope Guard`).
+### 🔴 Out of Scope (Keep Human-in-the-Loop)
+* ❌ **Unverifiable Visual UI Tweaks:** Pixel-pushing CSS/Tailwind without automated Playwright regression tests.
+* ❌ **Closed Proprietary Platforms Without CLI:** Systems lacking local CLI or git integration (e.g. Salesforce GUI, Webflow).
+* ❌ **Unmocked Live Cloud Systems:** Code requiring live connections to 10+ external cloud APIs without local mocks or emulators.
+* ❌ **Protected Infrastructure Files:** Direct edits to `.github/workflows/`, production deployment keys, or agent security gate rules (blocked fail-closed by `Agent Scope Guard`).
 
 <br/>
 
@@ -166,26 +122,44 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 
 <br/>
 
-<a id="matrix"></a>
-## 📊 Feature Comparison Matrix
+## 🚀 Core Capabilities at a Glance
 
-| Dimension | Raw Agent Execution (No Orchestrator) | Standard CI/CD Pipelines | `jules-orchestrator-kit` (v0.31.0) |
+* **🔒 Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-ins (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`). Zero third-party npm packages means zero supply-chain CVE attack surface.
+* **🌐 Cross-Platform Parity:** Verified 100% green across **Linux, macOS (Darwin), and Windows** on Node 20, 22, and 24.
+* **🔄 Autonomous OODA Self-Healing:** Captures test stderr/stdout, fingerprints error traces, and feeds structured context back into automated repair turns (up to 3 attempts) before human escalation.
+* **🛡️ Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules *before* Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and **base64-encoded credentials** (e.g. inside Kubernetes `Secret` manifests).
+* **💸 Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to cheap fast-tier models while reserving primary models for complex refactors.
+* **💻 Zero-Dependency TUI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
+* **📈 Proven Scale & Empirical Reliability:** Battle-tested with **555 unit tests across 81 suites passing in < 10.0s**.
+
+<br/>
+
+---
+
+<br/>
+
+<a id="cli-docs"></a>
+## 🛠️ CLI Command Reference (`agentctl`)
+
+`agentctl` is the unified command-line interface for `jules-orchestrator-kit`, available via `npx jules-orchestrator-kit <command>` or `agentctl <command>`.
+
+| Command | Usage | Description | Exit Codes |
 | :--- | :--- | :--- | :--- |
-| **Self-Healing Loop** | ❌ None (Crashes on test error) | ❌ None (Fails build; notifies human) | ✅ **Autonomous OODA Loop** (Max 3 repair turns with error fingerprinting) |
-| **Interactive UX Engine**| ❌ Raw unformatted CLI dumps | ❌ Non-interactive log outputs | ✅ **Native TUI Engine & Command Palette** (Zero-dependency alternate-screen TUI) |
-| **Scope Isolation** | ❌ None (Can modify CI files or lockfiles) | 🟡 Post-commit branch rules only | ✅ **Fail-Closed Scope Guard** (Deny-first evaluation; blocks protected paths) |
-| **Polyglot Stack Detection**| ❌ Manual prompt instructions | 🟡 Hardcoded YAML workflow steps | ✅ **Universal 26+ Stack Detector** (`src/config.mjs`) |
-| **Flaky Test Quarantine** | ❌ Fails session randomly | ❌ Breaks CI pipeline randomly | ✅ **Wilson-Score Statistical Quarantine** (Oscillation ≥ 0.40 quarantined automatically) |
-| **Monorepo Scoping** | ❌ Runs full global test suite | 🟡 Requires custom Nx/Turbo scripting | ✅ **Scoped Subshell Boundary Resolver** (`resolveWorkspaceBoundary`) |
-| **Zero-Test Bootstrapping**| ❌ Halts without verification oracle | ❌ Fails build if no tests exist | ✅ **Instant Oracle Synthesis** (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`) |
-| **Secret Leak Prevention**| ❌ Prone to leaking tokens in diffs | 🟡 Post-push secret scanning alerts | ✅ **Pre-Dispatch & Pre-Commit Diff Scanner** (Blocks CVEs/keys before PR creation) |
-| **Dependency Footprint** | ❌ Requires heavy SDKs & parsers | 🟡 Many external actions & plugins | ✅ **0 Native Dependencies** (100% Node.js 20+ ESM built-ins) |
-
-<br/>
-
-<p align="center">
-  <img src="docs/assets/tier-presets.svg" alt="Subscription Tier Allocation Matrix" width="100%" />
-</p>
+| `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack oracle inspector generating `.agent/config.yml`. | `0` (Created) |
+| `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>] [--role <name>] [--tier fast\|complex]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing, preflight gate checks, and DAG dependency wiring. | `0` (Queued), `1` (Secret/Unfalsifiable) |
+| `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes pre-calibrated web task envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`, `web-ai-access`). | `0` (Listed/Synthesized) |
+| `doctor` | `agentctl doctor [--interactive] [--fix safe]` | Diagnostic DAG check runner & automated transactional self-repair engine. | `0` (Healthy) |
+| `queue` | `agentctl queue [--interactive] [--dag] [--concurrency <n>]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. | `0` (Complete) |
+| `swarm` | `agentctl swarm [--interactive] [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
+| `gate` / `audit`| `agentctl gate --mode working-tree [--json]` | Runs security, secret scanning, and verification gates against working tree or branch. | `0` (Approved), `3` (Scope), `5` (Diff >75K), `6` (Secret) |
+| `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
+| `resume` | `agentctl resume <sessionId> --response "<reply>"` | Streams engineer response back into active Google Jules warm session context window. | `0` (Resumed), `1` (Error) |
+| `test-gen` | `agentctl test-gen --title <t> --spec <s> [--run]` | Scaffolds falsifiable unit tests, verifies **RED** failure state, and locks test in `scope.deny`. | `0` (Scaffolded/Red) |
+| `dashboard` | `agentctl dashboard [port]` | Starts zero-dependency local HTTP telemetry and audit visualizer dashboard. | `0` (Running) |
+| `evidence` | `agentctl evidence <generate\|verify\|show>` | Generates, verifies, or prints SHA-256 cryptographic evidence manifests with test-tamper locking. | `0` (Verified), `1` (Tamper) |
+| `flaky` | `agentctl flaky <status\|heal\|reset>` | Manages Wilson-quarantined tests (Exit Code 8) and dispatches automated anti-flakiness healing swarms. | `0` (Healed/Listed) |
+| `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for Claude, Cursor, and Antigravity. | `0` / Stdio stream |
+| `mcp init` | `agentctl mcp init [--target cursor\|vscode\|claude\|all]` | 1-click config scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | `0` (Scaffolded) |
 
 <br/>
 
@@ -193,85 +167,13 @@ To ensure maximum merge success, dispatch tasks according to our deterministic t
 
 <br/>
 
-<a id="quickstart"></a>
-## ⚡ Guided Quickstart (Audit → Author → Verify)
-
-Get started with a safe 3-step workflow across any repository:
-
-<br/>
-
-### Step 1: Security & Scope Gate Audit
-Audit your current working tree or branch for secret leaks, protected path violations, and verification readiness:
-```bash
-# Run security, secret scanning, and scope gate audit without modifying files
-npx jules-orchestrator-kit gate --mode working-tree
-```
-
-<br/>
-
-### Step 2: Author a Scoped Task
-Launch the interactive task authoring wizard or create a task via CLI:
-```bash
-# Interactive authoring wizard with secret scrubbing & verification probes
-npx jules-orchestrator-kit task create
-
-# Or dispatch directly with explicit flags
-npx jules-orchestrator-kit task create --title "Fix authentication token expiration" \
-  --prompt "Fix JWT expiration check in src/auth.mjs and verify with npm test."
-```
-
-<br/>
-
-### Step 3: Local Verification & Queue Execution
-Inspect diagnostics and execute queued tasks:
-```bash
-# Run interactive diagnostic matrix
-npx jules-orchestrator-kit doctor --interactive
-
-# Process pending task queue in isolated worktrees
-npx jules-orchestrator-kit queue --interactive
-```
-
-<br/>
+<a id="deep-dives"></a>
+## 🔍 Deep Dives & Technical Reference
 
 <details>
-<summary><b>🔍 View All 26+ Supported Ecosystems & Stack Triggers</b></summary>
+<summary><b>⚙️ Complete Configuration Reference (<code>.agent/config.yml</code>)</b></summary>
 
 <br/>
-
-```
-Ecosystems Natively Supported by src/config.mjs:
-├── PHP / Laravel / WordPress (composer.json, phpunit.xml, pest.php, artisan, wp-cli.yml)
-├── .NET / C# / F# (*.sln, *.csproj, *.fsproj, global.json)
-├── Mobile / Dart / Flutter (pubspec.yaml)
-├── Mobile / Swift / Xcode (Package.swift)
-├── Mobile / React Native (app.json, react-native.config.js)
-├── Systems / CMake (CMakeLists.txt)
-├── Systems / Rust Cargo (Cargo.toml)
-├── Systems / Go (go.mod)
-├── Systems / Make (Makefile)
-├── Web3 / Solidity Foundry (foundry.toml, remappings.txt) — offline-enforced forge test/build/fmt
-├── Web3 / Solidity Hardhat (hardhat.config.js, hardhat.config.ts)
-├── Python / FastAPI / Django (pyproject.toml, requirements.txt, setup.py)
-├── Elixir / Phoenix (mix.exs)
-├── Ruby / Rails (Gemfile)
-├── Java / Maven (pom.xml)
-├── Java / Gradle (build.gradle, build.gradle.kts)
-├── JS / TS Workspaces (turbo.json, pnpm-workspace.yaml, nx.json)
-├── JS / TS Runtimes (bunfig.toml, deno.json, package.json)
-└── Devcontainers & Docker Compose (.devcontainer/devcontainer.json, docker-compose.yml, Dockerfile)
-```
-
-</details>
-
-<br/>
-
----
-
-<br/>
-
-<a id="configuration"></a>
-## ⚙️ Configuration Reference (`.agent/config.yml`)
 
 `jules-orchestrator-kit` auto-detects stack defaults, but allows explicit overrides through `.agent/config.yml`:
 
@@ -301,134 +203,85 @@ limits:
   promptKb: 50           # Maximum prompt payload size
   dailyTasks: 300        # Task quota per rolling 24h window (not per calendar day)
   repairAttempts: 3      # Maximum OODA repair iterations
-  concurrency: 15        # Worker slots; the ultra plan allows up to 60
+  concurrency: 15        # Worker slots (pro: 15, ultra: 60)
 
 # Dynamic Complexity & Cost Router — opt-in, disabled by default.
-# Provider-agnostic: "fast"/"complex" accept any provider key ("jules" |
-# "claude-code" | "codex" | "gemini-flash") or an inline custom provider spec.
 router:
   enabled: false
   fast: "gemini-flash"    # Trivial/mechanical tasks (score <= threshold)
-  complex: "jules"        # Complex/multi-file/safety-sensitive tasks; defaults to `provider`
-  threshold: 0            # Heuristic score above which a task escalates to `complex`
+  complex: "jules"        # Complex/multi-file/safety-sensitive tasks
+  threshold: 0            # Heuristic score threshold for escalation
 ```
 
-<br/>
-
----
+</details>
 
 <br/>
 
-<a id="architecture"></a>
-## 🏛️ System Architecture & Visual Diagrams
+<details>
+<summary><b>🔍 26+ Supported Languages, Frameworks & Stacks</b></summary>
 
 <br/>
 
+```
+Ecosystems Natively Detected & Verified by Stack Oracle:
+├── Python / FastAPI / Django (pyproject.toml, requirements.txt, setup.py)
+├── Systems / Rust Cargo (Cargo.toml)
+├── Systems / Go (go.mod)
+├── Systems / CMake & Make (CMakeLists.txt, Makefile)
+├── JS / TS Workspaces (turbo.json, pnpm-workspace.yaml, nx.json)
+├── JS / TS Runtimes (bunfig.toml, deno.json, package.json)
+├── PHP / Laravel / WordPress (composer.json, phpunit.xml, pest.php, artisan, wp-cli.yml)
+├── .NET / C# / F# (*.sln, *.csproj, *.fsproj, global.json)
+├── Mobile / Dart / Flutter (pubspec.yaml)
+├── Mobile / Swift / Xcode (Package.swift)
+├── Mobile / React Native (app.json, react-native.config.js)
+├── Web3 / Solidity Foundry (foundry.toml, remappings.txt) — offline-enforced
+├── Web3 / Solidity Hardhat (hardhat.config.js, hardhat.config.ts)
+├── Elixir / Phoenix (mix.exs)
+├── Ruby / Rails (Gemfile)
+├── Java / Maven & Gradle (pom.xml, build.gradle, build.gradle.kts)
+└── Devcontainers & Docker Compose (.devcontainer/devcontainer.json, docker-compose.yml, Dockerfile)
+```
+
+</details>
+
+<br/>
+
+<details>
+<summary><b>🏛️ System Architecture & Verification Diagrams</b></summary>
+
+<br/>
+
+### 1. Control Plane Architecture Layers
 <p align="center">
   <img src="docs/assets/architecture-layers.svg" alt="Control Plane Architecture Layers" width="100%" />
 </p>
 
-<br/>
-
-### 1. The Autonomous OODA Verification Loop
-Every task dispatched to `jules-orchestrator-kit` executes within an immutable, fail-closed verification loop:
-
-<br/>
-
+### 2. The Autonomous Self-Healing OODA Loop
 <p align="center">
   <img src="docs/assets/ooda-loop-cycle.svg" alt="Self-Healing OODA Repair Loop & Thrash Breaker" width="100%" />
 </p>
 
-<br/>
-
-### 2. Polyglot Monorepo Scoped Execution Engine
-In monorepos containing multiple languages, `resolveWorkspaceBoundary(changedFiles)` traverses directory ancestry to isolate verification to affected subprojects:
-
-<br/>
-
+### 3. Polyglot Monorepo Scoped Boundary Resolver
 <p align="center">
   <img src="docs/assets/monorepo-resolver.svg" alt="Polyglot Monorepo Scoped Boundary Resolver" width="100%" />
 </p>
 
-<br/>
-
-### 3. Multi-Agent Parallel Swarm Topology
-Run concurrent agents across parallel worktree slots with AST/JSON 3-way merging:
-
-<br/>
-
+### 4. Multi-Agent Parallel Swarm Topology
 <p align="center">
   <img src="docs/assets/swarm-topology.svg" alt="Multi-Agent Parallel Swarm Topology" width="100%" />
 </p>
 
-<br/>
-
-### 4. Model Context Protocol (MCP) Integration
-Native stdio server exposing task dispatch, gate verification, and risk auditing to client tools (Antigravity, Claude, Cursor):
+</details>
 
 <br/>
 
-<p align="center">
-  <img src="docs/assets/mcp-integration.svg" alt="Model Context Protocol (MCP) Integration" width="100%" />
-</p>
+<details>
+<summary><b>🔌 Multi-Provider Failover & Cost Router SDK</b></summary>
 
 <br/>
 
----
-
-<br/>
-
-<a id="cli-docs"></a>
-## 🛠️ CLI Command Reference (`agentctl`)
-
-`agentctl` is the unified command-line interface for `jules-orchestrator-kit`, available via `bin/agentctl.mjs` or `npx jules-orchestrator-kit <command>`.
-
-<br/>
-
-| Command | Usage | Description | Exit Codes |
-| :--- | :--- | :--- | :--- |
-| `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack oracle inspector generating `.agent/config.yml`. | `0` (Created) |
-| `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>] [--role <name>] [--tier fast\|complex] [--depends-on <id,...>]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing, preflight gate checks, specialist role resolution, DAG dependency wiring, and an optional Cost Router tier override. | `0` (Queued), `1` (Unfalsifiable / Secret leak) |
-| `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes specialized web task envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`, `web-ai-access`). | `0` (Synthesized/Listed) |
-| `task optimize` | `agentctl task optimize "<prompt>" [--fix] [--web] [--json]` | Linter & optimizer injecting Google Labs 3-phase exploration budgets, critic steering, and web oracles. | `0` (Scored/Fixed) |
-| `test-gen` | `agentctl test-gen --title <t> --spec <s> [--run]` | Scaffolds falsifiable unit tests, verifies **RED** failure state, and locks test in `scope.deny`. | `0` (Scaffolded/Red) |
-| `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
-| `resume` | `agentctl resume <sessionId> --response "<reply>"` | Streams engineer response back into active Google Jules warm session context window. | `0` (Resumed), `1` (Error) |
-| `dispatch` | `agentctl dispatch --title <t> --prompt <p> [--role <name>] [--tier fast\|complex]` | Dispatches a single task to an AI agent in an isolated worktree, optionally binding a specialist role prompt (`overseer`\|`bolt`\|`sentinel`\|`janitor`) and/or overriding the Cost Router tier. | `0` (Success), `1` (Arg error), `2` (429 Rate limit), `3` (Scope deny), `4` (OODA exhausted), `5` (Diff > 75KB), `6` (Secret leak) |
-| `doctor` | `agentctl doctor [--interactive] [--fix safe]` | Diagnostic DAG check runner & automated transactional repair planner. | `0` (Healthy) |
-| `queue` | `agentctl queue [--interactive] [--dag] [--concurrency <n>] [--json]` | Consumes, inspects, and executes task envelopes in `.agent/jules-queue/`; `--dag` resolves inter-task dependencies via Kahn's algorithm with cycle detection instead of linear FIFO order (supports `--json`). | `0` (Complete) |
-| `swarm` | `agentctl swarm [--interactive] [--json]` | Runs parallel multi-agent swarm across worker slots with process PID liveness detection (supports `--json`). | `0` (Complete) |
-| `scan` | `agentctl scan` | Scans codebase for TODO/FIXME annotations to seed task authoring. | `0` (Scanned) |
-| `review-repair`| `agentctl review-repair <pr-comments.json>`| Parses GitHub PR review comments and synthesizes actionable OODA repair tasks. | `0` (Parsed), `1` (Missing file) |
-| `dashboard` | `agentctl dashboard [port]` | Starts zero-dependency local HTTP telemetry and audit visualizer dashboard. | `0` (Running) |
-| `gate` / `audit`| `agentctl gate --mode working-tree [--json]` | Runs security, secret scanning, and verification gate against working tree or branch (supports `--json`). | `0` (Approved), `3` (Scope violation), `5` (Diff limit), `6` (Secret leak) |
-| `bootstrap` | `agentctl bootstrap [--force] [--json]` | Inspects an untested repository and synthesizes `.agent/config.yml` with a zero-test verification oracle (`php -l`, `compileall`, `dotnet build`, `tsc`, `smoke`). | `0` (Bootstrapped / Existing) |
-| `lock` | `agentctl lock <acquire\|release\|status>`| Manages VFS mutex locks for multi-agent non-overlapping file ownership. | `0` (Locked/Released), `1` (Conflict) |
-| `clean` | `agentctl clean` | Prunes stale git worktrees, lockfiles, and temporary ledgers. | `0` (Clean) |
-| `evidence` | `agentctl evidence <generate\|verify\|show> [--manifest <path>] [--json]` | Generates, verifies, or prints a SHA-256 cryptographic evidence manifest (changed-file hashes + test-file tamper lock) for audit trails. | `0` (Verified/Generated), `1` (Tamper detected / Verification failed) |
-| `escalate` | `agentctl escalate [<sessionId>] [--status] [--flush] [--clear]` | Dispatches or manages webhook escalation incidents across Slack and Discord with Type III Silence Governor and interruption budgeting. | `0` (Dispatched/Buffered) |
-| `flaky` | `agentctl flaky <status\|heal\|reset> [--dispatch] [--dry-run] [--role <name>]` | Manages Wilson-quarantined tests (Exit Code 8) and dispatches automated anti-flakiness healing swarm without assertion weakening. | `0` (Healed/Queued/Listed) |
-| `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for tool integration. | `0` / Stdio stream |
-| `mcp init` | `agentctl mcp init [--target cursor\|vscode\|claude\|all]` | 1-click scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | `0` (Scaffolded) |
-| `version` | `agentctl version` | Outputs orchestrator kit semantic version. | `0` |
-
-<br/>
-
----
-
-<br/>
-
-<a id="providers"></a>
-## 🔌 Provider Integration & SDK Usage
-
-`jules-orchestrator-kit` supports standard AI agent platforms and programmatic failover routing:
-
-### 1. Google Jules Native Integration
-Dispatch tasks using canonical task envelopes or the Google Jules REST v1alpha API.
-
-### 2. Multi-Provider Failover SDK (`createFailoverProvider`)
-Programmatically configure ordered provider failover (e.g. falling back to secondary providers on HTTP 429 rate limits):
-
+### Multi-Provider Failover SDK (`createFailoverProvider`)
 ```javascript
 import { createFailoverProvider, loadConfig } from "jules-orchestrator-kit";
 
@@ -441,9 +294,7 @@ const result = await provider.dispatch(
 );
 ```
 
-### 3. Dynamic Complexity & Cost Router (`resolveRoutedProvider`)
-Opt-in, config-driven routing between a cheap/fast provider and your primary provider — see [Configuration Reference](#configuration) for the `router:` block. Programmatic usage mirrors `createFailoverProvider`:
-
+### Cost Router SDK (`resolveRoutedProvider`)
 ```javascript
 import { resolveRoutedProvider, loadConfig } from "jules-orchestrator-kit";
 
@@ -455,41 +306,31 @@ const { provider, classification } = resolveRoutedProvider(
 console.log(classification.tier); // "fast" | "complex"
 ```
 
-Ships with a `gemini-flash` preset (Gemini CLI headless mode, `gemini-3.6-flash`) as a batteries-included fast tier, but any provider key or custom spec works for `router.fast`/`router.complex` — the router is provider-agnostic by design, not tied to any single vendor.
-
-### 4. Model Context Protocol (MCP) Server
-Expose orchestrator gates and queue controls over stdio to client tools (Antigravity, Claude, Cursor):
-```bash
-npx jules-orchestrator-kit mcp
-```
+</details>
 
 <br/>
 
----
+<details>
+<summary><b>🗺️ Feature Roadmap & Shipped Milestones</b></summary>
 
 <br/>
 
-<a id="roadmap"></a>
-## 🗺️ Feature Roadmap & Release History
-
-| Feature | Module / Command | Architectural Description | Target Release |
+| Feature | Module / Command | Architectural Description | Status |
 | :--- | :--- | :--- | :---: |
-| **Dynamic Complexity & Cost Router** | `src/router.mjs`, `router:` in `.agent/config.yml` | Provider-agnostic, zero-dependency heuristic classifier routing trivial tasks to a fast/cheap provider (`gemini-flash` preset included) and complex/safety-sensitive tasks to the primary provider; opt-in, `--tier` override. | **v0.32.5** *(Shipped)* |
-| **DAG Task Queue, Specialist Roles & Evidence Ledger** | `src/dag-engine.mjs`, `src/evidence.mjs`, `agentctl evidence` | Kahn's-algorithm dependency-ordered queue execution (`queue --dag`), `--role` specialist prompt resolution, and SHA-256 cryptographic evidence manifests with test-tamper locking. | **v0.32.5** *(Shipped)* |
+| **Multi-OS CI Matrix & TUI Hardening** | `scripts/run-tests.mjs`, `src/state.mjs`, `src/git.mjs` | Automated 9-job CI matrix across Linux, macOS, and Windows on Node 20/22/24 with raw-mode TUI resilience and native Windows command quoting. | **v0.38.0** *(Shipped)* |
+| **Base64 Secret Detection & Budget Fix** | `src/security.mjs`, `src/budget.mjs` | Secret scanner decodes base64 before matching structured patterns (K8s secrets), and `budget reset` preserves confirmed provider sessions. | **v0.37.0** *(Shipped)* |
+| **Universal AI Crawler Policy & llms.txt** | `src/web-templates.mjs` (`web-ai-access`) | Cross-surface consistency for crawler directives (`robots.txt`, meta tags, `X-Robots-Tag`) and `llms.txt` local route integrity. | **v0.36.0** *(Shipped)* |
+| **Silence Governor & Flaky Test Swarm** | `src/webhook.mjs`, `src/flaky-ledger.mjs` | Type III Silence Governor with interruption budgeting, and automated anti-flakiness swarm coordinator. | **v0.35.0** *(Shipped)* |
+| **Rolling 24h Quota & Plan Concurrency** | `src/state.mjs`, `src/config.mjs` | Rolling 24-hour quota accounting matching vendor reset windows and true concurrency limits (3/15/60). | **v0.34.0** *(Shipped)* |
+| **Cost Router & Guided First Run** | `src/router.mjs`, `src/ops/next-step.mjs` | Heuristic task classifier routing trivial tasks to fast models, and guided single-command first run workflow. | **v0.33.0** *(Shipped)* |
+| **DAG Task Queue & Specialist Roles** | `src/dag-engine.mjs`, `src/evidence.mjs` | Kahn's-algorithm dependency queue execution (`queue --dag`), specialist role prompts (`overseer`, `bolt`, `sentinel`, `janitor`), and SHA-256 evidence manifests. | **v0.32.5** *(Shipped)* |
 | **Warm Session Resumption & PR Bundler** | `src/provider.mjs`, `src/engine.mjs` | Multi-turn warm session context streaming via `POST /v1alpha/sessions/{id}:sendMessage` & evidence PR descriptions. | **v0.31.0** *(Shipped)* |
 | **TDD Harness & Prompt Falsifiability Linter** | `agentctl test-gen`, `agentctl task optimize` | Automated RED-state test generator, `scope.deny` test locking, and prompt testability linter with fuzzy path resolution. | **v0.31.0** *(Shipped)* |
 | **Atomic Git Checkpoint & Rollback** | `agentctl rollback` (`src/ops/checkpoint.mjs`) | Pre-flight git HEAD/stash snapshotting, atomic rollback restoration, and 10-session pruning rotation. | **v0.31.0** *(Shipped)* |
-| **Verification Sandbox & SSR Hydration Prober** | `verify.server`, `verify.setup`/`teardown` | Isolated process group dev server probing, Next.js/React SSR panic detection, and deterministic DB hooks. | **v0.31.0** *(Shipped)* |
-| **AST Selective Testing & Escalation Bridge** | `src/dag-engine.mjs`, `agentctl escalate` | Downstream import test resolution, Slack/Discord webhook alerts, and async `agentctl resume` unblocking. | **v0.31.0** *(Shipped)* |
-| **IDE Native MCP Config Scaffolder** | `agentctl mcp init` (`src/ops/ide-scaffold.mjs`) | 1-click scaffolding for Cursor (`.cursor/mcp.json`), VS Code tasks (`tasks.json`), and Claude Desktop. | **v0.31.0** *(Shipped)* |
 | **Interactive UX Engine & TUI Engine** | `src/ux/` (`capabilities`, `key-decoder`, `renderer`, `layout`, `widgets`) | Zero-dependency terminal capabilities detector, sequence key decoder, virtual frame renderer, and widgets. | **v0.30.0** *(Shipped)* |
-| **Guided Diagnostics & Transactional Core** | `src/ops/` (`doctor-registry`, `doctor-planner`, `transaction`, `receipts`) | Diagnostic check DAG (`runDoctorChecks`), pure fix planner (`planDiagnosticFixes`), and transactional executor with rollback. | **v0.30.0** *(Shipped)* |
-| **Interactive Queue & Swarm Manager** | `src/ux/`, `src/ops/` (`queue-model`, `swarm-model`, `task-actions`, `swarm-actions`) | Task sidecar state machine, queue snapshot builder, PID liveness reconciler, task actions, and swarm actions. | **v0.30.0** *(Shipped)* |
-| **Command Registry & Command Palette** | `src/ops/command-registry.mjs`, `src/ux/palette.mjs` | Single-source command descriptor registry (`COMMAND_REGISTRY`), `--help` string formatter, fuzzy search filter, and command palette. | **v0.30.0** *(Shipped)* |
-| **Onboarding & Stack Oracle Wizard** | `agentctl init --interactive` (`src/wizard-init.mjs`) | Zero-dependency interactive CLI wizard auto-detecting verification oracles, quota tiers, and preset workflows. | **v0.29.0** *(Shipped)* |
-| **Guided Task Authoring Subsystem** | `agentctl task create` (`src/wizard-task.mjs`) | Guided task authoring with TODO candidate harvesting, Shannon entropy secret scrubbing, and guardrail footer synthesis. | **v0.29.0** *(Shipped)* |
-| **P0 Remediation & Safety Alignment** | Queue, Task Envelope & Secrets (`src/wizard-task.mjs`) | Canonical queue path alignment (`.agent/jules-queue/`), path traversal guards, atomic writes, multiline secret scans, and JSON headers. | **v0.29.1** *(Shipped)* |
 | **PR Review Auto-Remediation Loop** | `agentctl review-repair` (`src/review-repair.mjs`) | Ingests GitHub PR review comments (`CHANGES_REQUESTED`), extracts line/file context, and dispatches automated OODA repair turns. | **v0.27.0** *(Shipped)* |
+
+</details>
 
 <br/>
 
@@ -497,9 +338,9 @@ npx jules-orchestrator-kit mcp
 
 <br/>
 
-## 📖 Documentation & Architecture
+## 📖 Documentation & External References
 
-- [**System Architecture & Pipeline Overview**](./docs/architecture.md) — Comprehensive technical sequence diagram and control plane architecture.
+- [**System Architecture & Pipeline Overview**](./docs/architecture.md) — Comprehensive technical sequence diagrams and control plane specifications.
 - [**Google Jules Official Documentation**](https://jules.google) — Official platform overview and API specifications for Google Jules.
 - [**Examples & Task Envelope Recipes**](./EXAMPLES.md) — Production YAML and Markdown task envelopes.
 - [**Changelog**](./CHANGELOG.md) — Full release history and migration guides.
@@ -513,3 +354,4 @@ npx jules-orchestrator-kit mcp
 <div align="center">
   <p><b>jules-orchestrator-kit</b> • Built with zero external dependencies for Google Jules and enterprise AI agent swarms.</p>
 </div>
+
