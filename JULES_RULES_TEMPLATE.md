@@ -92,8 +92,9 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 
 - **Multi-Agent Mutex Lock Protocol**: Prevent concurrent file modification collisions. Check and acquire locks before modifying paths:
   ```bash
-  node scripts/lock-manager.mjs acquire <agent_name> <task_id> <file_paths...> --unattended
+  agentctl lock acquire <agent_name> <task_id> <file_path...>
   ```
+  Inspect holders with `agentctl lock status` and hand back with `agentctl lock release <task_id>`. A conflicting acquire exits `1` and names the current holder.
 - **The Baton Pass Protocol**: Write handover documents when a session pauses or hands off work (e.g. `.agent/history/YYYY-MM-DD-handover-[task_id].md`).
 
 ### Standard Jules Guardrails Footer

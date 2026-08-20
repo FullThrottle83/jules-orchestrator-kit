@@ -41,6 +41,15 @@ Jules automatically infers test and build verification commands via `scripts/com
 - `pyproject.toml` -> `testCmd: "pytest"`, `buildCmd: ""`
 - Workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`) -> targeted affected package filters
 
+### Canonical Operator Commands (authoritative)
+
+Operations run **only** via `agentctl`. Standalone helper scripts were removed as shims. **This supersedes any older `scripts/*.mjs` path from a stored memory or another repo** — if one is not in `package.json`, it is stale; use the equivalent here instead of burning repair turns on `ENOENT`.
+
+- Locks: `agentctl lock acquire <agent> <task_id> <file_path...>` (positional, no `--unattended`; conflict exits `1` naming the holder) · `lock status` · `lock release <task_id>`. *(was `scripts/lock-manager.mjs`)*
+- Learnings: `agentctl learning add "<trigger>" "<solution>"` — both args required; regenerates `.agent/SYSTEM_LEARNINGS.md`, never hand-edit it. *(was `scripts/add-learning.mjs`)*
+- Prompt hydration: `agentctl hydrate [prompt]` · Self-audit: `npm run jules:audit` · Doc drift: `npm run jules:doc-sync`
+- Use `JULES_DRY_RUN=1` when exercising dispatch paths so no session is spent.
+
 ---
 
 ## 4. Operational & Code Quality Directives
@@ -98,41 +107,25 @@ HARD CONSTRAINTS:
 
 ---
 
-## 6. Exit Code Registry for CI/CD Integration
+## 6. Exit Code Registry & Remediation Matrix
 
-The orchestrator enforces standardized exit codes across all automation scripts (`jules-dispatch`, `jules-self-audit`, `jules-queue-runner`):
+Standardized across all automation entry points (`agentctl`, `jules-dispatch`, `jules-self-audit`, `jules-queue-runner`).
 
-| Exit Code | Classification | Description |
+| Code | Meaning | Immediate remediation |
 | :--- | :--- | :--- |
-| `0` | **Success** | Task completed cleanly; PR opened or verification passed. |
-| `1` | **Pre-Dispatch / Arg Failure** | Invalid arguments, prompt > 50 KB, or pre-dispatch validation error. |
-| `2` | **API / Network Failure** | Jules API rate-limit (HTTP 429), `FAILED_PRECONDITION` concurrency quota, or connection timeout. |
-| `3` | **Scope Violation** | Attempted modification of restricted files (`.github/`, command files, agent rules). |
-| `4` | **OODA Exhausted** | Auto-repair loop reached maximum retries (3) without achieving clean verification. |
-| `5` | **Diff Payload Limit** | Post-change git diff exceeds payload budget (`JULES_MAX_DIFF_KB`, default 50 KB). |
-| `6` | **Secret Leak Prevented** | High-confidence secret or private key detected in patch diff. |
-| `7` | **Quota / Budget Exhausted** | Daily task session quota limit reached (`dailyTasks: 300`). |
-| `8` | **Flaky Quarantine** | Statistical flaky test detected and quarantined (oscillation >= 0.4, Wilson CI); OODA repair suppressed. |
+| `0` | Success — verification passed, PR opened. | Merge, or proceed to the next queue task. |
+| `1` | Pre-dispatch / arg failure; prompt > `limits.promptKb` (50 KB). | Shorten the prompt or check flags via `agentctl doctor`. |
+| `2` | API / network — HTTP 429, `FAILED_PRECONDITION` concurrency quota, timeout. | Exponential backoff; stagger swarm dispatches (`staggerMs: 1500`). |
+| `3` | Scope violation — restricted path (`.github/`, command files, `.agent/rules/`). | Drop protected files from the diff, or pass `allowProtected: true` / label `allow-protected-paths`. |
+| `4` | OODA exhausted — 3 repair attempts without clean verification. | Inspect `.agent/state/` logs; fix the root cause or sharpen the repair prompt. |
+| `5` | Diff payload exceeds `limits.diffKb` (default **75 KB**). | Split into smaller scoped envelopes (`npm run jules:validate-envelope`). |
+| `6` | Secret leak prevented — high-confidence key in the patch diff. | Scrub the credential from source **and revoke the leaked key immediately**. |
+| `7` | Quota exhausted — `dailyTasks` cap (default 300) reached. | Wait for the next UTC day, or raise `dailyTasks` in `.agent/config.yml`. |
+| `8` | Flaky quarantine — oscillation >= 0.40 (Wilson CI interior). | Fix the non-deterministic test; OODA repair is suppressed by design, not broken. |
 
 ---
 
-## 7. Exit Code Troubleshooting & Remediation Matrix
-
-| Exit Code | Cause | Immediate Remediation Action |
-| :--- | :--- | :--- |
-| `0` | Clean run. | Proceed to merge PR or next queue task. |
-| `1` | Invalid prompt, missing arguments, or prompt > 50 KB. | Reduce prompt length below 50 KB or verify command line flags (`agentctl doctor`). |
-| `2` | Network failure, API rate limit (429), or worker concurrency limit. | Retry with exponential backoff or stagger swarm dispatches (`staggerMs: 1500`). |
-| `3` | Modified protected file (`.github/`, `package.json`, `.agent/rules/`). | Remove protected files from diff or run with `allowProtected: true` / label `allow-protected-paths`. |
-| `4` | Verification suite (`npm test`, build) failed after 3 OODA repair attempts. | Inspect error logs in `.agent/state/`, fix root cause manually or provide clearer repair prompt. |
-| `5` | Diff payload exceeded threshold (> 75 KB). | Split task into smaller scoped sub-tasks using task envelopes (`validate-envelope.mjs`). |
-| `6` | High-confidence secret detected in patch diff (e.g. AWS/Stripe key). | Scrub leaked credentials from source code, revoke leaked key immediately. |
-| `7` | Daily quota cap reached (`dailyTasks: 300`). | Wait until next day UTC cycle or adjust `dailyTasks` limit in `.agent/config.yml`. |
-| `8` | Test quarantined due to statistical flakiness (oscillation >= 0.4, Wilson CI interior). | Inspect test stability; fix non-deterministic test code rather than sending OODA repair loops. |
-
----
-
-## 8. Release Protocol & Automated Versioning
+## 7. Release Protocol & Automated Versioning
 
 Whenever bumping the package version in `package.json`:
 1. Document changes under `CHANGELOG.md`.

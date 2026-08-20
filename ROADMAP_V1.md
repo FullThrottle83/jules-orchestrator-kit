@@ -64,6 +64,8 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ### v0.32.6 (Unreleased): Documentation Sync Gate & Adversarial Self-Audit
 - [x] **Documentation Sync Gate** (`scripts/doc-sync-check.mjs`, blocking step `1b` in `scripts/release.mjs`) — Implements the `doc-sync-sentinel` preset advertised in `src/wizard-init.mjs`. Blocks any release whose `package.json`, CLI version strings, README test counts, ROADMAP milestone markers or CHANGELOG entry have drifted apart.
 - [x] **Adversarial Red-Team Suite** (`test/adversarial-claims.test.mjs`) — Additive, `src/`-read-only probes that attempt to falsify the safety guarantees in `README.md`. Confirmed gaps are recorded as `node:test` `todo` probes: visible in every run, non-blocking for CI.
+- [x] **Agent Rule Budget Enforcement** — Wired the previously-unrun `scripts/rules-lint.mjs` into the doc-sync gate; `AGENTS.md` had silently exceeded its 10k character budget, where host truncation drops trailing directives without error.
+- [x] **Canonical Command Harmonisation** (`AGENTS.md`, `JULES_RULES_TEMPLATE.md`) — Authoritative `agentctl` command reference that supersedes stale `scripts/*.mjs` paths held in agent memories; fixed the deleted `lock-manager.mjs` invocation still shipping to npm consumers.
 - [ ] **Close the recorded canonicalisation gaps** — `normalizePath()` should resolve `.`/`..` and case-fold before deny matching (reachable via `validateEnvelope()` `allowed_paths`); `extractPathTokens()` should accept `\` as a separator; the secret scanner should strip zero-width characters and scan concatenation-joined added lines.
 
 ---

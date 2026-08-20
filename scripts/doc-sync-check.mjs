@@ -176,6 +176,24 @@ export function checkDocSync(root = process.cwd(), opts = {}) {
     );
   }
 
+  // 5. Agent rule-file budgets. rules-lint has existed unwired, which is how
+  //    AGENTS.md silently drifted past its 10k character budget — agent rule
+  //    files are truncated by the model host, so an over-budget file loses
+  //    directives from the end without any error surfacing.
+  if (opts.skipRulesLint !== true) {
+    try {
+      execSync("node scripts/rules-lint.mjs", { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      add("agent rule budgets", true, "AGENTS.md and .agent/rules/ within char/line budgets");
+    } catch (err) {
+      const detail = `${err.stdout || ""}${err.stderr || ""}`
+        .split("\n")
+        .filter((l) => l.trim().startsWith("-"))
+        .map((l) => l.trim().replace(/^-\s*/, ""))
+        .join("; ");
+      add("agent rule budgets", false, detail || "rules-lint reported violations");
+    }
+  }
+
   return { ok: checks.every((c) => c.ok), version, checks };
 }
 
