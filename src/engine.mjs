@@ -3,7 +3,8 @@ import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
-import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked } from "./state.mjs";
+import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
+import { resolveDailyLimit, recordObservedCeiling, isDailyQuotaRejection } from "./budget.mjs";
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import fs, { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
@@ -746,6 +747,19 @@ export async function dispatch(task = {}, opts = {}) {
 
   const runDispatch = () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun });
 
+  // An estimated ceiling may warn but must not block: refusing a dispatch the
+  // provider would have accepted is a worse failure than an over-count.
+  const budget = resolveDailyLimit(config, root);
+  if (!opts.dryRun && !budget.certain) {
+    const check = checkDailyBudget(root, budget.limit);
+    if (check.used >= budget.limit) {
+      console.warn(
+        `[BUDGET_ESTIMATE] ${check.used}/${budget.limit} tasks used — ${budget.note}. ` +
+        `Proceeding: the real allowance is unknown, so this is not enforced.`
+      );
+    }
+  }
+
   try {
     // A dry run performs no provider call and produces no work, so it must not
     // consume one of the operator's finite daily task slots. Reserving here also
@@ -753,9 +767,17 @@ export async function dispatch(task = {}, opts = {}) {
     // ledger and turned the suite red for reasons unrelated to any code change.
     const session = opts.dryRun
       ? await runDispatch()
-      : await withBudget(runDispatch, root, config.limits.dailyTasks);
+      : await withBudget(runDispatch, root, budget.limit, { enforce: budget.certain });
     return classification ? { ...session, _routeTier: classification.tier, _routeReason: classification.reason } : session;
   } catch (err) {
+    // A refusal for daily quota is the only authoritative statement of the
+    // account's real allowance, so record it: from here on the gate enforces a
+    // number the provider demonstrated instead of one a tier preset guessed.
+    if (isDailyQuotaRejection(err)) {
+      try {
+        recordObservedCeiling(checkDailyBudget(root, budget.limit).used, root, { source: "provider-rejection" });
+      } catch (_) {}
+    }
     if (err instanceof ProviderRateLimitError || err instanceof ProviderUnavailableError) {
       if (err.reservationId && !err.budgetReservationRolledBack) {
         rollbackBudgetReservation(root, err.reservationId);

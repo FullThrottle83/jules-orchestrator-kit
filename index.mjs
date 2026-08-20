@@ -130,3 +130,16 @@ export {
   generateEvidenceMarkdown,
   computeEvidenceHash,
 } from "./src/evidence.mjs";
+
+export {
+  resolveDailyLimit,
+  budgetStatus,
+  readObservedCeiling,
+  readActiveCeiling,
+  recordObservedCeiling,
+  isDailyQuotaRejection,
+  CEILING_FILE,
+} from "./src/budget.mjs";
+export { KIT_VERSION } from "./src/version.mjs";
+export { VENDOR_TIERS, FALLBACK_TIER } from "./src/config.mjs";
+export { tierOptions } from "./src/wizard-init.mjs";

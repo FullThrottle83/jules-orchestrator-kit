@@ -5,15 +5,30 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
-import { acquireLock, releaseLock, lockStatus, checkDailyBudget, getQueueDir } from "../src/state.mjs";
+import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.mjs";
 import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
+import { budgetStatus } from "../src/budget.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0];
 
 export const VERSION = KIT_VERSION;
+
+/**
+ * Render the budget line so the number is never mistaken for the vendor's own
+ * counter. The ledger counts what *this checkout* dispatched; sessions started
+ * from the web UI or another machine spend the same quota unseen, so a bare
+ * "N / M used" invites the reader to trust a figure that cannot be complete.
+ * @param {{ used: number, limit: number, source: string, certain: boolean }} b
+ */
+export function formatBudgetLine(b) {
+  const scope = `${b.used} / ${b.limit} used (this repo)`;
+  if (b.source === "learned") return `${scope} — provider refused further work today`;
+  if (b.certain) return `${scope} — limit from ${b.source === "env" ? "JULES_DAILY_BUDGET" : "config"}`;
+  return `${scope} — limit estimated from tier "${b.tier || "?"}", not enforced`;
+}
 
 export function printHelp() {
   console.log(`
@@ -321,8 +336,8 @@ async function main() {
       console.log(`  Detected Stack   : ${detectStack(root).stack}`);
       console.log(`  Test Command     : ${config.verify.test || "(None)"}`);
       console.log(`  Build Command    : ${config.verify.build || "(None)"}`);
-      const budget = checkDailyBudget(root, config.limits.dailyTasks);
-      console.log(`  Daily Budget     : ${budget.used} / ${budget.budget} sessions used`);
+      const budget = budgetStatus(config, root);
+      console.log(`  Daily Budget     : ${formatBudgetLine(budget)}`);
       console.log(`--------------------------------------------------\n`);
       process.exit(0);
       break;
@@ -579,8 +594,8 @@ async function main() {
       console.log(`  Project Root     : ${root}`);
       console.log(`  Pending Tasks    : ${files.length}`);
       console.log(`  Active VFS Locks : ${lockStatus(root).length}`);
-      const budget = checkDailyBudget(root, config.limits.dailyTasks);
-      console.log(`  Daily Budget     : ${budget.used} / ${budget.budget} used`);
+      const budget = budgetStatus(config, root);
+      console.log(`  Daily Budget     : ${formatBudgetLine(budget)}`);
       console.log(`--------------------------------------------------\n`);
       process.exit(0);
       break;

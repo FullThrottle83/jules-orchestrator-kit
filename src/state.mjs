@@ -280,7 +280,12 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
     }
 
     const used = count + activeIds.size;
-    if (used >= limit) {
+    // `enforce: false` marks a limit the kit only guessed (a tier preset rather
+    // than a stated or provider-demonstrated figure). Blocking on a guess would
+    // refuse work the provider would happily have accepted, so an uncertain
+    // ceiling records the overrun and lets the call through to find out.
+    const overLimit = used >= limit;
+    if (overLimit && opts.enforce !== false) {
       throw new BudgetError(`Daily budget exhausted (${used}/${limit} tasks executed)`);
     }
 
@@ -303,12 +308,13 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
       reservationId,
       remaining: Math.max(0, limit - (used + 1)),
       used: used + 1,
+      softLimitExceeded: overLimit,
     };
   }, opts);
 }
 
-export function reserveBudget(rootOrOpts = resolveRoot(), limit = 300) {
-  return reserveBudgetAtomic(rootOrOpts, limit);
+export function reserveBudget(rootOrOpts = resolveRoot(), limit = 300, opts = {}) {
+  return reserveBudgetAtomic(rootOrOpts, limit, opts);
 }
 
 export function commitBudgetReservation(rootOrOpts = resolveRoot(), reservationId = "") {
@@ -321,8 +327,13 @@ export function rollbackBudgetReservation(rootOrOpts = resolveRoot(), reservatio
   return appendLedger({ event: "budget_rolled_back", reservationId }, root);
 }
 
-export async function withBudget(fn, root = resolveRoot(), limit = 300) {
-  const reservation = reserveBudget(root, limit);
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.enforce=true] - Pass false when `limit` is an estimate
+ *   rather than a known allowance; the overrun is then recorded, not blocked.
+ */
+export async function withBudget(fn, root = resolveRoot(), limit = 300, opts = {}) {
+  const reservation = reserveBudget(root, limit, opts);
   try {
     const result = await fn();
     commitBudgetReservation(root, reservation.reservationId);

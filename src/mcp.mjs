@@ -2,7 +2,8 @@ import { Transform } from "node:stream";
 import { loadConfig, resolveRoot, detectStack } from "./config.mjs";
 import { gate, dispatch } from "./engine.mjs";
 import { classifyRiskTier } from "./risk.mjs";
-import { checkDailyBudget, lockStatus } from "./state.mjs";
+import { lockStatus } from "./state.mjs";
+import { budgetStatus } from "./budget.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "./journal.mjs";
 import { readTelemetry } from "./telemetry.mjs";
 import { ProgressBus } from "./mcp-progress.mjs";
@@ -322,13 +323,22 @@ export async function handleMcpRequest(request, opts = {}) {
 
       if (toolName === "get_jules_status") {
         const stackInfo = detectStack(root);
-        const budget = checkDailyBudget(root, config.limits.dailyTasks);
+        const budget = budgetStatus(config, root);
         const locks = lockStatus(root);
         const status = {
           version: MCP_SERVER_INFO.version,
           root,
           stack: stackInfo.stack,
-          budget: { used: budget.used, limit: budget.budget, remaining: budget.budget - budget.used },
+          // `source`/`enforced` travel with the number so an agent reading this
+          // can tell a measured limit from an estimated one.
+          budget: {
+            used: budget.used,
+            limit: budget.limit,
+            remaining: budget.remaining,
+            source: budget.source,
+            enforced: budget.enforced,
+            scope: "this-repository",
+          },
           activeLocksCount: locks.length,
           locks,
         };

@@ -409,6 +409,18 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       ...(envDailyTasks !== null && !isNaN(envDailyTasks) ? { dailyTasks: envDailyTasks } : {}),
       ...(envDiffKb !== null && !isNaN(envDiffKb) ? { diffKb: envDiffKb } : {}),
     },
+    // Where each contested limit actually came from. The merge above flattens
+    // config, env and tier into one number, after which no caller can tell a
+    // figure the operator stated from one the kit guessed — and the budget gate
+    // must not hard-block on a guess. See resolveDailyLimit() in src/budget.mjs.
+    provenance: {
+      dailyTasks:
+        envDailyTasks !== null && !isNaN(envDailyTasks)
+          ? "env"
+          : normalizedLimits.dailyTasks !== undefined
+            ? "config"
+            : "tier",
+    },
     isolation: parsed.isolation || DEFAULTS.isolation,
     runner: parsed.runner || DEFAULTS.runner,
     branchPrefix: parsed.branch_prefix || parsed.branchPrefix || DEFAULTS.branchPrefix,
