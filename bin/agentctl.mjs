@@ -12,11 +12,11 @@ import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 const args = process.argv.slice(2);
 const command = args[0];
 
-export const VERSION = "0.32.6";
+export const VERSION = "0.32.7";
 
 export function printHelp() {
   console.log(`
-🚀 agentctl v0.32.6 — Universal Agent Orchestrator & Safety Gatekeeper
+🚀 agentctl v0.32.7 — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 
@@ -62,6 +62,7 @@ Options:
 `);
 }
 
+
 async function main() {
   if (!command || command === "--help" || command === "-h") {
     printHelp();
@@ -69,7 +70,14 @@ async function main() {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    console.log("agentctl v0.32.6");
+    console.log(`agentctl v${VERSION}`);
+    process.exit(0);
+  }
+
+  // Intercept --help / -h on any subcommand (e.g. `agentctl init --help`)
+  const subArgs = args.slice(1);
+  if (subArgs.includes("--help") || subArgs.includes("-h")) {
+    printHelp();
     process.exit(0);
   }
 
@@ -171,6 +179,7 @@ async function main() {
           fix: { type: "boolean" },
           "allow-protected": { type: "boolean" },
           json: { type: "boolean", short: "j" },
+          "dry-run": { type: "boolean", short: "d" },
         },
         allowPositionals: true,
       });
@@ -304,7 +313,7 @@ async function main() {
     }
 
     case "doctor": {
-      console.log(`\n🔍 agentctl System Diagnostics (v0.29.1)`);
+      console.log(`\n🔍 agentctl System Diagnostics (v${VERSION})`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);
@@ -323,6 +332,7 @@ async function main() {
         args: args.slice(1),
         options: {
           force: { type: "boolean", short: "f" },
+          "dry-run": { type: "boolean", short: "d" },
         },
         allowPositionals: true,
       });
@@ -372,6 +382,7 @@ async function main() {
           interactive: { type: "boolean", short: "i" },
           tier: { type: "string", short: "t" },
           json: { type: "boolean", short: "j" },
+          "dry-run": { type: "boolean", short: "d" },
         },
         allowPositionals: true,
       });
@@ -412,6 +423,7 @@ async function main() {
             "require-plan-approval": { type: "boolean" },
             repoless: { type: "boolean" },
             json: { type: "boolean", short: "j" },
+            "dry-run": { type: "boolean", short: "d" },
           },
           allowPositionals: true,
         });
@@ -449,6 +461,7 @@ async function main() {
             list: { type: "boolean", short: "l" },
             json: { type: "boolean", short: "j" },
             "verify-cmd": { type: "string", short: "v" },
+            "dry-run": { type: "boolean", short: "d" },
           },
           allowPositionals: true,
         });
@@ -497,6 +510,7 @@ async function main() {
             web: { type: "boolean", short: "w" },
             json: { type: "boolean", short: "j" },
             "verify-cmd": { type: "string", short: "v" },
+            "dry-run": { type: "boolean" },
           },
           allowPositionals: true,
         });
@@ -559,7 +573,7 @@ async function main() {
     case "status": {
       const queueDir = getQueueDir(root);
       const files = existsSync(queueDir) ? readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir)) : [];
-      console.log(`\n📊 agentctl Status Summary (v0.29.1)`);
+      console.log(`\n📊 agentctl Status Summary (v${VERSION})`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Pending Tasks    : ${files.length}`);
@@ -653,6 +667,7 @@ async function main() {
           spec: { type: "string", short: "s" },
           run: { type: "boolean", short: "r" },
           json: { type: "boolean", short: "j" },
+          "dry-run": { type: "boolean", short: "d" },
         },
         allowPositionals: true,
       });
@@ -698,6 +713,7 @@ async function main() {
           options: {
             target: { type: "string", short: "t", default: "all" },
             json: { type: "boolean", short: "j" },
+            "dry-run": { type: "boolean", short: "d" },
           },
           allowPositionals: true,
         });
@@ -746,6 +762,7 @@ async function main() {
           task: { type: "string" },
           agent: { type: "string" },
           json: { type: "boolean", short: "j" },
+          "dry-run": { type: "boolean", short: "d" },
         },
         allowPositionals: true,
       });
@@ -798,6 +815,7 @@ async function main() {
           manifest: { type: "string", short: "m" },
           markdown: { type: "string" },
           json: { type: "boolean", short: "j" },
+          "dry-run": { type: "boolean", short: "d" },
         },
         allowPositionals: true,
       });

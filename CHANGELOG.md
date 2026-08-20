@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+
+## [0.32.7] - 2026-08-20
+### Fix stale version banners & subcommand flag handling
+
+#### Fixed
+- **Stale `v0.29.1` version strings in `doctor`, `status`, `dashboard` banners and `index.mjs` JSDoc**: All now read dynamically from the `VERSION` constant or `package.json` instead of hardcoded strings.
+- **`--version` output**: Now uses the `VERSION` constant instead of a hardcoded string.
+- **Subcommand `--help` / `-h` fatal error**: `agentctl <subcommand> --help` previously threw `[FATAL ERROR] Unknown option '--help'` because `node:util` `parseArgs` runs in strict mode. Added global interception of `--help`/`-h` in subcommand args before the switch statement.
+- **Subcommand `--dry-run` / `-d` fatal error**: Added `--dry-run` as a recognized option to all 10 `parseArgs` call sites that were missing it (gate, bootstrap, init, task create, task template, task optimize, test-gen, mcp init, harvest, evidence). `-d` short alias omitted for `task optimize` where it conflicts with `--dir`.
+
 ## [0.32.6] - 2026-08-20
 ### Cross-Platform Scope Hardening, Doc-Sync Release Gate & Adversarial Self-Audit
 

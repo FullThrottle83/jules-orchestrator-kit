@@ -4,9 +4,14 @@
  */
 
 import http from "node:http";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
 import { readTelemetry, verifyTelemetryIntegrity } from "./telemetry.mjs";
 import { readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import { lockStatus } from "./state.mjs";
+
+const pkgVersion = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf-8")).version;
 
 export function getDashboardHtml(root = process.cwd()) {
   return `<!DOCTYPE html>
@@ -32,7 +37,7 @@ export function getDashboardHtml(root = process.cwd()) {
   </style>
 </head>
 <body>
-  <h1>🚀 jules-orchestrator-kit Dashboard (v0.29.1)</h1>
+  <h1>🚀 jules-orchestrator-kit Dashboard (v${pkgVersion})</h1>
   <div class="subtitle">Repository: <code>${root}</code></div>
 
   <div class="grid">
