@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.32.6 (Current Stable) ──► v0.33.0 ──► v1.0.0 (Production Kernel)
+ v0.32.8 (Current Stable) ──► v0.33.0 ──► v1.0.0 (Production Kernel)
  (Web, UX & Bridge)        (Monorepos) (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.32.6)
+## ✅ Shipped Milestones (v0.20.0 – v0.32.8)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.

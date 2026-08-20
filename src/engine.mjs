@@ -695,7 +695,12 @@ export async function dispatch(task = {}, opts = {}) {
   }
   const root = opts.config?._root || opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
-  const { provider, routed, classification } = resolveRoutedProvider(task, config);
+  // opts.provider mirrors gate()'s existing injection point, so a caller can
+  // exercise dispatch without reaching a live provider.
+  const resolved = resolveRoutedProvider(task, config);
+  const provider = opts.provider || resolved.provider;
+  const routed = opts.provider ? false : resolved.routed;
+  const classification = opts.provider ? null : resolved.classification;
   if (routed && classification) {
     appendTelemetry(root, "router_decision", {
       tier: classification.tier,
@@ -739,12 +744,16 @@ export async function dispatch(task = {}, opts = {}) {
 
   const cleanTask = { ...task, prompt: envelopedPrompt };
 
+  const runDispatch = () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun });
+
   try {
-    const session = await withBudget(
-      () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun }),
-      root,
-      config.limits.dailyTasks
-    );
+    // A dry run performs no provider call and produces no work, so it must not
+    // consume one of the operator's finite daily task slots. Reserving here also
+    // made every `npm test` burn real budget, which eventually exhausted the
+    // ledger and turned the suite red for reasons unrelated to any code change.
+    const session = opts.dryRun
+      ? await runDispatch()
+      : await withBudget(runDispatch, root, config.limits.dailyTasks);
     return classification ? { ...session, _routeTier: classification.tier, _routeReason: classification.reason } : session;
   } catch (err) {
     if (err instanceof ProviderRateLimitError || err instanceof ProviderUnavailableError) {

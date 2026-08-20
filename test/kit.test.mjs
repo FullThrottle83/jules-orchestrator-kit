@@ -1,4 +1,4 @@
-import { test, describe } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -241,17 +241,37 @@ describe("Security Redaction & Secret Classification", () => {
 });
 
 describe("Atomic Budget Reservation & Ledger Check", () => {
+  // These reservations are permanent by design, so they must never land in the
+  // operator's real ledger: accumulated test reservations previously exhausted
+  // the daily budget and made the whole suite fail locally while CI stayed green.
+  let budgetRoot;
+
+  before(() => {
+    budgetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jok-budget-"));
+    fs.mkdirSync(path.join(budgetRoot, ".agent", "state"), { recursive: true });
+  });
+
+  after(() => {
+    fs.rmSync(budgetRoot, { recursive: true, force: true });
+  });
+
   test("reserves daily budget and respects maximum session limits", () => {
-    const res = reserveDailyBudget(300, "test-key-123");
+    const res = reserveDailyBudget(300, "test-key-123", budgetRoot);
     assert.equal(res.ok, true);
     assert.ok(res.used >= 1);
   });
 
   test("counts only budget_reserved events, avoiding double-counting with session_dispatched", () => {
-    const check1 = checkDailyBudget(300);
-    reserveDailyBudget(300, "test-key-single-event");
-    const check2 = checkDailyBudget(300);
+    const check1 = checkDailyBudget(budgetRoot, 300);
+    reserveDailyBudget(300, "test-key-single-event", budgetRoot);
+    const check2 = checkDailyBudget(budgetRoot, 300);
     assert.ok(check2.used >= check1.used + 1);
+  });
+
+  test("an isolated root never touches the repository ledger", () => {
+    const stray = path.join(budgetRoot, ".agent", "state");
+    const written = fs.readdirSync(stray).filter((f) => f.startsWith("ledger-"));
+    assert.ok(written.length >= 1, "reservations must be written under the isolated root");
   });
 });
 

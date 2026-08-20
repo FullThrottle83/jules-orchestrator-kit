@@ -135,9 +135,15 @@ export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300) {
   return res;
 }
 
-export function reserveDailyBudget(maxSessions = 300, taskKey = "") {
-  appendLedger({ event: "budget_reserved", key: taskKey });
-  const check = checkDailyBudget(maxSessions);
+/**
+ * @param {number} [maxSessions=300]
+ * @param {string} [taskKey=""]
+ * @param {string} [root] - Ledger root. Defaults to the git toplevel. Pass an
+ *   explicit root to keep callers (notably tests) off the operator's real ledger.
+ */
+export function reserveDailyBudget(maxSessions = 300, taskKey = "", root = resolveRoot()) {
+  appendLedger({ event: "budget_reserved", key: taskKey }, root);
+  const check = checkDailyBudget(root, maxSessions);
   return { ok: check.ok, used: check.used, budget: maxSessions };
 }
 

@@ -121,10 +121,22 @@ test("Model Context Protocol (MCP) Server", async (t) => {
   });
 
   await t.test("BudgetError exit code propagation in agentctl dispatch", () => {
-    const res = spawnSync("node", ["bin/agentctl.mjs", "dispatch", "-p", "test", "--dry-run"], {
+    // A live dispatch fails at the budget gate before any provider call, so this
+    // needs no API key and makes no network request.
+    const res = spawnSync("node", ["bin/agentctl.mjs", "dispatch", "-p", "test"], {
       env: { ...process.env, JULES_DAILY_BUDGET: "0" }
     });
     assert.equal(res.status, 7);
+  });
+
+  await t.test("--dry-run succeeds even when the daily budget is exhausted", () => {
+    // Previously this exited 7: a dry run reserved a real slot before deciding it
+    // had nothing to do, so previewing a task could be blocked by (and consume)
+    // the operator's quota.
+    const res = spawnSync("node", ["bin/agentctl.mjs", "dispatch", "-p", "test", "--dry-run"], {
+      env: { ...process.env, JULES_DAILY_BUDGET: "0" }
+    });
+    assert.equal(res.status, 0);
   });
 
   await t.test("handles unrecognized JSON-RPC method names gracefully with JSON-RPC error response -32601", async () => {

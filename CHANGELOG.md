@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.32.8] - 2026-08-20
+### Dry-Run Budget Leak & Test Suite Ledger Isolation
+
+#### Fixed
+- **`--dry-run` consumed a real daily task slot (`dispatch()` in `src/engine.mjs`)**: `withBudget()` wrapped the provider call unconditionally, so the budget was reserved *before* the dry-run branch was reached. Previewing a task with `agentctl dispatch --dry-run` therefore made no API call but still permanently burned one of the operator's 300 daily sessions, and failed outright with exit `7` once the quota was gone — the one situation where a preview is most useful. Dry runs now bypass budget reservation entirely.
+- **The test suite wrote to the operator's real budget ledger**: `test/engine.test.mjs`, `test/kit.test.mjs` and the CLI dry-run probes in `test/mcp.test.mjs` all dispatched against `process.cwd()`, appending permanent `budget_reserved` entries to `.agent/state/ledger-<date>.jsonl` on every run. Because reservations accumulate across a day and are never released on success, `npm test` eventually exhausted the 300-slot quota and turned the suite red — locally only, never in CI, and with no code change to explain it. Budget-touching tests now run against an isolated temporary root; a full `npm test` leaves the repository ledger byte-identical.
+
+#### Added
+- **`opts.provider` injection for `dispatch()`**: mirrors the injection point `gate()` already exposed, so dispatch can be exercised without reaching a live provider. Passing an explicit provider bypasses cost-router classification.
+- Regression coverage for both defects: a dry run must not change the reserved count, a live dispatch must consume exactly one slot, `agentctl dispatch --dry-run` must exit `0` under an exhausted budget, and budget reservations must land under the isolated root.
+
 ## [0.32.7] - 2026-08-20
 ### Fix stale version banners & subcommand flag handling
 

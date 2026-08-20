@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { gate, dispatch, synthesizePrDescription } from "../src/engine.mjs";
+import { checkDailyBudget } from "../src/state.mjs";
 
 describe("src/engine.mjs", () => {
   it("gate passes clean repository verification", async () => {
@@ -14,6 +18,40 @@ describe("src/engine.mjs", () => {
     const session = await dispatch(task, { dryRun: true });
     assert.equal(session.id, "dry-run-session-id");
     assert.equal(session.status, "pending");
+  });
+
+  it("dry-run dispatch does not consume a daily budget slot", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jok-dryrun-"));
+    try {
+      const ledgerDir = join(tmpDir, ".agent", "state");
+      mkdirSync(ledgerDir, { recursive: true });
+
+      // A dry run makes no provider call, so it must leave the budget untouched.
+      // Reserving here previously exhausted the operator's 300 daily slots
+      // through nothing but repeated `npm test` runs.
+      const before = checkDailyBudget(tmpDir, 300).used;
+      await dispatch({ title: "Dry", prompt: "No-op" }, { root: tmpDir, dryRun: true });
+      const after = checkDailyBudget(tmpDir, 300).used;
+
+      assert.equal(after, before, "dry-run must not reserve budget");
+    } finally {
+      try { rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
+
+  it("a real dispatch still reserves budget", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jok-wet-"));
+    try {
+      mkdirSync(join(tmpDir, ".agent", "state"), { recursive: true });
+      const before = checkDailyBudget(tmpDir, 300).used;
+      const provider = { dispatch: async () => ({ id: "sess-1", status: "pending" }) };
+      await dispatch({ title: "Wet", prompt: "Do work" }, { root: tmpDir, provider });
+      const after = checkDailyBudget(tmpDir, 300).used;
+
+      assert.equal(after, before + 1, "a live dispatch must consume exactly one slot");
+    } finally {
+      try { rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+    }
   });
 
   it("synthesizePrDescription generates evidence-backed PR description body", () => {
