@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Multi-OS CI Matrix (Linux, macOS, Windows) & Interactive TUI Hardening
 
 #### Added
-- **Multi-OS CI Matrix across Node 20, 22, and 24 (`.github/workflows/jules-audit.yml`)**: Fully automated test matrix executing 555 tests across 81 suites on Ubuntu Linux, macOS (Darwin), and Windows (PowerShell/CMD).
+- **Multi-OS CI Matrix across Node 20, 22, and 24 (`.github/workflows/jules-audit.yml`)**: Fully automated test matrix executing 559 tests across 81 suites on Ubuntu Linux, macOS (Darwin), and Windows (PowerShell/CMD).
 - **Deterministic Cross-Platform Test Runner (`scripts/run-tests.mjs`)**: Native zero-dependency runner that resolves all `test/*.test.mjs` test suites via `node:fs` and executes them via `node --test`, eliminating shell-globbing divergences across Windows CMD/PowerShell, macOS zsh, and Linux bash on Node 20/22/24.
 - **Darwin / macOS PID Inspection (`src/state.mjs`)**: Added BSD/Darwin `ps -p <pid> -o lstart=` support in `getProcessStartTime` so PID recycling checks and mutex stale-lock reapers work reliably on macOS where `/proc` is absent.
 

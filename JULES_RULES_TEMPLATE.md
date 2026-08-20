@@ -39,7 +39,7 @@ Jules automatically infers test and build verification commands via `scripts/com
 - `package.json` -> `testCmd: "npm test"` (or `"npm run lint && npm test"`), `buildCmd: "npm run build"`
 - `Cargo.toml` -> `testCmd: "cargo test --workspace"`, `buildCmd: "cargo build"`
 - `go.mod` -> `testCmd: "go test ./..."`, `buildCmd: "go build ./..."`
-- `pyproject.toml` -> `testCmd: "pytest"`, `buildCmd: ""`
+- `pyproject.toml` -> `testCmd: "pytest"`, `buildCmd: "python3 -m compileall -q ."`
 - `pom.xml` -> `testCmd: "mvn test"`, `buildCmd: "mvn compile"`
 - `build.gradle` -> `testCmd: "./gradlew test"`, `buildCmd: "./gradlew assemble"`
 - Workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`) -> targeted affected package filters
