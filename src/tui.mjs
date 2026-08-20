@@ -42,10 +42,11 @@ export function styleText(text, style) {
 }
 
 import { WizardCancelledError } from "./ux/terminal-session.mjs";
+import { createKeyDecoder } from "./ux/key-decoder.mjs";
 export { WizardCancelledError };
 
 /**
- * Read keypress in raw mode from TTY input stream.
+ * Read keypress in raw mode from TTY input stream without destroying stream on early return.
  * @param {import("node:stream").Readable} stream
  * @returns {AsyncGenerator<string, void, unknown>}
  */
@@ -54,20 +55,84 @@ async function* readKeypresses(stream = process.stdin) {
   if (stream.setRawMode) {
     stream.setRawMode(true);
   }
+
+  const decoder = createKeyDecoder();
+  const queue = [];
+  let waiting = null;
+  let error = null;
+
+  const onData = (chunk) => {
+    const events = decoder.push(chunk);
+    for (const ev of events) {
+      const str = ev.sequence;
+      if (waiting) {
+        const resolve = waiting;
+        waiting = null;
+        resolve({ value: str, done: false });
+      } else {
+        queue.push(str);
+      }
+    }
+  };
+
+  const onEnd = () => {
+    const flushed = decoder.flush();
+    for (const ev of flushed) {
+      queue.push(ev.sequence);
+    }
+    if (waiting) {
+      const resolve = waiting;
+      waiting = null;
+      if (queue.length > 0) {
+        resolve({ value: queue.shift(), done: false });
+      } else {
+        resolve({ done: true });
+      }
+    }
+  };
+
+  const onError = (err) => {
+    error = err;
+    if (waiting) {
+      const reject = waiting;
+      waiting = null;
+      reject(err);
+    }
+  };
+
+  stream.on("data", onData);
+  stream.on("end", onEnd);
+  stream.on("error", onError);
+
   stream.resume();
   stream.setEncoding("utf-8");
 
   try {
-    for await (const chunk of stream) {
-      const str = String(chunk);
-      if (str === "\u0003") {
+    while (true) {
+      if (error) throw error;
+      let nextVal;
+      if (queue.length > 0) {
+        nextVal = queue.shift();
+      } else {
+        const res = await new Promise((resolve) => {
+          waiting = resolve;
+        });
+        if (res.done) break;
+        nextVal = res.value;
+      }
+
+      if (nextVal === "\u0003") {
         // Ctrl+C SIGINT
         process.stdout.write(ANSI.showCursor + "\n");
         throw new WizardCancelledError("Wizard operation cancelled by user (SIGINT).");
       }
-      yield str;
+      yield nextVal;
     }
   } finally {
+    stream.off("data", onData);
+    stream.off("end", onEnd);
+    stream.off("error", onError);
+    stream.pause();
     if (stream.setRawMode) {
       stream.setRawMode(Boolean(wasRaw));
     }

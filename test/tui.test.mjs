@@ -107,4 +107,77 @@ test("Native Terminal UI (TUI) Engine", async (t) => {
     assert.ok(out.includes("[Starting] Analyzing stack"));
     assert.ok(out.includes("[Completed] Analysis complete"));
   });
+
+  await t.test("interactive TTY sequential prompts: select -> input -> multiSelect does not abort stream", async () => {
+    const mockStdin = new PassThrough();
+    mockStdin.isTTY = true;
+    mockStdin.setRawMode = () => {};
+    const mockStdout = new PassThrough();
+
+    // 1. First prompt: select
+    const selectPromise = select(
+      [
+        { label: "Free", value: "free" },
+        { label: "Pro", value: "pro" },
+        { label: "Ultra", value: "ultra" },
+      ],
+      "Which plan does your Jules account use?",
+      { stdin: mockStdin, stdout: mockStdout }
+    );
+    setTimeout(() => mockStdin.write("\u001b[B\r"), 10);
+    const chosenPlan = await selectPromise;
+    assert.equal(chosenPlan, "pro");
+    assert.equal(mockStdin.destroyed, false, "stdin stream must not be destroyed after select()");
+
+    // 2. Second prompt: input (uses readline.createInterface)
+    const inputPromise = input("Verification Test Command", {
+      defaultValue: "npm test",
+      stdin: mockStdin,
+      stdout: mockStdout,
+    });
+    setTimeout(() => mockStdin.write("pytest\n"), 10);
+    const chosenCmd = await inputPromise;
+    assert.equal(chosenCmd, "pytest");
+    assert.equal(mockStdin.destroyed, false, "stdin stream must not be destroyed after input()");
+
+    // 3. Third prompt: multiSelect
+    const multiPromise = multiSelect(
+      [
+        { label: "Workflow A", value: "wf_a", checked: false },
+        { label: "Workflow B", value: "wf_b", checked: true },
+      ],
+      "Select Autonomous Workflows",
+      { stdin: mockStdin, stdout: mockStdout }
+    );
+    setTimeout(() => mockStdin.write("\r"), 10);
+    const chosenWfs = await multiPromise;
+    assert.deepEqual(chosenWfs, ["wf_b"]);
+    assert.equal(mockStdin.destroyed, false, "stdin stream must remain intact across all steps");
+  });
+
+  await t.test("interactive TTY select throws WizardCancelledError on Ctrl+C (\\u0003)", async () => {
+    const mockStdin = new PassThrough();
+    mockStdin.isTTY = true;
+    mockStdin.setRawMode = () => {};
+    const mockStdout = new PassThrough();
+
+    const selectPromise = select(
+      [{ label: "A", value: "a" }],
+      "Pick one",
+      { stdin: mockStdin, stdout: mockStdout }
+    );
+
+    setTimeout(() => mockStdin.write("\u0003"), 10);
+
+    await assert.rejects(
+      async () => {
+        await selectPromise;
+      },
+      (err) => {
+        assert.equal(err instanceof WizardCancelledError, true);
+        assert.equal(err.code, 130);
+        return true;
+      }
+    );
+  });
 });
