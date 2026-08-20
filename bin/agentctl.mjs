@@ -889,6 +889,12 @@ async function main() {
           console.log(`   Session ID   : ${sessionId}`);
           console.log(`   Digest Count : ${res.digestCount || 1}`);
           console.log(`   (Use 'agentctl escalate --flush' to deliver immediately)\n`);
+        } else if (res.dryRun) {
+          // Nothing left the machine, so do not claim it did.
+          console.log(`\n🧪 Dry run — this incident would be sent immediately:`);
+          console.log(`   Session ID : ${sessionId}`);
+          console.log(`   Reason     : ${values.reason}`);
+          console.log(`   (No request sent, and your hourly interruption budget is untouched.)\n`);
         } else if (res.dispatched) {
           console.log(`\n🚨 Incident Escalation Dispatched!`);
           console.log(`   Session ID : ${sessionId}`);

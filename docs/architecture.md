@@ -161,9 +161,9 @@ Protects developer attention by buffering non-critical notifications while guara
   <img src="assets/silence-governor.svg" alt="Type III Silence Governor Architecture" width="100%" />
 </p>
 
-1. **Critical Bypass (0ms)**: Incidents matching `DEFAULT_CRITICAL_REASONS` (`R3_GATE_VIOLATION`, `AWAITING_USER_FEEDBACK`, `OODA_REPAIR_EXHAUSTED`, `SECRET_LEAK_DETECTED`) or carrying `critical: true` are dispatched immediately to configured Slack/Discord endpoints.
-2. **Interruption Budget**: Immediate non-critical alerts are throttled to `notifications.budgetPerHour` (default 3) via a sliding 1-hour window in `.agent/state/interruption-ledger.json`.
-3. **Digest Mode & Batch Flush**: When `notifications.mode` is set to `"digest"`, non-critical incidents buffer in `.agent/state/escalation-digest.json` and auto-flush upon reaching `threshold` (default 5) or via explicit operator trigger (`agentctl escalate --flush`).
+1. **Critical Bypass (0ms)**: Incidents matching `DEFAULT_CRITICAL_REASONS` (`R3_GATE_VIOLATION`, `SECRET_LEAK_DETECTED`, `CRITICAL_FAILURE`) or carrying `critical: true` are dispatched immediately to configured Slack/Discord endpoints. The list stays short on purpose: a reason belongs on it only when *delay widens the damage*. `AWAITING_USER_FEEDBACK` is not on it — a blocked agent is the most frequent escalation on a swarm and the exact case the governor exists to batch. Override with `notifications.critical_reasons`.
+2. **Interruption Budget**: Immediate non-critical alerts are throttled to `notifications.budgetPerHour` (default 3) via a sliding 1-hour window in `.agent/state/interruption-ledger.json`. The allowance is charged when an alert is actually sent — never for a `--dry-run` preview or a repo with no webhook configured.
+3. **Digest Mode & Batch Flush**: When `notifications.mode` is set to `"digest"`, non-critical incidents buffer in `.agent/state/escalation-digest.json` and auto-flush upon reaching `threshold` (default 5) or via explicit operator trigger (`agentctl escalate --flush`). A flush carries at most `DIGEST_BATCH_LIMIT` (10) incidents — what Slack and Discord will actually render — and leaves the rest buffered. The buffer is emptied only by a delivery that succeeded, so a failed webhook or a preview loses nothing.
 4. **Secret Scrubbing**: All error logs are scrubbed with `redactSecrets()` before formatting webhook markdown blocks.
 
 ---

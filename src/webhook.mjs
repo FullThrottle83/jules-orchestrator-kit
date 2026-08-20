@@ -3,16 +3,41 @@ import { createServer } from "node:http";
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { getStateDir } from "./state.mjs";
-import { resolveRoot } from "./config.mjs";
+import { resolveRoot, DEFAULT_CRITICAL_REASONS } from "./config.mjs";
 import { redactSecrets } from "./security.mjs";
 
-export const DEFAULT_CRITICAL_REASONS = [
-  "R3_GATE_VIOLATION",
-  "AWAITING_USER_FEEDBACK",
-  "OODA_REPAIR_EXHAUSTED",
-  "SECRET_LEAK_DETECTED",
-  "CRITICAL_FAILURE",
-];
+/**
+ * Reasons that bypass the governor and page the operator the moment they occur.
+ * Defined in config.mjs (loadConfig needs the same list); re-exported here
+ * because this is the module that acts on it.
+ *
+ * The list is deliberately short. Anything named here is exempt from batching,
+ * so a reason belongs on it only when a delayed alert would let damage widen:
+ * a leaked credential keeps being valid, a violated gate keeps merging. Those
+ * are safety events, and the cost of waking someone beats the cost of waiting.
+ *
+ * `AWAITING_USER_FEEDBACK` is deliberately NOT here, even though it is the most
+ * urgent-*feeling* reason. It is the one a blocked agent raises, so on a swarm
+ * of fifteen workers it is also the most frequent by a wide margin — and it is
+ * the exact case the governor exists to batch. Listing it (as v0.35.0 did) made
+ * every default-configured escalation critical and left the governor governing
+ * nothing. Same for `OODA_REPAIR_EXHAUSTED`: the task has already stopped, so
+ * nothing worsens while it sits in a digest.
+ *
+ * An operator who wants the old behaviour sets `notifications.critical_reasons`
+ * in `.agent/config.yml` — this is a default, not a policy.
+ */
+export { DEFAULT_CRITICAL_REASONS };
+
+/**
+ * How many incidents one flush may carry.
+ *
+ * Slack truncates the summary block and Discord accepts a bounded field list,
+ * so a flush of fifty would render ten and drop forty. The digest promises the
+ * opposite — that a buffered incident is never lost — so a flush sends at most
+ * this many and leaves the remainder buffered for the next one.
+ */
+export const DIGEST_BATCH_LIMIT = 10;
 
 export function getDigestFilePath(root = resolveRoot()) {
   return join(getStateDir(root), "escalation-digest.json");
@@ -144,16 +169,21 @@ export async function flushEscalationDigest(config = {}, options = {}) {
   const discordUrl = process.env.DISCORD_WEBHOOK_URL || notifications.discordWebhookUrl || config.discordWebhookUrl || "";
   const dryRun = options.dryRun || config.dryRun || false;
 
-  const count = digest.incidents.length;
-  const results = { flushed: true, count, slack: false, discord: false, dryRun };
+  // One flush carries a bounded batch; whatever does not fit stays buffered.
+  const batch = digest.incidents.slice(0, DIGEST_BATCH_LIMIT);
+  const remainder = digest.incidents.slice(DIGEST_BATCH_LIMIT);
+  const count = batch.length;
+  const results = { flushed: true, count, pending: remainder.length, slack: false, discord: false, dryRun };
 
   if (dryRun) {
-    if (!options.preserve) clearEscalationDigest(root);
+    // A dry run shows what *would* be sent. It must leave the buffer exactly as
+    // it found it — clearing here (as v0.35.0 did) discarded real incidents in
+    // exchange for a preview.
     return {
       ...results,
       payload: {
         count,
-        incidents: digest.incidents,
+        incidents: batch,
       },
     };
   }
@@ -165,7 +195,7 @@ export async function flushEscalationDigest(config = {}, options = {}) {
   // Format Slack digest
   if (slackUrl) {
     try {
-      const summaryText = digest.incidents
+      const summaryText = batch
         .map((inc) => `• *\`${inc.sessionId}\`* on \`${inc.branch}\` [${inc.reason}]: \`agentctl resume ${inc.sessionId}\``)
         .join("\n");
 
@@ -183,7 +213,12 @@ export async function flushEscalationDigest(config = {}, options = {}) {
           {
             type: "context",
             elements: [
-              { type: "mrkdwn", text: `Aggregated by Type III Silence Governor · Oldest: ${digest.createdAt || "N/A"}` },
+              {
+                type: "mrkdwn",
+                text:
+                  `Aggregated by Type III Silence Governor · Oldest: ${digest.createdAt || "N/A"}` +
+                  (remainder.length ? ` · ${remainder.length} still buffered` : ""),
+              },
             ],
           },
         ],
@@ -203,7 +238,7 @@ export async function flushEscalationDigest(config = {}, options = {}) {
   // Format Discord digest
   if (discordUrl) {
     try {
-      const fields = digest.incidents.slice(0, 10).map((inc) => ({
+      const fields = batch.map((inc) => ({
         name: `Session \`${inc.sessionId}\` [${inc.reason}]`,
         value: `Branch: \`${inc.branch}\`\n\`agentctl resume ${inc.sessionId} --response "<answer>"\``,
         inline: false,
@@ -216,7 +251,11 @@ export async function flushEscalationDigest(config = {}, options = {}) {
             title: `Escalation Digest (${count} incidents)`,
             color: 3447003,
             fields,
-            footer: { text: `Aggregated by Type III Silence Governor · Total: ${count}` },
+            footer: {
+              text:
+                `Aggregated by Type III Silence Governor · Total: ${count}` +
+                (remainder.length ? ` · ${remainder.length} still buffered` : ""),
+            },
           },
         ],
       };
@@ -232,8 +271,13 @@ export async function flushEscalationDigest(config = {}, options = {}) {
     }
   }
 
-  if (results.slack || results.discord) {
-    if (!options.preserve) {
+  // Only what actually reached a webhook is dropped. A failed delivery leaves
+  // the whole buffer intact so the next flush retries it rather than silently
+  // eating the incidents.
+  if ((results.slack || results.discord) && !options.preserve) {
+    if (remainder.length) {
+      saveEscalationDigest(root, { incidents: remainder, createdAt: digest.createdAt });
+    } else {
       clearEscalationDigest(root);
     }
   }
@@ -303,11 +347,6 @@ export async function dispatchEscalation(incident = {}, config = {}) {
     }
   }
 
-  // If immediate/critical dispatch:
-  if (!isCritical) {
-    recordInterruption(root);
-  }
-
   const slackUrl = process.env.SLACK_WEBHOOK_URL || notifications.slackWebhookUrl || config.slackWebhookUrl || "";
   const discordUrl = process.env.DISCORD_WEBHOOK_URL || notifications.discordWebhookUrl || config.discordWebhookUrl || "";
 
@@ -339,6 +378,14 @@ export async function dispatchEscalation(incident = {}, config = {}) {
         logLines,
       },
     };
+  }
+
+  // The budget counts interruptions, not intentions. Recording it any earlier
+  // charged the operator's hourly allowance for a `--dry-run` preview or for a
+  // repo with no webhook configured — an alert nobody ever received. Same
+  // mistake the daily task budget made before cd26d6e; same fix.
+  if (!isCritical) {
+    recordInterruption(root);
   }
 
   // Dispatch to Slack

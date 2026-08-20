@@ -114,7 +114,11 @@ export {
   getEscalationDigestStatus,
   clearEscalationDigest,
   bufferEscalationIncident,
+  loadEscalationDigest,
+  recordInterruption,
+  countRecentInterruptions,
   DEFAULT_CRITICAL_REASONS,
+  DIGEST_BATCH_LIMIT,
 } from "./src/webhook.mjs";
 
 // PR Review Evidence Bundler & Dev Server Probe

@@ -11,6 +11,10 @@ import {
   clearEscalationDigest,
   bufferEscalationIncident,
   loadEscalationDigest,
+  recordInterruption,
+  countRecentInterruptions,
+  DEFAULT_CRITICAL_REASONS,
+  DIGEST_BATCH_LIMIT,
 } from "../src/webhook.mjs";
 
 describe("Type III Silence Governor & Interruption Budgeting", () => {
@@ -132,9 +136,12 @@ describe("Type III Silence Governor & Interruption Budgeting", () => {
     assert.equal(res3.count, 3);
     assert.equal(res3.payload.incidents.length, 3);
 
-    // Buffer cleared after flush
+    // This flush ran as a dry run, so nothing left the machine — and a buffer
+    // is only ever emptied by a delivery that succeeded. The incidents are
+    // still here, waiting for a real flush. (Clearing them on a preview, as
+    // v0.35.0 did, threw away escalations in exchange for a payload dump.)
     const status = getEscalationDigestStatus(tempRoot, config);
-    assert.equal(status.pendingCount, 0);
+    assert.equal(status.pendingCount, 3);
   });
 
   it("enforces hourly interruption budget on immediate non-critical alerts", async () => {
@@ -148,22 +155,99 @@ describe("Type III Silence Governor & Interruption Budgeting", () => {
       dryRun: true,
     };
 
-    // First 2 non-critical alerts are allowed
+    // Under budget, a non-critical alert goes straight out.
     const r1 = await dispatchEscalation({ sessionId: "sess-alert-1", reason: "NON_CRITICAL" }, config);
     assert.equal(r1.dispatched, true);
 
-    const r2 = await dispatchEscalation({ sessionId: "sess-alert-2", reason: "NON_CRITICAL" }, config);
-    assert.equal(r2.dispatched, true);
+    // Spend the allowance for real. Seeding the ledger directly rather than
+    // relying on the dry runs above to spend it: a preview must not consume the
+    // operator's hourly budget, so the calls above deliberately record nothing.
+    recordInterruption(tempRoot);
+    recordInterruption(tempRoot);
 
-    // 3rd exceeds budget of 2 per hour -> demoted to digest buffer
-    const r3 = await dispatchEscalation({ sessionId: "sess-alert-3", reason: "NON_CRITICAL" }, config);
-    assert.equal(r3.dispatched, false);
-    assert.equal(r3.buffered, true);
-    assert.equal(r3.reason, "INTERRUPTION_BUDGET_EXCEEDED");
+    const r2 = await dispatchEscalation({ sessionId: "sess-alert-2", reason: "NON_CRITICAL" }, config);
+    assert.equal(r2.dispatched, false);
+    assert.equal(r2.buffered, true);
+    assert.equal(r2.reason, "INTERRUPTION_BUDGET_EXCEEDED");
 
     // Critical reason STILL dispatches even if budget is exceeded
     const rCrit = await dispatchEscalation({ sessionId: "sess-crit", reason: "AWAITING_USER_FEEDBACK" }, config);
     assert.equal(rCrit.dispatched, true);
+  });
+
+  it("a dry run neither spends the interruption budget nor empties the digest", async () => {
+    const config = {
+      root: tempRoot,
+      notifications: { mode: "immediate", budgetPerHour: 3, criticalReasons: [] },
+      dryRun: true,
+    };
+
+    for (let i = 0; i < 5; i++) {
+      await dispatchEscalation({ sessionId: `preview-${i}`, reason: "NON_CRITICAL" }, config);
+    }
+    assert.equal(countRecentInterruptions(tempRoot), 0, "a preview must not charge the hourly allowance");
+
+    bufferEscalationIncident({ sessionId: "real-1", reason: "NON_CRITICAL" }, tempRoot);
+    bufferEscalationIncident({ sessionId: "real-2", reason: "NON_CRITICAL" }, tempRoot);
+    const res = await flushEscalationDigest({}, { root: tempRoot, dryRun: true });
+    assert.equal(res.count, 2);
+    assert.equal(
+      loadEscalationDigest(tempRoot).incidents.length,
+      2,
+      "previewing a flush must leave the buffer intact"
+    );
+  });
+
+  it("uses the shipped defaults to batch a blocked agent rather than page immediately", async () => {
+    // Every other test names its own criticalReasons, so none of them exercise
+    // what an operator who configured nothing actually gets. AWAITING_USER_FEEDBACK
+    // is both the default reason and the most frequent one on a swarm, so if it
+    // counts as critical the governor never engages at all.
+    assert.ok(
+      !DEFAULT_CRITICAL_REASONS.includes("AWAITING_USER_FEEDBACK"),
+      "the default escalation reason must remain governable"
+    );
+
+    const config = { root: tempRoot, notifications: { mode: "digest", threshold: 5 }, dryRun: true };
+    const res = await dispatchEscalation({ sessionId: "sess-default" }, config);
+    assert.equal(res.dispatched, false);
+    assert.equal(res.buffered, true);
+    assert.equal(res.reason, "BUFFERED_IN_DIGEST");
+
+    // A genuine safety event still bypasses everything.
+    const leak = await dispatchEscalation({ sessionId: "sess-leak", reason: "SECRET_LEAK_DETECTED" }, config);
+    assert.equal(leak.dispatched, true);
+  });
+
+  it("a flush larger than one batch leaves the remainder buffered", async () => {
+    for (let i = 0; i < DIGEST_BATCH_LIMIT + 4; i++) {
+      bufferEscalationIncident({ sessionId: `overflow-${i}`, reason: "NON_CRITICAL" }, tempRoot);
+    }
+
+    let delivered = null;
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        delivered = JSON.parse(body);
+        res.writeHead(200).end("ok");
+      });
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${server.address().port}/hook`;
+
+    try {
+      const res = await flushEscalationDigest({ notifications: { slackWebhookUrl: url } }, { root: tempRoot });
+      assert.equal(res.count, DIGEST_BATCH_LIMIT, "one flush carries at most a full batch");
+      assert.equal(res.pending, 4);
+      assert.ok(delivered, "the batch reached the webhook");
+
+      const left = loadEscalationDigest(tempRoot).incidents;
+      assert.equal(left.length, 4, "incidents past the batch limit must survive the flush");
+      assert.equal(left[0].sessionId, `overflow-${DIGEST_BATCH_LIMIT}`, "and the oldest unsent one is next");
+    } finally {
+      server.close();
+    }
   });
 
   it("suppresses all non-critical notifications in silent mode", async () => {

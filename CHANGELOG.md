@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.35.2] - 2026-08-20
+### The Silence Governor Now Actually Governs
+
+Three defects shipped in v0.35.0 meant the Type III Silence Governor did not do what its own documentation described. All three shared a root cause: every test in `test/silence-governor.test.mjs` overrode `criticalReasons` and ran with `dryRun: true`, so the suite proved the mechanism worked while never once exercising the configuration an operator actually gets.
+
+#### Fixed
+- **The governor was inert by default (`src/webhook.mjs`, `src/config.mjs`)**: `AWAITING_USER_FEEDBACK` is both the fallback `reason` and was listed in `DEFAULT_CRITICAL_REASONS`, so every escalation that did not name a reason took the critical bypass. Digest mode, silent mode and the interruption budget were unreachable on a default install. The critical list is now limited to events where delay widens the damage — `R3_GATE_VIOLATION`, `SECRET_LEAK_DETECTED`, `CRITICAL_FAILURE`. A blocked agent is the case the governor exists to batch, not to bypass. Restore the old behaviour with `notifications.critical_reasons` in `.agent/config.yml`.
+- **`--dry-run` spent the interruption budget (`src/webhook.mjs`)**: `recordInterruption()` ran before the dry-run and no-webhook-configured early returns, so previewing an escalation — or raising one in a repo with no webhook — charged the operator's hourly allowance for an alert nobody received. Three previews silenced the next real alert. The budget is now charged at the point of delivery. Same defect the daily task budget carried before `cd26d6e`.
+- **`--dry-run --flush` destroyed the digest (`src/webhook.mjs`)**: previewing a flush called `clearEscalationDigest()` and returned the payload, discarding every buffered incident without sending anything. A preview now leaves the buffer untouched; the buffer is emptied only by a delivery that succeeded.
+- **Oversized flushes dropped incidents silently (`src/webhook.mjs`)**: Slack truncated the summary block and Discord rendered only the first 10 fields, after which the entire buffer was cleared — so a digest of 50 reported 10 and lost 40. A flush now carries at most `DIGEST_BATCH_LIMIT` (10), leaves the remainder buffered for the next one, and reports the count still pending.
+
+#### Changed
+- **`DEFAULT_CRITICAL_REASONS` moved to `src/config.mjs`** and is re-exported from `src/webhook.mjs`. `loadConfig` needs the same list as its default, and the two hand-copied copies were what let the defaults drift from the documentation in the first place.
+- **`flushEscalationDigest()` returns `pending`**, the number of incidents left buffered after the batch.
+
 ## [0.35.1] - 2026-08-20
 ### Universal Web Internationalization (i18n) Template
 

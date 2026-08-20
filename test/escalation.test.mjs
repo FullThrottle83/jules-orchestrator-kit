@@ -1,9 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { dispatchEscalation } from "../src/webhook.mjs";
 
+// Every dispatch here passes an isolated `root`. Without one, `dispatchEscalation`
+// falls back to `resolveRoot()` — the checkout the suite is running in — and the
+// governor reads and writes the developer's own `.agent/state/`. These tests used
+// to get away with it because their reasons took the critical bypass and returned
+// before touching any state; once the bypass narrowed in v0.35.2 they began
+// spending the real interruption budget, and then failed when they exhausted it.
 test("dispatchEscalation Formats and Dispatches Webhook Payloads to Slack and Discord", async (t) => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "escalation-test-"));
+  t.after(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch (_) {}
+  });
+
   await t.test("a) dry-run mode synthesizes structured incident payload without external HTTP request", async () => {
     const res = await dispatchEscalation(
       {
@@ -13,7 +29,7 @@ test("dispatchEscalation Formats and Dispatches Webhook Payloads to Slack and Di
         reason: "OODA_REPAIR_EXHAUSTED",
         logs: "Error: Failed assertion on line 42 in auth.test.mjs",
       },
-      { dryRun: true }
+      { root: tempRoot, dryRun: true }
     );
 
     assert.equal(res.dispatched, true);
@@ -56,6 +72,7 @@ test("dispatchEscalation Formats and Dispatches Webhook Payloads to Slack and Di
           logs: "Which auth provider should be configured?",
         },
         {
+          root: tempRoot,
           slackWebhookUrl: `http://127.0.0.1:${port}/slack`,
           discordWebhookUrl: `http://127.0.0.1:${port}/discord`,
         }

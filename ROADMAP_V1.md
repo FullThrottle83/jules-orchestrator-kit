@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.35.1 (Current Stable) ──► v1.0.0 (Production Kernel)
+ v0.35.2 (Current Stable) ──► v1.0.0 (Production Kernel)
  (Universal i18n & Swarm)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.35.1)
+## ✅ Shipped Milestones (v0.20.0 – v0.35.2)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -87,11 +87,16 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **Real Plan Concurrency** (`TIER_PRESETS` in `src/config.mjs`) — Defaults raised from 1/2/3 to 3/8/15 against published ceilings of 3/15/60; a Pro account had been running two workers where fifteen were available. The vendor ceiling is now recorded as `maxConcurrency`, separate from the kit's default, and `resolveConcurrency()` applies the same provenance rule the daily limit already used: an operator-stated figure is authoritative, a preset is a guess. An overrun is reported by `agentctl doctor`, never blocked — the provider enforces its own slot limit, and a pooled account legitimately exceeds any single plan's.
 
 ### v0.35.0: Swarm Autonomy, Silence Governor & Flaky Test Healing
-- [x] **Type III Silence Governor & Interruption Budgeting** (`src/webhook.mjs`, `agentctl escalate`) — Configurable digest mode for escalation webhooks (`mode: immediate | digest | threshold | silent`), suppressing non-critical notifications to protect developer focus until context shifts or critical manual intervention thresholds (`R3_GATE_VIOLATION`, `AWAITING_USER_FEEDBACK`, `OODA_REPAIR_EXHAUSTED`). Hourly interruption budget and secret redaction.
+- [x] **Type III Silence Governor & Interruption Budgeting** (`src/webhook.mjs`, `agentctl escalate`) — Configurable digest mode for escalation webhooks (`mode: immediate | digest | threshold | silent`), suppressing non-critical notifications to protect developer focus until context shifts or critical manual intervention thresholds (`R3_GATE_VIOLATION`, `SECRET_LEAK_DETECTED`, `CRITICAL_FAILURE` — narrowed in v0.35.2). Hourly interruption budget and secret redaction.
 - [x] **Automated Flaky Test Healing Swarm** (`src/flaky-ledger.mjs`, `agentctl flaky heal`) — Background coordinator and CLI (`agentctl flaky heal`) that consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness prompt templates and repeated verification oracles to repair timing and race conditions without test weakening.
 
 ### v0.35.1: Universal Web Internationalization (i18n) Template
 - [x] **Universal `web-i18n` Task Envelope Template** (`src/web-templates.mjs`) — Standardized verification envelope for multi-language locale routing, bidirectional symmetric `<link rel="alternate" hreflang="...">` integrity (including self & `x-default`), dynamic `<html lang="...">` validation, and missing translation fallback resilience.
+
+### v0.35.2: Silence Governor Correctness
+- [x] **The governor engages on a default install** (`src/webhook.mjs`, `src/config.mjs`) — `AWAITING_USER_FEEDBACK` was both the fallback reason and a critical-bypass reason, so digest mode, silent mode and the interruption budget were unreachable without hand-written config. Critical is now limited to events where delay widens the damage.
+- [x] **A preview has no side effects** (`src/webhook.mjs`) — `--dry-run` no longer spends the hourly interruption budget, and `--dry-run --flush` no longer discards the buffered digest it was asked to preview.
+- [x] **A flush cannot lose incidents** (`src/webhook.mjs`) — batched at `DIGEST_BATCH_LIMIT` (10) to what Slack and Discord actually render, remainder left buffered, buffer emptied only on a delivery that succeeded.
 
 ---
 

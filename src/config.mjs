@@ -350,6 +350,18 @@ export const VENDOR_TIERS = ["free", "pro", "ultra"];
 export const FALLBACK_TIER = "ultra";
 
 /**
+ * Escalation reasons that bypass the Silence Governor and alert immediately.
+ *
+ * Kept here rather than in webhook.mjs because `loadConfig` needs it as the
+ * default for `notifications.critical_reasons`, and webhook.mjs already imports
+ * from this module — the reverse direction would be a cycle. Two hand-copied
+ * lists were how v0.35.0 ended up with a governor that governed nothing.
+ *
+ * See webhook.mjs for why the list is this short.
+ */
+export const DEFAULT_CRITICAL_REASONS = ["R3_GATE_VIOLATION", "SECRET_LEAK_DETECTED", "CRITICAL_FAILURE"];
+
+/**
  * Loads and validates configuration from .agent/config.yml or .agent/jules.yml.
  */
 export function loadConfig(root = resolveRoot(), explicitPath = null) {
@@ -440,7 +452,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
         : 3,
       criticalReasons: Array.isArray(parsed.notifications?.critical_reasons)
         ? parsed.notifications.critical_reasons
-        : ["R3_GATE_VIOLATION", "AWAITING_USER_FEEDBACK", "OODA_REPAIR_EXHAUSTED", "SECRET_LEAK_DETECTED", "CRITICAL_FAILURE"],
+        : [...DEFAULT_CRITICAL_REASONS],
       slackWebhookUrl: parsed.notifications?.slack_webhook_url || parsed.notifications?.slackWebhookUrl || "",
       discordWebhookUrl: parsed.notifications?.discord_webhook_url || parsed.notifications?.discordWebhookUrl || "",
     },
