@@ -7,6 +7,7 @@ import {
   matchesGlob,
   checkScope,
   scanDiff,
+  hasEncodedSecret,
 } from "../src/security.mjs";
 
 describe("src/security.mjs", () => {
@@ -137,5 +138,72 @@ describe("src/security.mjs", () => {
     assert.equal(res.findings.length, 1);
     assert.equal(res.findings[0].type, "EDGE_RUNTIME_VIOLATION");
     assert.ok(res.findings[0].description.includes("node:fs"));
+  });
+});
+
+describe("secrets hidden behind a base64 encoding", () => {
+  const AWS = "AKIA" + "IOSFODNN7EXAMPLE";
+  const b64 = (s) => Buffer.from(s).toString("base64");
+
+  it("finds a structured key inside an encoded value", () => {
+    assert.equal(hasEncodedSecret(`token: ${b64(AWS)}`), true);
+    assert.equal(hasEncodedSecret(`token: ${b64("ghp_" + "a".repeat(36))}`), true);
+  });
+
+  it("leaves data that merely looks encoded alone", () => {
+    // Each of these is the right alphabet and often the right length. None of
+    // them decodes to anything structured, and flagging any of them would make
+    // the gate unusable on an ordinary repository.
+    const benign = [
+      "const sha = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';",
+      "integrity: sha512-BvQqNqLR5owYFRHZBVXBaZTsO2NUyIMMBUyzOZjNPqvNSaTz3xLLLzXOAqAg9yxCiFxLGXHIZ3rvJqvUPuLXqA==",
+      `background: url(data:font/woff2;base64,${Buffer.alloc(400).fill(0x1f).toString("base64")})`,
+      `const doc = "${b64("The quick brown fox jumps over the lazy dog and keeps going.")}";`,
+    ];
+    for (const line of benign) {
+      assert.equal(hasEncodedSecret(line), false, `false positive on: ${line.slice(0, 48)}…`);
+    }
+  });
+
+  it("never runs the entropy heuristics against decoded bytes", () => {
+    // Decoded output is high-entropy by construction, so the low-confidence
+    // patterns would fire on almost anything. Only the structured patterns are
+    // safe here, and this pins that: the word "password" round-tripped through
+    // base64 is not a finding, while an AWS key id is.
+    assert.equal(hasEncodedSecret(b64(`password: "hunter2hunter2hunter2"`)), false);
+    assert.equal(hasEncodedSecret(b64(`id = "${AWS}"`)), true);
+  });
+
+  it("bounds the work a single oversized blob can cause", () => {
+    // A checked-in binary or source map must not be decoded in full. The blob
+    // is skipped, and — crucially — skipping it does not hide the real key that
+    // follows, which is why the cap continues rather than breaking.
+    const huge = Buffer.alloc(1024 * 1024).fill(0x5a).toString("base64");
+    const started = Date.now();
+    const res = scanDiff(`+bin: ${huge}\n+key: ${b64(AWS)}`);
+    assert.equal(res.ok, false, "the small real key after the skipped blob must still be found");
+    assert.ok(Date.now() - started < 5000, "an oversized blob must not stall the gate");
+  });
+
+  it("reports the encoding in the description so an operator can act on it", () => {
+    const res = scanDiff(`+  access-key-id: ${b64(AWS)}`);
+    const finding = res.findings.find((f) => f.type === "HIGH_CONFIDENCE_SECRET");
+    assert.ok(finding);
+    assert.equal(finding.severity, "CRITICAL");
+    assert.match(finding.description, /base64-encoded/);
+  });
+
+  it("does not relabel a cleartext key as an encoded one", () => {
+    const res = scanDiff(`+const k = "${AWS}";`);
+    const finding = res.findings.find((f) => f.type === "HIGH_CONFIDENCE_SECRET");
+    assert.doesNotMatch(finding.description, /base64-encoded/);
+  });
+
+  it("still finds a key encoded behind zero-width characters", () => {
+    // The encoded check runs on the normalised text, so the evasions the
+    // cleartext scanner already handles must keep working through it.
+    const enc = b64(AWS);
+    const split = `+const k = "${enc.slice(0, 8)}​${enc.slice(8)}";`;
+    assert.equal(scanDiff(split).ok, false);
   });
 });

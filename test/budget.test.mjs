@@ -427,6 +427,90 @@ describe("reconciling a local count that no longer reflects reality", () => {
     }
   });
 
+  it("keeps reservations that demonstrably reached the provider", () => {
+    // A committed reservation carries proof that a session exists on Jules'
+    // side, so the quota really was spent. Giving it back makes the local count
+    // understate reality — and understating is the direction that gets the next
+    // dispatch refused, which is exactly what the ledger exists to prevent.
+    const root = makeRoot("jok-budget-keep-committed-");
+    try {
+      const a = reserveBudget(root, 100);
+      reserveBudget(root, 100);
+      reserveBudget(root, 100);
+      commitBudgetReservation(root, a.reservationId);
+
+      const res = releaseOpenReservations({ root });
+      assert.equal(res.released, 2);
+      assert.equal(res.kept, 1);
+      assert.equal(res.committed, 1);
+      assert.equal(res.includeCommitted, false);
+      assert.ok(!res.ids.includes(a.reservationId), "the committed one must not be released");
+
+      assert.equal(checkDailyBudget(root, 100).used, 1, "the confirmed dispatch is still charged");
+      assert.equal(listOpenReservations(root)[0].reservationId, a.reservationId);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("releases the committed ones too when the operator asks for --all", () => {
+    const root = makeRoot("jok-budget-all-");
+    try {
+      const a = reserveBudget(root, 100);
+      reserveBudget(root, 100);
+      commitBudgetReservation(root, a.reservationId);
+
+      const res = releaseOpenReservations({ root, includeCommitted: true });
+      assert.equal(res.released, 2);
+      assert.equal(res.kept, 0);
+      assert.equal(checkDailyBudget(root, 100).used, 0);
+      assert.equal(
+        verifyLedgerIntegrity(getDailyLedgerPath(root)).ok,
+        true,
+        "the override still corrects forwards, never in place"
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("writes nothing when every open reservation is a committed one", () => {
+    const root = makeRoot("jok-budget-all-committed-");
+    try {
+      const a = reserveBudget(root, 100);
+      commitBudgetReservation(root, a.reservationId);
+      const before = readFileSync(getDailyLedgerPath(root), "utf-8").split("\n").filter(Boolean).length;
+
+      const res = releaseOpenReservations({ root });
+      assert.equal(res.released, 0);
+      assert.equal(res.kept, 1);
+
+      const after = readFileSync(getDailyLedgerPath(root), "utf-8").split("\n").filter(Boolean).length;
+      assert.equal(after, before, "a reset with nothing to release must not touch the ledger");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still releases legacy id-less reservations, which can never be committed", () => {
+    // `budget_committed` names a reservationId, so an anonymous reservation can
+    // never acquire one. It always reads as uncommitted — which is right: it is
+    // exactly the phantom the default reset is meant to clear.
+    const root = makeRoot("jok-budget-anon-default-");
+    try {
+      appendLedger({ event: "budget_reserved", key: "legacy-a" }, root);
+      appendLedger({ event: "budget_reserved", key: "legacy-b" }, root);
+
+      const res = releaseOpenReservations({ root });
+      assert.equal(res.released, 2);
+      assert.equal(res.kept, 0);
+      assert.equal(res.anonymous, 2);
+      assert.equal(checkDailyBudget(root, 100).used, 0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("is a no-op on a ledger with nothing outstanding", () => {
     const root = makeRoot("jok-budget-noop-");
     try {

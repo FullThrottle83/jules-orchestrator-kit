@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.37.0] - 2026-08-20
+### The Secret Scanner Sees Through Base64, and `budget reset` Stops Giving Back Quota That Was Really Spent
+
+#### Added
+- **The secret scanner now decodes base64 values before matching (`src/security.mjs`)**: base64 is less an evasion technique than a file format — every value under `data:` in a Kubernetes Secret manifest is base64 by specification, and whole `.env` files get encoded into a single CI variable. A live credential arriving that way is ordinary rather than adversarial, and the line-oriented scanner walked straight past it, which made this the encoding most likely to carry a real key through the gate. `scanDiff()` now decodes the base64-looking blobs on added lines and runs the structured patterns against the plaintext. This closes the last remaining `todo` in `test/adversarial-claims.test.mjs`; the kit's advertised claims are now falsified by zero known gaps.
+  - **Decoded bytes are tested against the high-confidence patterns only.** The low-confidence set is entropy- and keyword-driven, and decoded output is high-entropy by construction, so pointing it here would flag close to every encoded blob in every repository. `AKIA[0-9A-Z]{16}` cannot match decoded noise; "looks secret-ish" always can. That asymmetry is what makes the check safe to enable by default, and `test/security.test.mjs` pins it.
+  - **Candidates are filtered before they are decoded**, by length-modulo-four and then by whether the result is at least 90% printable ASCII. `Buffer.from(str, "base64")` never throws — it silently discards what it cannot parse — so a hex digest or a minified identifier of the right length "decodes" into meaningless bytes. Real wrapped credentials decode to text; that ratio separates the two.
+  - **Bounded**: at most 64 candidates and 64 KB decoded per scan, checked against what a blob *would* cost rather than what has already been spent, so one checked-in binary cannot be decoded in full. An oversized blob is skipped rather than ending the scan, so it cannot hide a real key that follows it.
+  - Measured against all 263 commits in this repository (4.4 MB of diff): **zero false positives**, and `scanDiff()` on the largest single diff in the history (315 KB) runs in ~15 ms.
+- **`redactSecrets()` removes the encoded form too**: otherwise `scanDiff()` blocked the dispatch and the escalation payload reporting the block leaked the very value it blocked on. The whole blob is replaced — a partially-redacted encoding still decodes to the key.
+
+#### Fixed
+- **`agentctl budget reset` released reservations that had demonstrably reached Jules (`src/budget.mjs`, `bin/agentctl.mjs`)**: `budget_committed` was written to the ledger and read by `scanBudgetWindow()`, and `releaseOpenReservations()` even counted committed versus uncommitted for its report — then released both alike. The two are not equivalent. An *uncommitted* reservation is a phantom: the process died between taking the slot and learning what happened to it. A *committed* one carries proof that a session exists on the provider's side, so the quota really was spent, and giving it back makes the local count **understate** real usage. That is the dangerous direction — the kit then dispatches confidently past the provider's real limit and is refused. `reset` now releases only the reservations that never closed; `--all` is required to release the committed ones as well. Legacy id-less reservations can never acquire a `budget_committed` entry, so they always read as uncommitted and are still released by default, which is correct for them.
+- **`agentctl budget reset` silently ignored unrecognised flags**: a misremembered option — `--root`, `--force` — dropped straight through to a full release. Unknown options are now refused with exit code 2 and nothing is written.
+
+#### Changed
+- **`agentctl budget` reports the split**: open reservations are shown as *confirmed dispatched* versus *never closed*, so the number `reset` will act on is visible before it is run.
+- **`releaseOpenReservations()` returns `kept`, `open` and `includeCommitted`** alongside the existing counts. `released` now means "actually released", which under the new default is the uncommitted subset rather than everything open.
+
 ## [0.36.0] - 2026-08-20
 ### Universal AI Crawler Policy & llms.txt Integrity Template
 

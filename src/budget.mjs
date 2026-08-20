@@ -276,32 +276,54 @@ export function listOpenReservations(root = resolveRoot(), opts = {}) {
  * forwards — never by editing or deleting the file, which would break the chain
  * and destroy the audit trail the ledger exists to provide.
  *
- * This is an operator override, not an inference. The kit cannot tell a
- * reservation that reached the provider from one whose process died first, so
- * only the operator knows whether the local count still reflects reality.
+ * This is an operator override, not an inference — but the two kinds of open
+ * reservation are not equally likely to be wrong, and by default only one of
+ * them is released.
+ *
+ * An **uncommitted** reservation was taken and never resolved: the process died
+ * between reserving the slot and learning what happened to it. That is the
+ * phantom this function exists to clear.
+ *
+ * A **committed** one carries proof that the dispatch reached the provider, so
+ * a real session exists and the quota really was spent. Releasing it makes the
+ * local count *understate* actual usage, which is the dangerous direction: the
+ * kit then dispatches confidently past the provider's real limit and gets
+ * refused. `includeCommitted` therefore has to be asked for.
+ *
+ * Legacy id-less reservations have no `budget_committed` entry that could ever
+ * name them, so they always read as uncommitted and are always released.
  *
  * @param {object} [opts]
  * @param {string} [opts.root]
  * @param {string} [opts.reason] - Recorded on every released entry.
  * @param {boolean} [opts.dryRun] - Report what would be released, write nothing.
- * @returns {{ released: number, committed: number, uncommitted: number, ids: string[], dryRun: boolean }}
+ * @param {boolean} [opts.includeCommitted] - Also release reservations that
+ *   demonstrably reached the provider. Off by default.
+ * @returns {{ released: number, kept: number, open: number, committed: number,
+ *   uncommitted: number, anonymous: number, ids: string[],
+ *   includeCommitted: boolean, dryRun: boolean }}
  */
 export function releaseOpenReservations(opts = {}) {
   const root = opts.root || resolveRoot();
   const openRecords = listOpenReservations(root);
   const committed = openRecords.filter((r) => r.committed).length;
+  const includeCommitted = Boolean(opts.includeCommitted);
+  const targets = includeCommitted ? openRecords : openRecords.filter((r) => !r.committed);
 
   const result = {
-    released: openRecords.length,
+    released: targets.length,
+    kept: openRecords.length - targets.length,
+    open: openRecords.length,
     committed,
     uncommitted: openRecords.length - committed,
-    anonymous: openRecords.filter((r) => !r.reservationId).length,
-    ids: openRecords.map((r) => r.reservationId).filter(Boolean),
+    anonymous: targets.filter((r) => !r.reservationId).length,
+    ids: targets.map((r) => r.reservationId).filter(Boolean),
+    includeCommitted,
     dryRun: Boolean(opts.dryRun),
   };
-  if (opts.dryRun || openRecords.length === 0) return result;
+  if (opts.dryRun || targets.length === 0) return result;
 
-  for (const rec of openRecords) {
+  for (const rec of targets) {
     const entry = { event: "budget_released", reason: opts.reason || "operator-reconcile" };
     if (rec.reservationId) {
       entry.reservationId = rec.reservationId;

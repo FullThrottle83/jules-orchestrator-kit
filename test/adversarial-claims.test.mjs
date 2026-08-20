@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 
-import { checkScope, scanDiff } from "../src/security.mjs";
+import { checkScope, scanDiff, redactSecrets } from "../src/security.mjs";
 import { canonicalizePath } from "../src/config.mjs";
 import { classifyTaskComplexity } from "../src/router.mjs";
 import { createProvider } from "../src/provider.mjs";
@@ -222,9 +222,44 @@ describe("CLAIM: secret scanner blocks credentials pre-dispatch", () => {
     assert.equal(res.ok, false);
   });
 
-  it("a base64-wrapped key must still be flagged", { todo: "scanner does not attempt base64 decoding of added lines" }, () => {
+  it("HOLDS — a base64-wrapped key is flagged", () => {
     const res = scanDiff(`+const k = "${Buffer.from(AWS).toString("base64")}";`);
     assert.equal(res.ok, false);
+    assert.ok(res.findings.some((f) => f.type === "HIGH_CONFIDENCE_SECRET"));
+  });
+
+  it("HOLDS — a Kubernetes Secret manifest is scanned through its encoding", () => {
+    // Every value under `data:` in a Secret is base64 by specification, so this
+    // is what a leaked key looks like in perfectly idiomatic Kubernetes YAML.
+    const manifest = [
+      "+apiVersion: v1",
+      "+kind: Secret",
+      "+metadata:",
+      "+  name: aws-creds",
+      "+data:",
+      `+  access-key-id: ${Buffer.from(AWS).toString("base64")}`,
+    ].join("\n");
+    assert.equal(scanDiff(manifest).ok, false);
+  });
+
+  it("HOLDS — decoding does not turn ordinary encoded data into a finding", () => {
+    // The decoded variant is deliberately tested against the structured
+    // patterns only. If it were also run through the entropy heuristics, a
+    // checked-in binary blob would trip the gate on every repository.
+    const blob = Buffer.from(Buffer.alloc(600).fill(0xa7)).toString("base64");
+    assert.equal(scanDiff(`+const icon = "${blob}";`).ok, true);
+
+    const prose = Buffer.from("The quick brown fox jumps over the lazy dog. ".repeat(4)).toString("base64");
+    assert.equal(scanDiff(`+const note = "${prose}";`).ok, true);
+  });
+
+  it("HOLDS — redaction removes the encoded form too, not just the cleartext", () => {
+    // Otherwise scanDiff blocks the dispatch and the escalation payload that
+    // reports the block leaks the very value it blocked on.
+    const encoded = Buffer.from(AWS).toString("base64");
+    const out = redactSecrets(`key = "${encoded}"`);
+    assert.ok(!out.includes(encoded), "the blob must not survive redaction");
+    assert.ok(!Buffer.from(out, "base64").toString("utf-8").includes(AWS));
   });
 });
 

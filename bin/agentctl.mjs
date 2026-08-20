@@ -334,18 +334,41 @@ async function main() {
         // The count is local-only, so an operator who knows their real usage
         // must be able to correct it. Appending `budget_released` keeps the
         // hash chain intact — the ledger is corrected forwards, never edited.
+        // An unrecognised flag is refused rather than ignored. `reset` writes to
+        // the ledger, and a misremembered flag — `--root`, `--force` — silently
+        // dropping through to a full release is the kind of misfire that only
+        // becomes visible after the count is already gone.
+        const known = new Set(["--dry-run", "--yes", "-y", "--all"]);
+        const unknown = args.slice(2).filter((a) => !known.has(a));
+        if (unknown.length) {
+          console.error(`Unrecognised option${unknown.length > 1 ? "s" : ""} for \`budget reset\`: ${unknown.join(", ")}`);
+          console.error("Accepted: --dry-run, --yes/-y, --all. Nothing was released.");
+          process.exit(2);
+        }
         const dryRun = args.includes("--dry-run");
         const confirmed = args.includes("--yes") || args.includes("-y");
+        // Committed reservations reached the provider, so releasing them makes
+        // the local count understate real usage. That has to be deliberate.
+        const includeCommitted = args.includes("--all");
         if (!dryRun && !confirmed) {
           const open = listOpenReservations(root);
-          console.log(`Would release ${open.length} open reservation(s) from the last 24 hours.`);
+          const committed = open.filter((r) => r.committed).length;
+          const target = includeCommitted ? open.length : open.length - committed;
+          console.log(`Would release ${target} open reservation(s) from the last 24 hours.`);
+          if (committed > 0 && !includeCommitted) {
+            console.log(`Keeping ${committed} that reached Jules — those sessions really spent quota.`);
+            console.log("Add --all to release them too, if you know the count is still wrong.");
+          }
           console.log("This rewrites nothing — it appends `budget_released` entries.");
           console.log("Re-run with --yes to confirm, or --dry-run for detail.");
           process.exit(0);
         }
-        const res = releaseOpenReservations({ root, dryRun, reason: "operator-reconcile" });
+        const res = releaseOpenReservations({ root, dryRun, includeCommitted, reason: "operator-reconcile" });
         const verb = dryRun ? "Would release" : "Released";
-        console.log(`${verb} ${res.released} reservation(s) (${res.committed} committed, ${res.uncommitted} never closed).`);
+        console.log(`${verb} ${res.released} of ${res.open} open reservation(s) — ${res.uncommitted} never closed, ${res.committed} committed.`);
+        if (res.kept > 0) {
+          console.log(`Kept ${res.kept} committed reservation(s); re-run with --all to release those as well.`);
+        }
         if (!dryRun) {
           const after = budgetStatus(loadConfig(root), root);
           console.log(`Daily Budget : ${formatBudgetLine(after)}`);
@@ -363,14 +386,17 @@ async function main() {
       console.log(`  ${b.note}`);
       console.log(`  Window opened at ${b.windowStart} — the quota resets ${b.windowHours}h after each task,`);
       console.log("  not at midnight, so this count spans yesterday's ledger too.");
-      console.log(`  Open reservations in the window: ${listOpenReservations(root).length}`);
+      const openNow = listOpenReservations(root);
+      const committedNow = openNow.filter((r) => r.committed).length;
+      console.log(`  Open reservations in the window: ${openNow.length} (${committedNow} confirmed dispatched, ${openNow.length - committedNow} never closed)`);
       console.log("");
       console.log(`Worker Slots : ${slots.concurrency} concurrent`);
       console.log(`  ${slots.note}`);
       console.log("");
       console.log("The ledger counts this checkout only — sessions started from the Jules");
       console.log("web UI or another machine spend the same quota without appearing here.");
-      console.log("Use `agentctl budget reset --yes` to reconcile a count you know is wrong.");
+      console.log("Use `agentctl budget reset --yes` to clear the ones that never closed,");
+      console.log("or `--all` to also give back the ones that did reach Jules.");
       process.exit(0);
       break;
     }

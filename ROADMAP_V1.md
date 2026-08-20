@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.36.0 (Current Stable) ──► v1.0.0 (Production Kernel)
+ v0.37.0 (Current Stable) ──► v1.0.0 (Production Kernel)
  (Universal i18n & Swarm)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.36.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.37.0)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -100,6 +100,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ### v0.36.0: Universal AI Crawler Policy & llms.txt Integrity Template
 - [x] **Universal `web-ai-access` Task Envelope Template** (`src/web-templates.mjs`) — Cross-surface consistency for AI crawler directives (`robots.txt`, robots meta tags, `X-Robots-Tag`) and `llms.txt` integrity with locally-resolved links. Defaults to `preserve`: crawler posture is an operator policy decision, not a best practice, so the template enforces whatever the repository already states rather than opening it up. Scoped to verifiable file integrity — it claims no visibility or ranking effect, because none can be falsified.
+
+### v0.37.0: Encoded-Secret Detection & Honest Budget Reconciliation
+- [x] **The secret scanner decodes base64 before matching** (`src/security.mjs`) — every value in a Kubernetes `Secret` manifest is base64 by specification, so this was the encoding most likely to carry a live key past a line-oriented gate. Decoded bytes are matched against the structured patterns only, never the entropy heuristics, and the work is bounded at 64 candidates / 64 KB per scan. Zero false positives across all 263 commits in this repository.
+- [x] **`redactSecrets()` removes the encoded form too** (`src/security.mjs`) — otherwise the gate blocked the dispatch and the escalation payload reporting the block leaked the value it blocked on.
+- [x] **`budget reset` keeps reservations that reached the provider** (`src/budget.mjs`, `bin/agentctl.mjs`) — `budget_committed` was written and counted but never acted on. Releasing a committed reservation makes the local count understate real usage, which is the direction that gets the next dispatch refused. `--all` is now required for that.
+- [x] **`budget reset` refuses unrecognised flags** (`bin/agentctl.mjs`) — a misremembered option silently dropped through to a full release.
+- [x] **The adversarial red-team suite has no open gaps** (`test/adversarial-claims.test.mjs`) — the base64 `todo` was the last one; every documented safety claim is now backed by a passing probe.
 
 ---
 

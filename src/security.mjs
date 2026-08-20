@@ -142,6 +142,19 @@ export function redactSecrets(text) {
     sanitized = sanitized.replace(pat, "[REDACTED_BY_SECURITY_GATE]");
   }
 
+  // A key the scanner can find inside a base64 blob must not survive redaction
+  // just because the literal bytes differ — otherwise scanDiff blocks the
+  // dispatch and the escalation payload leaks the very value it blocked on. The
+  // whole blob goes, not part of it: a partially-redacted encoding still
+  // decodes to the key.
+  const encoded = new Set();
+  decodeBase64Blobs(sanitized, (plain, blob) => {
+    if (hasHighConfidenceSecret(plain)) encoded.add(blob);
+  });
+  for (const blob of encoded) {
+    sanitized = sanitized.split(blob).join("[REDACTED_ENCODED_SECRET]");
+  }
+
   return sanitized;
 }
 
@@ -374,14 +387,118 @@ const STRING_CONCAT_JOIN = /(["'`])\s*\+\s*(["'`])/g;
  * Produces the variants of the added-line text that secret patterns are run
  * against: as-written, with invisible characters stripped, and with
  * source-level string concatenation collapsed.
+ *
+ * `normalized` is the last of those — every normalisation applied. It is
+ * returned separately for checks that are too expensive to run three times and
+ * gain nothing from the intermediate forms.
+ *
  * @param {string} addedLines
- * @returns {string[]}
+ * @returns {{ all: string[], normalized: string }}
  */
 function secretScanVariants(addedLines) {
   const stripped = addedLines.replace(INVISIBLE_CHARS, "");
   // Collapse `"AAA" +\n  "BBB"` into `"AAABBB"` before matching.
   const dejoined = stripped.replace(/\s*\n\s*/g, " ").replace(STRING_CONCAT_JOIN, "");
-  return [...new Set([addedLines, stripped, dejoined])];
+  return { all: [...new Set([addedLines, stripped, dejoined])], normalized: dejoined };
+}
+
+// Base64 is less an evasion technique than a file format. Every value in a
+// Kubernetes Secret manifest is base64 by specification, and whole `.env` files
+// get encoded into a single CI variable. A credential arriving that way is
+// ordinary rather than adversarial — and a line-oriented scanner walks straight
+// past it, which makes this the encoding most likely to carry a live key
+// through the gate.
+const BASE64_CANDIDATE = /[A-Za-z0-9+/]{24,}={0,2}/g;
+
+// Decoding is cheap per blob and ruinous per diff if left unbounded. A patch
+// that checks in a binary, a source map or a bundled font is otherwise enough
+// to turn one scan into a memory event, so both the number of candidates and
+// the total decoded size are capped. Exceeding a cap skips the remainder; it
+// does not fail the scan, because a large diff is not evidence of a leak.
+const BASE64_MAX_CANDIDATES = 64;
+const BASE64_MAX_DECODED_BYTES = 64 * 1024;
+
+/**
+ * Share of characters that are printable ASCII (plus tab/newline/return).
+ *
+ * `Buffer.from(str, "base64")` never throws — it discards what it cannot parse
+ * and returns whatever it managed to decode. So a hex digest or a random
+ * identifier of the right length "decodes" successfully into bytes that mean
+ * nothing. A wrapped credential, on the other hand, decodes to text: keys,
+ * PEM blocks and `.env` bodies are all ASCII. This ratio is what separates the
+ * two, and it removes nearly all of the noise before any pattern runs.
+ */
+function printableRatio(str) {
+  if (!str) return 0;
+  let printable = 0;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126)) printable++;
+  }
+  return printable / str.length;
+}
+
+/**
+ * Decode the base64-looking blobs in `text` that plausibly hold text.
+ *
+ * @param {string} text
+ * @param {(plain: string, blob: string) => void} [onDecoded] - Called per blob.
+ * @returns {string[]}
+ */
+function decodeBase64Blobs(text, onDecoded) {
+  if (!text) return [];
+  const decoded = [];
+  let candidates = 0;
+  let bytes = 0;
+
+  BASE64_CANDIDATE.lastIndex = 0;
+  let match;
+  while ((match = BASE64_CANDIDATE.exec(text)) !== null) {
+    if (candidates++ >= BASE64_MAX_CANDIDATES) break;
+    const blob = match[0];
+    // Valid base64 is a multiple of four characters including padding. This
+    // costs nothing and rejects three quarters of the alphanumeric runs — commit
+    // hashes, minified identifiers — that would otherwise be decoded for nothing.
+    if (blob.length % 4 !== 0) continue;
+    // Check the budget against what this blob *would* cost, not against what
+    // has already been spent — otherwise the first candidate decodes in full
+    // however large it is, and a single checked-in binary costs more than the
+    // cap was meant to allow. `continue`, not `break`: one oversized blob must
+    // not hide the smaller ones after it.
+    if (bytes + (blob.length * 3) / 4 > BASE64_MAX_DECODED_BYTES) continue;
+
+    let plain;
+    try {
+      plain = Buffer.from(blob, "base64").toString("utf-8");
+    } catch (_) {
+      continue;
+    }
+    bytes += plain.length;
+    if (printableRatio(plain) < 0.9) continue;
+
+    decoded.push(plain);
+    if (onDecoded) onDecoded(plain, blob);
+  }
+  BASE64_CANDIDATE.lastIndex = 0;
+  return decoded;
+}
+
+/**
+ * True when a base64-encoded value on an added line decodes to a structured
+ * credential.
+ *
+ * Deliberately runs the high-confidence patterns *only*. The low-confidence set
+ * is entropy- and keyword-driven, and decoded bytes are high-entropy by
+ * construction — pointing it at this output would flag close to every encoded
+ * blob in every repository. `AKIA[0-9A-Z]{16}` cannot match decoded noise;
+ * "looks secret-ish" always can. That asymmetry is the whole reason this check
+ * is safe to enable by default.
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function hasEncodedSecret(text) {
+  return decodeBase64Blobs(text).some((plain) => hasHighConfidenceSecret(plain));
 }
 
 export function scanDiff(diffTextStr = "", options = {}) {
@@ -392,13 +509,23 @@ export function scanDiff(diffTextStr = "", options = {}) {
     .map((line) => line.slice(1))
     .join("\n");
 
-  const variants = secretScanVariants(addedLines);
+  const { all: variants, normalized } = secretScanVariants(addedLines);
   const hasHigh = variants.some((v) => hasHighConfidenceSecret(v));
-  const hasLow = !hasHigh && variants.some((v) => hasLowConfidenceSecret(v));
+  // Only worth decoding when nothing was found in the clear, and only against
+  // the fully-normalised text: decoding is the expensive step, and the
+  // intermediate variants differ from it in ways base64 blobs do not care about.
+  const hasEncoded = !hasHigh && hasEncodedSecret(normalized);
+  const hasLow = !hasHigh && !hasEncoded && variants.some((v) => hasLowConfidenceSecret(v));
   const findings = [];
 
   if (hasHigh) {
     findings.push({ severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", description: "High-confidence secret pattern detected in added diff lines" });
+  } else if (hasEncoded) {
+    // Same type as the cleartext case: every gate that blocks on
+    // HIGH_CONFIDENCE_SECRET should block on this too, and a new type would
+    // have silently passed through the ones not updated. The description
+    // carries the difference the operator needs.
+    findings.push({ severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", description: "High-confidence secret pattern detected inside a base64-encoded value on an added diff line" });
   } else if (hasLow) {
     findings.push({ severity: "HIGH", type: "LOW_CONFIDENCE_SECRET", description: "Low-confidence secret or authorization token detected in added diff lines" });
   }
@@ -419,7 +546,7 @@ export function scanDiff(diffTextStr = "", options = {}) {
   }
 
   return {
-    ok: !hasHigh && !hasLow && edgeRes.ok && crossPkgRes.ok,
+    ok: !hasHigh && !hasEncoded && !hasLow && edgeRes.ok && crossPkgRes.ok,
     findings,
   };
 }

@@ -13,6 +13,7 @@ export {
   matchesGlob,
   checkScope,
   scanDiff,
+  hasEncodedSecret,
   checkEdgeRuntimeImports,
   checkCrossPackageImports,
 } from "./src/security.mjs";

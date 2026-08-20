@@ -226,8 +226,11 @@ Every phase runs against `origin/<base>` rules and short-circuits on first failu
 | Finding type | Detector |
 | :--- | :--- |
 | `HIGH_CONFIDENCE_SECRET` / `LOW_CONFIDENCE_SECRET` | Regex pattern lists (AWS, GitHub, OpenAI, Stripe, private keys, bearer tokens) — **pattern matching, not entropy**. Run against three variants of the added lines: as-written, with invisible characters stripped, and with source-level string concatenation collapsed |
+| `HIGH_CONFIDENCE_SECRET` (encoded) | `hasEncodedSecret()` — base64 blobs on added lines are decoded and matched, so a key in a Kubernetes `Secret` manifest or a base64'd `.env` is not invisible to a line-oriented scanner. The description names the encoding; the type is deliberately the same, so every gate that already blocks on a cleartext key blocks on this one |
 | `EDGE_RUNTIME_VIOLATION` | `checkEdgeRuntimeImports()` — unsupported `node:*` built-ins in Cloudflare / Vercel / Netlify Edge contexts |
 | `CROSS_PACKAGE_BOUNDARY_VIOLATION` | `checkCrossPackageImports()` — illegal cross-package imports in a monorepo |
+
+**Decoded bytes are matched against the high-confidence patterns only.** The low-confidence set is entropy- and keyword-driven, and decoded output is high-entropy by construction, so running it there would flag close to every encoded blob in every repository. `AKIA[0-9A-Z]{16}` cannot match decoded noise; "looks secret-ish" always can. Candidates are filtered by length-modulo-four and then by whether the decode is ≥ 90% printable ASCII — `Buffer.from(s, "base64")` never throws, it silently discards what it cannot parse, so a hex digest of the right length "decodes" into bytes that mean nothing. Work is capped at 64 candidates and 64 KB decoded per scan; an oversized blob is skipped rather than ending the scan, so a checked-in binary cannot hide a real key that follows it.
 
 ### Shannon entropy thresholds
 
