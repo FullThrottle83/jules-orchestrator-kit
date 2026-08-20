@@ -32,6 +32,7 @@ export {
   ProviderSchemaError,
   parseRetryAfter,
 } from "./src/provider.mjs";
+export { resolveRoutedProvider } from "./src/router.mjs";
 export {
   detectPolyglotStack,
   resolveWorkspaceBoundary,

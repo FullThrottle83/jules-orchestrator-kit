@@ -390,7 +390,7 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
     }
 
     const timestamp = new Date(now).toISOString();
-    const reservationId = `res-${now}-${Math.random().toString(36).substring(2, 8)}`;
+    const reservationId = `res-${now}-${randomUUID().slice(0, 8)}`;
     const rawPayload = { timestamp, event: "budget_reserved", reservationId, budget: limit, prevHash };
     const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
     const payload = { ...rawPayload, hash };

@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import { resolveAffectedTests, executeQueueDag } from "./dag-engine.mjs";
 import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory } from "./remediation.mjs";
 import { hydratePrompt, harvestFailure } from "./memory.mjs";
-import { resolveRolePrompt } from "./wizard-task.mjs";
+import { resolveRolePrompt } from "./role-resolver.mjs";
 
 import {
   computeDirectoryHash,

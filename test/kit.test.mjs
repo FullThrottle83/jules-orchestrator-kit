@@ -764,19 +764,20 @@ describe("Swarm Concurrency & Merge Engine Hardening", () => {
 
   test("checkSafetyGate detects active worker lock files", async () => {
     const { checkSafetyGate } = await import("../scripts/jules-merge-swarm.mjs");
-    const locksDir = path.resolve(process.cwd(), ".agent/state/locks");
-    fs.mkdirSync(locksDir, { recursive: true });
-    const lockFile = path.join(locksDir, "test-lock.json");
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-lock-gate-"));
     try {
+      const locksDir = path.join(tmpDir, ".agent/state/locks");
+      fs.mkdirSync(locksDir, { recursive: true });
+      const lockFile = path.join(locksDir, "test-lock.json");
       fs.writeFileSync(lockFile, JSON.stringify({ branch: "jules/test-branch", agent: "Worker1" }));
-      const gateResult = checkSafetyGate("jules/test-branch");
+      const gateResult = checkSafetyGate("jules/test-branch", tmpDir);
       assert.equal(gateResult.safe, false);
       assert.ok(gateResult.reason.includes("Active lock held by worker"));
 
-      const safeResult = checkSafetyGate("jules/other-branch");
+      const safeResult = checkSafetyGate("jules/other-branch", tmpDir);
       assert.equal(safeResult.safe, true);
     } finally {
-      if (fs.existsSync(lockFile)) fs.rmSync(lockFile);
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 

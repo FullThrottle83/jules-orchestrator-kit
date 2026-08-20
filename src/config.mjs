@@ -394,22 +394,24 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     }
   }
 
-  const setupCmd = parsed.setup_cmd || parsed.verify?.setup || "";
-  const testCmd = parsed.test_cmd || parsed.verify?.test || "";
-  const lintCmd = parsed.lint_cmd || parsed.verify?.lint || "";
-  const fuzzCmd = parsed.fuzz_cmd || parsed.verify?.fuzz || "";
-  const invariantCmd = parsed.invariant_cmd || parsed.verify?.invariant || "";
-  const e2eCmd = parsed.e2e_cmd || parsed.verify?.e2e || "";
-  const teardownCmd = parsed.teardown_cmd || parsed.verify?.teardown || "";
-  const buildCmd = parsed.build_cmd || parsed.verify?.build || "";
+  const rawSetup = parsed.setup_cmd ?? parsed.verify?.setup;
+  const rawTest = parsed.test_cmd ?? parsed.verify?.test;
+  const rawLint = parsed.lint_cmd ?? parsed.verify?.lint;
+  const rawFuzz = parsed.fuzz_cmd ?? parsed.verify?.fuzz;
+  const rawInvariant = parsed.invariant_cmd ?? parsed.verify?.invariant;
+  const rawE2e = parsed.e2e_cmd ?? parsed.verify?.e2e;
+  const rawTeardown = parsed.teardown_cmd ?? parsed.verify?.teardown;
+  const rawBuild = parsed.build_cmd ?? parsed.verify?.build;
+  const rawUnit = parsed.verify?.unit;
   const verifyTimeoutMs = parsed.verify?.timeoutMs ?? parsed.verify?.timeout_ms ?? 60000;
   const autoVerify = resolveVerify(root);
 
-  const activeTier = String(process.env.JULES_TIER || parsed.tier || "ultra").toLowerCase();
-  const tierLimits = TIER_PRESETS[activeTier] || TIER_PRESETS.ultra;
+  const rawTier = String(process.env.JULES_TIER || parsed.tier || "ultra").toLowerCase();
+  const activeTier = TIER_PRESETS[rawTier] ? rawTier : "ultra";
+  const tierLimits = TIER_PRESETS[activeTier];
 
-  const envDailyTasks = process.env.JULES_DAILY_BUDGET !== undefined ? Number(process.env.JULES_DAILY_BUDGET) : null;
-  const envDiffKb = process.env.JULES_MAX_DIFF_KB !== undefined ? Number(process.env.JULES_MAX_DIFF_KB) : null;
+  const envDailyTasks = process.env.JULES_DAILY_BUDGET !== undefined && Number.isFinite(Number(process.env.JULES_DAILY_BUDGET)) ? Number(process.env.JULES_DAILY_BUDGET) : null;
+  const envDiffKb = process.env.JULES_MAX_DIFF_KB !== undefined && Number.isFinite(Number(process.env.JULES_MAX_DIFF_KB)) ? Number(process.env.JULES_MAX_DIFF_KB) : null;
 
   const parsedLimits = parsed.limits || {};
   const normalizedLimits = {
@@ -429,17 +431,17 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     provider: parsed.provider || DEFAULTS.provider,
     tier: activeTier,
     verify: {
-      setup: setupCmd || autoVerify.setup || "",
-      lint: lintCmd || autoVerify.lint || "",
-      test: testCmd || autoVerify.test,
-      unit: parsed.verify?.unit || testCmd || autoVerify.unit || autoVerify.test,
-      fuzz: fuzzCmd || autoVerify.fuzz || "",
-      invariant: invariantCmd || autoVerify.invariant || "",
-      e2e: e2eCmd || autoVerify.e2e || "",
-      teardown: teardownCmd || autoVerify.teardown || "",
-      build: buildCmd || autoVerify.build,
-      stages: parsed.verify?.stages || autoVerify.stages || null,
-      policy: parsed.verify?.policy || autoVerify.policy,
+      setup: rawSetup ?? autoVerify.setup ?? "",
+      lint: rawLint ?? autoVerify.lint ?? "",
+      test: rawTest ?? autoVerify.test,
+      unit: rawUnit ?? rawTest ?? autoVerify.unit ?? autoVerify.test,
+      fuzz: rawFuzz ?? autoVerify.fuzz ?? "",
+      invariant: rawInvariant ?? autoVerify.invariant ?? "",
+      e2e: rawE2e ?? autoVerify.e2e ?? "",
+      teardown: rawTeardown ?? autoVerify.teardown ?? "",
+      build: rawBuild ?? autoVerify.build,
+      stages: parsed.verify?.stages ?? autoVerify.stages ?? null,
+      policy: parsed.verify?.policy ?? autoVerify.policy,
       timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 60000,
     },
     evidence: {

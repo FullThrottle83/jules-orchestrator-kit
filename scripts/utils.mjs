@@ -4,6 +4,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { resolveRoot } from "../src/config.mjs";
 import { appendLedger, checkDailyBudget as baseCheckDailyBudget, verifyLedgerIntegrity as baseVerifyLedgerIntegrity } from "../src/state.mjs";
@@ -144,7 +145,7 @@ export function reserveDailyBudget(maxSessions = 300, taskKey = "", root = resol
   // The id is what makes the reservation releasable. Written without one, a
   // reservation counted against the day and no rollback, commit or reconcile
   // could ever name it again — it stayed charged until the ledger rotated.
-  const reservationId = `res-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const reservationId = `res-${Date.now()}-${randomUUID().slice(0, 8)}`;
   appendLedger({ event: "budget_reserved", reservationId, key: taskKey }, root);
   const check = checkDailyBudget(root, maxSessions);
   return { ok: check.ok, used: check.used, budget: maxSessions, reservationId };

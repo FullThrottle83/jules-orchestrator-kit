@@ -74,23 +74,34 @@ test("Model Context Protocol (MCP) Server", async (t) => {
   });
 
   await t.test("executes record_system_learning tool call", async () => {
-    const res = await handleMcpRequest({
-      jsonrpc: "2.0",
-      id: 55,
-      method: "tools/call",
-      params: {
-        name: "record_system_learning",
-        arguments: {
-          trigger: "Vercel Edge Buffer crash",
-          solution: "Use Uint8Array instead of Buffer in Edge runtime",
-          category: "EDGE",
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-mcp-learning-"));
+    try {
+      const res = await handleMcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 55,
+          method: "tools/call",
+          params: {
+            name: "record_system_learning",
+            arguments: {
+              trigger: "Vercel Edge Buffer crash",
+              solution: "Use Uint8Array instead of Buffer in Edge runtime",
+              category: "EDGE",
+            },
+          },
         },
-      },
-    });
-    assert.equal(res.jsonrpc, "2.0");
-    assert.equal(res.id, 55);
-    const parsed = JSON.parse(res.result.content[0].text);
-    assert.equal(parsed.ok, true);
+        { root: tmpDir }
+      );
+      assert.equal(res.jsonrpc, "2.0");
+      assert.equal(res.id, 55);
+      const parsed = JSON.parse(res.result.content[0].text);
+      assert.equal(parsed.ok, true);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   await t.test("returns error for unknown method", async () => {

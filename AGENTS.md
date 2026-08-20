@@ -38,7 +38,7 @@ Jules automatically infers test and build verification commands via `scripts/com
 - `package.json` -> `testCmd: "npm test"` (or `"npm run lint && npm test"`), `buildCmd: "npm run build"`
 - `Cargo.toml` -> `testCmd: "cargo test --workspace"`, `buildCmd: "cargo build"`
 - `go.mod` -> `testCmd: "go test ./..."`, `buildCmd: "go build ./..."`
-- `pyproject.toml` -> `testCmd: "pytest"`, `buildCmd: ""`
+- `pyproject.toml` -> `testCmd: "pytest"`, `buildCmd: "python3 -m compileall -q ."`
 - Workspace graphs (`turbo.json`, `pnpm-workspace.yaml`, `nx.json`) -> targeted affected package filters
 
 ### Canonical Operator Commands (authoritative)
@@ -113,11 +113,11 @@ Standardized across all automation entry points (`agentctl`, `jules-dispatch`, `
 | `0` | Success — verification passed, PR opened. | Merge, or proceed to the next queue task. |
 | `1` | Pre-dispatch / arg failure; prompt > `limits.promptKb` (50 KB). | Shorten the prompt or check flags via `agentctl doctor`. |
 | `2` | API / network — HTTP 429, `FAILED_PRECONDITION` concurrency quota, timeout. | Exponential backoff; stagger swarm dispatches (`staggerMs: 1500`). |
-| `3` | Scope violation — restricted path (`.github/`, command files, `.agent/rules/`). | Drop protected files from the diff, or pass `allowProtected: true` / label `allow-protected-paths`. |
+| `3` | Scope violation — restricted path (`.github/`, command files, `.agent/rules/`). | Drop protected files from the diff, or pass `--allow-protected` / label `allow-protected-paths`. |
 | `4` | OODA exhausted — 3 repair attempts without clean verification. | Inspect `.agent/state/` logs; fix the root cause or sharpen the repair prompt. |
 | `5` | Diff payload exceeds `limits.diffKb` (default **75 KB**). | Split into smaller scoped envelopes (`npm run jules:validate-envelope`). |
 | `6` | Secret leak prevented — high-confidence key in the patch diff. | Scrub the credential from source **and revoke the leaked key immediately**. |
-| `7` | Quota exhausted — `dailyTasks` cap (default 300) reached. | Wait for the next UTC day, or raise `dailyTasks` in `.agent/config.yml`. |
+| `7` | Quota exhausted — `dailyTasks` cap (default 300) reached. | Wait for the rolling 24h budget window to open, or raise `dailyTasks` in `.agent/config.yml`. |
 | `8` | Flaky quarantine — oscillation >= 0.40 (Wilson CI interior). | Fix the non-deterministic test; OODA repair is suppressed by design, not broken. |
 
 ---
@@ -126,6 +126,6 @@ Standardized across all automation entry points (`agentctl`, `jules-dispatch`, `
 
 Whenever bumping the package version in `package.json`:
 1. Document changes under `CHANGELOG.md`.
-2. Update version strings in `package.json` and `bin/agentctl.mjs`.
+2. Update version string in `package.json`.
 3. Execute `npm run release` (or `node scripts/release.mjs`) to automate running unit tests, tagging git (`v<version>`), pushing to `origin`, and creating the official GitHub Release via `gh release create`.
 

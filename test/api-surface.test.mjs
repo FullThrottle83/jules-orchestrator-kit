@@ -158,6 +158,7 @@ const FROZEN_SDK_EXPORTS = [
   "resolveProjectCommands",
   "resolveRolePrompt",
   "resolveRoot",
+  "resolveRoutedProvider",
   "resolveVerify",
   "resolveWorkspaceBoundary",
   "resolveWorkspaceExecutionBoundary",
@@ -236,7 +237,7 @@ describe("SDK API Surface & Exit Code Stability Lock", () => {
       `Unapproved new SDK exports detected:\n${addedExports.join("\n")}\nIf intentional, review and update FROZEN_SDK_EXPORTS snapshot.`
     );
 
-    assert.equal(actualExports.length, 189, "Total exported SDK symbols count must remain locked at 189");
+    assert.equal(actualExports.length, 190, "Total exported SDK symbols count must remain locked at 190");
   });
 
   it("ensures every exported symbol is defined and non-null", () => {

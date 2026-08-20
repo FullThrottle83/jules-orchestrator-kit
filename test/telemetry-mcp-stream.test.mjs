@@ -101,9 +101,10 @@ test("O(1) Telemetry Spine & MCP Event/Progress Streaming (v0.25.1)", async (t) 
 
     // First update ("Step 1") and latest intermediate update ("Step 3") emitted, "Step 2" coalesced out
     const progressFrames = frames.filter((f) => f.method === "notifications/progress");
-    assert.ok(progressFrames.length >= 2);
+    assert.equal(progressFrames.length, 2);
     assert.equal(progressFrames[0].params.message, "Step 1");
-    assert.equal(progressFrames[progressFrames.length - 1].params.message, "Step 3");
+    assert.equal(progressFrames[1].params.message, "Step 3");
+    assert.equal(progressFrames.some((f) => f.params.message === "Step 2"), false);
   });
 
   await t.test("ProgressBus caps progress message strings at 240 characters", async () => {
@@ -145,11 +146,11 @@ test("O(1) Telemetry Spine & MCP Event/Progress Streaming (v0.25.1)", async (t) 
     const sendPromise = bus.log("info", "Backpressure test log message");
 
     // Drain buffer
-    mockOutput.read();
+    while (mockOutput.read()) {}
     await sendPromise;
 
     await bus.flush();
-    assert.ok(drainFired || true);
+    assert.equal(drainFired, true);
   });
 
   await t.test("ProgressBus emits notifications/message logging frames", async () => {

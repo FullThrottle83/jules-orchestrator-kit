@@ -149,9 +149,10 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack detector generating `.agent/config.yml`. | `0` (Created) |
 | `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>] [--role <name>] [--tier fast\|complex]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing, preflight gate checks, and DAG dependency wiring. | `0` (Queued), `1` (Secret/Unfalsifiable) |
 | `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes pre-calibrated web task envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`, `web-ai-access`). | `0` (Listed/Synthesized) |
-| `doctor` | `agentctl doctor [--interactive] [--fix safe]` | Diagnostic DAG check runner & automated transactional self-repair engine. | `0` (Healthy) |
-| `queue` | `agentctl queue [--interactive] [--dag] [--concurrency <n>]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. | `0` (Complete) |
-| `swarm` | `agentctl swarm [--interactive] [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
+| `dispatch` | `agentctl dispatch [-p <prompt>] [-f <file>] [-r <role>] [-t <tier>] [--auto-pr] [--repoless] [--dry-run]` | Dispatches autonomous task to the active provider with payload limits and role prompt resolution. | `0` (Dispatched), `1` (Error) |
+| `doctor` | `agentctl doctor [--json]` | Diagnostic DAG check runner & automated transactional self-repair engine. | `0` (Healthy), `1` (Failures) |
+| `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. | `0` (Complete) |
+| `swarm` | `agentctl swarm [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
 | `gate` / `audit`| `agentctl gate --mode working-tree [--json]` | Runs security, secret scanning, and verification gates against working tree or branch. | `0` (Approved), `3` (Scope), `5` (Diff >75K), `6` (Secret) |
 | `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
 | `resume` | `agentctl resume <sessionId> --response "<reply>"` | Streams engineer response back into active Google Jules warm session context window. | `0` (Resumed), `1` (Error) |
@@ -204,7 +205,7 @@ limits:
   promptKb: 50           # Maximum prompt payload size
   dailyTasks: 300        # Task quota per rolling 24h window (not per calendar day)
   repairAttempts: 3      # Maximum repair iterations
-  concurrency: 15        # Worker slots (pro: 15, ultra: 60)
+  concurrency: 15        # Worker slots (free: 3, pro: 8, ultra: 15)
 
 # Dynamic Complexity & Cost Router — opt-in, disabled by default.
 router:
@@ -225,7 +226,7 @@ router:
 
 ```
 Ecosystems Natively Detected & Verified by Stack Detector:
-├── Python / FastAPI / Django (pyproject.toml, requirements.txt, setup.py)
+├── Python / Django (pyproject.toml, requirements.txt, setup.py, manage.py)
 ├── Systems / Rust Cargo (Cargo.toml)
 ├── Systems / Go (go.mod)
 ├── Systems / CMake & Make (CMakeLists.txt, Makefile)
