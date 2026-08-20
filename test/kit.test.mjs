@@ -571,7 +571,7 @@ describe("OODA State Module Scoping & Ledger Pruning", () => {
   test("exports getOodaStateFile cleanly at module top-level scope", () => {
     assert.equal(typeof getOodaStateFile, "function");
     const stateFile = getOodaStateFile("main");
-    assert.ok(stateFile.includes(".agent/state/ooda"));
+    assert.ok(stateFile.replace(/\\/g, "/").includes(".agent/state/ooda"));
   });
 
   test("prunes old ledger files older than retention days", () => {

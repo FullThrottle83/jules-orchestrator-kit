@@ -142,7 +142,7 @@ test("Guided Task Authoring Subsystem", async (t) => {
       });
 
       assert.equal(res.ok, true);
-      assert.ok(res.taskFile.includes(".agent/jules-queue"));
+      assert.ok(res.taskFile.replace(/\\/g, "/").includes(".agent/jules-queue"));
       assert.ok(existsSync(res.taskFile));
 
       const content = readFileSync(res.taskFile, "utf-8");
