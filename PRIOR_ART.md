@@ -37,6 +37,12 @@ This documentation lists the projects in the AI agent ecosystem that inspired th
 - **Inspiration (`RouteLLM`, `LiteLLM`, `OpenRouter`, agent-router SaaS gateways):** Complexity-aware LLM routing — classifying a query's difficulty and dispatching it to the cheapest model that can still handle it, cutting inference cost 40–85% with near-identical quality.
 - **Our Difference:** Those tools route raw chat completions through a hosted gateway. `agentctl`'s router (`src/router.mjs`, `router:` in `.agent/config.yml`, opt-in and disabled by default) routes whole *autonomous coding tasks* between locally-installed, already-harnessed agent CLIs (Jules, Claude Code, Codex, Gemini CLI) using a zero-dependency rule-based heuristic — no ML classifier, no third-party gateway, no data leaving the machine except to the provider the user already configured. Safety-sensitive paths (`auth/**`, `migrations/**`, secrets, `.github/**`) and the `sentinel` role always force the primary provider regardless of score, and any provider is user-swappable — the kit is not tied to Gemini, Jules, or any single vendor.
 
+- **Inspiration (`ekayaprod/jules-agent-roster`):** Positive Enclosure boundaries ("The Pink Elephant Problem") and clinical vocabulary sanitization to avoid triggering safety classifiers during deep agent attention turns.
+- **Our Difference:** Automated prompt sanitization (`sanitizePromptVocabulary`) in `src/prompt-guard.mjs` and positive boundary linting in `src/task-optimizer.mjs` that transforms aggressive operational verbs into sterile equivalents during envelope construction.
+
+- **Inspiration (`jeremy-angulo/Jules-Orchestrator`):** Deterministic mechanical JSON/Markdown conflict resolution and multi-token pool balancing with automatic 429 failover.
+- **Our Difference:** Fully zero-dependency `resolveJsonConflict` / `resolveMarkdownConflict` built directly into `src/merge-blocks.mjs` and native `TokenPool` auto-failover in `src/provider.mjs`, operating purely on native Node.js without requiring SQLite or database daemons.
+
 ## What makes jules-orchestrator-kit unique?
 
 The honest answer to what *this* kit does that the others don't is **the gate**:

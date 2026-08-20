@@ -279,7 +279,7 @@ async function main() {
 
       const queueDir = getQueueDir(root);
       const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
-      console.log(`Found ${files.length} queued task(s) in .agent/queue/`);
+      console.log(`Found ${files.length} queued task(s) in .agent/jules-queue/`);
       if (files.length > 0) {
         const concurrency = values.concurrency ? Number(values.concurrency) : undefined;
         const results = await run(null, {

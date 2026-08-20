@@ -908,31 +908,31 @@ export function synthesizePrDescription(session = {}, gateResult = {}, options =
   const kbLimit = ((payloadPhase.limitBytes || 76800) / 1024).toFixed(0);
   const evidenceManifest = gateResult.evidence || (options.evidence ? options.evidence : null);
   const evidenceSection = evidenceManifest
-    ? `\n### 🛡️ Cryptographic Evidence Manifest\n- **Manifest ID:** \`${evidenceManifest.manifestId}\`\n- **Signature:** \`${evidenceManifest.evidenceHash?.slice(0, 16)}...\`\n- **Test Integrity:** ${evidenceManifest.testIntegrity?.tamperDetected ? "❌ Tampered" : "✅ Verified (0 test weakening)"}\n`
+    ? `\n### Evidence Manifest\n- **Manifest ID:** \`${evidenceManifest.manifestId}\`\n- **Digest:** \`${evidenceManifest.evidenceHash?.slice(0, 16)}...\`\n- **Test Integrity:** ${evidenceManifest.testIntegrity?.tamperDetected ? "❌ Tampered" : "✅ Verified (0 test weakening)"}\n`
     : "";
 
   const modifiedFiles = options.modifiedFiles || [];
   const affectedTests = resolveAffectedTests(modifiedFiles, options);
 
-  const prBody = `## 🚀 Autonomous Jules Agent Execution Evidence
+  const prBody = `## Autonomous Agent Execution Summary
 
-### ⏱️ OODA Verification Trace
+### Verification Trace
 - **Session ID:** \`${sessionId}\`
 - **OODA Turns:** \`${attemptsCount}/${maxAttempts}\`
 - **Warm Resumption:** ${isWarm ? "✅ Active Context Stream" : "Cold Start"}
 - **Execution Latency:** \`${durationSec}s\`
 ${evidenceSection}
-### 🛡️ Zero-Trust Security Audit Matrix
+### Security & Scope Audit
 - **Scope Guard:** ${scopePhase.ok ? "✅ PASS (0 protected path violations)" : "❌ FAIL"}
-- **Diff Payload Governor:** ${payloadPhase.ok ? `✅ PASS (${kbDiff} KB / ${kbLimit} KB limit)` : "❌ EXCEEDED"}
-- **Secret Scanner:** ${secretPhase.ok ? "✅ PASS (0 high-entropy leaks detected)" : "❌ LEAKS FOUND"}
+- **Diff Payload Budget:** ${payloadPhase.ok ? `✅ PASS (${kbDiff} KB / ${kbLimit} KB limit)` : "❌ EXCEEDED"}
+- **Secret Scanner:** ${secretPhase.ok ? "✅ PASS (0 credentials detected)" : "❌ LEAKS FOUND"}
 
-### 🧪 Terminal Verification Evidence
+### Terminal Verification Output
 \`\`\`text
 ${options.testOutput || "All verification tests passed with Exit Code 0."}
 \`\`\`
 
-### 📂 AST Impact & Dependency Graph
+### Affected Tests & Impact Analysis
 ${
   affectedTests === null
     ? "- **Impact Scope:** ⚠️ Global contract change detected (`package.json`/`tsconfig`/`schema`). Full test suite executed."

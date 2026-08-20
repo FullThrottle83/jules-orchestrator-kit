@@ -71,8 +71,8 @@ export {
   verifyExecutionEnvelope,
   freezeExecutionEnvelope,
   hashExecutionEnvelope,
-} from "./src/execution_envelope.mjs";
-export { checkAssetIntegrity } from "./src/asset_integrity.mjs";
+} from "./src/execution-envelope.mjs";
+export { checkAssetIntegrity } from "./src/asset-integrity.mjs";
 export { classifyRiskTier, RISK_TIERS } from "./src/risk.mjs";
 export { recordRemediation, queryRemediations } from "./src/remediation.mjs";
 export { DagExecutor, DagCycleError } from "./src/dag-engine.mjs";

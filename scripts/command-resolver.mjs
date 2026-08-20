@@ -1,6 +1,5 @@
 /**
- * Backward compatibility shim for command-resolver.mjs in v0.9.0.
- * Re-exports detectStack from src/config.mjs.
+ * Project command resolver: infers build and test commands across stacks.
  */
 
 import { detectStack, parseYaml } from "../src/config.mjs";

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Backward compatibility shim for jules-patch.mjs in v0.9.0.
+ * Session patch fetching utility.
  */
 
 export async function fetchSessionPatch(sessionId, _options = {}) {
@@ -18,6 +18,6 @@ export async function fetchSessionPatch(sessionId, _options = {}) {
 }
 
 if (process.argv[1] && process.argv[1].endsWith("jules-patch.mjs")) {
-  console.log("[Shim] Patch fetch completed.");
+  console.log("Patch fetch completed.");
   process.exit(0);
 }

@@ -279,7 +279,27 @@ export function mergeBlocks3Way(baseText = "", oursText = "", theirsText = "", l
     }
   }
 
-  const mergedText = outputBlocks.join("\n\n");
+  let mergedText = outputBlocks.join("\n\n");
+
+  if (conflicts > 0) {
+    if (lang === "json") {
+      try {
+        const autoResolved = resolveJsonConflict(mergedText);
+        if (autoResolved && !autoResolved.includes("<<<<<<<")) {
+          mergedText = autoResolved;
+          conflicts = 0;
+        }
+      } catch (_) {}
+    } else if (lang === "md" || lang === "markdown") {
+      try {
+        const autoResolved = resolveMarkdownConflict(mergedText);
+        if (autoResolved && !autoResolved.includes("<<<<<<<")) {
+          mergedText = autoResolved;
+          conflicts = 0;
+        }
+      } catch (_) {}
+    }
+  }
 
   return {
     mergedText,
@@ -289,4 +309,161 @@ export function mergeBlocks3Way(baseText = "", oursText = "", theirsText = "", l
       return this.mergedText;
     },
   };
+}
+
+/**
+ * Deep-merges two parsed JSON values.
+ * - Objects: merged recursively; HEAD (ours) wins on scalar conflicts.
+ * - Arrays: concatenated with primitive deduplication and deep object equality check.
+ * - Primitives: HEAD (ours) wins unless null/undefined.
+ */
+export function deepMergeJson(head, dev) {
+  if (head === null || head === undefined) return dev;
+  if (dev === null || dev === undefined) return head;
+
+  if (Array.isArray(head) && Array.isArray(dev)) {
+    const combined = [...head];
+    for (const item of dev) {
+      const isPrimitive = typeof item !== "object" || item === null;
+      if (isPrimitive) {
+        if (!combined.includes(item)) combined.push(item);
+      } else {
+        const itemStr = JSON.stringify(item);
+        const exists = combined.some((c) => JSON.stringify(c) === itemStr);
+        if (!exists) combined.push(item);
+      }
+    }
+    return combined;
+  }
+
+  if (typeof head === "object" && typeof dev === "object" && !Array.isArray(head) && !Array.isArray(dev)) {
+    const result = { ...dev };
+    for (const key of Object.keys(head)) {
+      if (key in result) {
+        result[key] = deepMergeJson(head[key], result[key]);
+      } else {
+        result[key] = head[key];
+      }
+    }
+    return result;
+  }
+
+  // Scalar conflict: HEAD (ours) wins
+  return head;
+}
+
+/**
+ * Automatically resolves merge conflicts in JSON files.
+ * Extracts <<<<<<< / ======= / >>>>>>> markers, parses both branches, deep-merges them,
+ * and returns the formatted JSON string.
+ *
+ * @param {string} content - Raw conflict-marked file content
+ * @returns {string} Clean, resolved JSON string (or original content if unresolvable)
+ */
+export function resolveJsonConflict(content) {
+  if (typeof content !== "string") return content;
+  if (!content.includes("<<<<<<<") || !content.includes("=======") || !content.includes(">>>>>>>")) {
+    return content;
+  }
+
+  // Check if the whole file or a segment is marked as conflict
+  const fullConflictRegex = /^<{7}.*?\r?\n([\s\S]*?)\r?\n={7}\r?\n([\s\S]*?)\r?\n>{7}.*?$/m;
+  const match = content.match(fullConflictRegex);
+
+  if (match) {
+    const headRaw = match[1].trim();
+    const devRaw = match[2].trim();
+
+    try {
+      const headJson = JSON.parse(headRaw);
+      const devJson = JSON.parse(devRaw);
+      const merged = deepMergeJson(headJson, devJson);
+      return JSON.stringify(merged, null, 2) + "\n";
+    } catch (_) {
+      // If individual branches are partial JSON snippets, fall through to block resolution
+    }
+  }
+
+  // Multi-block / partial JSON conflict resolution
+  const conflictBlockRegex = /<{7}[^\n]*\r?\n([\s\S]*?)\r?\n={7}\r?\n([\s\S]*?)\r?\n>{7}[^\n]*/g;
+  const resolved = content.replace(conflictBlockRegex, (_, headBlock, devBlock) => {
+    try {
+      const h = JSON.parse(`{${headBlock}}`);
+      const d = JSON.parse(`{${devBlock}}`);
+      const m = deepMergeJson(h, d);
+      const inner = JSON.stringify(m, null, 2).replace(/^\{\s*\n?/, "").replace(/\n?\s*\}$/, "");
+      return inner;
+    } catch (_) {
+      // Fallback: take head (ours)
+      return headBlock.trim();
+    }
+  });
+
+  return resolved;
+}
+
+/**
+ * Automatically resolves merge conflicts in Markdown files (changelogs, notes, docs).
+ * Removes conflict markers, deduplicates repeated items, and concatenates updates.
+ *
+ * @param {string} content - Raw conflict-marked markdown content
+ * @returns {string} Resolved Markdown text
+ */
+export function resolveMarkdownConflict(content) {
+  if (typeof content !== "string") return content;
+  if (!content.includes("<<<<<<<") || !content.includes("=======") || !content.includes(">>>>>>>")) {
+    return content;
+  }
+
+  const lines = content.split(/\r?\n/);
+  const result = [];
+  let inConflict = false;
+  let headBuffer = [];
+  let devBuffer = [];
+  let section = null; // 'head' | 'dev'
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.startsWith("<<<<<<<")) {
+      inConflict = true;
+      section = "head";
+      headBuffer = [];
+      devBuffer = [];
+      continue;
+    }
+
+    if (inConflict && line.startsWith("=======")) {
+      section = "dev";
+      continue;
+    }
+
+    if (inConflict && line.startsWith(">>>>>>>")) {
+      inConflict = false;
+      section = null;
+
+      // Concatenate both sides while deduplicating identical lines
+      const seen = new Set();
+      for (const hLine of headBuffer) {
+        result.push(hLine);
+        if (hLine.trim()) seen.add(hLine.trim());
+      }
+      for (const dLine of devBuffer) {
+        if (!seen.has(dLine.trim())) {
+          result.push(dLine);
+          if (dLine.trim()) seen.add(dLine.trim());
+        }
+      }
+      continue;
+    }
+
+    if (inConflict) {
+      if (section === "head") headBuffer.push(line);
+      else if (section === "dev") devBuffer.push(line);
+    } else {
+      result.push(line);
+    }
+  }
+
+  return result.join("\n");
 }

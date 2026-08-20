@@ -1,13 +1,12 @@
 /**
- * Backward compatibility shim for utils.mjs in v0.9.0.
- * Re-exports utilities from modular src/ domain modules.
+ * Common scripting utilities and helper functions.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import os from "node:os";
 import { resolveRoot } from "../src/config.mjs";
-import { appendLedger, checkDailyBudget as baseCheckDailyBudget } from "../src/state.mjs";
+import { appendLedger, checkDailyBudget as baseCheckDailyBudget, verifyLedgerIntegrity as baseVerifyLedgerIntegrity } from "../src/state.mjs";
 
 export { loadConfig, resolveRoot, normalizePath } from "../src/config.mjs";
 export {
@@ -45,7 +44,7 @@ export function loadEnv(targetDir = process.cwd()) {
   if (!existsSync(envPath)) return;
   try {
     const raw = readFileSync(envPath, "utf-8");
-    for (const line of raw.split("\n")) {
+    for (const line of raw.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
       const clean = trimmed.startsWith("export ") ? trimmed.slice(7).trim() : trimmed;
@@ -79,7 +78,7 @@ export function logToHistory(filename, content) {
   const dateStr = new Date().toISOString().split("T")[0];
   const historyDir = resolve(process.env.JULES_PROJECT_ROOT || process.cwd(), ".agent/history");
   if (!existsSync(historyDir)) {
-    try { writeFileSync(historyDir, ""); } catch (_) {}
+    try { mkdirSync(historyDir, { recursive: true }); } catch (_) {}
   }
   const filePath = join(historyDir, `${dateStr}-${filename}`);
   try { writeFileSync(filePath, content, "utf-8"); } catch (_) {}
@@ -155,12 +154,17 @@ export function verifyLedgerIntegrity(filePath) {
   if (!existsSync(filePath)) return { ok: false, count: 0 };
   try {
     const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
+    let hasHashes = true;
     for (const line of lines) {
-      JSON.parse(line);
+      const obj = JSON.parse(line);
+      if (!obj.hash) hasHashes = false;
+    }
+    if (hasHashes && lines.length > 0) {
+      return baseVerifyLedgerIntegrity(filePath);
     }
     return { ok: true, count: lines.length, lastHash: "sha256-verified" };
-  } catch (_) {
-    return { ok: false, count: 0, error: "Invalid JSON in ledger" };
+  } catch (err) {
+    return { ok: false, count: 0, error: err.message || "Invalid JSON in ledger" };
   }
 }
 

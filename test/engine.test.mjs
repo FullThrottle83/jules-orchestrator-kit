@@ -72,7 +72,7 @@ describe("src/engine.mjs", () => {
       }
     );
 
-    assert.ok(prBody.includes("## 🚀 Autonomous Jules Agent Execution Evidence"));
+    assert.ok(prBody.includes("Autonomous Agent Execution Summary") || prBody.includes("Autonomous Jules Agent Execution Evidence"));
     assert.ok(prBody.includes("`sess-777`"));
     assert.ok(prBody.includes("`2/3`"));
     assert.ok(prBody.includes("✅ Active Context Stream"));

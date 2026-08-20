@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Backward compatibility shim for jules-self-audit.mjs in v0.9.0.
- * Delegates execution to src/engine.mjs gate().
+ * Self-audit gatekeeper: runs 4-phase safety gate against working tree or base branch.
  */
 
 import { existsSync } from "node:fs";

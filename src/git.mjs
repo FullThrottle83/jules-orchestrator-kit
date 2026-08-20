@@ -138,8 +138,11 @@ export function git(args = [], opts = {}) {
 }
 
 export function ensureBaseFetched(root = process.cwd(), baseRef = "main") {
+  if (!baseRef || typeof baseRef !== "string" || baseRef.startsWith("-") || !/^[A-Za-z0-9._/-]+$/.test(baseRef)) {
+    return false;
+  }
   try {
-    execFileSync("git", ["fetch", "origin", baseRef, "--depth=100"], {
+    execFileSync("git", ["fetch", "origin", "--", baseRef, "--depth=100"], {
       cwd: root,
       encoding: "utf-8",
       shell: false,
@@ -148,7 +151,7 @@ export function ensureBaseFetched(root = process.cwd(), baseRef = "main") {
     return true;
   } catch (_) {
     try {
-      execFileSync("git", ["fetch", "origin", baseRef, "--unshallow"], {
+      execFileSync("git", ["fetch", "origin", "--", baseRef, "--unshallow"], {
         cwd: root,
         encoding: "utf-8",
         shell: false,
@@ -236,7 +239,7 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
         if (existsSync(fullPath)) {
           const content = readFileSync(fullPath, "utf-8");
           untrackedDiff += `\ndiff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n`;
-          untrackedDiff += content.split("\n").map((line) => `+${line}`).join("\n") + "\n";
+          untrackedDiff += content.split(/\r?\n/).map((line) => `+${line}`).join("\n") + "\n";
         }
       } catch (_) {}
     }

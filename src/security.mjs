@@ -14,20 +14,21 @@ export const HIGH_CONFIDENCE_PATTERNS = [
 
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bASIA[0-9A-Z]{16}\b/g,
-  /\baws_secret_access_key\s*=\s*['"]?[A-Za-z0-9\/+=]{40}['"]?/gi,
+  /\baws_secret_access_key\s*[:=]\s*['"]?[A-Za-z0-9\/+=]{40}['"]?/gi,
 
-  /-----BEGIN (?:RSA|DSA|EC|OPENSSH|PRIVATE)(?:\s+PRIVATE)? KEY-----[\s\S]*?-----END (?:RSA|DSA|EC|OPENSSH|PRIVATE)(?:\s+PRIVATE)? KEY-----/g,
+  /-----BEGIN (?:RSA|DSA|EC|OPENSSH|ENCRYPTED|PRIVATE)(?:\s+PRIVATE)? KEY-----[\s\S]*?-----END (?:RSA|DSA|EC|OPENSSH|ENCRYPTED|PRIVATE)(?:\s+PRIVATE)? KEY-----/g,
   /PuTTY-User-Key-File-[0-9]:[^\n]+/g,
 
   /\bsk_live_[0-9a-zA-Z]{24,99}\b/g,
   /\brk_live_[0-9a-zA-Z]{24,99}\b/g,
   /\bnpm_[0-9a-zA-Z]{36}\b/g,
+  /\/\/[^/\s]+\/:_authToken=[A-Za-z0-9_-]{20,}/g,
   /\bglpat-[0-9a-zA-Z_-]{20,99}\b/g,
   /\bGOCSPX-[0-9a-zA-Z_-]{28,99}\b/g,
 
   /\bAIzaSy[A-Za-z0-9_-]{33}\b/g,
   /\bya29\.[A-Za-z0-9_-]{20,255}\b/g,
-  /\b(?:sk-ant-api03-|sk-proj-)[A-Za-z0-9_-]{32,255}\b/g,
+  /\b(?:sk-ant-api03-|sk-proj-|sk-)[A-Za-z0-9_-]{20,255}\b/g,
 
   /https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9_]{8,}\/B[A-Za-z0-9_]{8,}\/[A-Za-z0-9_]{24,}/g,
   /\bxox[baprs]-[0-9a-zA-Z-]{10,48}\b/g,
@@ -39,8 +40,21 @@ export const LOW_CONFIDENCE_PATTERNS = [
   /Bearer\s+[A-Za-z0-9._~+/-]{10,255}/gi,
   /Authorization:\s*Bearer\s+[A-Za-z0-9._~+/-]{10,255}/gi,
   /\bsk_test_[0-9a-zA-Z]{24,99}\b/g,
-  /(?:api[_-]?key|secret|password|passwd|token|auth[_-]?token)\s*[:=]\s*['"]([^'"]{8,128})['"]/gi,
+  /(?:api[_-]?key|secret|password|passwd|token|auth[_-]?token)\s*[:=]\s*(?:['"`]([^'"`\n]{8,128})['"`]|([A-Za-z0-9._~+/-]{16,128}))/gi,
 ];
+
+export function safeRenameSync(src, dst) {
+  try {
+    renameSync(src, dst);
+  } catch (err) {
+    if (process.platform === "win32" && (err.code === "EEXIST" || err.code === "EPERM")) {
+      try { unlinkSync(dst); } catch (_) {}
+      renameSync(src, dst);
+    } else {
+      throw err;
+    }
+  }
+}
 
 /**
  * TOCTOU-safe atomic file write using O_CREAT|O_EXCL|O_WRONLY temp file in target dir.
@@ -48,12 +62,13 @@ export const LOW_CONFIDENCE_PATTERNS = [
 export function safeAtomicWrite(filePath, content, options = {}) {
   const mode = options.mode || 0o644;
   const encoding = options.encoding || "utf-8";
+  const rejectSymlinks = options.rejectSymlinks !== false;
 
   if (existsSync(filePath)) {
     const stat = lstatSync(filePath);
     if (stat.isSymbolicLink()) {
       const realPath = realpathSync(filePath);
-      if (options.rejectSymlinks) {
+      if (rejectSymlinks) {
         throw new Error(`TOCTOU Guard: Refusing to write to symlink ${filePath} -> ${realPath}`);
       }
     }
@@ -71,7 +86,7 @@ export function safeAtomicWrite(filePath, content, options = {}) {
     }
     closeSync(fd);
     fd = undefined;
-    renameSync(tempFile, filePath);
+    safeRenameSync(tempFile, filePath);
     return true;
   } catch (err) {
     if (fd !== undefined) {
@@ -381,16 +396,37 @@ const INVISIBLE_CHARS = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2
 // A credential split across a source-level string concatenation is invisible to
 // a line-oriented scanner. This is not only an evasion technique — formatters
 // wrap long string literals exactly this way, so it also happens by accident.
-const STRING_CONCAT_JOIN = /(["'`])\s*\+\s*(["'`])/g;
+const STRING_CONCAT_JOIN = /(["'`])\s*(?:\/\*[\s\S]*?\*\/)?\s*\+\s*(?:\/\*[\s\S]*?\*\/)?\s*(["'`])/g;
+
+function tryHexDecodeTokens(str) {
+  return str.replace(/\b([0-9a-fA-F]{24,})\b/g, (match) => {
+    if (match.length % 2 !== 0) return match;
+    try {
+      const decoded = Buffer.from(match, "hex").toString("utf-8");
+      if (printableRatio(decoded) >= 0.9) return decoded;
+    } catch (_) {}
+    return match;
+  });
+}
+
+function tryPercentDecode(str) {
+  try {
+    return decodeURIComponent(str);
+  } catch (_) {
+    return str.replace(/%([0-9a-fA-F]{2})/g, (_, hex) => {
+      try {
+        return String.fromCharCode(parseInt(hex, 16));
+      } catch (_) {
+        return _;
+      }
+    });
+  }
+}
 
 /**
  * Produces the variants of the added-line text that secret patterns are run
  * against: as-written, with invisible characters stripped, and with
  * source-level string concatenation collapsed.
- *
- * `normalized` is the last of those — every normalisation applied. It is
- * returned separately for checks that are too expensive to run three times and
- * gain nothing from the intermediate forms.
  *
  * @param {string} addedLines
  * @returns {{ all: string[], normalized: string }}
@@ -398,35 +434,31 @@ const STRING_CONCAT_JOIN = /(["'`])\s*\+\s*(["'`])/g;
 function secretScanVariants(addedLines) {
   const stripped = addedLines.replace(INVISIBLE_CHARS, "");
   // Collapse `"AAA" +\n  "BBB"` into `"AAABBB"` before matching.
-  const dejoined = stripped.replace(/\s*\n\s*/g, " ").replace(STRING_CONCAT_JOIN, "");
-  return { all: [...new Set([addedLines, stripped, dejoined])], normalized: dejoined };
+  let dejoined = stripped.replace(/\s*\n\s*/g, " ").replace(STRING_CONCAT_JOIN, "");
+  // Collapse template literal empty expressions `${""}` and `${"VALUE"}`
+  dejoined = dejoined.replace(/\$\{\s*["'`]{2}\s*\}/g, "").replace(/\$\{\s*["'`]([^"'`]+)["'`]\s*\}/g, "$1");
+  // Collapse method concatenations like .concat("...") or .join("")
+  dejoined = dejoined.replace(/\.concat\(\s*["'`]/g, "").replace(/\.join\(\s*["'`]{2}\s*\)/g, "");
+
+  const hexDecoded = tryHexDecodeTokens(dejoined);
+  const pctDecoded = tryPercentDecode(dejoined);
+
+  return {
+    all: [...new Set([addedLines, stripped, dejoined, hexDecoded, pctDecoded])],
+    normalized: dejoined,
+  };
 }
 
 // Base64 is less an evasion technique than a file format. Every value in a
 // Kubernetes Secret manifest is base64 by specification, and whole `.env` files
-// get encoded into a single CI variable. A credential arriving that way is
-// ordinary rather than adversarial — and a line-oriented scanner walks straight
-// past it, which makes this the encoding most likely to carry a live key
-// through the gate.
-const BASE64_CANDIDATE = /[A-Za-z0-9+/]{24,}={0,2}/g;
+// get encoded into a single CI variable.
+const BASE64_CANDIDATE = /[A-Za-z0-9+/\-_]{20,}={0,2}/g;
 
-// Decoding is cheap per blob and ruinous per diff if left unbounded. A patch
-// that checks in a binary, a source map or a bundled font is otherwise enough
-// to turn one scan into a memory event, so both the number of candidates and
-// the total decoded size are capped. Exceeding a cap skips the remainder; it
-// does not fail the scan, because a large diff is not evidence of a leak.
 const BASE64_MAX_CANDIDATES = 64;
 const BASE64_MAX_DECODED_BYTES = 64 * 1024;
 
 /**
  * Share of characters that are printable ASCII (plus tab/newline/return).
- *
- * `Buffer.from(str, "base64")` never throws — it discards what it cannot parse
- * and returns whatever it managed to decode. So a hex digest or a random
- * identifier of the right length "decodes" successfully into bytes that mean
- * nothing. A wrapped credential, on the other hand, decodes to text: keys,
- * PEM blocks and `.env` bodies are all ASCII. This ratio is what separates the
- * two, and it removes nearly all of the noise before any pattern runs.
  */
 function printableRatio(str) {
   if (!str) return 0;
@@ -443,33 +475,36 @@ function printableRatio(str) {
  *
  * @param {string} text
  * @param {(plain: string, blob: string) => void} [onDecoded] - Called per blob.
- * @returns {string[]}
+ * @returns {{ decoded: string[], capped: boolean }}
  */
 function decodeBase64Blobs(text, onDecoded) {
-  if (!text) return [];
+  if (!text) return { decoded: [], capped: false };
   const decoded = [];
   let candidates = 0;
   let bytes = 0;
+  let capped = false;
 
   BASE64_CANDIDATE.lastIndex = 0;
   let match;
   while ((match = BASE64_CANDIDATE.exec(text)) !== null) {
-    if (candidates++ >= BASE64_MAX_CANDIDATES) break;
-    const blob = match[0];
-    // Valid base64 is a multiple of four characters including padding. This
-    // costs nothing and rejects three quarters of the alphanumeric runs — commit
-    // hashes, minified identifiers — that would otherwise be decoded for nothing.
-    if (blob.length % 4 !== 0) continue;
-    // Check the budget against what this blob *would* cost, not against what
-    // has already been spent — otherwise the first candidate decodes in full
-    // however large it is, and a single checked-in binary costs more than the
-    // cap was meant to allow. `continue`, not `break`: one oversized blob must
-    // not hide the smaller ones after it.
-    if (bytes + (blob.length * 3) / 4 > BASE64_MAX_DECODED_BYTES) continue;
+    if (candidates++ >= BASE64_MAX_CANDIDATES) {
+      capped = true;
+      break;
+    }
+    const rawBlob = match[0].replace(/[\s\r\n]+/g, "");
+    let stdBlob = rawBlob.replace(/-/g, "+").replace(/_/g, "/");
+    while (stdBlob.length % 4 !== 0) {
+      stdBlob += "=";
+    }
+
+    if (bytes + (stdBlob.length * 3) / 4 > BASE64_MAX_DECODED_BYTES) {
+      capped = true;
+      continue;
+    }
 
     let plain;
     try {
-      plain = Buffer.from(blob, "base64").toString("utf-8");
+      plain = Buffer.from(stdBlob, "base64").toString("utf-8");
     } catch (_) {
       continue;
     }
@@ -477,28 +512,35 @@ function decodeBase64Blobs(text, onDecoded) {
     if (printableRatio(plain) < 0.9) continue;
 
     decoded.push(plain);
-    if (onDecoded) onDecoded(plain, blob);
+    if (onDecoded) onDecoded(plain, rawBlob);
+
+    // Try 1 level of nested base64 decoding if printable
+    if (/[A-Za-z0-9+/\-_]{20,}={0,2}/.test(plain)) {
+      try {
+        let nestedStd = plain.trim().replace(/-/g, "+").replace(/_/g, "/");
+        while (nestedStd.length % 4 !== 0) nestedStd += "=";
+        const nestedPlain = Buffer.from(nestedStd, "base64").toString("utf-8");
+        if (printableRatio(nestedPlain) >= 0.9) {
+          decoded.push(nestedPlain);
+        }
+      } catch (_) {}
+    }
   }
   BASE64_CANDIDATE.lastIndex = 0;
-  return decoded;
+  return { decoded, capped };
 }
 
 /**
  * True when a base64-encoded value on an added line decodes to a structured
  * credential.
  *
- * Deliberately runs the high-confidence patterns *only*. The low-confidence set
- * is entropy- and keyword-driven, and decoded bytes are high-entropy by
- * construction — pointing it at this output would flag close to every encoded
- * blob in every repository. `AKIA[0-9A-Z]{16}` cannot match decoded noise;
- * "looks secret-ish" always can. That asymmetry is the whole reason this check
- * is safe to enable by default.
- *
  * @param {string} text
  * @returns {boolean}
  */
 export function hasEncodedSecret(text) {
-  return decodeBase64Blobs(text).some((plain) => hasHighConfidenceSecret(plain));
+  const result = decodeBase64Blobs(text);
+  if (result.capped) return true; // Fail closed if cap exceeded
+  return result.decoded.some((plain) => hasHighConfidenceSecret(plain));
 }
 
 export function scanDiff(diffTextStr = "", options = {}) {

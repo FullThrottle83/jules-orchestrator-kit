@@ -62,8 +62,12 @@ export function resolveNextStep(root, env = process.env) {
     };
   }
 
-  const queueDir = join(root, ".agent", "queue");
-  const queued = existsSync(queueDir) ? readdirSync(queueDir).filter((f) => f.endsWith(".json") || f.endsWith(".yml")).length : 0;
+  const primaryQueueDir = join(root, ".agent", "jules-queue");
+  const fallbackQueueDir = join(root, ".agent", "queue");
+  const queueDir = existsSync(primaryQueueDir) ? primaryQueueDir : fallbackQueueDir;
+  const queued = existsSync(queueDir)
+    ? readdirSync(queueDir).filter((f) => f.endsWith(".md") || f.endsWith(".json") || f.endsWith(".yml")).length
+    : 0;
   if (queued > 0) {
     return {
       id: "queue",

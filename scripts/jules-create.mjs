@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Backward compatibility shim for jules-create.mjs in v0.9.0.
+ * Quick task file creator for .agent/jules-queue/.
  */
 
 import { writeFileSync } from "node:fs";

@@ -126,6 +126,91 @@ const NAMED_PRESETS = {
   "gemini-cli": GEMINI_PRESET,
 };
 
+/**
+ * Multi-token manager with round-robin rotation, 429 quarantine/cooldown, and failover.
+ */
+export class TokenPool {
+  constructor(tokens = []) {
+    this.tokens = Array.from(new Set(tokens.filter(Boolean)));
+    this.currentIndex = 0;
+    this.cooldowns = new Map(); // token -> cooldownExpiryTimestamp
+    this.usage24h = new Map(); // token -> count
+  }
+
+  static fromEnv(config = {}) {
+    const rawList = (process.env.JULES_API_KEYS || process.env.JULES_API_KEY_SECONDARY || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const primary = (process.env.JULES_API_KEY || "").trim();
+    const configKeys = Array.isArray(config.julesApiKeys) ? config.julesApiKeys : [];
+    const combined = Array.from(new Set([primary, ...rawList, ...configKeys].filter(Boolean)));
+    return new TokenPool(combined);
+  }
+
+  get size() {
+    return this.tokens.length;
+  }
+
+  getNextToken() {
+    if (this.tokens.length === 0) return "";
+    const now = Date.now();
+
+    // Find first non-cooldown token starting from currentIndex
+    for (let i = 0; i < this.tokens.length; i++) {
+      const idx = (this.currentIndex + i) % this.tokens.length;
+      const token = this.tokens[idx];
+      const cooldownUntil = this.cooldowns.get(token) || 0;
+      if (now >= cooldownUntil) {
+        this.currentIndex = (idx + 1) % this.tokens.length;
+        return token;
+      }
+    }
+
+    // If all are in cooldown, pick the one that expires earliest
+    let earliestToken = this.tokens[0];
+    let earliestExpiry = this.cooldowns.get(earliestToken) || Infinity;
+    for (const token of this.tokens) {
+      const expiry = this.cooldowns.get(token) || 0;
+      if (expiry < earliestExpiry) {
+        earliestExpiry = expiry;
+        earliestToken = token;
+      }
+    }
+    return earliestToken;
+  }
+
+  markRateLimited(token, retryAfterMs = 60000) {
+    if (!token) return;
+    const cooldownMs = Math.max(1000, Number(retryAfterMs) || 60000);
+    this.cooldowns.set(token, Date.now() + cooldownMs);
+  }
+
+  recordUsage(token) {
+    if (!token) return;
+    const count = (this.usage24h.get(token) || 0) + 1;
+    this.usage24h.set(token, count);
+  }
+
+  getInventory() {
+    const now = Date.now();
+    return this.tokens.map((token, index) => {
+      const cooldownUntil = this.cooldowns.get(token) || 0;
+      const inCooldown = now < cooldownUntil;
+      const maskedToken = token.length <= 8 ? "****" : `${token.slice(0, 4)}...${token.slice(-4)}`;
+      return {
+        id: `key-${index + 1}`,
+        index,
+        isPrimary: index === 0,
+        maskedToken,
+        inCooldown,
+        cooldownRemainingMs: inCooldown ? cooldownUntil - now : 0,
+        usage: this.usage24h.get(token) || 0,
+      };
+    });
+  }
+}
+
 export function createProvider(spec = "jules", config = {}) {
   if (spec && typeof spec === "object" && typeof spec.dispatch === "function") {
     return spec;
@@ -153,8 +238,10 @@ export function createProvider(spec = "jules", config = {}) {
         throw new TypeError("Provider task must be an object");
       }
       if (!ctx || typeof ctx !== "object") ctx = {};
-      const rawToken = process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
-      if (!rawToken && !ctx.dryRun && providerSpec.name === "jules") {
+
+      const pool = ctx.tokenPool || config.tokenPool || TokenPool.fromEnv(config);
+      const hasAnyKey = pool.size > 0 || Boolean(process.env.JULES_API_KEY) || Boolean(ctx.allowLegacyKey && process.env.GEMINI_API_KEY);
+      if (!hasAnyKey && !ctx.dryRun && providerSpec.name === "jules") {
         throw new MissingApiKeyError();
       }
 
@@ -180,6 +267,7 @@ export function createProvider(spec = "jules", config = {}) {
       };
 
       if (ctx.dryRun) {
+        const rawToken = pool.getNextToken() || process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
         return {
           id: "dry-run-session-id",
           status: "pending",
@@ -193,109 +281,126 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       if (providerSpec.type === "http") {
-        const urlData = { ...data };
-        const url = interpolateString(providerSpec.url, urlData);
-        const headerData = { ...urlData, token: rawToken };
-        const headers = {};
-        for (const [k, v] of Object.entries(providerSpec.headers || {})) {
-          const val = interpolateString(v, headerData);
-          if (val.includes("\r") || val.includes("\n")) {
-            throw new Error(`CRITICAL: Header injection attempt detected in header "${k}"`);
-          }
-          headers[k] = val;
-        }
+        const maxAttempts = Math.max(1, pool.size);
+        let lastError = null;
 
-        let body;
-        let bodyObj;
-        if (typeof providerSpec.bodyTemplate === "string") {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          const rawToken = pool.getNextToken() || process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
+          if (!rawToken && !ctx.dryRun && providerSpec.name === "jules") {
+            throw new MissingApiKeyError();
+          }
+
+          const urlData = { ...data };
+          const url = interpolateString(providerSpec.url, urlData);
+          const headerData = { ...urlData, token: rawToken };
+          const headers = {};
+          for (const [k, v] of Object.entries(providerSpec.headers || {})) {
+            const val = interpolateString(v, headerData);
+            if (val.includes("\r") || val.includes("\n")) {
+              throw new Error(`CRITICAL: Header injection attempt detected in header "${k}"`);
+            }
+            headers[k] = val;
+          }
+
+          let body;
+          let bodyObj;
+          if (typeof providerSpec.bodyTemplate === "string") {
+            try {
+              const parsedObj = JSON.parse(providerSpec.bodyTemplate);
+              bodyObj = interpolateDeep(parsedObj, data);
+            } catch (_) {
+              body = interpolateString(providerSpec.bodyTemplate, data);
+            }
+          } else if (providerSpec.bodyTemplate) {
+            bodyObj = interpolateDeep(providerSpec.bodyTemplate, data);
+          } else {
+            bodyObj = { ...data };
+          }
+
+          if (bodyObj && typeof bodyObj === "object") {
+            if (isRepoless || !sourceName) {
+              delete bodyObj.sourceContext;
+            }
+            if (task.autoPr || ctx.autoPr) {
+              bodyObj.automationMode = "AUTO_CREATE_PR";
+            }
+            if (task.requirePlanApproval || ctx.requirePlanApproval) {
+              bodyObj.requirePlanApproval = true;
+            }
+            body = JSON.stringify(bodyObj);
+          }
+
+          const requestedTimeout = Number(ctx.timeoutMs ?? config.timeoutMs ?? providerSpec.timeoutMs ?? 120_000);
+          const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 120_000;
+          let res;
           try {
-            const parsedObj = JSON.parse(providerSpec.bodyTemplate);
-            bodyObj = interpolateDeep(parsedObj, data);
-          } catch (_) {
-            body = interpolateString(providerSpec.bodyTemplate, data);
-          }
-        } else if (providerSpec.bodyTemplate) {
-          bodyObj = interpolateDeep(providerSpec.bodyTemplate, data);
-        } else {
-          bodyObj = { ...data };
-        }
-
-        if (bodyObj && typeof bodyObj === "object") {
-          if (isRepoless || !sourceName) {
-            delete bodyObj.sourceContext;
-          }
-          if (task.autoPr || ctx.autoPr) {
-            bodyObj.automationMode = "AUTO_CREATE_PR";
-          }
-          if (task.requirePlanApproval || ctx.requirePlanApproval) {
-            bodyObj.requirePlanApproval = true;
-          }
-          body = JSON.stringify(bodyObj);
-        }
-
-        const requestedTimeout = Number(ctx.timeoutMs ?? config.timeoutMs ?? providerSpec.timeoutMs ?? 120_000);
-        const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 120_000;
-        let res;
-        try {
-          res = await fetch(url, {
-            method: providerSpec.method || "POST",
-            headers,
-            body,
-            signal: AbortSignal.timeout(timeoutMs),
-          });
-        } catch (err) {
-          if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
-            throw new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, {
-              status: 504,
+            res = await fetch(url, {
+              method: providerSpec.method || "POST",
+              headers,
+              body,
+              signal: AbortSignal.timeout(timeoutMs),
             });
-          }
-          throw err;
-        }
-
-        if (!res.ok) {
-          const text = await res.text();
-          const cleanText = text.slice(0, 500);
-          const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
-          const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
-          const retryAfterMs = parseRetryAfter(retryAfterHeader);
-
-          if (res.status === 429) {
-            throw new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
-              retryAfterMs: retryAfterMs ?? 60000,
-              status: 429,
-            });
+          } catch (err) {
+            if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
+              throw new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, {
+                status: 504,
+              });
+            }
+            throw err;
           }
 
-          if (res.status >= 500 && res.status < 600) {
-            throw new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
+          if (!res.ok) {
+            const text = await res.text();
+            const cleanText = text.slice(0, 500);
+            const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
+            const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
+            const retryAfterMs = parseRetryAfter(retryAfterHeader);
+
+            if (res.status === 429) {
+              pool.markRateLimited(rawToken, retryAfterMs ?? 60000);
+              lastError = new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
+                retryAfterMs: retryAfterMs ?? 60000,
+                status: 429,
+              });
+              if (pool.size > 1 && attempt < maxAttempts - 1) {
+                continue;
+              }
+              throw lastError;
+            }
+
+            if (res.status >= 500 && res.status < 600) {
+              throw new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
+                status: res.status,
+                retryAfterMs: retryAfterMs ?? undefined,
+              });
+            }
+
+            throw new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
+          }
+
+          pool.recordUsage(rawToken);
+
+          let json;
+          try {
+            json = await res.json();
+          } catch (err) {
+            throw new ProviderSchemaError(`Provider Payload Error: Invalid JSON response: ${err.message}`, {
               status: res.status,
-              retryAfterMs: retryAfterMs ?? undefined,
             });
           }
 
-          throw new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
-        }
+          if (!json || typeof json !== "object") {
+            throw new ProviderSchemaError("Provider Payload Error: Expected JSON object response", {
+              status: res.status,
+            });
+          }
 
-        let json;
-        try {
-          json = await res.json();
-        } catch (err) {
-          throw new ProviderSchemaError(`Provider Payload Error: Invalid JSON response: ${err.message}`, {
-            status: res.status,
-          });
+          return {
+            id: json.id || json.name || "http-session",
+            status: json.state || "active",
+            raw: json,
+          };
         }
-
-        if (!json || typeof json !== "object") {
-          throw new ProviderSchemaError("Provider Payload Error: Expected JSON object response", {
-            status: res.status,
-          });
-        }
-
-        return {
-          id: json.id || json.name || "http-session",
-          status: json.state || "active",
-          raw: json,
-        };
       }
 
       if (providerSpec.type === "exec") {

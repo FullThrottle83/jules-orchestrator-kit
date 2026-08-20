@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Backward compatibility shim for jules-scan-todos.mjs in v0.9.0.
+ * Codebase scanner for TODO and FIXME comments.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";

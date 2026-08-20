@@ -43,11 +43,22 @@ export const BUILTIN_DENY = [
 
 export const BUILTIN_PROTECT = [
   ".agent/rules/**",
+  ".agent/SYSTEM_LEARNINGS.md",
+  ".agent/knowledge/**",
   "package.json",
+  "**/package.json",
   "Cargo.toml",
+  "**/Cargo.toml",
   "pyproject.toml",
+  "**/pyproject.toml",
   "go.mod",
+  "**/go.mod",
+  "composer.json",
+  "**/composer.json",
   "Makefile",
+  "**/Makefile",
+  "**/.npmrc",
+  "**/.netrc",
 ];
 
 const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -481,6 +492,12 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     runner: parsed.runner || DEFAULTS.runner,
     branchPrefix: parsed.branch_prefix || parsed.branchPrefix || DEFAULTS.branchPrefix,
     baseBranch: parsed.base_branch || parsed.baseBranch || DEFAULTS.baseBranch,
+    julesApiKeys: Array.from(new Set([
+      (process.env.JULES_API_KEY || "").trim(),
+      ...(process.env.JULES_API_KEYS || process.env.JULES_API_KEY_SECONDARY || "").split(",").map((k) => k.trim()),
+      ...(Array.isArray(parsed.jules_api_keys) ? parsed.jules_api_keys : []),
+      ...(Array.isArray(parsed.julesApiKeys) ? parsed.julesApiKeys : []),
+    ].filter(Boolean))),
     _root: root,
     _file: configFile || null,
   };

@@ -10,6 +10,7 @@ import {
   ProviderUnavailableError,
   ProviderSchemaError,
   parseRetryAfter,
+  TokenPool,
 } from "../src/provider.mjs";
 import { dispatch, repair } from "../src/engine.mjs";
 import { checkDailyBudget } from "../src/state.mjs";
@@ -274,6 +275,67 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
         return true;
       }
     );
+  });
+
+  await t.test("f) TokenPool rotates keys round-robin and masks sensitive secrets in inventory", () => {
+    const pool = new TokenPool(["secret-key-1-abcdef", "secret-key-2-ghijkl"]);
+    assert.equal(pool.size, 2);
+
+    assert.equal(pool.getNextToken(), "secret-key-1-abcdef");
+    assert.equal(pool.getNextToken(), "secret-key-2-ghijkl");
+    assert.equal(pool.getNextToken(), "secret-key-1-abcdef");
+
+    const inv = pool.getInventory();
+    assert.equal(inv.length, 2);
+    assert.equal(inv[0].maskedToken, "secr...cdef");
+    assert.equal(inv[1].maskedToken, "secr...ijkl");
+    assert.equal(inv[0].isPrimary, true);
+    assert.equal(inv[1].isPrimary, false);
+  });
+
+  await t.test("g) HTTP provider automatically rotates and fails over to secondary token upon HTTP 429", async () => {
+    let server;
+    let requestCount = 0;
+    const receivedTokens = [];
+
+    try {
+      server = createServer((req, res) => {
+        requestCount++;
+        const authHeader = req.headers["x-goog-api-key"] || req.headers["authorization"] || "";
+        receivedTokens.push(authHeader);
+
+        if (authHeader === "token-primary") {
+          res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "60" });
+          res.end(JSON.stringify({ error: "Primary quota exceeded" }));
+        } else if (authHeader === "token-secondary") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ id: "session-secondary-ok", state: "active" }));
+        } else {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unknown token" }));
+        }
+      });
+
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+      const url = `http://127.0.0.1:${port}/sessions`;
+
+      const pool = new TokenPool(["token-primary", "token-secondary"]);
+      const provider = createProvider({
+        type: "http",
+        url,
+        headers: { "X-Goog-Api-Key": "{token}" },
+      }, { tokenPool: pool });
+
+      const result = await provider.dispatch({ prompt: "test prompt" }, { tokenPool: pool });
+
+      assert.equal(requestCount, 2);
+      assert.deepEqual(receivedTokens, ["token-primary", "token-secondary"]);
+      assert.equal(result.id, "session-secondary-ok");
+      assert.equal(result.status, "active");
+    } finally {
+      if (server) server.close();
+    }
   });
 });
 

@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Backward compatibility shim for jules-dispatch.mjs in v0.9.1.
- * Delegates execution to bin/agentctl.mjs dispatch.
+ * Task dispatch entrypoint: delegates execution to engine dispatch pipeline.
  */
 
 import { dispatch } from "../src/engine.mjs";

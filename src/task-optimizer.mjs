@@ -3,6 +3,7 @@ import { join, relative, resolve } from "node:path";
 import { checkScope } from "./security.mjs";
 import { detectStackOracles } from "./wizard-oracle.mjs";
 import { loadConfig } from "./config.mjs";
+import { sanitizePromptVocabulary } from "./prompt-guard.mjs";
 
 /**
  * Calculates Levenshtein distance between two strings.
@@ -243,7 +244,14 @@ export function scorePromptFalsifiability(promptText, options = {}) {
     suggestions.push(`Web domain detected (${webIntent.categories.join(", ")}). Consider incorporating exploration budget and critic agent checks.`);
   }
 
-  // 5. Stack Oracle Detection
+  // 5. Positive Boundary / Negative Restriction Linting ("Pink Elephant" Principle)
+  const negativeMatches = rawPrompt.match(/\b(do not|never|don't|forbidden|must not)\b/gi) || [];
+  const positiveScopeMatch = /\b(only modify|strictly scoped to|scoped to|confined to)\b/i.test(rawPrompt);
+  if (negativeMatches.length >= 3 && !positiveScopeMatch) {
+    suggestions.push("Multiple negative constraints detected. Consider defining Airtight Positive Enclosures (e.g. 'ONLY modify [Target]') to prevent attention-drift.");
+  }
+
+  // 6. Stack Oracle Detection
   let verifyCmd = options.verifyCmd || null;
   let autoDetected = false;
   let isTrivial = false;
@@ -317,7 +325,7 @@ export function optimizeTaskPrompt(promptText, options = {}) {
     };
   }
 
-  let promptBody = rawPrompt;
+  let promptBody = sanitizePromptVocabulary(rawPrompt);
 
   // Apply suggestions & path corrections to prompt body if requested
   for (const pathInfo of analysis.paths.found) {

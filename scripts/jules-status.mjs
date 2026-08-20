@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Backward compatibility shim for jules-status.mjs in v0.9.0.
+ * Session status and budget status summarizer.
  */
 
 import { checkDailyBudget } from "../src/state.mjs";

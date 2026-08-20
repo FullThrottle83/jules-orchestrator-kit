@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Backward compatibility shim for jules-queue-runner.mjs in v0.9.0.
+ * Queue processing runner: processes envelopes in .agent/jules-queue/.
  */
 
 import { run } from "../src/engine.mjs";

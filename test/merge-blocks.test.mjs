@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { chunkBlocks, mergeBlocks3Way } from "../src/merge-blocks.mjs";
+import { chunkBlocks, mergeBlocks3Way, deepMergeJson, resolveJsonConflict, resolveMarkdownConflict } from "../src/merge-blocks.mjs";
 import { mergeVerifyChain } from "../src/merge-verify.mjs";
 import { DagExecutor, withTaskTimeout } from "../src/dag-engine.mjs";
 
@@ -84,5 +84,63 @@ describe("Non-JSON Indentation-Block Structural Merger & Verification Chain", ()
       },
       /Task execution timed out after 20ms/
     );
+  });
+
+  it("e) deepMergeJson and resolveJsonConflict recursively merge disjoint keys and deduplicate arrays", () => {
+    const head = {
+      name: "jules-kit",
+      version: "1.1.0",
+      features: ["auth", "dispatch"],
+      settings: { timeout: 5000, retry: true },
+    };
+
+    const dev = {
+      name: "jules-kit",
+      version: "1.0.0",
+      features: ["dispatch", "telemetry"],
+      settings: { retry: false, concurrency: 4 },
+      author: "Operator",
+    };
+
+    const merged = deepMergeJson(head, dev);
+    assert.equal(merged.name, "jules-kit");
+    assert.equal(merged.version, "1.1.0"); // head wins scalar conflict
+    assert.equal(merged.author, "Operator");
+    assert.deepEqual(merged.features, ["auth", "dispatch", "telemetry"]);
+    assert.equal(merged.settings.timeout, 5000);
+    assert.equal(merged.settings.retry, true); // head wins scalar conflict
+    assert.equal(merged.settings.concurrency, 4);
+
+    // Conflict marker string resolution
+    const conflictString = `<<<<<<< OURS\n${JSON.stringify(head, null, 2)}\n=======\n${JSON.stringify(dev, null, 2)}\n>>>>>>> THEIRS`;
+    const resolvedStr = resolveJsonConflict(conflictString);
+    const parsed = JSON.parse(resolvedStr);
+    assert.equal(parsed.author, "Operator");
+    assert.deepEqual(parsed.features, ["auth", "dispatch", "telemetry"]);
+  });
+
+  it("f) resolveMarkdownConflict preserves unique log and changelog entries from concurrent swarms", () => {
+    const conflictDoc = `# Changelog
+
+<<<<<<< OURS
+- feat: add prompt sanitization guardrail
+- fix: normalize cross-platform paths
+=======
+- feat: add multi-token pool rotation
+- fix: normalize cross-platform paths
+>>>>>>> THEIRS
+
+## Prior Art`;
+
+    const resolved = resolveMarkdownConflict(conflictDoc);
+    assert.ok(!resolved.includes("<<<<<<<"));
+    assert.ok(!resolved.includes("======="));
+    assert.ok(!resolved.includes(">>>>>>>"));
+    assert.ok(resolved.includes("- feat: add prompt sanitization guardrail"));
+    assert.ok(resolved.includes("- feat: add multi-token pool rotation"));
+    assert.ok(resolved.includes("- fix: normalize cross-platform paths"));
+    // Verify deduplication: "normalize cross-platform paths" appears only once
+    const matches = resolved.match(/- fix: normalize cross-platform paths/g);
+    assert.equal(matches.length, 1);
   });
 });

@@ -59,6 +59,8 @@ Jules automatically infers test and build verification commands via `scripts/com
 - **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
 - **Google Labs Exploration Budget Protocol**: Execute complex multi-step tasks across 3 discrete phases: (1) Discovery & Symbol Tracing (silent inspection, write NO code), (2) Oracle & Test Formulation, and (3) Surgical Implementation & Verification.
 - **Critic Agent Steering (Adversarial Pre-Review)**: Jules' internal Critic Agent evaluates proposed patches for edge-case regressions, $O(n^2)$ bottlenecks, unhandled parameters, and layout shifts (CLS) prior to final PR submission.
+- **Airtight Positive Enclosures ("Pink Elephant" Principle)**: Avoid massive negative constraint lists; define explicit positive perimeters (`ONLY modify [Target/Module]`) to eliminate attention distortion and cognitive drag.
+- **Sterile / Clinical Vocabulary Mandate**: Replace aggressive verbs (`kill`, `amputate`, `destroy`) with clinical equivalents (`terminate PID`, `prune code`, `purge state`) to prevent false-positive safety classifier tripwires.
 
 ---
 

@@ -27,7 +27,7 @@ export const ANSI = {
  * @returns {boolean}
  */
 export function isTTY(stream = process.stdin) {
-  return Boolean(stream && (stream.isTTY || isatty(stream.fd)));
+  return Boolean(stream && (stream.isTTY || (typeof stream.fd === "number" && isatty(stream.fd))));
 }
 
 /**

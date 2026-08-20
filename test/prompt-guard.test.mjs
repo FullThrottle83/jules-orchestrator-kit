@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
-import { sanitizeUntrustedData, buildAgentEnvelope } from "../src/prompt-guard.mjs";
+import { sanitizeUntrustedData, buildAgentEnvelope, sanitizePromptVocabulary } from "../src/prompt-guard.mjs";
 import { startMcpServer } from "../src/mcp.mjs";
 
 test("Prompt Guard & Input Sanitization Boundary", async (t) => {
@@ -83,5 +83,23 @@ test("Prompt Guard & Input Sanitization Boundary", async (t) => {
     } finally {
       process.stderr.write = origStderrWrite;
     }
+  });
+
+  await t.test("d) Sterile vocabulary sanitization replaces aggressive verbs with clinical equivalents", () => {
+    const raw = "Please kill process 8080, amputate dead code in src/legacy, and sabotage the tests to verify failure.";
+    const sanitized = sanitizePromptVocabulary(raw);
+
+    assert.equal(
+      sanitized,
+      "Please terminate the process 8080, prune unused code in src/legacy, and mutate test logic to verify failure."
+    );
+
+    const envelope = buildAgentEnvelope(
+      "Do not kill the process.",
+      "Amputate code and destroy cache.",
+      []
+    );
+    assert.match(envelope, /Do not terminate the process\./);
+    assert.match(envelope, /prune unused code and purge the cache\./i);
   });
 });

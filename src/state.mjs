@@ -9,12 +9,13 @@ import {
   closeSync,
   fsyncSync,
   unlinkSync,
+  lstatSync,
 } from "node:fs";
 import { join, basename } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { execFileSync } from "node:child_process";
-import { resolveRoot } from "./config.mjs";
+import { resolveRoot, normalizePath } from "./config.mjs";
 import { redactSecrets } from "./security.mjs";
 
 function scrubStateValue(value) {
@@ -38,14 +39,14 @@ export function ensureDir(dirPath) {
 
 export function getQueueDir(rootOrOpts = resolveRoot()) {
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
-  const dir = join(root, ".agent/jules-queue");
+  const dir = normalizePath(root).endsWith(".agent/jules-queue") ? root : join(root, ".agent/jules-queue");
   ensureDir(dir);
   return dir;
 }
 
 export function getStateDir(rootOrOpts = resolveRoot()) {
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
-  const dir = root.endsWith(".agent/state") ? root : join(root, ".agent/state");
+  const dir = normalizePath(root).endsWith(".agent/state") ? root : join(root, ".agent/state");
   ensureDir(dir);
   return dir;
 }
@@ -247,6 +248,10 @@ export function appendLedger(entry, rootOrOpts = resolveRoot()) {
     const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
     const payload = { ...rawPayload, hash };
 
+    if (existsSync(filePath) && lstatSync(filePath).isSymbolicLink()) {
+      throw new Error(`Refusing to append to symbolic link: ${filePath}`);
+    }
+
     const fd = openSync(filePath, "a");
     try {
       writeSync(fd, JSON.stringify(payload) + "\n", "utf-8");
@@ -330,8 +335,8 @@ export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300, opts = {}) {
       remaining: Math.max(0, limit - scan.used),
       windowStart: scan.windowStart,
     };
-  } catch (_) {
-    return { ok: true, used: 0, budget: limit, remaining: limit };
+  } catch (err) {
+    return { ok: false, used: limit, budget: limit, remaining: 0, error: err.message };
   }
 }
 
