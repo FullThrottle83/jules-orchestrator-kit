@@ -88,7 +88,7 @@ Autonomous coding agents can write software at 100× human speed—but unconstra
 
 `jules-orchestrator-kit` provides the missing **Safety, Orchestration, and Verification Kernel** for high-reliability AI agent deployments:
 
-* **🔥 Warm Multi-Turn Session Resumption (`v0.31.0`):** Streams OODA repair prompts directly into active Google Jules session streams via `POST /v1alpha/sessions/{id}:sendMessage`, saving 60–80% context tokens while preserving reasoning context.
+* **🔥 Warm Multi-Turn Session Resumption (`v0.31.0`):** `agentctl resume <sessionId> --response "<reply>"` streams an engineer's reply directly into an active Google Jules session via `POST /v1alpha/sessions/{id}:sendMessage`, preserving reasoning context instead of paying to rebuild it, with fail-soft cold-dispatch fallback on HTTP 400/404. This is the asynchronous HITL unblocking path; the automatic OODA repair loop currently opens a fresh session per attempt (see [architecture.md](docs/architecture.md#on-warm-session-resumption)).
 
 * **🧪 Automated TDD Red-to-Green Harness (`agentctl test-gen`):** Scaffolds falsifiable unit tests from bug specs, verifies **RED** failure state, locks the test file in `scope.deny`, and tasks Jules with making it pass (**GREEN** state).
 
