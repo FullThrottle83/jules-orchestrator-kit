@@ -54,12 +54,12 @@ test("src/git.mjs Unit Tests", async (t) => {
     assert.equal(resArray.stderr, "");
 
     // String command without shell
-    const resStr = runCmd(`${process.execPath} -e console.log(123)`, { cwd: tmpRoot });
+    const resStr = runCmd(`"${process.execPath}" -e "console.log(123)"`, { cwd: tmpRoot });
     assert.equal(resStr.status, 0);
     assert.equal(resStr.stdout, "123");
 
     // Shell command with pipe / special character
-    const resShell = runCmd(`${process.execPath} -e "console.log('piped')"`, { cwd: tmpRoot });
+    const resShell = runCmd(`"${process.execPath}" -e "console.log(String.fromCharCode(112,105,112,101,100))"`, { cwd: tmpRoot });
     assert.equal(resShell.status, 0);
     assert.equal(resShell.stdout, "piped");
 

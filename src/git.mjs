@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { normalizePath } from "./config.mjs";
@@ -49,20 +49,26 @@ export function runCmd(command, opts = {}) {
   }
 
   try {
-    const isWin = process.platform === "win32";
-    const execBin = useShell ? (isWin ? (process.env.ComSpec || "cmd.exe") : "/bin/sh") : binary;
-    const execArgs = useShell ? (isWin ? ["/d", "/s", "/c", shellCmd] : ["-c", shellCmd]) : args;
+    const stdout = useShell
+      ? execSync(shellCmd, {
+          cwd,
+          encoding: "utf-8",
+          stdio: ["ignore", "pipe", "pipe"],
+          env: opts.env || process.env,
+          timeout,
+          maxBuffer,
+        })
+      : execFileSync(binary, args, {
+          cwd,
+          encoding: "utf-8",
+          shell: false,
+          stdio: ["ignore", "pipe", "pipe"],
+          env: opts.env || process.env,
+          timeout,
+          maxBuffer,
+        });
 
-    const stdout = execFileSync(execBin, execArgs, {
-      cwd,
-      encoding: "utf-8",
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: opts.env || process.env,
-      timeout,
-      maxBuffer,
-    });
-    return { status: 0, stdout: stdout.trim(), stderr: "" };
+    return { status: 0, stdout: String(stdout || "").trim(), stderr: "" };
   } catch (err) {
     const isTimeout = err.code === "ETIMEDOUT" || (err.signal === "SIGTERM" && err.killed);
     const isNobufs = err.code === "ENOBUFS" || (err.message && err.message.includes("maxBuffer"));

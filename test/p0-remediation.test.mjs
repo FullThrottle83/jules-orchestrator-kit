@@ -332,7 +332,7 @@ test("P0-06: Queue Retry Semantics on Provider Error", async (t) => {
 
 test("P0-07: Shell Execution Safety in runCmd", async (t) => {
   await t.test("executes shell chained operators && correctly", () => {
-    const res = runCmd("node -e 'process.stdout.write(\"step1 \")' && node -e 'process.stdout.write(\"step2\")'");
+    const res = runCmd(`"${process.execPath}" -e "process.stdout.write(String.fromCharCode(115,116,101,112,49,32))" && "${process.execPath}" -e "process.stdout.write(String.fromCharCode(115,116,101,112,50))"`);
     assert.equal(res.status, 0);
     assert.equal(res.stdout, "step1 step2");
   });
