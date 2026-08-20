@@ -186,6 +186,33 @@ export function checkDocSync(root = process.cwd(), opts = {}) {
         ? `v${unreleased.join(", v")} marked (Unreleased) but <= shipped v${version}`
         : "no released version left marked (Unreleased)"
     );
+
+    // An unchecked item under "Shipped Milestones" is a claim the release
+    // contradicts. v0.37.0 shipped base64 decoding while the deferral note
+    // under v0.32.6 still read "still does not decode" — two statements about
+    // the same feature, thirty lines apart, disagreeing. Both survived every
+    // other check here, because nothing compared a milestone to its own
+    // section heading. Deferrals belong under a target milestone, not a
+    // shipped one; moving the item is the fix, ticking it off is the other.
+    const shippedStart = roadmap.search(/^##\s.*Shipped Milestones/m);
+    if (shippedStart === -1) {
+      add("ROADMAP shipped items resolved", false, "no `## … Shipped Milestones` heading found");
+    } else {
+      const rest = roadmap.slice(shippedStart);
+      // Search from index 1 so the section's own heading cannot terminate it.
+      const nextHeading = rest.slice(1).search(/^##\s/m);
+      const section = nextHeading === -1 ? rest : rest.slice(0, nextHeading + 1);
+      const openItems = [...section.matchAll(/^-\s\[ \]\s+(.+)$/gm)].map((m) =>
+        m[1].replace(/\*\*/g, "").split("—")[0].trim().slice(0, 60)
+      );
+      add(
+        "ROADMAP shipped items resolved",
+        openItems.length === 0,
+        openItems.length
+          ? `unchecked under Shipped Milestones: ${openItems.join("; ")}`
+          : "every item under Shipped Milestones is resolved"
+      );
+    }
   }
 
   // 3. CHANGELOG.md — a released version needs a matching entry (release.mjs
