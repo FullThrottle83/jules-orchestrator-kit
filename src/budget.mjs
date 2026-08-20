@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { resolveRoot } from "./config.mjs";
-import { getStateDir, ensureDir, appendLedger, checkDailyBudget } from "./state.mjs";
+import { getStateDir, getDailyLedgerPath, ensureDir, appendLedger, checkDailyBudget } from "./state.mjs";
 
 /**
  * Where the observed quota ceiling lives, outside the ledger so it survives
@@ -186,6 +186,113 @@ export function resolveDailyLimit(config, root = resolveRoot()) {
     certain: false,
     note: `estimated from tier "${config?.tier || "unknown"}" — set limits.daily_tasks to make this exact`,
   };
+}
+
+/**
+ * List reservations that today's ledger still counts as spent.
+ *
+ * A reservation is open until a `budget_rolled_back` or `budget_released` entry
+ * names it. `budget_committed` deliberately does not close one — a committed
+ * dispatch really did consume quota — so the open set is "everything reserved
+ * today that was not given back".
+ *
+ * Anonymous reservations (no `reservationId`, as older kit versions and
+ * scripts/utils.mjs wrote them) are counted too, as records with
+ * `reservationId: null`. They must be, or a reconcile would silently leave them
+ * charged against the day: `checkDailyBudget` counts them, and with no id there
+ * is nothing a targeted release could name. They are matched by count, the same
+ * way the counter itself treats them.
+ *
+ * @param {string} [root]
+ * @returns {{ reservationId: string|null, timestamp: string, committed: boolean }[]}
+ */
+export function listOpenReservations(root = resolveRoot()) {
+  const filePath = getDailyLedgerPath(root);
+  if (!existsSync(filePath)) return [];
+
+  /** @type {Map<string, { reservationId: string, timestamp: string, committed: boolean }>} */
+  const open = new Map();
+  /** @type {{ reservationId: null, timestamp: string, committed: boolean }[]} */
+  const anonymous = [];
+  let raw = "";
+  try {
+    raw = readFileSync(filePath, "utf-8");
+  } catch (_) {
+    return [];
+  }
+
+  for (const line of raw.split("\n").filter(Boolean)) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch (_) {
+      continue;
+    }
+    if (!entry || !entry.event) continue;
+
+    if (entry.event === "budget_reserved") {
+      if (entry.reservationId) {
+        open.set(entry.reservationId, {
+          reservationId: entry.reservationId,
+          timestamp: entry.timestamp || "",
+          committed: false,
+        });
+      } else {
+        anonymous.push({ reservationId: null, timestamp: entry.timestamp || "", committed: false });
+      }
+    } else if (entry.event === "budget_committed") {
+      const rec = entry.reservationId ? open.get(entry.reservationId) : null;
+      if (rec) rec.committed = true;
+    } else if (entry.event === "budget_rolled_back" || entry.event === "budget_released") {
+      if (entry.reservationId) open.delete(entry.reservationId);
+      else anonymous.pop();
+    }
+  }
+
+  return [...open.values(), ...anonymous];
+}
+
+/**
+ * Give today's open reservations back, by appending `budget_released` entries.
+ *
+ * The ledger is append-only and hash-chained, so a miscounted day is corrected
+ * forwards — never by editing or deleting the file, which would break the chain
+ * and destroy the audit trail the ledger exists to provide.
+ *
+ * This is an operator override, not an inference. The kit cannot tell a
+ * reservation that reached the provider from one whose process died first, so
+ * only the operator knows whether the local count still reflects reality.
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.root]
+ * @param {string} [opts.reason] - Recorded on every released entry.
+ * @param {boolean} [opts.dryRun] - Report what would be released, write nothing.
+ * @returns {{ released: number, committed: number, uncommitted: number, ids: string[], dryRun: boolean }}
+ */
+export function releaseOpenReservations(opts = {}) {
+  const root = opts.root || resolveRoot();
+  const openRecords = listOpenReservations(root);
+  const committed = openRecords.filter((r) => r.committed).length;
+
+  const result = {
+    released: openRecords.length,
+    committed,
+    uncommitted: openRecords.length - committed,
+    anonymous: openRecords.filter((r) => !r.reservationId).length,
+    ids: openRecords.map((r) => r.reservationId).filter(Boolean),
+    dryRun: Boolean(opts.dryRun),
+  };
+  if (opts.dryRun || openRecords.length === 0) return result;
+
+  for (const rec of openRecords) {
+    const entry = { event: "budget_released", reason: opts.reason || "operator-reconcile" };
+    // An anonymous reservation is released by an equally anonymous entry: the
+    // counter decrements those by count, so naming an id here would leave the
+    // original charged and subtract from someone else's total instead.
+    if (rec.reservationId) entry.reservationId = rec.reservationId;
+    appendLedger(entry, root);
+  }
+  return result;
 }
 
 /**

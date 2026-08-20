@@ -9,7 +9,7 @@ import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.
 import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
-import { budgetStatus } from "../src/budget.mjs";
+import { budgetStatus, listOpenReservations, releaseOpenReservations } from "../src/budget.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -57,6 +57,7 @@ Commands:
   rollback              Restore git state & working tree to atomic pre-flight checkpoint
   resume                Resume warm session with human response (--response "<text>")
   status                Display queue and system status summary
+  budget                Show today's task budget and its provenance (reset --yes to reconcile)
   scan                  Scan codebase for TODO/FIXME task candidates
   hydrate [prompt]      Prepend active system learnings and baton-pass state to a prompt
   harvest               Harvest failure traces and record/quarantine resolution rules
@@ -316,6 +317,49 @@ async function main() {
       console.log("🧹 Running System Cleanup...");
       worktreePrune(root);
       console.log("  ✅ Pruned stale Git worktrees.");
+      process.exit(0);
+      break;
+    }
+
+    case "budget": {
+      const action = args[1];
+      const b = budgetStatus(config, root);
+
+      if (action === "reset") {
+        // The count is local-only, so an operator who knows their real usage
+        // must be able to correct it. Appending `budget_released` keeps the
+        // hash chain intact — the ledger is corrected forwards, never edited.
+        const dryRun = args.includes("--dry-run");
+        const confirmed = args.includes("--yes") || args.includes("-y");
+        if (!dryRun && !confirmed) {
+          const open = listOpenReservations(root);
+          console.log(`Would release ${open.length} open reservation(s) from today's ledger.`);
+          console.log("This rewrites nothing — it appends `budget_released` entries.");
+          console.log("Re-run with --yes to confirm, or --dry-run for detail.");
+          process.exit(0);
+        }
+        const res = releaseOpenReservations({ root, dryRun, reason: "operator-reconcile" });
+        const verb = dryRun ? "Would release" : "Released";
+        console.log(`${verb} ${res.released} reservation(s) (${res.committed} committed, ${res.uncommitted} never closed).`);
+        if (!dryRun) {
+          const after = budgetStatus(loadConfig(root), root);
+          console.log(`Daily Budget : ${formatBudgetLine(after)}`);
+        }
+        process.exit(0);
+      }
+
+      if (args.includes("--json")) {
+        console.log(JSON.stringify({ ok: true, budget: { ...b, scope: "this-repository" } }, null, 2));
+        process.exit(0);
+      }
+
+      console.log(`Daily Budget : ${formatBudgetLine(b)}`);
+      console.log(`  ${b.note}`);
+      console.log(`  Open reservations today: ${listOpenReservations(root).length}`);
+      console.log("");
+      console.log("The ledger counts this checkout only — sessions started from the Jules");
+      console.log("web UI or another machine spend the same quota without appearing here.");
+      console.log("Use `agentctl budget reset --yes` to reconcile a count you know is wrong.");
       process.exit(0);
       break;
     }

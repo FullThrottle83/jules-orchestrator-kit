@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.32.8 (Current Stable) ──► v0.33.0 ──► v1.0.0 (Production Kernel)
- (Web, UX & Bridge)        (Monorepos) (Enterprise Hardened)
+ v0.33.0 (Current Stable) ──► v0.34.0 ──► v1.0.0 (Production Kernel)
+ (Plan-Agnostic Budgeting)  (Monorepos) (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.32.8)
+## ✅ Shipped Milestones (v0.20.0 – v0.33.0)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -56,7 +56,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **Tiered Verification Stages & Offline Execution Policy** (`src/config.mjs` `verify.stages`/`verify.policy`) — Optional lint/unit/fuzz/invariant/e2e stage pipeline and network-access policy (used to enforce `--offline` for Web3/Solidity stacks).
 - [x] **Web3 / Solidity Stack Detection** (`src/stack-detector.mjs`) — Foundry (`forge test/build/fmt --offline`) and Hardhat auto-detection.
 
-- [x] **Provider-Agnostic Cost Router** (`src/router.mjs`, `router:` block in `.agent/config.yml`, opt-in/disabled by default) — Zero-dependency heuristic classifier routing trivial tasks to a fast/cheap provider and complex or safety-sensitive tasks to the primary provider. See the v0.33.0 milestone entry below for full details.
+- [x] **Provider-Agnostic Cost Router** (`src/router.mjs`, `router:` block in `.agent/config.yml`, opt-in/disabled by default) — Zero-dependency heuristic classifier (`classifyTaskComplexity`) routing trivial tasks (typos, linter fixes, lockfile bumps, single-file changes) to a fast/cheap provider while reserving the primary provider for complex multi-file refactors — provider-agnostic and user-configurable, not tied to any single vendor. Safety-first: tasks touching `scope.deny` or sensitive paths (`auth/**`, `migrations/**`, secrets, `.github/**`), or using the `sentinel` role, always force-route to the primary provider regardless of score, and FAST-tier dispatch cascades to the primary provider on rate-limit/5xx via `createFailoverProvider`.
 - [x] **Gemini CLI Fast-Tier Preset** (`src/provider.mjs` `gemini-flash`) — Headless Gemini CLI exec preset (`gemini-3.6-flash`, `--approval-mode=yolo`) usable as `router.fast`, or swapped for any other provider.
 - [x] **`--tier fast|complex` Override** (`agentctl dispatch`, `agentctl task create`, MCP `dispatch_jules_task`) — Explicit routing override that bypasses the heuristic classifier.
 - [x] **Provider URL Token Leakage Guard** (`src/provider.mjs`) — `createProvider()` rejects custom HTTP specs with `{token}` in `url`/`sendMessageUrl`; credentials are isolated to `headerData` so they cannot reach URL paths, query strings, or access logs.
@@ -71,20 +71,23 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **Router Windows-Path Parity** (`src/router.mjs`) — `collectReferencedPaths()` normalises separators before path extraction, so a sensitive path written `src\auth\session.mjs` by a Windows author still force-routes to the primary provider instead of the cheap tier.
 - [ ] **Base64-encoded credential detection** — `scanDiff()` still does not decode base64 blobs before matching. Deliberately deferred: decoding every base64-looking candidate in a large diff carries a false-positive and performance cost that needs measuring first. Tracked as the single remaining `todo` probe in `test/adversarial-claims.test.mjs`.
 
+### v0.33.0: Plan-Agnostic Budgeting, Limit Provenance & Guided First Use
+- [x] **Limit Provenance** (`src/budget.mjs`, `resolveDailyLimit()`) — The kit records *where* a daily limit came from: stated by the operator (`limits.daily_tasks` / `JULES_DAILY_BUDGET`), demonstrated by the provider refusing work, or guessed from a tier preset. Only the first two may hard-block; a guess warns and lets the dispatch through, because refusing work the provider would have accepted is a worse failure than an over-count.
+- [x] **Day-Scoped Learned Ceiling** — A daily-quota refusal records "stop for today", not "this is your allowance". Deliberately not permanent: the local ledger cannot see sessions started from the Jules web UI or another machine, so the count at the moment of refusal is a lower bound on the real quota, and treating it as the quota would lock the operator below their own plan.
+- [x] **Unified Tier Table** (`TIER_PRESETS` in `src/config.mjs`) — The wizard's separate table had drifted, scaffolding free-tier repos with double their real allowance. The wizard now projects the runtime table and generates its menu from it, so advertised and enforced numbers cannot disagree.
+- [x] **Ledger Reconciliation** (`agentctl budget`, `agentctl budget reset`) — Corrects a local count the operator knows is wrong by *appending* `budget_released` entries. The hash-chained ledger is corrected forwards, never edited or truncated, so the audit trail survives the correction.
+- [x] **CI-Enforced Egress Allowlist** (`test/egress-allowlist.test.mjs`) — Pins every host any shipped source may contact, requires webhook URLs to stay operator-supplied via environment, asserts zero runtime dependencies, and fails if a credential ever appears in a URL. In a kit that asks for an API key, this is what a reader can verify instead of a promise.
+- [x] **Guided First Run** (`src/ops/next-step.mjs`, bare `agentctl`) — Walks git → init → key → queue → ready and names one command, rather than printing thirty. `agentctl doctor` now actually renders the diagnostic registry it has always contained, including a new critical finding for a git-tracked `.env`.
+- [x] **Single-Source Version** (`src/version.mjs`) — Four modules hardcoded the kit version and had drifted three minor releases apart; all now read `package.json`.
+- [x] **Monorepo Architecture & Cross-Package Import Guard** — `resolveWorkspaceBoundary` detects illegal cross-package imports and circular dependencies in TypeScript, Go, and Rust monorepos before running CI.
+
 ---
 
-## 🎯 Target Milestone v0.33.0: Monorepo Swarms, Dynamic Routing & Code Intelligence
-*Focus: Multi-agent coordination, cost optimization, and monorepo architectural integrity.*
+## 🎯 Target Milestone v0.34.0: Swarm Autonomy & Interruption Budgeting
+*Focus: Multi-agent coordination and protecting developer attention.*
 
-- [x] **Monorepo Architecture & Cross-Package Import Guard**:
-  - Extend `resolveWorkspaceBoundary` to detect illegal cross-package imports and circular dependencies in TypeScript, Go, and Rust monorepos before running CI.
 - [ ] **Type III Silence Governor & Interruption Budgeting**:
   - Configurable digest mode for escalation webhooks (`src/webhook.mjs`), suppressing non-critical notifications to protect developer focus until context shifts or critical manual intervention thresholds.
-- [x] **Dynamic Complexity & Cost Router** (`src/router.mjs`, `router:` in `.agent/config.yml`, opt-in):
-  - Zero-dependency heuristic classifier (`classifyTaskComplexity`) that routes trivial tasks (typos, linter fixes, lockfile bumps, single-file changes) to a fast/cheap provider while reserving the primary provider for complex multi-file refactors — provider-agnostic and user-configurable, not tied to any single vendor.
-  - Ships with a `gemini-flash` exec preset (`src/provider.mjs`, Gemini CLI headless mode) as a batteries-included fast tier; any exec/HTTP provider spec works as `router.fast`/`router.complex`.
-  - Safety-first: tasks touching `scope.deny` or sensitive paths (`auth/**`, `migrations/**`, secrets, `.github/**`), or using the `sentinel` role, always force-route to the primary provider regardless of score. FAST-tier dispatch cascades to the primary provider on rate-limit/5xx via `createFailoverProvider`.
-  - `--tier fast|complex` CLI/MCP override on `dispatch`, `task create`, and `dispatch_jules_task` for explicit control.
 - [ ] **Automated Flaky Test Healing Swarm**:
   - Background worker that consumes Wilson-quarantined tests (Exit Code 8) and dispatches specialized anti-flakiness prompt templates to repair timing and race conditions.
 

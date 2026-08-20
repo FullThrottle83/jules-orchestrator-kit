@@ -142,9 +142,13 @@ export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300) {
  *   explicit root to keep callers (notably tests) off the operator's real ledger.
  */
 export function reserveDailyBudget(maxSessions = 300, taskKey = "", root = resolveRoot()) {
-  appendLedger({ event: "budget_reserved", key: taskKey }, root);
+  // The id is what makes the reservation releasable. Written without one, a
+  // reservation counted against the day and no rollback, commit or reconcile
+  // could ever name it again — it stayed charged until the ledger rotated.
+  const reservationId = `res-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  appendLedger({ event: "budget_reserved", reservationId, key: taskKey }, root);
   const check = checkDailyBudget(root, maxSessions);
-  return { ok: check.ok, used: check.used, budget: maxSessions };
+  return { ok: check.ok, used: check.used, budget: maxSessions, reservationId };
 }
 
 export function verifyLedgerIntegrity(filePath) {

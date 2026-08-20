@@ -138,6 +138,8 @@ export {
   readActiveCeiling,
   recordObservedCeiling,
   isDailyQuotaRejection,
+  listOpenReservations,
+  releaseOpenReservations,
   CEILING_FILE,
 } from "./src/budget.mjs";
 export { KIT_VERSION } from "./src/version.mjs";

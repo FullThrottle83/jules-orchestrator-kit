@@ -10,11 +10,23 @@ import {
   recordObservedCeiling,
   isDailyQuotaRejection,
   budgetStatus,
+  listOpenReservations,
+  releaseOpenReservations,
   CEILING_FILE,
 } from "../src/budget.mjs";
 import { loadConfig, TIER_PRESETS } from "../src/config.mjs";
 import { dispatch } from "../src/engine.mjs";
-import { checkDailyBudget, BudgetError } from "../src/state.mjs";
+import {
+  checkDailyBudget,
+  BudgetError,
+  reserveBudget,
+  commitBudgetReservation,
+  rollbackBudgetReservation,
+  getDailyLedgerPath,
+  verifyLedgerIntegrity,
+  appendLedger,
+} from "../src/state.mjs";
+import { reserveDailyBudget } from "../scripts/utils.mjs";
 
 /** An isolated repo root so nothing here touches the operator's real ledger. */
 function makeRoot(prefix) {
@@ -298,6 +310,120 @@ describe("budgetStatus reports what it knows", () => {
       const stated = budgetStatus(loadConfig(root), root);
       assert.equal(stated.limit, 10);
       assert.equal(stated.enforced, true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("reconciling a local count that no longer reflects reality", () => {
+  it("treats a committed reservation as still spent", () => {
+    const root = makeRoot("jok-budget-open-");
+    try {
+      const a = reserveBudget(root, 100);
+      const b = reserveBudget(root, 100);
+      commitBudgetReservation(root, a.reservationId);
+
+      const open = listOpenReservations(root);
+      assert.equal(open.length, 2, "a commit records success, it does not give quota back");
+      assert.equal(open.filter((r) => r.committed).length, 1);
+      assert.ok(open.some((r) => r.reservationId === b.reservationId));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("excludes reservations that were already rolled back", () => {
+    const root = makeRoot("jok-budget-open-rb-");
+    try {
+      const a = reserveBudget(root, 100);
+      rollbackBudgetReservation(root, a.reservationId);
+      assert.equal(listOpenReservations(root).length, 0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports without writing when asked for a dry run", () => {
+    const root = makeRoot("jok-budget-dry-");
+    try {
+      reserveBudget(root, 100);
+      reserveBudget(root, 100);
+
+      const res = releaseOpenReservations({ root, dryRun: true });
+      assert.equal(res.released, 2);
+      assert.equal(res.dryRun, true);
+      assert.equal(checkDailyBudget(root, 100).used, 2, "a dry run must leave the count alone");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("zeroes the count by appending, leaving the hash chain verifiable", () => {
+    const root = makeRoot("jok-budget-release-");
+    try {
+      for (let i = 0; i < 5; i++) reserveBudget(root, 100);
+      assert.equal(checkDailyBudget(root, 100).used, 5);
+
+      const before = readFileSync(getDailyLedgerPath(root), "utf-8").split("\n").filter(Boolean).length;
+      const res = releaseOpenReservations({ root, reason: "operator-reconcile" });
+
+      assert.equal(res.released, 5);
+      assert.equal(checkDailyBudget(root, 100).used, 0);
+
+      const after = readFileSync(getDailyLedgerPath(root), "utf-8").split("\n").filter(Boolean).length;
+      assert.equal(after, before + 5, "corrections are appended, never edited in place");
+      assert.equal(
+        verifyLedgerIntegrity(getDailyLedgerPath(root)).ok,
+        true,
+        "the audit chain must survive the correction"
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("is a no-op on a ledger with nothing outstanding", () => {
+    const root = makeRoot("jok-budget-noop-");
+    try {
+      const res = releaseOpenReservations({ root });
+      assert.equal(res.released, 0);
+      assert.equal(existsSync(getDailyLedgerPath(root)), false, "nothing to correct writes nothing");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("legacy reservations written without an id", () => {
+  it("counts and releases them, since nothing else ever could", () => {
+    const root = makeRoot("jok-budget-anon-");
+    try {
+      // Exactly what older kit versions and scripts/utils.mjs used to write.
+      appendLedger({ event: "budget_reserved", key: "legacy-a" }, root);
+      appendLedger({ event: "budget_reserved", key: "legacy-b" }, root);
+      const withId = reserveBudget(root, 100);
+
+      assert.equal(checkDailyBudget(root, 100).used, 3);
+      const open = listOpenReservations(root);
+      assert.equal(open.length, 3, "an unnamed reservation still spends budget");
+      assert.equal(open.filter((r) => !r.reservationId).length, 2);
+
+      const res = releaseOpenReservations({ root });
+      assert.equal(res.anonymous, 2);
+      assert.deepEqual(res.ids, [withId.reservationId], "only real ids are reported as ids");
+      assert.equal(checkDailyBudget(root, 100).used, 0, "the day must actually come back to zero");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("no longer produces them", () => {
+    const root = makeRoot("jok-budget-anon-fixed-");
+    try {
+      const res = reserveDailyBudget(100, "k", root);
+      assert.ok(res.reservationId, "every reservation must be nameable to be releasable");
+      assert.equal(listOpenReservations(root).every((r) => r.reservationId), true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

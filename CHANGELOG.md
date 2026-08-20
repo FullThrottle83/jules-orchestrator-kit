@@ -3,6 +3,33 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.33.0] - 2026-08-20
+### Plan-Agnostic Budgeting, Limit Provenance & Guided First Use
+
+The kit previously assumed every operator was on the same plan and that its own
+estimate of their quota was a fact. Both assumptions produced wrong behaviour on
+real accounts. This release makes the kit usable on any Jules plan by being
+honest about which numbers it knows and which it is guessing.
+
+#### Fixed
+- **Two disagreeing tier tables (`TIER_PRESETS` in `src/config.mjs` vs `TIER_PROFILES` in `src/wizard-init.mjs`)**: the wizard scaffolded `free: daily_tasks: 30` while the runtime budgeted free accounts at `15`, and the written value won the merge — so a freshly initialised free-tier repo was cleared for **twice its actual allowance** and hit a provider refusal the kit had no model for. `TIER_PRESETS` is now the single source of truth and the wizard projects it; the two cannot drift again.
+- **`ultra` was never offered by the onboarding wizard** despite being the runtime's fallback tier, and `tier: enterprise` resolved to no preset at all. The tier menu is now generated from the preset table, so every tier the runtime understands is selectable and its advertised numbers are the numbers actually written.
+- **Hardcoded version strings in four modules**: the CLI banner read `0.32.8` while `src/mcp.mjs`, `src/dashboard.mjs` and the config the wizard scaffolded still claimed `0.29.x`. All now derive from `package.json` via the new `src/version.mjs`, and `test/mcp.test.mjs` asserts against the manifest rather than a literal it had pinned three minor versions earlier.
+- **Reservations written with no `reservationId` (`reserveDailyBudget()` in `scripts/utils.mjs`)**: these counted against the daily budget but could never be named by a rollback, commit or reconcile, so they stayed charged until the ledger rotated at midnight. Every reservation now carries an id.
+
+#### Added
+- **Limit provenance (`src/budget.mjs`, `resolveDailyLimit()`)**: the kit now records whether a daily limit came from the operator (`limits.daily_tasks` or `JULES_DAILY_BUDGET`), from the provider refusing work, or from a tier preset. Precedence runs in that order.
+- **Day-scoped learned ceiling**: a provider refusal matching a daily-quota signature records "stop for today", not "this is your allowance". Deliberately not permanent — the local ledger cannot see sessions started from the Jules web UI or another machine, so the local count at the moment of a refusal is a *lower bound* on the real quota. Treated as permanent it would lock the operator below their own plan.
+- **`agentctl budget` / `agentctl budget reset`**: shows today's count, where its limit came from, and how many reservations are open. `reset` reconciles a count the operator knows is wrong by **appending** `budget_released` entries — the hash-chained ledger is corrected forwards, never edited or deleted, so the audit trail survives the correction.
+- **Egress allowlist enforced in CI (`test/egress-allowlist.test.mjs`)**: pins every host any shipped source may contact, requires Slack/Discord webhooks to stay operator-supplied via environment, asserts `dependencies` is empty, and fails if a credential ever appears in a URL. In a kit that asks for an API key, this is what replaces "trust us" with something a reader can verify.
+- **Guided first run**: bare `agentctl` now answers "what do I do next" — walking git → init → key → queue → ready and naming one command — instead of printing thirty. The API-key step states plainly that the key is read from the environment only, is never written to config, and is never sent anywhere but the provider.
+- **`doctor` now reports a git-tracked `.env`** as a critical finding with remediation, and names which environment variable the key was found in without printing its value.
+
+#### Changed
+- **A guessed limit warns; it no longer blocks.** When the daily limit comes only from a tier preset, exceeding it logs `[BUDGET_ESTIMATE]` and lets the dispatch through. Refusing work the provider would have accepted is a worse failure than an over-count, and the kit cannot know a plan it was never told about. A limit the operator stated, or one the provider demonstrated, still hard-blocks with exit `7` exactly as before.
+- **`agentctl doctor` renders the diagnostic registry.** `runDoctorChecks()` and its checks were reachable only from the test suite; the CLI printed a hand-written summary and showed the findings to nobody.
+- **Budget output names its own scope**: `306 / 300 used (this repo) — limit estimated from tier "ultra", not enforced`. The ledger counts this checkout only, and the number should not invite the reader to trust it as the vendor's counter.
+
 ## [0.32.8] - 2026-08-20
 ### Dry-Run Budget Leak & Test Suite Ledger Isolation
 
