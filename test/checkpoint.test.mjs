@@ -16,11 +16,11 @@ test("Atomic Git Checkpoint & Rollback Manager", async (t) => {
   t.beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "checkpoint-test-"));
     execSync("git init -b main", { cwd: tmpDir, stdio: "ignore" });
-    execSync("git config user.name 'Test'", { cwd: tmpDir, stdio: "ignore" });
-    execSync("git config user.email 'test@test.com'", { cwd: tmpDir, stdio: "ignore" });
+    execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "ignore" });
+    execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "ignore" });
     writeFileSync(join(tmpDir, "file1.txt"), "Initial content");
     execSync("git add .", { cwd: tmpDir, stdio: "ignore" });
-    execSync("git commit -m 'Initial commit'", { cwd: tmpDir, stdio: "ignore" });
+    execSync('git commit -m "Initial commit"', { cwd: tmpDir, stdio: "ignore" });
   });
 
   t.afterEach(() => {

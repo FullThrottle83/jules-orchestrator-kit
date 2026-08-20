@@ -51,14 +51,14 @@ test("Stack Oracle & Verification Probes", async (t) => {
   });
 
   await t.test("runVerificationProbe executes successful command and returns ok: true", async () => {
-    const res = await runVerificationProbe("node -e 'process.exit(0)'");
+    const res = await runVerificationProbe('node -e "process.exit(0)"');
     assert.equal(res.ok, true);
     assert.equal(res.code, 0);
     assert.equal(typeof res.durationMs, "number");
   });
 
   await t.test("runVerificationProbe executes failing command and returns ok: false", async () => {
-    const res = await runVerificationProbe("node -e 'process.exit(1)'");
+    const res = await runVerificationProbe('node -e "process.exit(1)"');
     assert.equal(res.ok, false);
     assert.equal(res.code, 1);
   });

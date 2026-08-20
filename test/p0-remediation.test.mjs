@@ -241,12 +241,12 @@ test("P0-05: Working Tree & Untracked File Gate Mode", async (t) => {
     const tmpDir = mkdtempSync(join(tmpdir(), "jules-gate-test-"));
     try {
       runCmd("git init", { cwd: tmpDir });
-      runCmd("git config user.name 'Test'", { cwd: tmpDir });
-      runCmd("git config user.email 'test@example.com'", { cwd: tmpDir });
+      runCmd('git config user.name "Test"', { cwd: tmpDir });
+      runCmd('git config user.email "test@example.com"', { cwd: tmpDir });
 
       writeFileSync(join(tmpDir, "README.md"), "# Initial\n");
       runCmd("git add README.md", { cwd: tmpDir });
-      runCmd("git commit -m 'Initial commit'", { cwd: tmpDir });
+      runCmd('git commit -m "Initial commit"', { cwd: tmpDir });
 
       // Create untracked file containing secret pattern
       writeFileSync(join(tmpDir, ".env"), "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n");
@@ -268,12 +268,12 @@ test("P0-05: Working Tree & Untracked File Gate Mode", async (t) => {
     const tmpDir = mkdtempSync(join(tmpdir(), "jules-gate-e2e-"));
     try {
       runCmd("git init", { cwd: tmpDir });
-      runCmd("git config user.name 'Test'", { cwd: tmpDir });
-      runCmd("git config user.email 'test@example.com'", { cwd: tmpDir });
+      runCmd('git config user.name "Test"', { cwd: tmpDir });
+      runCmd('git config user.email "test@example.com"', { cwd: tmpDir });
 
       writeFileSync(join(tmpDir, "README.md"), "# Initial\n");
       runCmd("git add README.md", { cwd: tmpDir });
-      runCmd("git commit -m 'Initial commit'", { cwd: tmpDir });
+      runCmd('git commit -m "Initial commit"', { cwd: tmpDir });
 
       // Create untracked file containing secret pattern
       writeFileSync(join(tmpDir, ".env"), "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n");

@@ -119,7 +119,7 @@ verify:
     networkAccess: "forbidden"
 `;
       writeFileSync(join(tmp, ".agent", "jules.yml"), yaml, "utf-8");
-      execSync("git add . && git commit -m 'setup verification config'", { cwd: tmp, stdio: "ignore" });
+      execSync('git add . && git commit -m "setup verification config"', { cwd: tmp, stdio: "ignore" });
 
       const res = await gate({ root: tmp, base: "main" });
       assert.equal(res.ok, true);

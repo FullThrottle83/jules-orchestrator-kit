@@ -50,8 +50,13 @@ export function runCmd(command, opts = {}) {
 
   try {
     const isWin = process.platform === "win32";
+    let formattedShellCmd = shellCmd;
+    if (isWin && useShell && typeof formattedShellCmd === "string") {
+      // In cmd.exe, single quotes are literal characters, not string delimiters.
+      formattedShellCmd = formattedShellCmd.replace(/'([^']*)'/g, '"$1"');
+    }
     const execBin = useShell ? (isWin ? (process.env.ComSpec || "cmd.exe") : "/bin/sh") : binary;
-    const execArgs = useShell ? (isWin ? ["/d", "/s", "/c", shellCmd] : ["-c", shellCmd]) : args;
+    const execArgs = useShell ? (isWin ? ["/d", "/s", "/c", formattedShellCmd] : ["-c", formattedShellCmd]) : args;
 
     const stdout = execFileSync(execBin, execArgs, {
       cwd,

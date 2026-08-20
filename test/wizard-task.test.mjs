@@ -125,11 +125,11 @@ test("Guided Task Authoring Subsystem", async (t) => {
 
     try {
       runCmd("git init", { cwd: tmpDir });
-      runCmd("git config user.name 'Test'", { cwd: tmpDir });
-      runCmd("git config user.email 'test@example.com'", { cwd: tmpDir });
+      runCmd('git config user.name "Test"', { cwd: tmpDir });
+      runCmd('git config user.email "test@example.com"', { cwd: tmpDir });
       writeFileSync(join(tmpDir, "README.md"), "# Initial\n");
       runCmd("git add README.md", { cwd: tmpDir });
-      runCmd("git commit -m 'Initial commit'", { cwd: tmpDir });
+      runCmd('git commit -m "Initial commit"', { cwd: tmpDir });
 
       const res = await runTaskCreateWizard(tmpDir, {
         interactive: false,
