@@ -351,6 +351,16 @@ console.log(classification.tier); // "fast" | "complex"
 
 <br/>
 
+## ⚖️ Disclaimer
+
+`jules-orchestrator-kit` is an independent, community-driven open-source project and is not affiliated with, endorsed by, or sponsored by Google, Google LLC, or Alphabet Inc. "Google", "Google Jules", and related marks are trademarks of Google LLC.
+
+<br/>
+
+---
+
+<br/>
+
 <div align="center">
   <p><b>jules-orchestrator-kit</b> • Built with zero external dependencies for Google Jules and enterprise AI agent swarms.</p>
 </div>
