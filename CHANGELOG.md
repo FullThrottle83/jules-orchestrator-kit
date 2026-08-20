@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.38.0] - 2026-08-20
+### Multi-OS CI Matrix (Linux, macOS, Windows) & Interactive TUI Hardening
+
+#### Added
+- **Multi-OS CI Matrix across Node 20, 22, and 24 (`.github/workflows/jules-audit.yml`)**: Fully automated test matrix executing 555 tests across 81 suites on Ubuntu Linux, macOS (Darwin), and Windows (PowerShell/CMD).
+- **Deterministic Cross-Platform Test Runner (`scripts/run-tests.mjs`)**: Native zero-dependency runner that resolves all `test/*.test.mjs` test suites via `node:fs` and executes them via `node --test`, eliminating shell-globbing divergences across Windows CMD/PowerShell, macOS zsh, and Linux bash on Node 20/22/24.
+- **Darwin / macOS PID Inspection (`src/state.mjs`)**: Added BSD/Darwin `ps -p <pid> -o lstart=` support in `getProcessStartTime` so PID recycling checks and mutex stale-lock reapers work reliably on macOS where `/proc` is absent.
+
+#### Fixed
+- **Windows Command Quoting & Shell Execution (`src/git.mjs`)**: Replaced custom arguments parsing with native `child_process.execSync` for shell-mode command execution, ensuring Windows `cmd.exe` properly preserves quoted string arguments without pathspec syntax corruption.
+- **Windows Path Backslash Normalization in Test Harnesses (`test/tiered-verification.test.mjs`, `test/wizard-task.test.mjs`, `test/kit.test.mjs`)**: Ensured all generated temporary file paths and code evaluation snippets normalize Windows backslashes (`\`) to POSIX slashes (`/`), preventing JavaScript string escape corruption.
+- **TUI Raw Mode & Interactive Wizard Cancellation (`src/ux/terminal-session.mjs`, `src/tui.mjs`, `src/wizard-init.mjs`)**:
+  - Fixed stream destruction and `AbortError` issues when chaining interactive input prompts.
+  - Added support for SS3 escape sequences (`\u001bOA`, `\u001bOB`) in arrow-key navigation.
+  - Handled SIGINT / Ctrl+C (`\u0003`) gracefully via `WizardCancelledError` (exiting with code `130` instead of uncaught fatal errors).
+  - Enhanced `runInitWizard` to non-destructively pre-populate defaults from existing `.agent/config.yml` on re-initialization.
+
 ## [0.37.0] - 2026-08-20
 ### The Secret Scanner Sees Through Base64, and `budget reset` Stops Giving Back Quota That Was Really Spent
 

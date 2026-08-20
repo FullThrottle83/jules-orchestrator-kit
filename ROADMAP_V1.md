@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.37.0 (Current Stable) ──► v1.0.0 (Production Kernel)
+ v0.38.0 (Current Stable) ──► v1.0.0 (Production Kernel)
  (Universal i18n & Swarm)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.37.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.38.0)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -107,6 +107,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **`budget reset` keeps reservations that reached the provider** (`src/budget.mjs`, `bin/agentctl.mjs`) — `budget_committed` was written and counted but never acted on. Releasing a committed reservation makes the local count understate real usage, which is the direction that gets the next dispatch refused. `--all` is now required for that.
 - [x] **`budget reset` refuses unrecognised flags** (`bin/agentctl.mjs`) — a misremembered option silently dropped through to a full release.
 - [x] **The adversarial red-team suite has no open gaps** (`test/adversarial-claims.test.mjs`) — the base64 `todo` was the last one; every documented safety claim is now backed by a passing probe.
+
+### v0.38.0: Multi-OS CI Matrix (Linux, macOS, Windows) & Interactive TUI Hardening
+- [x] **Multi-OS CI Matrix across Node 20, 22, and 24** (`.github/workflows/jules-audit.yml`) — Automated CI matrix executing all 555 tests across 81 suites on Ubuntu Linux, macOS (Darwin), and Windows (PowerShell/CMD).
+- [x] **Deterministic Cross-Platform Test Runner** (`scripts/run-tests.mjs`) — Zero-dependency file discovery via `node:fs` running `node --test` across all platforms and shell environments.
+- [x] **macOS Darwin Process Inspection** (`src/state.mjs`) — Added BSD/Darwin `ps -p <pid> -o lstart=` support in `getProcessStartTime` for reliable PID recycling protection on macOS.
+- [x] **Windows Command Quoting & Path Normalization** (`src/git.mjs`, `test/`) — Native `child_process.execSync` for shell execution and cross-platform backslash normalization in test harnesses.
+- [x] **TUI Raw Mode & Interactive Wizard Cancellation** (`src/ux/terminal-session.mjs`, `src/tui.mjs`, `src/wizard-init.mjs`) — SS3 arrow navigation, `WizardCancelledError` (exit code 130) on Ctrl+C, and non-destructive re-init defaults preservation.
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.37.0",
-  "description": "Orchestration kit for running Google Jules autonomous agents.",
+  "version": "0.38.0",
+  "description": "Zero-dependency safety gatekeeper, test oracle generator, and multi-agent coordination protocol for Google Jules (jules) autonomous agents.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/FullThrottle83/jules-orchestrator-kit.git"
