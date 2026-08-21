@@ -149,7 +149,19 @@ export {
   verifyEvidenceManifest,
   generateEvidenceMarkdown,
   computeEvidenceHash,
+  exportJsonReport,
 } from "./src/evidence.mjs";
+
+// Declarative Assertion Primitives
+export {
+  assertDirSize,
+  assertFileSize,
+  assertFilePatterns,
+  assertFileExists,
+  runAssertion,
+  formatBytes,
+  resolveBytesLimit,
+} from "./src/assertions.mjs";
 
 export {
   resolveDailyLimit,

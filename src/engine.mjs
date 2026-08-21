@@ -18,12 +18,14 @@ import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemo
 import { hydratePrompt, harvestFailure } from "./memory.mjs";
 import { resolveRolePrompt } from "./role-resolver.mjs";
 
+import { runAssertion } from "./assertions.mjs";
 import {
   computeDirectoryHash,
   generateEvidenceManifest,
   writeEvidenceManifest,
   verifyEvidenceManifest,
   generateEvidenceMarkdown,
+  exportJsonReport,
   sha256,
 } from "./evidence.mjs";
 
@@ -47,6 +49,8 @@ export {
   writeEvidenceManifest,
   verifyEvidenceManifest,
   generateEvidenceMarkdown,
+  exportJsonReport,
+  runAssertion,
 };
 
 
@@ -296,34 +300,60 @@ export async function gate(opts = {}) {
 
   try {
     for (const stage of stagesToRun) {
-      if (!stage.cmd) continue;
-      const startTime = Date.now();
-      const stageEnv = stage.networkAccess === "forbidden" || trustedVerify.policy?.offline
-        ? { ...testEnv, JULES_SANDBOX_OFFLINE: "1" }
-        : testEnv;
+      const isAssertion = Boolean(
+        stage.assert ||
+        (stage.type && String(stage.type).startsWith("assert:")) ||
+        (stage.kind && String(stage.kind).startsWith("assert:"))
+      );
+      if (!stage.cmd && !isAssertion) continue;
 
-      const res = runCmd(stage.cmd, { cwd: root, ignoreError: true, env: stageEnv, timeout: stage.timeoutMs || verifyTimeout });
-      const durationMs = Date.now() - startTime;
-      const stdoutRedacted = redactSecrets(res.stdout || "");
-      const stderrRedacted = redactSecrets(res.stderr || "");
-      const stageOk = res.status === 0;
+      const startTime = Date.now();
+      let res;
+      let durationMs;
+      let stdoutRedacted;
+      let stderrRedacted;
+      let stageOk;
+      let assertDiagnostics = [];
+      let assertMetrics = {};
+
+      if (isAssertion) {
+        const assertRes = runAssertion(stage, root);
+        durationMs = assertRes.metrics?.durationMs ?? (Date.now() - startTime);
+        stdoutRedacted = assertRes.stdout || "";
+        stderrRedacted = assertRes.stderr || "";
+        stageOk = assertRes.ok;
+        assertDiagnostics = assertRes.diagnostics || [];
+        assertMetrics = assertRes.metrics || {};
+        res = { status: assertRes.status, stdout: stdoutRedacted, stderr: stderrRedacted };
+      } else {
+        const stageEnv = stage.networkAccess === "forbidden" || trustedVerify.policy?.offline
+          ? { ...testEnv, JULES_SANDBOX_OFFLINE: "1" }
+          : testEnv;
+
+        res = runCmd(stage.cmd, { cwd: root, ignoreError: true, env: stageEnv, timeout: stage.timeoutMs || verifyTimeout });
+        durationMs = Date.now() - startTime;
+        stdoutRedacted = redactSecrets(res.stdout || "");
+        stderrRedacted = redactSecrets(res.stderr || "");
+        stageOk = res.status === 0;
+      }
 
       executionRecords.push({
-        id: stage.id || stage.kind,
-        kind: stage.kind,
-        cmd: stage.cmd,
+        id: stage.id || stage.kind || (isAssertion ? `assert:${stage.assert}` : "stage"),
+        kind: stage.kind || (isAssertion ? "assert" : "test"),
+        cmd: stage.cmd || `assert:${stage.assert || stage.type || stage.kind}`,
         exitCode: res.status,
         durationMs,
-        networkAccess: stage.networkAccess || "allow",
+        networkAccess: isAssertion ? "offline" : (stage.networkAccess || "allow"),
         stdoutHash: "sha256:" + sha256(stdoutRedacted),
         stderrHash: "sha256:" + sha256(stderrRedacted),
+        ...(isAssertion ? { assert: stage.assert || stage.type || stage.kind, diagnostics: assertDiagnostics, metrics: assertMetrics } : {}),
       });
 
       if (stage.kind === "test" || stage.kind === "unit") {
         testResult = { ok: stageOk, status: res.status, stdout: stdoutRedacted, stderr: stderrRedacted, command: stage.cmd };
         const fingerprint = !stageOk ? fingerprintFailureState(testResult, root) : null;
-        recordVerifyRun(root, stage.cmd, stageOk, fingerprint, durationMs);
-        if (!stageOk) {
+        if (stage.cmd) recordVerifyRun(root, stage.cmd, stageOk, fingerprint, durationMs);
+        if (!stageOk && stage.cmd) {
           const runs = readVerifyRuns(root, stage.cmd);
           flakyVerdictResult = flakyVerdict(runs);
           if (flakyVerdictResult.verdict === "QUARANTINED") {
@@ -343,8 +373,11 @@ export async function gate(opts = {}) {
           status: res.status,
           stdout: stdoutRedacted,
           stderr: stderrRedacted,
-          command: stage.cmd,
-          phase: stage.kind,
+          command: stage.cmd || `assert:${stage.assert || stage.type || stage.kind}`,
+          phase: stage.kind || (isAssertion ? "assert" : "stage"),
+          stageId: stage.id || (isAssertion ? `assert:${stage.assert || stage.type || stage.kind}` : stage.kind),
+          diagnostics: assertDiagnostics,
+          metrics: assertMetrics,
         };
         break;
       }
@@ -378,8 +411,11 @@ export async function gate(opts = {}) {
     }
   }
 
+  const verifyOk = !failingCmd && !testTampered;
+
   // Generate & persist Evidence Manifest
   const evidenceManifest = generateEvidenceManifest(root, {
+    taskId: opts.taskId,
     preTestHash,
     executionRecords,
     secretScanOk: secretResult.ok,
@@ -387,6 +423,10 @@ export async function gate(opts = {}) {
     maxDiffKb: config.limits.diffKb || 75,
     protectedScopeOk: scopeResult.ok,
     repository: config.provider || "jules",
+    failedStage: failingCmd?.stageId || failingCmd?.phase || null,
+    diagnostics: failingCmd?.diagnostics?.length ? failingCmd.diagnostics : (failingCmd?.stderr ? [failingCmd.stderr] : []),
+    metrics: failingCmd?.metrics || {},
+    ok: verifyOk,
   });
   if (testTampered) {
     evidenceManifest.testIntegrity.tamperDetected = true;
@@ -396,7 +436,13 @@ export async function gate(opts = {}) {
     evidencePath = writeEvidenceManifest(root, evidenceManifest);
   } catch (_) {}
 
-  const verifyOk = !failingCmd && !testTampered;
+  // Export structured JSON report if requested
+  const jsonReportPath = opts.jsonReport || opts.jsonReportPath || process.env.JULES_JSON_REPORT || null;
+  if (jsonReportPath) {
+    try {
+      exportJsonReport(evidenceManifest, jsonReportPath);
+    } catch (_) {}
+  }
   phases.push({
     phase: "verify",
     ok: verifyOk,

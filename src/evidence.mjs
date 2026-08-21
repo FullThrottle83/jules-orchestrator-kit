@@ -156,6 +156,11 @@ export function computeEvidenceHash(manifest) {
     testIntegrity: manifest.testIntegrity,
     executionRecords: manifest.executionRecords,
     securityChecks: manifest.securityChecks,
+    ...(manifest.status ? { status: manifest.status } : {}),
+    ...(manifest.failedStage ? { failedStage: manifest.failedStage } : {}),
+    ...(manifest.diagnostics && manifest.diagnostics.length > 0 ? { diagnostics: manifest.diagnostics } : {}),
+    ...(manifest.metrics && Object.keys(manifest.metrics).length > 0 ? { metrics: manifest.metrics } : {}),
+    ...(manifest.summary && Object.keys(manifest.summary).length > 0 ? { summary: manifest.summary } : {}),
   });
   return "sha256:" + sha256(canonicalPayload);
 }
@@ -242,11 +247,18 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
   const promptHash = taskPrompt ? "sha256:" + sha256(taskPrompt) : "sha256:empty";
   const promptExcerpt = taskPrompt ? taskPrompt.slice(0, 140).replace(/[\r\n]+/g, " ") : "";
 
+  const diagnostics = Array.isArray(options.diagnostics) ? options.diagnostics : [];
+  const metrics = options.metrics || {};
+  const status = options.status || (options.ok === false || tamperDetected || diagnostics.length > 0 ? "failed" : "passed");
+  const failedStage = options.failedStage || options.failedStep || null;
+
   // Base manifest
   const baseManifest = {
     schema: "agentctl/evidence-manifest-v1",
     manifestId,
     generatedAt,
+    status,
+    ...(failedStage ? { failedStage } : {}),
     intent: {
       taskId: options.taskId || options.task?.id || "local-task",
       title: options.title || options.task?.title || "Verification Run",
@@ -273,6 +285,8 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
       maxDiffKb: options.maxDiffKb || 75,
       protectedScopeOk: options.protectedScopeOk ?? true,
     },
+    ...(diagnostics.length > 0 ? { diagnostics } : {}),
+    ...(Object.keys(metrics).length > 0 ? { metrics } : {}),
   };
 
   const evidenceHash = computeEvidenceHash(baseManifest);
@@ -403,6 +417,32 @@ export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "m
 }
 
 /**
+ * Exports a structured, machine-readable JSON report optimized for agent consumption.
+ * @param {object} manifest
+ * @param {string} [customPath]
+ * @returns {object}
+ */
+export function exportJsonReport(manifest, customPath = null) {
+  const report = {
+    schema: manifest.schema || "agentctl/evidence-manifest-v1",
+    manifestId: manifest.manifestId,
+    generatedAt: manifest.generatedAt,
+    status: manifest.status || (manifest.testIntegrity?.tamperDetected ? "failed" : "passed"),
+    failedStage: manifest.failedStage || null,
+    metrics: manifest.metrics || {},
+    diagnostics: manifest.diagnostics || [],
+    executionRecords: manifest.executionRecords || [],
+    evidenceHash: manifest.evidenceHash,
+  };
+
+  if (customPath) {
+    writeFileAtomically(customPath, JSON.stringify(report, null, 2));
+  }
+
+  return report;
+}
+
+/**
  * Renders PR-ready Markdown evidence section.
  * @param {object} manifest
  * @returns {string}
@@ -422,12 +462,20 @@ export function generateEvidenceMarkdown(manifest) {
 
   if (Array.isArray(manifest.executionRecords) && manifest.executionRecords.length > 0) {
     lines.push("", "#### Executed Verification Stages");
-    lines.push("| Stage | Command | Policy | Exit Code | Duration |");
+    lines.push("| Stage | Command / Assertion | Policy | Exit Code | Duration |");
     lines.push("| :--- | :--- | :---: | :---: | :---: |");
     for (const rec of manifest.executionRecords) {
       const statusIcon = rec.exitCode === 0 ? "✅" : "❌";
       const policyStr = rec.networkAccess === "forbidden" ? "🔒 Offline" : rec.networkAccess === "read-only" ? "📖 Read-Only" : "🌐 Online";
-      lines.push(`| \`${rec.id || rec.kind}\` | \`${rec.cmd}\` | ${policyStr} | ${statusIcon} \`${rec.exitCode}\` | \`${rec.durationMs || 0}ms\` |`);
+      const cmdOrAssert = rec.assert ? `\`assert:${rec.assert}\`` : `\`${rec.cmd}\``;
+      lines.push(`| \`${rec.id || rec.kind}\` | ${cmdOrAssert} | ${policyStr} | ${statusIcon} \`${rec.exitCode}\` | \`${rec.durationMs || 0}ms\` |`);
+    }
+  }
+
+  if (Array.isArray(manifest.diagnostics) && manifest.diagnostics.length > 0) {
+    lines.push("", "#### ⚠️ Diagnostic Findings");
+    for (const diag of manifest.diagnostics) {
+      lines.push(`- ${diag}`);
     }
   }
 

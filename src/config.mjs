@@ -155,6 +155,12 @@ export function normalizeScope(parsed = {}) {
  */
 export function parseYaml(src) {
   if (!src || typeof src !== "string") return Object.create(null);
+  const trimmedSrc = src.trim();
+  if (trimmedSrc.startsWith("{") && trimmedSrc.endsWith("}")) {
+    try {
+      return JSON.parse(trimmedSrc);
+    } catch (_) {}
+  }
   const root = Object.create(null);
   const stack = [{ indent: -1, node: root }];
   const lines = src.split("\n");
@@ -174,13 +180,44 @@ export function parseYaml(src) {
     const top = stack[stack.length - 1];
 
     if (trimmed.startsWith("- ")) {
+      const itemBody = trimmed.slice(2).trim();
+      const colonIdx = itemBody.indexOf(":");
+      if (colonIdx > 0 && !itemBody.startsWith('"') && !itemBody.startsWith("'") && !itemBody.startsWith("[")) {
+        const itemKey = itemBody.slice(0, colonIdx).trim();
+        const itemVal = itemBody.slice(colonIdx + 1).trim();
+        if (BLOCKED_KEYS.has(itemKey)) {
+          throw new ConfigError(`Illegal prototype key "${itemKey}" detected in configuration`);
+        }
+        const obj = Object.create(null);
+        if (itemVal.startsWith("[") && itemVal.endsWith("]")) {
+          obj[itemKey] = itemVal
+            .slice(1, -1)
+            .split(",")
+            .map((s) => coerce(s.trim()))
+            .filter((s) => s !== "");
+        } else if (itemVal !== "") {
+          obj[itemKey] = coerce(itemVal);
+        }
+
+        if (top.key && top.parent) {
+          if (!Array.isArray(top.parent[top.key])) {
+            top.parent[top.key] = [];
+          }
+          top.parent[top.key].push(obj);
+        } else if (Array.isArray(top.node)) {
+          top.node.push(obj);
+        }
+        stack.push({ indent, node: obj, isArrayItem: true });
+        continue;
+      }
+
       if (top.key && top.parent) {
         if (!Array.isArray(top.parent[top.key])) {
           top.parent[top.key] = [];
         }
-        top.parent[top.key].push(coerce(trimmed.slice(2).trim()));
+        top.parent[top.key].push(coerce(itemBody));
       } else if (Array.isArray(top.node)) {
-        top.node.push(coerce(trimmed.slice(2).trim()));
+        top.node.push(coerce(itemBody));
       }
       continue;
     }

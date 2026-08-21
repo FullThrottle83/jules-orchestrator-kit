@@ -26,6 +26,38 @@
 /** @type {CommandDescriptor[]} */
 export const COMMAND_REGISTRY = [
   {
+    id: "assert",
+    path: ["assert"],
+    title: "assert",
+    description: "Run declarative zero-dependency verification assertion primitives",
+    category: "Inspect",
+    mutates: false,
+    risk: "low",
+    interactive: "never",
+    requiresRepository: false,
+    shortcuts: ["ast"],
+    examples: [
+      "agentctl assert --dir dist --max-mb 10 --gzip",
+      "agentctl assert --file dist/server.js --max-kb 500",
+      'agentctl assert --patterns "console.log" --targets "src/**/*.js"',
+      "agentctl assert --config assert.json --json",
+    ],
+    flags: [
+      { name: "dir", type: "string", description: "Target directory path for dir-size assertion" },
+      { name: "file", type: "string", description: "Target file path for file-size assertion" },
+      { name: "targets", type: "string", description: "Target glob/path for pattern matching" },
+      { name: "patterns", type: "string", description: "Comma-separated patterns or regex to ban" },
+      { name: "patterns-file", type: "string", description: "Path to JSON file containing banned patterns" },
+      { name: "max-bytes", type: "string", description: "Maximum byte limit" },
+      { name: "max-kb", type: "string", description: "Maximum KiB limit" },
+      { name: "max-mb", type: "string", description: "Maximum MiB limit" },
+      { name: "gzip", type: "boolean", description: "Measure gzip compressed byte size" },
+      { name: "config", type: "string", description: "Path to assertion JSON/YAML config" },
+      { name: "json", type: "boolean", description: "Output structured JSON assertion result" },
+      { name: "json-report", type: "string", description: "Write structured JSON report to target path" },
+    ],
+  },
+  {
     id: "doctor",
     path: ["doctor"],
     title: "doctor",

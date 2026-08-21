@@ -69,6 +69,7 @@ Commands:
   harvest               Harvest failure traces and record/quarantine resolution rules
   learning add          Record a system learning rule into .agent/knowledge/
   evidence <action>     Manage cryptographic audit evidence (generate | verify | show)
+  assert                Run declarative zero-dependency verification assertion primitives
   version               Output agentctl version
 
 Options:
@@ -81,6 +82,7 @@ Options:
   --source, -s          Specify Jules repository source name
   --branch, -b          Specify target starting branch
   --json, -j            Emit machine-readable JSON output
+  --json-report <path>  Write structured machine-readable JSON diagnostics report
   --help, -h            Show command help
 `);
 }
@@ -224,6 +226,7 @@ async function main() {
           fix: { type: "boolean" },
           "allow-protected": { type: "boolean" },
           json: { type: "boolean", short: "j" },
+          "json-report": { type: "string" },
           "dry-run": { type: "boolean", short: "d" },
         },
         allowPositionals: true,
@@ -241,6 +244,7 @@ async function main() {
         mode: selectedMode,
         fix: values.fix,
         allowProtected: values["allow-protected"],
+        jsonReport: values["json-report"],
       });
 
       if (values.json) {
@@ -282,6 +286,93 @@ async function main() {
       }
 
       process.exit(typeof res.code === "number" ? res.code : 0);
+      break;
+    }
+
+    case "assert": {
+      const { runAssertion, parseYaml } = await import("../index.mjs");
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          dir: { type: "string", short: "d" },
+          file: { type: "string", short: "f" },
+          targets: { type: "string", short: "t" },
+          patterns: { type: "string", short: "p" },
+          "patterns-file": { type: "string" },
+          "max-bytes": { type: "string" },
+          "max-kb": { type: "string" },
+          "max-mb": { type: "string" },
+          gzip: { type: "boolean" },
+          config: { type: "string", short: "c" },
+          json: { type: "boolean", short: "j" },
+          "json-report": { type: "string" },
+        },
+        allowPositionals: true,
+      });
+
+      let stageConfig = {};
+      if (values.config && existsSync(values.config)) {
+        const raw = readFileSync(values.config, "utf-8");
+        stageConfig = parseYaml(raw);
+      } else {
+        let assertType = "dir-size";
+        if (values.file) assertType = "file-size";
+        else if (values.patterns || values["patterns-file"] || values.targets) assertType = "file-patterns";
+        else if (values.dir) assertType = "dir-size";
+
+        stageConfig = {
+          assert: assertType,
+          path: values.dir || values.file,
+          targets: values.targets ? values.targets.split(",").map((s) => s.trim()) : undefined,
+          patterns: values.patterns ? values.patterns.split(",").map((s) => s.trim()) : undefined,
+          patternsFile: values["patterns-file"],
+          maxBytes: values["max-bytes"] ? Number(values["max-bytes"]) : undefined,
+          maxKb: values["max-kb"] ? Number(values["max-kb"]) : undefined,
+          maxMb: values["max-mb"] ? Number(values["max-mb"]) : undefined,
+          gzip: values.gzip,
+        };
+      }
+
+      const result = runAssertion(stageConfig, root);
+      if (values["json-report"]) {
+        const { exportJsonReport, generateEvidenceManifest } = await import("../src/evidence.mjs");
+        const dummyManifest = generateEvidenceManifest(root, {
+          taskId: "CLI-ASSERT",
+          title: "Ad-hoc Assertion",
+          executionRecords: [
+            {
+              id: result.assertionType,
+              kind: "assert",
+              assert: result.assertionType,
+              exitCode: result.status,
+              durationMs: result.metrics?.durationMs || 0,
+              diagnostics: result.diagnostics,
+              metrics: result.metrics,
+            },
+          ],
+          diagnostics: result.diagnostics,
+          metrics: result.metrics,
+          ok: result.ok,
+        });
+        exportJsonReport(dummyManifest, values["json-report"]);
+      }
+
+      if (values.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        if (result.ok) {
+          console.log(`\n✅ Assertion [${result.assertionType}] PASSED (${result.metrics?.durationMs || 0}ms)`);
+          if (result.metrics?.measuredBytes !== undefined) {
+            console.log(`   Measured : ${result.metrics.measuredBytes} bytes${result.metrics.gzip ? " (gzipped)" : ""}`);
+          }
+        } else {
+          console.error(`\n❌ Assertion [${result.assertionType}] FAILED (Exit 1)`);
+          for (const d of result.diagnostics) {
+            console.error(`   - ${d}`);
+          }
+        }
+      }
+      process.exit(result.status);
       break;
     }
 
