@@ -23,6 +23,7 @@ const FROZEN_SDK_EXPORTS = [
   "DagExecutor",
   "FALLBACK_TIER",
   "GUARDRAIL_FOOTER",
+  "HandoverError",
   "IdeScaffoldError",
   "JULES_PRESET",
   "KIT_VERSION",
@@ -67,6 +68,7 @@ const FROZEN_SDK_EXPORTS = [
   "createCheckpoint",
   "createExecutionEnvelope",
   "createFailoverProvider",
+  "createHandover",
   "createProvider",
   "createWebhookServer",
   "detectCircularDependencies",
@@ -86,12 +88,14 @@ const FROZEN_SDK_EXPORTS = [
   "fingerprintFailureState",
   "flakyVerdict",
   "flushEscalationDigest",
+  "formatHandoverPromptContext",
   "freezeExecutionEnvelope",
   "gate",
   "generateEvidenceManifest",
   "generateEvidenceMarkdown",
   "getDynamicGuardrails",
   "getEscalationDigestStatus",
+  "getHandoverDir",
   "getLearningsPath",
   "getLedgerPathsInWindow",
   "getLockDir",
@@ -112,11 +116,13 @@ const FROZEN_SDK_EXPORTS = [
   "journalIntent",
   "levenshteinDistance",
   "listCheckpoints",
+  "listHandovers",
   "listOpenReservations",
   "listQuarantinedTests",
   "loadConfig",
   "loadEscalationDigest",
   "loadEvidenceManifest",
+  "loadHandover",
   "loadLearnings",
   "loadPresets",
   "lockStatus",
@@ -132,6 +138,7 @@ const FROZEN_SDK_EXPORTS = [
   "planTaskCreate",
   "probeDevServer",
   "pruneCheckpoints",
+  "pruneHandovers",
   "pushReservationManifest",
   "queryRemediations",
   "readActiveCeiling",
@@ -237,7 +244,7 @@ describe("SDK API Surface & Exit Code Stability Lock", () => {
       `Unapproved new SDK exports detected:\n${addedExports.join("\n")}\nIf intentional, review and update FROZEN_SDK_EXPORTS snapshot.`
     );
 
-    assert.equal(actualExports.length, 190, "Total exported SDK symbols count must remain locked at 190");
+    assert.equal(actualExports.length, 197, "Total exported SDK symbols count must remain locked at 197");
   });
 
   it("ensures every exported symbol is defined and non-null", () => {

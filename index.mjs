@@ -179,3 +179,14 @@ export {
   synthesizeFlakyHealingTask,
   runFlakyHealingSwarm,
 } from "./src/flaky-ledger.mjs";
+
+// Baton Pass Session Handover Engine
+export {
+  createHandover,
+  loadHandover,
+  listHandovers,
+  pruneHandovers,
+  formatHandoverPromptContext,
+  getHandoverDir,
+  HandoverError,
+} from "./src/ops/handover.mjs";

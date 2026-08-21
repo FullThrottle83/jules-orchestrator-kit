@@ -58,6 +58,7 @@ Commands:
   test-gen              Scaffold & run automated TDD Red-to-Green test cycle (--run)
   mcp init              Scaffold IDE integration config (cursor | vscode | claude | all)
   rollback              Restore git state & working tree to atomic pre-flight checkpoint
+  handover              Inspect or generate Baton Pass session handover envelopes (list | show | create | prune)
   resume                Resume warm session with human response (--response "<text>")
   escalate              Dispatch or manage webhook escalation incidents (--flush, --status, --clear)
   flaky                 Manage Wilson-quarantined tests and dispatch healing swarm (status | heal | reset)
@@ -769,18 +770,168 @@ async function main() {
 
     case "rollback": {
       const { restoreCheckpoint } = await import("../src/ops/checkpoint.mjs");
-      const targetId = args[1] || "--latest";
+      const { createHandover } = await import("../src/ops/handover.mjs");
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          reason: { type: "string", short: "r" },
+          intent: { type: "string", short: "i" },
+          handover: { type: "boolean", default: true },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const targetId = positionals[0] || "--latest";
       try {
         const res = restoreCheckpoint(targetId, { root });
-        console.log(`\n✅ Git Checkpoint Restored Successfully!`);
-        console.log(`   Session ID : ${res.id}`);
-        console.log(`   HEAD SHA   : ${res.headSha || "N/A"}`);
-        console.log(`   RestoredAt : ${res.restoredAt}\n`);
+        let hoResult = null;
+        if (values.handover !== false) {
+          try {
+            hoResult = createHandover(root, {
+              sessionId: res.id,
+              status: "rolled-back",
+              intent: values.intent || "Restored working tree to pre-flight checkpoint",
+              landmines: values.reason ? [values.reason] : ["Session cancelled or rolled back by operator"],
+              branch: res.branch,
+              headSha: res.headSha,
+            });
+          } catch (_) {}
+        }
+
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, ...res, handover: hoResult?.filePath }, null, 2));
+        } else {
+          console.log(`\n✅ Git Checkpoint Restored Successfully!`);
+          console.log(`   Session ID : ${res.id}`);
+          console.log(`   HEAD SHA   : ${res.headSha || "N/A"}`);
+          console.log(`   RestoredAt : ${res.restoredAt}`);
+          if (hoResult) {
+            console.log(`   Handover   : ${hoResult.filePath}`);
+          }
+          console.log("");
+        }
         process.exit(0);
       } catch (err) {
         console.error(`❌ Rollback Failed: ${err.message}`);
         process.exit(1);
       }
+      break;
+    }
+
+    case "handover": {
+      const {
+        createHandover,
+        loadHandover,
+        listHandovers,
+        pruneHandovers,
+        formatHandoverPromptContext,
+      } = await import("../src/ops/handover.mjs");
+
+      const subAction = args[1] || "list";
+      const { values, positionals } = parseArgs({
+        args: args.slice(2),
+        options: {
+          intent: { type: "string", short: "i" },
+          status: { type: "string", short: "s", default: "aborted" },
+          completed: { type: "string", short: "c" },
+          assumptions: { type: "string", short: "a" },
+          landmines: { type: "string", short: "l" },
+          "next-steps": { type: "string", short: "n" },
+          limit: { type: "string" },
+          json: { type: "boolean", short: "j" },
+          context: { type: "boolean" },
+        },
+        allowPositionals: true,
+      });
+
+      if (subAction === "list") {
+        let items = listHandovers(root);
+        const limitNum = parseInt(values.limit || "20", 10);
+        if (!isNaN(limitNum) && limitNum > 0) {
+          items = items.slice(0, limitNum);
+        }
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, count: items.length, handovers: items }, null, 2));
+        } else {
+          console.log(`\n📋 Baton Pass Handover Envelopes (${items.length})`);
+          console.log(`--------------------------------------------------`);
+          if (items.length === 0) {
+            console.log(`  (No handovers found in .agent/handovers/)`);
+          } else {
+            items.forEach((h, idx) => {
+              console.log(`  ${idx + 1}. [${h.status.toUpperCase()}] ${h.sessionId} (${h.createdAt.substring(0, 16)})`);
+              if (h.intent) console.log(`     Intent: ${h.intent.substring(0, 80)}`);
+              console.log(`     File  : ${h.filePath}\n`);
+            });
+          }
+          console.log(`--------------------------------------------------\n`);
+        }
+        process.exit(0);
+      }
+
+      if (subAction === "show") {
+        const targetId = positionals[0];
+        if (!targetId) {
+          console.error("Error: Session ID or file path is required for agentctl handover show <sessionId>");
+          process.exit(1);
+        }
+        try {
+          const ho = loadHandover(root, targetId);
+          if (values.context) {
+            console.log(formatHandoverPromptContext(ho));
+          } else if (values.json) {
+            console.log(JSON.stringify({ ok: true, handover: ho }, null, 2));
+          } else {
+            console.log(ho.rawMarkdown);
+          }
+          process.exit(0);
+        } catch (err) {
+          console.error(`❌ Error loading handover: ${err.message}`);
+          process.exit(1);
+        }
+      }
+
+      if (subAction === "create") {
+        const targetId = positionals[0] || `session-${Date.now()}`;
+        try {
+          const res = createHandover(root, {
+            sessionId: targetId,
+            status: values.status,
+            intent: values.intent,
+            completed: values.completed,
+            assumptions: values.assumptions,
+            landmines: values.landmines,
+            nextSteps: values["next-steps"],
+          });
+          if (values.json) {
+            console.log(JSON.stringify({ ok: true, ...res }, null, 2));
+          } else {
+            console.log(`\n✅ Handover Envelope Created Successfully!`);
+            console.log(`   Session ID : ${res.sessionId}`);
+            console.log(`   Status     : ${res.status}`);
+            console.log(`   File Path  : ${res.filePath}\n`);
+          }
+          process.exit(0);
+        } catch (err) {
+          console.error(`❌ Error creating handover: ${err.message}`);
+          process.exit(1);
+        }
+      }
+
+      if (subAction === "prune") {
+        const limitNum = parseInt(values.limit || "20", 10);
+        const count = pruneHandovers(root, limitNum);
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, pruned: count }, null, 2));
+        } else {
+          console.log(`✅ Pruned ${count} old handover manifest(s).`);
+        }
+        process.exit(0);
+      }
+
+      console.error(`Error: Unknown handover subcommand '${subAction}'. Use list, show, create, or prune.`);
+      process.exit(1);
       break;
     }
 

@@ -276,6 +276,31 @@ export const COMMAND_REGISTRY = [
       { name: "json", type: "boolean", description: "Output JSON structured response" },
     ],
   },
+  {
+    id: "handover",
+    path: ["handover"],
+    title: "handover",
+    description: "Inspect or generate Baton Pass session handover envelopes",
+    category: "Operate",
+    mutates: true,
+    risk: "low",
+    interactive: "never",
+    requiresRepository: true,
+    shortcuts: ["ho"],
+    examples: [
+      "agentctl handover list",
+      "agentctl handover show sess-123",
+      'agentctl handover create sess-123 --intent "Refactor auth" --status rolled-back',
+    ],
+    flags: [
+      { name: "intent", type: "string", description: "Task intent or goal description" },
+      { name: "status", type: "string", description: "Handover status (aborted, rolled-back, escalated, failed)" },
+      { name: "landmines", type: "string", description: "Obstacles or error summary" },
+      { name: "next-steps", type: "string", description: "Actionable next steps for successor agent" },
+      { name: "json", type: "boolean", description: "Output JSON structured response" },
+      { name: "limit", type: "string", description: "Maximum handovers to list" },
+    ],
+  },
 ];
 
 /**
