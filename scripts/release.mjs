@@ -57,6 +57,61 @@ console.log("1b. Verifying documentation is in sync with package.json & test sui
   console.log("   ✅ Documentation is in sync.\n");
 }
 
+// 1c. Continuous-integration gate (blocking). Step 1 ran the suite on this one
+//     machine. Every cross-platform break this repository has shipped was green
+//     locally and red on the matrix — a forward-slash path assertion, a
+//     case-folded deny rule — so a local pass says nothing about Windows or
+//     macOS. `gh` resolves the repository from the git remote, so this is not
+//     specific to any one fork.
+console.log("1c. Verifying CI is green for HEAD...");
+if (process.argv.includes("--skip-ci-check")) {
+  console.log("   ⚠️ Skipped via --skip-ci-check.\n");
+} else {
+  const headSha = execSync("git rev-parse HEAD", { cwd: root, encoding: "utf-8" }).trim();
+  let runs;
+  try {
+    const raw = execSync("gh run list --limit 40 --json headSha,status,conclusion,workflowName,url", {
+      cwd: root,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    runs = JSON.parse(raw).filter((r) => r.headSha === headSha);
+  } catch {
+    console.error("❌ Release Aborted: could not query CI status via `gh`.");
+    console.error("   Run `gh auth login`, or re-run with --skip-ci-check to release without it.");
+    process.exit(1);
+  }
+
+  if (runs.length === 0) {
+    console.error(`❌ Release Aborted: no CI run found for HEAD (${headSha.slice(0, 7)}).`);
+    console.error("   Push the commit and let CI finish first, or re-run with --skip-ci-check.");
+    process.exit(1);
+  }
+
+  // A run that is still going is not a pass. Releasing on a pending matrix is
+  // exactly how a red Windows job gets published.
+  const pending = runs.filter((r) => r.status !== "completed");
+  const failed = runs.filter((r) => !["success", "skipped", "neutral"].includes(r.conclusion));
+
+  for (const r of runs) {
+    const state = r.status !== "completed" ? r.status : r.conclusion;
+    const mark = pending.includes(r) ? "⏳" : failed.includes(r) ? "❌" : "✅";
+    console.log(`   ${mark} ${r.workflowName.padEnd(32)} ${state}`);
+  }
+
+  if (pending.length > 0) {
+    console.error(`\n❌ Release Aborted: ${pending.length} CI run(s) still in progress for HEAD.`);
+    console.error(`   Wait for them to finish: ${pending[0].url}`);
+    process.exit(1);
+  }
+  if (failed.length > 0) {
+    console.error(`\n❌ Release Aborted: ${failed.length} CI run(s) not green for HEAD.`);
+    for (const r of failed) console.error(`   ${r.workflowName}: ${r.conclusion} — ${r.url}`);
+    process.exit(1);
+  }
+  console.log(`   ✅ All ${runs.length} CI run(s) green for ${headSha.slice(0, 7)}.\n`);
+}
+
 // 2. Extract release notes from CHANGELOG.md
 console.log(`2. Extracting release notes for ${tagName} from CHANGELOG.md...`);
 let notes = "";

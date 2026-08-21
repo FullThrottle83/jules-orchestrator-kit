@@ -9,6 +9,9 @@ on:
 jobs:
   audit-and-test:
     runs-on: ${{ matrix.os }}
+    # Without this a hung test runs to GitHub's six-hour default. The suite
+    # finishes in ~25s on the slowest runner, so anything near this is a hang.
+    timeout-minutes: 20
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -47,4 +50,27 @@ jobs:
         env:
           CI: "true"
           BASE_BRANCH: "main"
+
+  # The same gate `release.mjs` blocks on at step 1b. It was previously only
+  # ever run by hand, which is how a stale README test count and an unchecked
+  # shipped-milestone item both reached main. Its own checks are
+  # platform-independent, and it measures the test counts by running the suite,
+  # so it belongs in one job rather than in all nine of the matrix above.
+  doc-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Documentation Sync Gate
+        run: npm run jules:doc-sync
 
