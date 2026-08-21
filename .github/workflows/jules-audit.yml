@@ -62,6 +62,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # This job runs the suite to measure test counts, and parts of that
+          # suite resolve a git base. actions/checkout defaults to depth 1,
+          # under which those tests fail — so the full history is not optional
+          # here for the same reason it is not optional for the matrix job.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

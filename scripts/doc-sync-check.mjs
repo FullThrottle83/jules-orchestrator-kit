@@ -53,7 +53,23 @@ export function parseTestCounts(out = "") {
     const m = String(out).match(new RegExp(`^[^\\n]*?(?:ℹ|#)\\s*${key}\\s+(\\d+)\\s*$`, "m"));
     return m ? Number(m[1]) : null;
   };
-  return { tests: num("tests"), pass: num("pass"), suites: num("suites"), todo: num("todo") };
+  // Names, not just a count. This gate runs where nobody is watching the
+  // output, and "2 failing" costs a round-trip through CI to turn into
+  // something actionable. The spec reporter prints each failure twice (inline
+  // and again in its summary), hence the dedupe.
+  const failures = [
+    ...String(out).matchAll(/^not ok \d+ - (.+?)$/gm),
+    ...String(out).matchAll(/^\s*✖\s+(.+?)\s+\(\d/gm),
+  ].map((m) => m[1].trim());
+
+  return {
+    tests: num("tests"),
+    pass: num("pass"),
+    suites: num("suites"),
+    todo: num("todo"),
+    fail: num("fail"),
+    failures: [...new Set(failures)],
+  };
 }
 
 function readIfExists(path) {
@@ -238,10 +254,29 @@ export function checkDocSync(root = process.cwd(), opts = {}) {
     const claimedSuites = claim ? Number(claim[2]) : null;
 
     let { tests, suites } = opts;
+    let measuredFail = null;
+    let measuredFailures = [];
     if (tests === undefined || suites === undefined) {
       const measured = measureTestCounts(root);
       tests = tests ?? measured.pass;
       suites = suites ?? measured.suites;
+      measuredFail = measured.fail;
+      measuredFailures = measured.failures || [];
+    }
+
+    // A failing suite still prints a summary, so the pass count silently drops
+    // and the README check reports a number mismatch — which reads as stale
+    // documentation and sends the reader looking for skipped tests. Say what
+    // actually happened instead. Only meaningful when this measured the suite
+    // itself; release.mjs passes counts in from a run it already verified.
+    if (measuredFail !== null) {
+      add(
+        "test suite passes",
+        measuredFail === 0,
+        measuredFail === 0
+          ? "no failing tests"
+          : `${measuredFail} failing: ${measuredFailures.slice(0, 3).join("; ") || "(names unparsed)"}${measuredFailures.length > 3 ? ` …+${measuredFailures.length - 3}` : ""}`
+      );
     }
 
     if (claimedTests === null) {
