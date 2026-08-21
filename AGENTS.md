@@ -127,5 +127,6 @@ Standardized across all automation entry points (`agentctl`, `jules-dispatch`, `
 Whenever bumping the package version in `package.json`:
 1. Document changes under `CHANGELOG.md`.
 2. Update version string in `package.json`.
-3. Execute `npm run release` (or `node scripts/release.mjs`) to automate running unit tests, tagging git (`v<version>`), pushing to `origin`, and creating the official GitHub Release via `gh release create`.
+3. Push `main` first. The pipeline refuses to release a commit CI has not verified.
+4. Execute `npm run release` (or `node scripts/release.mjs`). It blocks on the test suite, the doc-sync gate, and a green CI run for `HEAD` before tagging git (`v<version>`), pushing to `origin`, and creating the official GitHub Release via `gh release create`. Use `--skip-ci-check` only when `gh` is unavailable.
 

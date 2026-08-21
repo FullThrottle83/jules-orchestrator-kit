@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.38.1] - 2026-08-21
+### Release Gate Enforcement & Interactive Wizard Smoke Test
+
+*A broken `agentctl init` reached npm while 566 tests stayed green. Every gate needed to catch it already existed; none of them ran automatically.*
+
+#### Added
+- **Documentation Sync Gate in CI (`.github/workflows/jules-audit.yml`)**: The gate `release.mjs` blocks on at step 1b now runs on every push and pull request as its own job. It was previously only ever invoked by hand, which is how a stale README test count and an unchecked shipped-milestone item both reached `main`. It measures test counts by running the suite, so it runs once rather than in all nine matrix combinations.
+- **CI Verification Gate in the Release Pipeline (`scripts/release.mjs`, step 1c)**: A release now refuses to proceed unless every CI run for `HEAD` has completed successfully. Step 1 only proves the suite passes on the releasing machine; every cross-platform break this repository has shipped was green on Linux and red on Windows. Distinguishes *no run*, *still running* and *failed* — a pending matrix is not a pass. `gh` resolves the repository from the git remote, so nothing is fork-specific. `--skip-ci-check` remains as an escape hatch.
+- **Interactive Wizard Smoke Test (`test/wizard-smoke.test.mjs`)**: Drives the real `runInitWizard` — the function the CLI calls — over a fake TTY, reacting to what the wizard prints rather than to fixed delays. Verified against the pre-fix tree, where it stalls after prompt 1 of 5, exactly what the first external user reported. Asserts that arrow-down *moves* the selection rather than accepting the default, and declines the verification probe so no answered command is executed. A real pty would be closer to the truth, but Node has no built-in one and the kit ships zero runtime dependencies, so this runs identically on all three platforms instead of skipping on the one that broke last.
+
+#### Fixed
+- **Hung Tests Now Fail Instead of Stalling (`scripts/run-tests.mjs`, `.github/workflows/jules-audit.yml`)**: The `readKeypresses()` stdin regression failed by hanging rather than throwing. Without a deadline that burns a CI job to GitHub's six-hour default instead of going red in seconds. Adds `--test-timeout` (version-guarded: the flag landed in Node 20.6 and `engines` allows `>=20.0.0`, and an unrecognised flag makes Node abort before running anything) and `timeout-minutes` on both jobs.
+- **Windows Path Assertion in the Handover Suite (`test/handover.test.mjs`)**: `createHandover` returns a native path, which the test matched against a forward-slash regex — red on `windows-latest` only, green on both other platforms. Now asserts on the `normalizePath()` form, as the rest of the suite already does.
+- **Lint Errors and Stale Test Count on `main`**: Three unused bindings in `test/handover.test.mjs` and a README claiming 559/81 while the suite reported 566/81. Either one blocks step 1b, so `v0.38.0` could not have been cut from that tree.
+
 ## [0.38.0] - 2026-08-20
 ### Multi-OS CI Matrix (Linux, macOS, Windows) & Interactive TUI Hardening
 

@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.38.0 (Current Stable) ──► v0.40.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ v0.38.1 (Current Stable) ──► v0.40.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
  (Universal i18n & Swarm)    (Guillotine & Trojan Fences)   (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.38.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.38.1)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -107,6 +107,12 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **`budget reset` keeps reservations that reached the provider** (`src/budget.mjs`, `bin/agentctl.mjs`) — `budget_committed` was written and counted but never acted on. Releasing a committed reservation makes the local count understate real usage, which is the direction that gets the next dispatch refused. `--all` is now required for that.
 - [x] **`budget reset` refuses unrecognised flags** (`bin/agentctl.mjs`) — a misremembered option silently dropped through to a full release.
 - [x] **The adversarial red-team suite has no open gaps** (`test/adversarial-claims.test.mjs`) — the base64 `todo` was the last one; every documented safety claim is now backed by a passing probe.
+
+### v0.38.1: Release Gate Enforcement & Interactive Wizard Smoke Test
+- [x] **The documentation sync gate runs in CI** (`.github/workflows/jules-audit.yml`) — the gate `release.mjs` blocks on at step 1b was only ever run by hand, which is how a stale README test count and an unchecked shipped-milestone item both reached `main`. Its own job, not a tenth copy in the nine-way matrix, because it measures test counts by running the suite.
+- [x] **Releases block on a green CI matrix** (`scripts/release.mjs`, step 1c) — step 1 only proves the suite passes on the releasing machine, and every cross-platform break shipped here was green on Linux and red on Windows. Treats a still-running matrix as a failure, since releasing on a pending run is precisely how a red Windows job gets published. `--skip-ci-check` remains for when `gh` is unavailable.
+- [x] **A hung test fails instead of stalling** (`scripts/run-tests.mjs`) — the stdin regression failed by hanging, which without a per-test deadline burns a CI job to GitHub's six-hour default. Version-guarded: `--test-timeout` landed in Node 20.6 while `engines` allows `>=20.0.0`, and an unrecognised flag makes Node abort before running anything.
+- [x] **The real `init` wizard is exercised end to end** (`test/wizard-smoke.test.mjs`) — the TUI unit tests all passed while `agentctl init` was unusable, because nothing drove the wizard itself. Verified against the pre-fix tree, where it stalls after prompt 1 of 5 — exactly what the first external user reported.
 
 ### v0.38.0: Multi-OS CI Matrix (Linux, macOS, Windows) & Interactive TUI Hardening
 - [x] **Multi-OS CI Matrix across Node 20, 22, and 24** (`.github/workflows/jules-audit.yml`) — Automated CI matrix executing all 555 tests across 81 suites on Ubuntu Linux, macOS (Darwin), and Windows (PowerShell/CMD).
