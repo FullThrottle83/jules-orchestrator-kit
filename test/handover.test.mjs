@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -9,7 +9,6 @@ import {
   listHandovers,
   pruneHandovers,
   formatHandoverPromptContext,
-  getHandoverDir,
   HandoverError,
 } from "../src/ops/handover.mjs";
 
@@ -60,7 +59,7 @@ test("Baton Pass Handover Engine", async (t) => {
     const fakeToken = "ghp_123456789012345678901234567890123456";
     const fakeKey = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890";
 
-    const res = createHandover(testRoot, {
+    createHandover(testRoot, {
       sessionId: "sess-secret-leak",
       status: "aborted",
       intent: `Tried authenticating with token ${fakeToken}`,
