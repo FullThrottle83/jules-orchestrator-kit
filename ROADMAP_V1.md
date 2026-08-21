@@ -11,13 +11,13 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.38.1 (Current Stable) ──► v0.40.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ v0.38.2 (Current Stable) ──► v0.40.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
  (Universal i18n & Swarm)    (Guillotine & Trojan Fences)   (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.38.1)
+## ✅ Shipped Milestones (v0.20.0 – v0.38.2)
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.
@@ -107,6 +107,11 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **`budget reset` keeps reservations that reached the provider** (`src/budget.mjs`, `bin/agentctl.mjs`) — `budget_committed` was written and counted but never acted on. Releasing a committed reservation makes the local count understate real usage, which is the direction that gets the next dispatch refused. `--all` is now required for that.
 - [x] **`budget reset` refuses unrecognised flags** (`bin/agentctl.mjs`) — a misremembered option silently dropped through to a full release.
 - [x] **The adversarial red-team suite has no open gaps** (`test/adversarial-claims.test.mjs`) — the base64 `todo` was the last one; every documented safety claim is now backed by a passing probe.
+
+### v0.38.2: Queue Runner Fidelity — Manifest Rejection & Honest Dry Runs
+- [x] **The queue runner selects tasks by shape, not by extension** (`src/dag-engine.mjs`) — every `.json` in the queue directory was executed as a task, so a swarm manifest became a single task whose prompt was the whole file and blew the provider payload limit past ~50 KB. Reported from a live installation. The same check also stops the queue's own `README.md` from being dispatched.
+- [x] **`--dry-run` leaves the queue exactly as it found it** (`src/dag-engine.mjs`, `src/engine.mjs`) — both runners moved task files into `completed/` and wrote a `task_completed` ledger entry while simulating, so a second preview of the same queue found nothing to preview. Two existing tests asserted the bug as expected behaviour.
+- [x] **`run({ provider })` forwards to `dispatch`** (`src/engine.mjs`) — the non-DAG queue lifecycle had no way to be exercised without a live provider, which is why the dry-run bug was only ever covered by a test that depended on it.
 
 ### v0.38.1: Release Gate Enforcement & Interactive Wizard Smoke Test
 - [x] **The documentation sync gate runs in CI** (`.github/workflows/jules-audit.yml`) — the gate `release.mjs` blocks on at step 1b was only ever run by hand, which is how a stale README test count and an unchecked shipped-milestone item both reached `main`. Its own job, not a tenth copy in the nine-way matrix, because it measures test counts by running the suite.

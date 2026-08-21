@@ -824,7 +824,7 @@ export async function run(tasksOrOpts = {}, opts = {}) {
 
   const queueDir = getQueueDir(root);
   const completedDir = join(queueDir, "completed");
-  ensureDir(completedDir);
+  if (!isDry) ensureDir(completedDir);
 
   let filesToProcess = [];
   if (Array.isArray(tasks)) {
@@ -858,10 +858,17 @@ export async function run(tasksOrOpts = {}, opts = {}) {
             return;
           }
 
-          const session = await dispatch(task, { root, config, dryRun: isDry });
+          // options.provider mirrors dispatch()'s existing injection point so a
+          // caller can exercise the real queue lifecycle without a live provider.
+          const session = await dispatch(task, { root, config, dryRun: isDry, provider: options.provider });
 
           if (session && session.ok === false) {
             results.push({ file: fileName, ok: false, status: session.status, error: session.error, session });
+          } else if (isDry) {
+            // A dry run simulates; it must leave the queue exactly as it found
+            // it, or the second `--dry-run` sees an empty queue. Nothing
+            // completed either, so nothing is written to the ledger.
+            results.push({ file: fileName, ok: true, dryRun: true, session });
           } else {
             const dstPath = join(completedDir, fileName);
             if (existsSync(srcPath)) {

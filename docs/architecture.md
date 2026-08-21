@@ -201,9 +201,10 @@ graph TD
     C --> D
 ```
 
-1. **Kahn's Topological Sort**: Parses task frontmatter envelopes in `.agent/jules-queue/` and calculates dependency execution order.
-2. **Cycle Detection**: Automatically rejects cyclic dependencies (`DagCycleError`) before starting execution.
-3. **DAG Concurrency Slots**: Executes unblocked leaf tasks in parallel while ensuring downstream tasks wait for dependency completion.
+1. **Task Selection by Shape**: A queue-directory entry is executed only if it *is* a task: a `.md` file passing `isTaskFile`, a `.task` file, or a `.json` object carrying a non-empty `prompt` that is not a `tasks`/`envelopes` container. Manifests and the queue's own `README.md` are skipped and left in place.
+2. **Kahn's Topological Sort**: Parses task frontmatter envelopes in `.agent/jules-queue/` and calculates dependency execution order.
+3. **Cycle Detection**: Automatically rejects cyclic dependencies (`DagCycleError`) before starting execution.
+4. **DAG Concurrency Slots**: Executes unblocked leaf tasks in parallel while ensuring downstream tasks wait for dependency completion.
 
 ---
 
@@ -267,4 +268,5 @@ Stated explicitly, because earlier revisions of this document described machiner
 - **It does not provision git worktrees.** `src/git.mjs` exports `worktreeRemove()` and `worktreePrune()` — cleanup utilities used by `agentctl clean` to reap worktrees created by external swarm tooling. Nothing in the codebase runs `git worktree add`.
 - **It does not commit, push, or open pull requests.** For `type: "http"`, Jules does this server-side via `automationMode`. For `type: "exec"`, the changes are simply left in the working tree for you to review.
 - **`run()` does not verify.** It dispatches each queued task, moves the envelope to `.agent/jules-queue/completed/`, and appends to the ledger. Verification is a separate `agentctl gate` invocation.
+- **`--dry-run` writes nothing.** It previews the dispatch of every queued task and then leaves the filesystem exactly as it found it — no move to `completed/`, no directory creation, no ledger entry — so the same queue can be previewed repeatedly.
 - **The OODA loop is a property of `gate --fix`, not of dispatch.** A plain `agentctl dispatch` never self-heals.

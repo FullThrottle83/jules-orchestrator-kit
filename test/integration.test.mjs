@@ -165,9 +165,12 @@ describe("Integration Test Harness: End-to-End Execution", () => {
       const out = execFileSync("node", [runnerScript], { cwd: repoDir, env, encoding: "utf-8" });
       assert.ok(out.includes("Queue processing complete!"));
 
-      // Verify task moved to completed
+      // JULES_DRY_RUN is a preview: the runner must walk the whole queue and
+      // then leave it exactly as it found it. The real move to completed/ is
+      // covered against an injected provider in test/v1-readiness.test.mjs.
+      assert.ok(fs.existsSync(taskFile), "Dry run must leave the task file in the queue");
       const completedFile = path.join(queueDir, "completed/TASK-001-hello.md");
-      assert.ok(fs.existsSync(completedFile), "Task file should be moved to completed/");
+      assert.equal(fs.existsSync(completedFile), false, "Dry run must not populate completed/");
     } finally {
       fs.rmSync(repoDir, { recursive: true, force: true });
     }

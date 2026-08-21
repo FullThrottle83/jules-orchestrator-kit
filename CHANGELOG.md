@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.38.2] - 2026-08-21
+### Queue Runner Fidelity — Manifest Rejection & Honest Dry Runs
+
+*Both defects were reported from a live installation. Both had passing tests over them: one directory listing was never shape-checked, and two tests asserted the dry-run bug as the expected behaviour.*
+
+#### Fixed
+- **Manifests No Longer Dispatched as Tasks (`src/dag-engine.mjs`)**: `executeQueueDag` accepted every `.json` file in the queue directory as a task. A manifest such as `swarm-300.json` has no `prompt`, so the whole file became the prompt — and past roughly 50 KB that fails the provider payload limit and takes the run down with it. Selection is now by shape, not by extension: `.md` goes through the same `isTaskFile` check the non-DAG runner already used (which also stops the queue's own `README.md` from being dispatched), and a `.json` file must be an object carrying a non-empty `prompt` and must not be a `tasks`/`envelopes` container. Anything else is skipped and left where it lies, so a manifest can sit in the queue directory without being consumed.
+- **`--dry-run` No Longer Drains the Queue (`src/dag-engine.mjs`, `src/engine.mjs`)**: Both queue runners moved task files into `completed/` on a dry run, created `completed/` if it did not exist, and wrote a `task_completed` ledger entry — so the second preview of the same queue found nothing left to preview. A dry run now touches no file at all and marks its results `dryRun: true`. Two existing tests asserted the old behaviour and were rewritten; the real move is now covered against an injected provider instead of being smuggled in under a dry run.
+
+#### Added
+- **Provider Injection in `run()` (`src/engine.mjs`)**: `run({ provider })` forwards to `dispatch`, mirroring the injection point `dispatch` and `gate` already expose. This is what lets the non-DAG queue lifecycle — dispatch, move to `completed/`, ledger append — be tested end to end without a live provider, which is why the dry-run bug had no honest test over it before.
+
 ## [0.38.1] - 2026-08-21
 ### Release Gate Enforcement & Interactive Wizard Smoke Test
 

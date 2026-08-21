@@ -38,14 +38,24 @@ describe("v1.0.0 System Readiness & Resilience", () => {
       const taskFile = path.join(queueDir, "TASK-001-v1-readiness.md");
       fs.writeFileSync(taskFile, "# V1 Readiness Task\n\nTask content.");
 
-      const result = await run({ root: tmpDir, dryRun: true });
-      assert.equal(result.processed, 1);
-      assert.equal(result.results.length, 1);
-      assert.equal(result.results[0].ok, true);
-      assert.equal(result.results[0].session.status, "pending");
-
-      // Verify task moved to completed
       const completedFile = path.join(queueDir, "completed/TASK-001-v1-readiness.md");
+
+      // A dry run previews the dispatch and nothing more. This assertion used
+      // to read the other way round, which is how the queue quietly drained
+      // itself on `--dry-run`.
+      const preview = await run({ root: tmpDir, dryRun: true });
+      assert.equal(preview.processed, 1);
+      assert.equal(preview.results.length, 1);
+      assert.equal(preview.results[0].ok, true);
+      assert.equal(preview.results[0].session.status, "pending");
+      assert.ok(fs.existsSync(taskFile), "Dry run must leave the task file in the queue");
+      assert.equal(fs.existsSync(completedFile), false, "Dry run must not populate completed/");
+
+      // A real run against an injected provider does move it.
+      const provider = { dispatch: async () => ({ id: "sess-v1", status: "pending" }) };
+      const result = await run({ root: tmpDir, provider });
+      assert.equal(result.processed, 1);
+      assert.equal(result.results[0].ok, true);
       assert.ok(fs.existsSync(completedFile), "Task file must be moved to completed/");
       assert.equal(fs.existsSync(taskFile), false, "Original task file must be removed from queue root");
     } finally {

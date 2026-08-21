@@ -343,6 +343,60 @@ Test/Verification Command: npm test
     assert.equal(existsSync(join(queueDir, "completed", "TASK-01.md")), true);
     assert.equal(existsSync(join(queueDir, "completed", "TASK-02.md")), true);
   });
+
+  it("executeQueueDag skips manifests and other non-task JSON in the queue directory", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-01.json"),
+      JSON.stringify({ id: "TASK-01", title: "Real task", prompt: "Do the thing" })
+    );
+    // A swarm manifest: valid JSON, no prompt. Dispatching it sent the whole
+    // file as the prompt, which blew the payload limit once it grew past ~50 KB.
+    writeFileSync(
+      join(queueDir, "swarm-300.json"),
+      JSON.stringify({ swarmId: "swarm-300", tasks: Array.from({ length: 300 }, (_, i) => ({ id: `T-${i}`, body: "x".repeat(200) })) })
+    );
+    writeFileSync(join(queueDir, "index.json"), JSON.stringify([{ id: "a" }, { id: "b" }]));
+    writeFileSync(join(queueDir, "README.md"), "# Queue\n\nDrop task envelopes here.\n");
+
+    const dispatched = [];
+    const res = await executeQueueDag(testDir, {
+      dispatchFn: async (task) => {
+        dispatched.push({ id: task.id, promptLength: (task.prompt || "").length });
+        return { id: `session-${task.id}`, ok: true };
+      },
+    });
+
+    assert.equal(res.processed, 1, "only the real task envelope may be dispatched");
+    assert.deepEqual(dispatched.map((d) => d.id), ["TASK-01"]);
+    assert.equal(dispatched[0].promptLength, "Do the thing".length);
+    assert.equal(existsSync(join(queueDir, "swarm-300.json")), true, "the manifest must stay put");
+    assert.equal(existsSync(join(queueDir, "README.md")), true, "the queue README is not a task");
+  });
+
+  it("executeQueueDag with dryRun leaves the queue directory untouched", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+    writeFileSync(
+      join(queueDir, "TASK-01.md"),
+      `<!-- JULES_TASK_ENVELOPE: {"version":1,"id":"TASK-01","title":"Setup DB"} -->\n# Setup DB\n`
+    );
+
+    const res = await executeQueueDag(testDir, {
+      dryRun: true,
+      dispatchFn: async (task) => ({ id: `session-${task.id}`, ok: true }),
+    });
+
+    assert.equal(res.processed, 1);
+    assert.equal(res.results[0].dryRun, true);
+    assert.equal(existsSync(join(queueDir, "TASK-01.md")), true, "a dry run must not move the task file");
+    assert.equal(existsSync(join(queueDir, "completed", "TASK-01.md")), false);
+    assert.equal(existsSync(join(queueDir, "completed")), false, "a dry run must not create completed/ either");
+  });
 });
 
 

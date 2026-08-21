@@ -417,9 +417,42 @@ export function resolveAffectedTests(modifiedFiles = [], options = {}) {
  * @param {Object} [options.config]
  * @returns {Promise<{ processed: number, results: Array<any> }>}
  */
+/**
+ * Decides whether a queue-directory entry is a task this runner should execute.
+ *
+ * The DAG runner accepts more shapes than `isTaskFile` does — `.json` and
+ * `.task` envelopes as well as Markdown — but "every `.json` in the queue
+ * folder" also swept up manifests (swarm run files, indexes). A manifest has no
+ * `prompt`, so the whole file became the prompt and a large one blew the
+ * provider payload limit. Shape decides, not the extension.
+ *
+ * @param {string} fileName
+ * @param {string} content
+ * @param {Function} isTaskFile - `isTaskFile` from engine.mjs, passed in to avoid a circular import.
+ * @returns {boolean}
+ */
+function isDagTaskFile(fileName, content, isTaskFile) {
+  if (fileName.endsWith(".task")) return true;
+  if (fileName.endsWith(".md")) return isTaskFile(fileName, content);
+  if (fileName.endsWith(".json")) {
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch (_) {
+      return false;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    // A manifest *describes* tasks; a task envelope *is* one.
+    if (Array.isArray(parsed.tasks) || Array.isArray(parsed.envelopes)) return false;
+    return typeof parsed.prompt === "string" && parsed.prompt.length > 0;
+  }
+  return false;
+}
+
 export async function executeQueueDag(root = process.cwd(), options = {}) {
   const { readdirSync, renameSync, mkdirSync } = await import("node:fs");
   const { join, basename } = await import("node:path");
+  const { isTaskFile } = await import("./engine.mjs");
 
   const queueDir = join(root, ".agent", "jules-queue");
   const fallbackQueueDir = join(root, ".agent", "queue");
@@ -429,7 +462,7 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
   if (!existsSync(actualQueueDir)) {
     return { processed: 0, results: [] };
   }
-  if (!existsSync(completedDir)) {
+  if (!existsSync(completedDir) && !options.dryRun) {
     try {
       mkdirSync(completedDir, { recursive: true });
     } catch (_) {}
@@ -452,6 +485,7 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
     if (basename(file) !== file) continue;
     const fullPath = join(actualQueueDir, file);
     const content = readFileSync(fullPath, "utf-8");
+    if (!isDagTaskFile(file, content, isTaskFile)) continue;
     let taskId = file.replace(/\.(md|json|task)$/, "");
     let dependsOn = [];
     let title = taskId;
@@ -508,13 +542,17 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
           results.push({ file: t.file, taskId: t.taskId, ok: false, status: session.status, error: session.error, session });
           throw new Error(`DAG Task '${t.taskId}' failed: ${session.error || session.status || "Unknown error"}`);
         } else {
-          const dstPath = join(completedDir, t.file);
-          if (existsSync(srcPath)) {
-            if (!existsSync(dstPath)) {
-              renameSync(srcPath, dstPath);
+          // A dry run simulates; it must leave the queue exactly as it found it,
+          // or the second `--dry-run` sees an empty queue.
+          if (!options.dryRun) {
+            const dstPath = join(completedDir, t.file);
+            if (existsSync(srcPath)) {
+              if (!existsSync(dstPath)) {
+                renameSync(srcPath, dstPath);
+              }
             }
           }
-          results.push({ file: t.file, taskId: t.taskId, ok: true, session });
+          results.push({ file: t.file, taskId: t.taskId, ok: true, dryRun: Boolean(options.dryRun), session });
         }
       },
     });

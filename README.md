@@ -131,7 +131,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **569 unit tests across 81 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **572 unit tests across 81 suites passing in < 10.0s**.
 
 <br/>
 
@@ -151,7 +151,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes pre-calibrated web task envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`, `web-ai-access`). | `0` (Listed/Synthesized) |
 | `dispatch` | `agentctl dispatch [-p <prompt>] [-f <file>] [-r <role>] [-t <tier>] [--auto-pr] [--repoless] [--dry-run]` | Dispatches autonomous task to the active provider with payload limits and role prompt resolution. | `0` (Dispatched), `1` (Error) |
 | `doctor` | `agentctl doctor [--json]` | Diagnostic DAG check runner & automated transactional self-repair engine. | `0` (Healthy), `1` (Failures) |
-| `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. | `0` (Complete) |
+| `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. Non-task files (manifests, `README.md`) are skipped, and `--dry-run` previews without moving anything. | `0` (Complete) |
 | `swarm` | `agentctl swarm [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
 | `gate` / `audit`| `agentctl gate --mode working-tree [--json]` | Runs security, secret scanning, and verification gates against working tree or branch. | `0` (Approved), `3` (Scope), `5` (Diff >75K), `6` (Secret) |
 | `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
@@ -319,6 +319,7 @@ console.log(classification.tier); // "fast" | "complex"
 
 | Feature | Module / Command | Architectural Description | Status |
 | :--- | :--- | :--- | :---: |
+| **Queue Runner Fidelity** | `src/dag-engine.mjs`, `src/engine.mjs` | Queue selection is by task shape rather than file extension, so manifests and READMEs are skipped instead of dispatched, and `--dry-run` leaves the queue untouched. | **v0.38.2** *(Shipped)* |
 | **Release Gate Enforcement & Wizard Smoke Test** | `.github/workflows/jules-audit.yml`, `scripts/release.mjs`, `test/wizard-smoke.test.mjs` | Doc-sync gate runs in CI rather than by hand, releases block on a green CI matrix for `HEAD`, per-test deadlines turn a hang into a failure, and the real `init` wizard is driven end to end over a fake TTY. | **v0.38.1** *(Shipped)* |
 | **Multi-OS CI Matrix & TUI Hardening** | `scripts/run-tests.mjs`, `src/state.mjs`, `src/git.mjs` | Automated 9-job CI matrix across Linux, macOS, and Windows on Node 20/22/24 with raw-mode TUI resilience and native Windows command quoting. | **v0.38.0** *(Shipped)* |
 | **Base64 Secret Detection & Budget Fix** | `src/security.mjs`, `src/budget.mjs` | Secret scanner decodes base64 before matching structured patterns (K8s secrets), and `budget reset` preserves confirmed provider sessions. | **v0.37.0** *(Shipped)* |

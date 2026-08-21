@@ -1,9 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gate, dispatch, synthesizePrDescription } from "../src/engine.mjs";
+import { gate, dispatch, run, synthesizePrDescription } from "../src/engine.mjs";
 import { checkDailyBudget } from "../src/state.mjs";
 
 describe("src/engine.mjs", () => {
@@ -34,6 +34,26 @@ describe("src/engine.mjs", () => {
       const after = checkDailyBudget(tmpDir, 300).used;
 
       assert.equal(after, before, "dry-run must not reserve budget");
+    } finally {
+      try { rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
+
+  it("dry-run queue run leaves the task files in the queue", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jok-dryqueue-"));
+    try {
+      const queueDir = join(tmpDir, ".agent", "jules-queue");
+      mkdirSync(queueDir, { recursive: true });
+      writeFileSync(join(queueDir, "TASK-01.md"), "# Task ID: TASK-01\n\nDo the thing.\n");
+
+      const res = await run({ root: tmpDir, dryRun: true });
+
+      assert.equal(res.processed, 1);
+      assert.equal(res.results[0].dryRun, true);
+      // A dry run simulates. Moving the file to completed/ meant a second
+      // `--dry-run` preview found an empty queue.
+      assert.equal(existsSync(join(queueDir, "TASK-01.md")), true, "dry-run must not move the task file");
+      assert.equal(existsSync(join(queueDir, "completed")), false, "dry-run must not create completed/");
     } finally {
       try { rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
     }
