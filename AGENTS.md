@@ -66,7 +66,7 @@ Operations run **only** via `agentctl`. Standalone helper scripts were removed a
 - **Rebase Before PR**: Fetch latest `main`, rebase onto `origin/main`, re-execute verification suite. If the resulting diff is empty, close/abort PR without pushing.
 - **Diff Payload Governor**: API forcefully truncates diff payloads > 80 KB. Keep total diff payload under 75 KB (`git diff | wc -c`).
 - **Google Labs Exploration Budget Protocol**: Execute complex tasks across 3 discrete phases: (1) Discovery & Symbol Tracing (silent inspection, write NO code), (2) Oracle & Test Formulation, and (3) Surgical Implementation & Verification. Proven to increase Hit@5 accuracy from 33% to 57%.
-- **Critic Agent Steering (Adversarial Pre-Review)**: Jules' internal Critic Agent must evaluate proposed patches for edge-case failures, $O(n^2)$ complexity regressions, unhandled parameters, and layout shifts (CLS) prior to final PR submission.
+- **Critic Agent Steering (Adversarial Pre-Review)**: Jules' internal Critic Agent must evaluate proposed patches for edge-case failures, $O(n^2)$ complexity regressions, unhandled parameters, and layout shifts (CLS) prior to final PR submission. In test suites, verify deliberate logic mutations turn tests red (mutation falsification).
 
 ---
 
@@ -77,7 +77,7 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 ### Multi-Agent Coordination, Verification Gates & Web Envelopes
 
 - **Task Envelope Premise Validator**: Validates paths, scope, and base freshness (`agentctl task create`).
-- **Web Development Task Envelopes**: Pre-calibrated templates (`agentctl task template`): `web-cwv` (Core Web Vitals), `web-wcag` (Accessibility), `web-seo` (Structured data), `web-playwright` (E2E visual regression), `web-flaky-heal` (Async/timing flakiness auto-remediation), `web-i18n` (Hreflang & locale routing), `web-ai-access` (AI crawler policy consistency & llms.txt integrity).
+- **Task Envelopes & Templates**: Pre-calibrated templates (`agentctl task template`): `web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`, `web-ai-access`, `agent-qa-mutation` (Mutation test falsifier), `agent-ci-falsify` (CI exit code guard), `agent-service-isolate` (Cold sandbox test decoupling), `agent-error-paths` (Provoked failure test), `agent-security-audit` (TLS/secrets/permissions guard).
 - **Stale-Base Gate Predicate**: Rejects PRs whose merge-base is > 25 commits behind `origin/main`.
 - **Asset Integrity Gate**: Inspects assets (`.woff2`, `.png`, `.jpg`) to ensure error pages never land silently.
 - **Edge-Runtime Import Guard**: Blocks unsupported native Node imports (`node:fs`, `node:child_process`) in Edge environments.

@@ -11,7 +11,7 @@ import { handleMcpRequest } from "../src/mcp.mjs";
 test("listWebTemplates returns all registered web templates", () => {
   const templates = listWebTemplates();
   assert.ok(Array.isArray(templates));
-  assert.ok(templates.length >= 7);
+  assert.ok(templates.length >= 12);
   const ids = templates.map((t) => t.id);
   assert.ok(ids.includes("web-cwv"));
   assert.ok(ids.includes("web-wcag"));
@@ -20,6 +20,11 @@ test("listWebTemplates returns all registered web templates", () => {
   assert.ok(ids.includes("web-flaky-heal"));
   assert.ok(ids.includes("web-i18n"));
   assert.ok(ids.includes("web-ai-access"));
+  assert.ok(ids.includes("agent-qa-mutation"));
+  assert.ok(ids.includes("agent-ci-falsify"));
+  assert.ok(ids.includes("agent-service-isolate"));
+  assert.ok(ids.includes("agent-error-paths"));
+  assert.ok(ids.includes("agent-security-audit"));
 });
 
 test("getWebTemplate retrieves specific template by id case-insensitively", () => {
@@ -129,6 +134,35 @@ test("synthesizeWebEnvelope works for web-wcag, web-seo, web-playwright, web-fla
   const flakyEnv = synthesizeWebEnvelope("web-flaky-heal", { repetitionCount: 10 });
   assert.ok(flakyEnv.fullEnvelope.includes("10 consecutive runs"));
   assert.ok(flakyEnv.fullEnvelope.includes("Anti-Flakiness Rules"));
+});
+
+test("synthesizeWebEnvelope works for agent hardening templates", () => {
+  const qaEnv = synthesizeWebEnvelope("agent-qa-mutation", { targetTestDir: "test/unit/" });
+  assert.equal(qaEnv.templateId, "agent-qa-mutation");
+  assert.ok(qaEnv.fullEnvelope.includes("test/unit/"));
+  assert.ok(qaEnv.fullEnvelope.includes("Mutation Falsification"));
+  assert.ok(qaEnv.fullEnvelope.includes("Internal Critic Agent Focus Areas"));
+  assert.ok(qaEnv.criticFocus.some((f) => f.includes("mutated")));
+
+  const ciEnv = synthesizeWebEnvelope("agent-ci-falsify", { workflowPath: ".github/workflows/ci.yml" });
+  assert.equal(ciEnv.templateId, "agent-ci-falsify");
+  assert.ok(ciEnv.fullEnvelope.includes(".github/workflows/ci.yml"));
+  assert.ok(ciEnv.fullEnvelope.includes("Zero Swallowed Exit Codes"));
+
+  const isolateEnv = synthesizeWebEnvelope("agent-service-isolate", { targetServices: "Postgres and Redis" });
+  assert.equal(isolateEnv.templateId, "agent-service-isolate");
+  assert.ok(isolateEnv.fullEnvelope.includes("Postgres and Redis"));
+  assert.ok(isolateEnv.fullEnvelope.includes("Sandbox Decoupling"));
+
+  const errorEnv = synthesizeWebEnvelope("agent-error-paths", { targetModules: "src/ops/" });
+  assert.equal(errorEnv.templateId, "agent-error-paths");
+  assert.ok(errorEnv.fullEnvelope.includes("src/ops/"));
+  assert.ok(errorEnv.fullEnvelope.includes("Execute Every Catch Block"));
+
+  const secEnv = synthesizeWebEnvelope("agent-security-audit", { diffRange: "origin/main..HEAD" });
+  assert.equal(secEnv.templateId, "agent-security-audit");
+  assert.ok(secEnv.fullEnvelope.includes("origin/main..HEAD"));
+  assert.ok(secEnv.fullEnvelope.includes("Zero Transport & TLS Bypasses"));
 });
 
 test("planTaskCreate incorporates web template when --template flag is used", () => {

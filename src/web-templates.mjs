@@ -320,6 +320,176 @@ Add a repository-local test (no network access) that:
 
 The test must fail on a hand-broken fixture before you consider it done.`;
     }
+  },
+
+  "agent-qa-mutation": {
+    id: "agent-qa-mutation",
+    name: "Agent Test Quality & Mutation Falsification",
+    description: "Audit agent-authored tests by deliberately mutating code under test to prove assertions fail on real defects.",
+    defaultVerifyCmd: "npm test",
+    category: "Quality & Testing",
+    criticFocus: [
+      "Ensure tests assert actual returned values and behaviors, not trivial shape checks (e.g. toBeDefined, assertTrue, status == 200).",
+      "Verify that no test mocks the unit or function under test (mocking the subject under test measures only the mock).",
+      "Confirm that every newly added test was proven to fail (turn red) when the underlying production logic was deliberately mutated.",
+      "Ensure collected test count matches actual test count, and reconcile any skipped or deleted tautological tests."
+    ],
+    defaultParams: {
+      targetTestDir: "test/",
+      mutationStrategy: "invert conditions, drop return fields, alter numeric constants"
+    },
+    generatePrompt: (params = {}) => {
+      const testDir = params.targetTestDir || "test/";
+      const strategy = params.mutationStrategy || "invert conditions, drop return fields, alter numeric constants";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Audit and falsify agent-authored tests in '${testDir}'.${customGoal}
+
+### Mutation & Assertion Quality Invariants:
+1. **Prove Each Test Can Fail (Mutation Falsification)**:
+   - For every test in scope, deliberately introduce a defect into the code under test (${strategy}), run only that test, and confirm it turns red.
+   - Immediately revert every deliberate code mutation before proceeding to the next test.
+   - A test nobody has seen fail is an unverified assumption; delete or rewrite tests that remain green under deliberate mutation.
+2. **Eliminate Vacuous & Tautological Checks**:
+   - Strip tests that mock the subject under test (measuring the mock rather than the implementation).
+   - Replace shallow shape assertions (\`toBeDefined()\`, \`assertTrue(result)\`, \`is not None\`) with precise value assertions derived from requirements.
+3. **Reconcile Collected vs Passed Counts**:
+   - Compare test runner collected test count against actual test function count to detect uncollected or silently ignored test files.
+   - Document every deleted tautological test with its specific failure mode.`;
+    }
+  },
+
+  "agent-ci-falsify": {
+    id: "agent-ci-falsify",
+    name: "CI Pipeline Falsification & Exit Code Guard",
+    description: "Audit CI pipeline steps to eliminate swallowed exit codes, vacuous passes, or skipped checks.",
+    defaultVerifyCmd: "npm test",
+    category: "CI & Infrastructure",
+    criticFocus: [
+      "Verify no command discards exit codes via un-guarded pipes (e.g. \`cmd | tee out.txt\` without pipefail) or \`|| true\`.",
+      "Check that test runners fail when matching 0 test files instead of exiting cleanly with code 0.",
+      "Ensure CI matrix legs and path filters (\`paths:\`, \`if:\`) have not silently excluded required verification checks.",
+      "Confirm every CI check prints explicit item counts/coverage rather than bare unverified pass status."
+    ],
+    defaultParams: {
+      workflowPath: ".github/workflows/"
+    },
+    generatePrompt: (params = {}) => {
+      const workflowPath = params.workflowPath || ".github/workflows/";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Audit and harden CI/CD workflows in '${workflowPath}' against silent passes and swallowed exit codes.${customGoal}
+
+### Pipeline Integrity Invariants:
+1. **Zero Swallowed Exit Codes**:
+   - Eliminate \`|| true\`, \`continue-on-error: true\` (unless justified in an adjacent comment), and \`set +e\` workarounds.
+   - Ensure all shell pipes preserve non-zero exit statuses (e.g. \`set -o pipefail\` in bash steps).
+2. **Falsifiable Step Execution**:
+   - Verify test discovery patterns do not exit 0 on empty matches (e.g. runners reporting '0 tests collected' must fail).
+   - Ensure every check step logs explicit processed item counts (tests executed, files linted, types checked).
+3. **Trigger & Filter Integrity**:
+   - Audit \`paths:\` and \`if:\` conditional expressions to ensure no critical security, typecheck, or test jobs are bypassed.`;
+    }
+  },
+
+  "agent-service-isolate": {
+    id: "agent-service-isolate",
+    name: "Cold Sandbox Test Isolation & Service Decoupling",
+    description: "Decouple test suites from live databases, external network services, or background daemons at existing architecture seams.",
+    defaultVerifyCmd: "npm test",
+    category: "Testing & Architecture",
+    criticFocus: [
+      "Verify default test runner executes cleanly from cold with zero live databases, Docker daemons, or network connections.",
+      "Ensure assertions are never weakened or deleted to simulate passing service calls.",
+      "Confirm tests that genuinely require live external services are explicitly marked/tagged and documented.",
+      "Verify test isolation seams use existing repository abstractions/interfaces rather than brute monkey-patching."
+    ],
+    defaultParams: {
+      targetServices: "databases, caches, third-party network APIs"
+    },
+    generatePrompt: (params = {}) => {
+      const services = params.targetServices || "databases, caches, third-party network APIs";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Decouple test suite from external service dependencies (${services}) for reliable sandbox execution.${customGoal}
+
+### Sandbox Decoupling Invariants:
+1. **Zero Live Service Requirement for Default Suite**:
+   - The default test command must pass from cold with zero background daemons, databases, or external network connectivity.
+   - Fake external dependencies at existing boundary seams and repository interfaces.
+2. **No Test Assertion Weakening**:
+   - Never weaken assertions or delete checks to simulate service responses; retain exact expectation semantics.
+3. **Explicit Isolation Markers**:
+   - Categorize and tag integration tests requiring live services with explicit test runner markers (e.g. \`@integration\`, \`[live-service]\`).
+   - Provide a separate, documented command for executing live integration suites.`;
+    }
+  },
+
+  "agent-error-paths": {
+    id: "agent-error-paths",
+    name: "Error Path & Failure Recovery Stress Test",
+    description: "Exercise unexecuted error paths, catch blocks, and retry loops by intentionally inducing real failure conditions.",
+    defaultVerifyCmd: "npm test",
+    category: "Resilience & Security",
+    criticFocus: [
+      "Verify broad \`catch (e)\` or \`except Exception\` blocks do not swallow fatal runtime bugs or misspellings.",
+      "Confirm retry loops are bounded, backoff properly, and only operate on strictly idempotent actions.",
+      "Ensure error fallbacks fail in the safe/restrictive direction (e.g. denying permissions if auth check is unreachable).",
+      "Check that error messages clearly state the failed component, input, and actionable remedy."
+    ],
+    defaultParams: {
+      targetModules: "src/"
+    },
+    generatePrompt: (params = {}) => {
+      const modules = params.targetModules || "src/";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Audit, exercise, and harden error recovery paths and catch handlers in '${modules}'.${customGoal}
+
+### Resilience & Error Handling Invariants:
+1. **Execute Every Catch Block Under Real Failure Conditions**:
+   - Test error handlers by inducing real failure conditions (closed socket, invalid schema, full disk, revoked token) rather than only reasoning about them.
+   - Narrow overly broad \`catch (e)\` / \`except Exception\` blocks to catch only expected operational error types.
+2. **Safe Fallback Direction**:
+   - Ensure fallback branches fail in the restrictive/safe direction (e.g. permission checks must deny access on error, never allow).
+3. **Bounded Idempotent Retries**:
+   - Verify all retry mechanisms enforce maximum attempt caps, exponential backoff with jitter, and only retry idempotent operations.
+4. **Actionable Error Telemetry**:
+   - Ensure logged error messages specify the failed subsystem, input context, and actionable diagnostic guidance.`;
+    }
+  },
+
+  "agent-security-audit": {
+    id: "agent-security-audit",
+    name: "Agent-Authored Code Security & Permission Audit",
+    description: "Audit agent changes for TLS validation bypasses, hardcoded test credentials in repo history, and excessive workflow permissions.",
+    defaultVerifyCmd: "npm test",
+    category: "Security & Permissions",
+    criticFocus: [
+      "Verify zero TLS certificate verification bypasses (\`rejectUnauthorized: false\`, \`NODE_TLS_REJECT_UNAUTHORIZED=0\`, \`verify=False\`).",
+      "Check that no synthetic API keys, tokens, or private keys are committed in fixtures, configs, or git history.",
+      "Ensure GitHub Actions workflows and tokens are scoped to minimum necessary permissions (never \`permissions: write-all\`).",
+      "Confirm all string interpolations in SQL queries, shell commands, or HTML templates are properly escaped or parameterized."
+    ],
+    defaultParams: {
+      diffRange: "HEAD~1..HEAD"
+    },
+    generatePrompt: (params = {}) => {
+      const diffRange = params.diffRange || "HEAD~1..HEAD";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Conduct a targeted security audit of agent-authored modifications in diff '${diffRange}'.${customGoal}
+
+### Agent Code Security Invariants:
+1. **Zero Transport & TLS Bypasses**:
+   - Strictly prohibit disabling TLS validation (\`rejectUnauthorized: false\`, \`NODE_TLS_REJECT_UNAUTHORIZED=0\`, \`verify=False\`, \`--no-check-certificate\`).
+2. **Credential & Secret Scrubbing**:
+   - Verify zero synthetic or real API tokens, passwords, or private keys in test fixtures, examples, or commit history.
+3. **Least Privilege CI Permissions**:
+   - Ensure CI workflows declare minimum explicit permissions; flag any \`permissions: write-all\` or unconstrained token scopes.
+4. **Injection Prevention**:
+   - Verify zero un-sanitized string concatenations in database queries, child process executions, file path resolutions, or HTML rendering.`;
+    }
   }
 };
 

@@ -54,7 +54,7 @@ Commands:
   init                  Scaffold .agent/ config and run onboarding wizard
   task create           Interactively author and scope a Jules task envelope (--template <name>, --role <name>, --tier fast|complex)
   task optimize         Linter & optimizer for Jules task prompts (--fix, --json, --web)
-  task template         List and generate web development task templates (--list, --json)
+  task template         List and generate task templates (--list, --json)
   test-gen              Scaffold & run automated TDD Red-to-Green test cycle (--run)
   mcp init              Scaffold IDE integration config (cursor | vscode | claude | all)
   rollback              Restore git state & working tree to atomic pre-flight checkpoint
@@ -734,7 +734,7 @@ async function main() {
           if (values.json) {
             console.log(JSON.stringify({ ok: true, templates }, null, 2));
           } else {
-            console.log(`\n🌐 Available Web Development Task Templates`);
+            console.log(`\n📋 Available Task Templates & Envelopes`);
             console.log(`--------------------------------------------------`);
             templates.forEach((t) => {
               console.log(`  • ${t.id.padEnd(16)} [${t.category}]`);
