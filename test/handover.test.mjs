@@ -11,6 +11,7 @@ import {
   formatHandoverPromptContext,
   HandoverError,
 } from "../src/ops/handover.mjs";
+import { normalizePath } from "../src/config.mjs";
 
 test("Baton Pass Handover Engine", async (t) => {
   const testRoot = mkdtempSync(join(tmpdir(), "jules-handover-test-"));
@@ -39,7 +40,10 @@ test("Baton Pass Handover Engine", async (t) => {
     assert.equal(res.sessionId, "sess-abc-123");
     assert.equal(res.status, "rolled-back");
     assert.ok(existsSync(res.filePath));
-    assert.match(res.filePath, /\.agent\/handovers\/\d{4}-\d{2}-\d{2}-sess-abc-123\.md$/);
+    // createHandover returns a native path, so this asserts on the normalised
+    // form — on Windows the separators are backslashes and a forward-slash
+    // regex fails against a perfectly correct path.
+    assert.match(normalizePath(res.filePath), /\.agent\/handovers\/\d{4}-\d{2}-\d{2}-sess-abc-123\.md$/);
 
     // Verify round-trip load
     const loaded = loadHandover(testRoot, "sess-abc-123");
