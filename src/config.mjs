@@ -531,6 +531,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     runner: parsed.runner || DEFAULTS.runner,
     branchPrefix: parsed.branch_prefix || parsed.branchPrefix || DEFAULTS.branchPrefix,
     baseBranch: parsed.base_branch || parsed.baseBranch || DEFAULTS.baseBranch,
+    source: parsed.source || process.env.JULES_REPO || "",
     julesApiKeys: Array.from(new Set([
       (process.env.JULES_API_KEY || "").trim(),
       ...(process.env.JULES_API_KEYS || process.env.JULES_API_KEY_SECONDARY || "").split(",").map((k) => k.trim()),
