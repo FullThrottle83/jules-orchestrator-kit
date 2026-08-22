@@ -40,7 +40,7 @@ export function printHelp() {
 Usage: agentctl <command> [options]
 
 Commands:
-  dispatch | create     Dispatch a single task to an AI agent (--role <name>, --tier fast|complex)
+  dispatch | create     Dispatch a single task to an AI agent (--role <name>, --tier fast|complex, --check-premise)
   gate | audit          Run CI security and verification gate against current branch
   queue                 Run pending task queue (--dag, --concurrency <n>)
   swarm                 Run parallel task swarm
@@ -60,6 +60,9 @@ Commands:
   rollback              Restore git state & working tree to atomic pre-flight checkpoint
   handover              Inspect or generate Baton Pass session handover envelopes (list | show | create | prune)
   resume                Resume warm session with human response (--response "<text>")
+  plan approve <id>     Approve pending plan for a Jules session (:approvePlan)
+  session get <id>      Retrieve remote session status from provider API
+  pr harvest            Triage, verify CI, and auto-merge low-risk agent PRs (--auto, --tier r0,r1)
   escalate              Dispatch or manage webhook escalation incidents (--flush, --status, --clear)
   flaky                 Manage Wilson-quarantined tests and dispatch healing swarm (status | heal | reset)
   status                Display queue and system status summary
@@ -75,6 +78,7 @@ Commands:
 Options:
   --role, -r            Specify specialist agent role (overseer | bolt | sentinel | janitor)
   --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:
+  --check-premise       Verify task goal/oracle passes locally before burning API budget
   --dag                 Execute queue tasks via DAG dependency resolution
   --dry-run, -d         Simulate action without making API calls or modifying git
   --mode, -m            Gate evaluation mode (working-tree | committed | staged)
@@ -149,6 +153,8 @@ async function main() {
           repoless: { type: "boolean" },
           "auto-pr": { type: "boolean" },
           "require-plan-approval": { type: "boolean" },
+          "check-premise": { type: "boolean" },
+          idempotent: { type: "boolean" },
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
         },
@@ -179,6 +185,7 @@ async function main() {
         repoless: values.repoless,
         autoPr: values["auto-pr"],
         requirePlanApproval: values["require-plan-approval"],
+        checkPremise: values["check-premise"] || values.idempotent,
       };
 
       try {
@@ -189,15 +196,21 @@ async function main() {
           repoless: values.repoless,
           source: values.source,
           branch: values.branch,
+          checkPremise: values["check-premise"] || values.idempotent,
         });
         if (values.json) {
           console.log(JSON.stringify({ ok: true, session }, null, 2));
         } else {
-          console.log(`\n✅ Task Dispatched Successfully!`);
-          console.log(`   Session ID  : ${session.id}`);
-          console.log(`   Session URL : ${session.url || "N/A"}`);
-          if (session._routeTier) {
-            console.log(`   Router Tier : ${session._routeTier} (${session._routeReason || "n/a"})`);
+          if (session.status === "ALREADY_SATISFIED" || session.skipped) {
+            console.log(`\n⚡ Task Already Satisfied (skipped dispatch):`);
+            console.log(`   Reason: ${session.reason || "Verification oracle already passing on base branch."}`);
+          } else {
+            console.log(`\n✅ Task Dispatched Successfully!`);
+            console.log(`   Session ID  : ${session.id}`);
+            console.log(`   Session URL : ${session.url || "N/A"}`);
+            if (session._routeTier) {
+              console.log(`   Router Tier : ${session._routeTier} (${session._routeReason || "n/a"})`);
+            }
           }
         }
         process.exit(0);
@@ -1065,6 +1078,160 @@ async function main() {
         console.error(`❌ Resume Failed: ${err.message}`);
         process.exit(1);
       }
+      break;
+    }
+
+    case "plan": {
+      const subAction = args[1];
+      if (subAction === "approve") {
+        const sessionId = args[2];
+        const { values, positionals } = parseArgs({
+          args: args.slice(2),
+          options: {
+            "dry-run": { type: "boolean", short: "d" },
+            json: { type: "boolean", short: "j" },
+          },
+          allowPositionals: true,
+        });
+        const targetSessionId = sessionId && !sessionId.startsWith("-") ? sessionId : positionals?.[0];
+        if (!targetSessionId) {
+          console.error("Error: Session ID is required for agentctl plan approve <sessionId>.");
+          process.exit(1);
+        }
+        const { createProvider } = await import("../src/provider.mjs");
+        const provider = createProvider(config.provider || "jules", config);
+        try {
+          const res = await provider.approvePlan(targetSessionId, { root, dryRun: values["dry-run"] });
+          if (values.json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            console.log(`\n✅ Plan Approved Successfully!`);
+            console.log(`   Session ID : ${res.id}`);
+            console.log(`   Status     : ${res.status}\n`);
+          }
+          process.exit(0);
+        } catch (err) {
+          console.error(`❌ Plan Approval Failed: ${err.message}`);
+          process.exit(1);
+        }
+      }
+      console.error(`Error: Unknown plan subcommand '${subAction}'. Use approve.`);
+      process.exit(1);
+      break;
+    }
+
+    case "approve": {
+      const sessionId = args[1];
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+      const targetSessionId = sessionId && !sessionId.startsWith("-") ? sessionId : positionals?.[0];
+      if (!targetSessionId) {
+        console.error("Error: Session ID is required for agentctl approve <sessionId>.");
+        process.exit(1);
+      }
+      const { createProvider } = await import("../src/provider.mjs");
+      const provider = createProvider(config.provider || "jules", config);
+      try {
+        const res = await provider.approvePlan(targetSessionId, { root, dryRun: values["dry-run"] });
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`\n✅ Plan Approved Successfully!`);
+          console.log(`   Session ID : ${res.id}`);
+          console.log(`   Status     : ${res.status}\n`);
+        }
+        process.exit(0);
+      } catch (err) {
+        console.error(`❌ Plan Approval Failed: ${err.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case "session": {
+      const subAction = args[1];
+      if (subAction === "get" || subAction === "status") {
+        const sessionId = args[2];
+        const { values, positionals } = parseArgs({
+          args: args.slice(2),
+          options: {
+            "dry-run": { type: "boolean", short: "d" },
+            json: { type: "boolean", short: "j" },
+          },
+          allowPositionals: true,
+        });
+        const targetSessionId = sessionId && !sessionId.startsWith("-") ? sessionId : positionals?.[0];
+        if (!targetSessionId) {
+          console.error("Error: Session ID is required for agentctl session get <sessionId>.");
+          process.exit(1);
+        }
+        const { createProvider } = await import("../src/provider.mjs");
+        const provider = createProvider(config.provider || "jules", config);
+        try {
+          const res = await provider.getSession(targetSessionId, { root, dryRun: values["dry-run"] });
+          if (values.json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            console.log(`\n📋 Remote Session Status:`);
+            console.log(`   Session ID : ${res.id}`);
+            console.log(`   Status     : ${res.status}\n`);
+          }
+          process.exit(0);
+        } catch (err) {
+          console.error(`❌ Session Retrieval Failed: ${err.message}`);
+          process.exit(1);
+        }
+      }
+      console.error(`Error: Unknown session subcommand '${subAction}'. Use get.`);
+      process.exit(1);
+      break;
+    }
+
+    case "pr": {
+      const subAction = args[1];
+      if (subAction === "harvest") {
+        const { harvestPullRequests, formatHarvestTable } = await import("../src/ops/pr-harvest.mjs");
+        const { values } = parseArgs({
+          args: args.slice(2),
+          options: {
+            tier: { type: "string" },
+            limit: { type: "string" },
+            auto: { type: "boolean" },
+            merge: { type: "boolean" },
+            "dry-run": { type: "boolean", short: "d" },
+            json: { type: "boolean", short: "j" },
+          },
+          allowPositionals: true,
+        });
+
+        const limit = values.limit ? parseInt(values.limit, 10) : 50;
+        try {
+          const res = await harvestPullRequests(root, {
+            tier: values.tier,
+            limit,
+            auto: values.auto || values.merge,
+            dryRun: values["dry-run"],
+          });
+
+          if (values.json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            console.log(formatHarvestTable(res));
+          }
+          process.exit(0);
+        } catch (err) {
+          console.error(`❌ PR Harvest Failed: ${err.message}`);
+          process.exit(1);
+        }
+      }
+      console.error(`Error: Unknown PR subcommand '${subAction}'. Use harvest.`);
+      process.exit(1);
       break;
     }
 

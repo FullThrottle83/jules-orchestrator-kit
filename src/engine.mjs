@@ -668,10 +668,48 @@ export async function repair(failure, opts = {}) {
 /**
  * Polls an async provider for terminal session state (COMPLETED / FAILED) before re-verification.
  */
+/**
+ * Evaluates whether a task's verification oracle or goal is already satisfied on the current working tree.
+ * Prevents redundant session dispatch and API budget burning.
+ */
+export async function checkTaskPremise(task = {}, opts = {}) {
+  const root = opts.config?._root || opts.root || process.cwd();
+  const verifyCmd = task.verifyCmd || task.verify;
+  if (!verifyCmd) {
+    return { satisfied: false, reason: "No verification oracle specified for pre-flight premise check." };
+  }
+
+  const { runVerificationProbe } = await import("./wizard-oracle.mjs");
+  const probe = await runVerificationProbe(verifyCmd, root, { timeoutMs: opts.timeoutMs || 30_000 });
+  if (probe.ok) {
+    return {
+      satisfied: true,
+      reason: `Verification oracle '${verifyCmd}' already passes cleanly with exit code 0 on base branch.`,
+      durationMs: probe.durationMs,
+    };
+  }
+
+  return {
+    satisfied: false,
+    reason: `Verification oracle '${verifyCmd}' failed (exit ${probe.code}), proving task need.`,
+    durationMs: probe.durationMs,
+  };
+}
+
+/**
+ * Polls the provider until the session terminates in COMPLETED, FAILED, or reaches timeout.
+ */
 export async function pollSessionState(provider, session, opts = {}) {
   if (!session || !session.id) return { status: "COMPLETED" };
   const initialStatus = String(session.status || session.state || "").toUpperCase();
-  if (initialStatus === "COMPLETED" || initialStatus === "FAILED" || opts.dryRun || session.id === "dry-run-session-id") {
+  if (
+    initialStatus === "COMPLETED" ||
+    initialStatus === "FAILED" ||
+    opts.dryRun ||
+    session.id === "dry-run-session-id" ||
+    session.id.startsWith("mock-") ||
+    session.id.startsWith("dry-run-")
+  ) {
     return { status: initialStatus || "COMPLETED" };
   }
 
@@ -696,6 +734,17 @@ export async function pollSessionState(provider, session, opts = {}) {
 
     if (currentSession) {
       const status = String(currentSession.status || currentSession.state || "").toUpperCase();
+      if (
+        (status === "AWAITING_PLAN_APPROVAL" || status === "PENDING_APPROVAL") &&
+        (opts.autoApprovePlan || opts.autoApprove || session.autoApprovePlan)
+      ) {
+        if (provider && typeof provider.approvePlan === "function") {
+          try {
+            await provider.approvePlan(session.id, opts);
+          } catch (_) {}
+        }
+      }
+
       if (status === "COMPLETED" || status === "FAILED") {
         return { ...currentSession, status };
       }
@@ -761,6 +810,19 @@ export async function dispatch(task = {}, opts = {}) {
   const promptKb = (config.limits.promptKb || 50) * 1024;
   if (task.prompt && Buffer.byteLength(task.prompt, "utf-8") > promptKb) {
     throw new Error(`Task prompt exceeds maximum payload limit of ${config.limits.promptKb} KB`);
+  }
+
+  // Pre-flight idempotency premise check
+  if (opts.checkPremise || task.checkPremise) {
+    const premise = await checkTaskPremise(task, { root, config });
+    if (premise.satisfied) {
+      return {
+        id: "premise-already-satisfied",
+        status: "ALREADY_SATISFIED",
+        skipped: true,
+        reason: premise.reason,
+      };
+    }
   }
 
   // Redact secrets in prompt before dispatching

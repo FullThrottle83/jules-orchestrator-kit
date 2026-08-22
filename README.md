@@ -131,7 +131,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **584 unit tests across 83 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **602 unit tests across 83 suites passing in < 10.0s**.
 
 <br/>
 
@@ -148,8 +148,11 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | :--- | :--- | :--- | :--- |
 | `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack detector generating `.agent/config.yml`. | `0` (Created) |
 | `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>] [--role <name>] [--tier fast\|complex]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing, preflight gate checks, and DAG dependency wiring. | `0` (Queued), `1` (Secret/Unfalsifiable) |
-| `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes pre-calibrated task envelopes (Web & Agent Hardening: `web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`, `web-ai-access`, `agent-qa-mutation`, `agent-ci-falsify`, `agent-service-isolate`, `agent-error-paths`, `agent-security-audit`). | `0` (Listed/Synthesized) |
-| `dispatch` | `agentctl dispatch [-p <prompt>] [-f <file>] [-r <role>] [-t <tier>] [--auto-pr] [--repoless] [--dry-run]` | Dispatches autonomous task to the active provider with payload limits and role prompt resolution. | `0` (Dispatched), `1` (Error) |
+| `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes pre-calibrated task envelopes (Web & Agent Hardening: `web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `agent-dead-code-audit`, `web-flaky-heal`, `web-i18n`, `web-ai-access`, `agent-qa-mutation`, `agent-ci-falsify`, `agent-service-isolate`, `agent-error-paths`, `agent-security-audit`). | `0` (Listed/Synthesized) |
+| `dispatch` | `agentctl dispatch [-p <prompt>] [-f <file>] [-r <role>] [-t <tier>] [--check-premise] [--auto-pr] [--repoless] [--dry-run]` | Dispatches autonomous task to the active provider with pre-flight idempotency checks, payload limits, and role prompt resolution. | `0` (Dispatched), `1` (Error) |
+| `plan approve` | `agentctl plan approve <sessionId> [--dry-run] [--json]` | Approves pending execution plan for an active Jules session (`:approvePlan`) with automatic 404/503 retry backoff. | `0` (Approved), `1` (Error) |
+| `session get` | `agentctl session get <sessionId> [--dry-run] [--json]` | Retrieves live session lifecycle state from provider REST API with token rotation. | `0` (Fetched), `1` (Error) |
+| `pr harvest` | `agentctl pr harvest [--tier r0,r1] [--limit <n>] [--auto] [--dry-run]` | Discovers open agent PRs, evaluates CI checks & risk tiers, and auto-squashes green low-risk changes autonomously. | `0` (Triaged/Merged), `1` (Error) |
 | `doctor` | `agentctl doctor [--json]` | Diagnostic DAG check runner & automated transactional self-repair engine. | `0` (Healthy), `1` (Failures) |
 | `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. Non-task files (manifests, `README.md`) are skipped, and `--dry-run` previews without moving anything. | `0` (Complete) |
 | `swarm` | `agentctl swarm [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |

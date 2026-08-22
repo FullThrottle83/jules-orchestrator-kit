@@ -251,7 +251,15 @@ export function scorePromptFalsifiability(promptText, options = {}) {
     suggestions.push("Multiple negative constraints detected. Consider defining Airtight Positive Enclosures (e.g. 'ONLY modify [Target]') to prevent attention-drift.");
   }
 
-  // 6. Stack Oracle Detection
+  // 6. Headless Remote VM & Dead Code Linting
+  if (/\b(?:playwright|e2e|screenshot|browser)\b/i.test(rawPrompt) && !/\b(?:headless|mock)\b/i.test(rawPrompt)) {
+    suggestions.push("E2E / Browser testing detected. Ensure Playwright runs specify '--headless' to prevent display-server crashes in headless Jules VMs.");
+  }
+  if (/\b(?:knip|dead code|unused exports?|remove unused)\b/i.test(rawPrompt) && !/\b(?:report|audit|audit-first)\b/i.test(rawPrompt)) {
+    suggestions.push("Dead code cleanup detected. Consider adopting the Audit-First principle (generate .agent/reports/dead-code-audit.md before deleting files) to avoid removing dynamic runtime imports.");
+  }
+
+  // 7. Stack Oracle Detection
   let verifyCmd = options.verifyCmd || null;
   let autoDetected = false;
   let isTrivial = false;

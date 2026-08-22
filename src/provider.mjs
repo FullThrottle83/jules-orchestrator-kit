@@ -564,6 +564,255 @@ export function createProvider(spec = "jules", config = {}) {
 
       throw new Error(`Unsupported provider type: ${providerSpec.type}`);
     },
+
+    async getSession(sessionId, ctx = {}) {
+      if (!sessionId || typeof sessionId !== "string") {
+        throw new TypeError("getSession() requires a valid sessionId string");
+      }
+      if (!ctx || typeof ctx !== "object") ctx = {};
+
+      const pool = ctx.tokenPool || config.tokenPool || TokenPool.fromEnv(config);
+      const rawToken = pool.getNextToken() || process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
+      if (!rawToken && !ctx.dryRun && providerSpec.name === "jules") {
+        throw new MissingApiKeyError();
+      }
+
+      if (ctx.dryRun) {
+        return {
+          id: sessionId,
+          status: "active",
+          provider: providerSpec.name,
+        };
+      }
+
+      if (providerSpec.type === "http") {
+        const getSessionUrlTemplate = providerSpec.getSessionUrl || `${providerSpec.url}/${sessionId}`;
+        const urlData = { sessionId, ...ctx };
+        const url = interpolateString(getSessionUrlTemplate, urlData);
+
+        const headerData = { ...urlData, token: rawToken };
+        const headers = {};
+        for (const [k, v] of Object.entries(providerSpec.headers || {})) {
+          const val = interpolateString(v, headerData);
+          if (val.includes("\r") || val.includes("\n")) {
+            throw new Error(`CRITICAL: Header injection attempt detected in header "${k}"`);
+          }
+          headers[k] = val;
+        }
+
+        const requestedTimeout = Number(ctx.timeoutMs ?? config.timeoutMs ?? providerSpec.timeoutMs ?? 30_000);
+        const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 30_000;
+        const maxRetries = Number.isInteger(ctx.maxRetries) ? ctx.maxRetries : 3;
+        const initialDelayMs = Number.isInteger(ctx.initialDelayMs) ? ctx.initialDelayMs : 500;
+
+        let lastErr = null;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          if (attempt > 0) {
+            const delay = initialDelayMs * Math.pow(2, attempt - 1);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+
+          let res;
+          try {
+            res = await fetch(url, {
+              method: "GET",
+              headers,
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+          } catch (err) {
+            if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
+              lastErr = new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, { status: 504 });
+              if (attempt < maxRetries) continue;
+              throw lastErr;
+            }
+            throw err;
+          }
+
+          if (!res.ok) {
+            const text = await res.text();
+            const cleanText = text.slice(0, 500);
+            const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
+
+            if (res.status === 404) {
+              lastErr = new Error(`Provider HTTP Error (404 Not Found): ${sanitizedText}`);
+              lastErr.status = 404;
+              if (attempt < maxRetries) continue;
+              throw lastErr;
+            }
+
+            if (res.status === 429) {
+              const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
+              const retryAfterMs = parseRetryAfter(retryAfterHeader);
+              pool.markRateLimited(rawToken, retryAfterMs ?? 60000);
+              lastErr = new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
+                retryAfterMs: retryAfterMs ?? 60000,
+                status: 429,
+              });
+              if (attempt < maxRetries) continue;
+              throw lastErr;
+            }
+
+            if (res.status >= 500 && res.status < 600) {
+              lastErr = new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
+                status: res.status,
+              });
+              if (attempt < maxRetries) continue;
+              throw lastErr;
+            }
+
+            const err = new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
+            err.status = res.status;
+            throw err;
+          }
+
+          let json;
+          try {
+            json = await res.json();
+          } catch (err) {
+            throw new ProviderSchemaError(`Provider Payload Error: Invalid JSON response: ${err.message}`, {
+              status: res.status,
+            });
+          }
+
+          return {
+            id: json.id || json.name || sessionId,
+            status: json.state || json.status || "active",
+            raw: json,
+          };
+        }
+      }
+
+      if (providerSpec.type === "exec") {
+        return { id: sessionId, status: "completed" };
+      }
+
+      throw new Error(`Unsupported provider type: ${providerSpec.type}`);
+    },
+
+    async approvePlan(sessionId, ctx = {}) {
+      if (!sessionId || typeof sessionId !== "string") {
+        throw new TypeError("approvePlan() requires a valid sessionId string");
+      }
+      if (!ctx || typeof ctx !== "object") ctx = {};
+
+      const pool = ctx.tokenPool || config.tokenPool || TokenPool.fromEnv(config);
+      const rawToken = pool.getNextToken() || process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
+      if (!rawToken && !ctx.dryRun && providerSpec.name === "jules") {
+        throw new MissingApiKeyError();
+      }
+
+      if (ctx.dryRun) {
+        return {
+          id: sessionId,
+          status: "approved",
+          approved: true,
+          provider: providerSpec.name,
+        };
+      }
+
+      if (providerSpec.type === "http") {
+        const approvePlanUrlTemplate = providerSpec.approvePlanUrl || `${providerSpec.url}/${sessionId}:approvePlan`;
+        const urlData = { sessionId, ...ctx };
+        const url = interpolateString(approvePlanUrlTemplate, urlData);
+
+        const headerData = { ...urlData, token: rawToken };
+        const headers = {};
+        for (const [k, v] of Object.entries(providerSpec.headers || {})) {
+          const val = interpolateString(v, headerData);
+          if (val.includes("\r") || val.includes("\n")) {
+            throw new Error(`CRITICAL: Header injection attempt detected in header "${k}"`);
+          }
+          headers[k] = val;
+        }
+
+        const requestedTimeout = Number(ctx.timeoutMs ?? config.timeoutMs ?? providerSpec.timeoutMs ?? 30_000);
+        const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 30_000;
+        const maxRetries = Number.isInteger(ctx.maxRetries) ? ctx.maxRetries : 3;
+        const initialDelayMs = Number.isInteger(ctx.initialDelayMs) ? ctx.initialDelayMs : 500;
+
+        let lastErr = null;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          if (attempt > 0) {
+            const delay = initialDelayMs * Math.pow(2, attempt - 1);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+
+          let res;
+          try {
+            res = await fetch(url, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(ctx.body || {}),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+          } catch (err) {
+            if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
+              lastErr = new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, { status: 504 });
+              if (attempt < maxRetries) continue;
+              throw lastErr;
+            }
+            throw err;
+          }
+
+          if (!res.ok) {
+            const text = await res.text();
+            const cleanText = text.slice(0, 500);
+            const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
+
+            if (res.status === 404) {
+              lastErr = new Error(`Provider HTTP Error (404 Not Found): ${sanitizedText}`);
+              lastErr.status = 404;
+              if (attempt < maxRetries) continue;
+              throw lastErr;
+            }
+
+            if (res.status === 429) {
+              const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
+              const retryAfterMs = parseRetryAfter(retryAfterHeader);
+              pool.markRateLimited(rawToken, retryAfterMs ?? 60000);
+              lastErr = new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
+                retryAfterMs: retryAfterMs ?? 60000,
+                status: 429,
+              });
+              if (attempt < maxRetries) continue;
+              throw lastErr;
+            }
+
+            if (res.status >= 500 && res.status < 600) {
+              lastErr = new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
+                status: res.status,
+              });
+              if (attempt < maxRetries) continue;
+              throw lastErr;
+            }
+
+            const err = new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
+            err.status = res.status;
+            throw err;
+          }
+
+          let json;
+          try {
+            json = await res.json();
+          } catch (_) {
+            json = {};
+          }
+
+          return {
+            id: json.id || json.name || sessionId,
+            status: json.state || "approved",
+            approved: true,
+            raw: json,
+          };
+        }
+      }
+
+      if (providerSpec.type === "exec") {
+        return { id: sessionId, status: "approved", approved: true };
+      }
+
+      throw new Error(`Unsupported provider type: ${providerSpec.type}`);
+    },
   };
 }
 
@@ -619,6 +868,60 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
             err instanceof ProviderUnavailableError ||
             (err.status && err.status >= 500 && err.status < 600) ||
             err.status === 429;
+
+          if (i === providerList.length - 1 || !isRecoverable) {
+            if (err && typeof err === "object") {
+              err._failoverErrors = errors;
+            }
+            throw err;
+          }
+        }
+      }
+    },
+
+    async getSession(sessionId, ctx = {}) {
+      const errors = [];
+      for (let i = 0; i < providerList.length; i++) {
+        const provider = providerList[i];
+        if (typeof provider.getSession !== "function") continue;
+        try {
+          const res = await provider.getSession(sessionId, ctx);
+          return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
+        } catch (err) {
+          errors.push({ provider: provider.name, error: err });
+          const isRecoverable =
+            err instanceof ProviderRateLimitError ||
+            err instanceof ProviderUnavailableError ||
+            (err.status && err.status >= 500 && err.status < 600) ||
+            err.status === 429 ||
+            err.status === 404;
+
+          if (i === providerList.length - 1 || !isRecoverable) {
+            if (err && typeof err === "object") {
+              err._failoverErrors = errors;
+            }
+            throw err;
+          }
+        }
+      }
+    },
+
+    async approvePlan(sessionId, ctx = {}) {
+      const errors = [];
+      for (let i = 0; i < providerList.length; i++) {
+        const provider = providerList[i];
+        if (typeof provider.approvePlan !== "function") continue;
+        try {
+          const res = await provider.approvePlan(sessionId, ctx);
+          return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
+        } catch (err) {
+          errors.push({ provider: provider.name, error: err });
+          const isRecoverable =
+            err instanceof ProviderRateLimitError ||
+            err instanceof ProviderUnavailableError ||
+            (err.status && err.status >= 500 && err.status < 600) ||
+            err.status === 429 ||
+            err.status === 404;
 
           if (i === providerList.length - 1 || !isRecoverable) {
             if (err && typeof err === "object") {

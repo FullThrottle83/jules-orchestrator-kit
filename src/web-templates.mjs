@@ -14,7 +14,8 @@ export const WEB_TEMPLATES = {
       "Check for un-optimized dynamic imports and excessive JavaScript bundle size.",
       "Verify that all newly introduced images have explicit width/height and loading='lazy' decoding='async'.",
       "Ensure font preloading uses fetchpriority='high' and prevents Cumulative Layout Shift (CLS).",
-      "Verify that critical CSS is not blocked by third-party analytics or non-critical scripts."
+      "Verify that critical CSS is not blocked by third-party analytics or non-critical scripts.",
+      "Ensure server:defer / dynamic deferrals are NOT applied to static marketing prose or static landing components."
     ],
     defaultParams: {
       lcpMaxMs: 1200,
@@ -41,8 +42,9 @@ export const WEB_TEMPLATES = {
 ### Required Architectural Actions:
 1. Eliminate unused CSS and JavaScript chunks on '${page}'.
 2. Preload above-the-fold hero images / fonts using \`<link rel="preload">\` with correct \`fetchpriority\`.
-3. Wrap below-the-fold heavy components in dynamic imports / lazy-loading.
-4. Ensure zero content shifts during font swaps or dynamic component mounting.`;
+3. Wrap below-the-fold heavy dynamic components in lazy-loading.
+4. Ensure zero content shifts during font swaps or dynamic component mounting.
+5. Invariant: Do NOT apply server-deferral / streaming to static marketing text; reserve for heavy dynamic data.`;
     }
   },
 
@@ -131,7 +133,8 @@ export const WEB_TEMPLATES = {
       "Verify that Playwright tests use strict, accessible locators (getByRole, getByLabel, getByText) rather than brittle CSS selectors.",
       "Ensure zero hard-coded arbitrary wait timeouts (e.g. page.waitForTimeout); use web assertions with automatic retries.",
       "Check that mobile viewports (375px) do not introduce horizontal scrollbars (document.body.scrollWidth > window.innerWidth).",
-      "Confirm snapshot assertions use appropriate pixel threshold tolerance to avoid flaky anti-aliasing failures."
+      "Confirm snapshot assertions use appropriate pixel threshold tolerance to avoid flaky anti-aliasing failures.",
+      "Ensure tests execute cleanly in headless CI environments without requiring active X11/Wayland display servers."
     ],
     defaultParams: {
       viewports: "Mobile (375x667), Tablet (768x1024), Desktop (1440x900)",
@@ -146,15 +149,51 @@ export const WEB_TEMPLATES = {
 
 ### Test Harness & Assertion Criteria:
 1. **Multi-Viewport Coverage**: Test and capture snapshots across: ${viewports}.
-2. **Responsive Invariants**:
+2. **Headless Sandbox Invariant**: Ensure all Playwright runs specify headless execution compatible with remote CI sandboxes.
+3. **Responsive Invariants**:
    - Zero horizontal overflow on mobile viewports (\`overflow-x\` containment).
    - Tap target sizes for mobile touch buttons >= 44x44px.
    - Hamburger / collapsible navigation expands and closes with correct ARIA attributes.
-3. **Resilient Locators**:
+4. **Resilient Locators**:
    - Use user-facing accessible locators (\`page.getByRole('button', { name: /submit/i })\`).
    - Never use arbitrary \`waitForTimeout(3000)\` sleeps; use \`expect(locator).toBeVisible()\`.
-4. **Visual Snapshots**:
+5. **Visual Snapshots**:
    - Verify visual snapshots pass with \`expect(page).toHaveScreenshot()\`.`;
+    }
+  },
+
+  "agent-dead-code-audit": {
+    id: "agent-dead-code-audit",
+    name: "Dead Code Audit & Safe Removal Protocol",
+    description: "Audit unused exports and dead code with the Audit-First Principle to prevent deleting dynamic runtime dependencies.",
+    defaultVerifyCmd: "npm test",
+    category: "Refactoring & Audit",
+    criticFocus: [
+      "Verify that flagged 'unused' exports are not dynamically imported at runtime or registered in dynamic router/plugin maps.",
+      "Ensure the audit generates a structured report (.agent/reports/dead-code-audit.md) with confidence ratings before applying destructive file deletions.",
+      "Check that zero core library entry points or framework-specific file-based routes are accidentally removed.",
+      "Confirm all surviving test suites and typechecks pass with 0 errors after any proposed removal."
+    ],
+    defaultParams: {
+      targetScope: "apps/ or src/",
+      toolName: "Knip / ts-prune"
+    },
+    generatePrompt: (params = {}) => {
+      const scope = params.targetScope || "src/";
+      const tool = params.toolName || "Knip";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Perform an Audit-First dead code inspection and safe cleanup for ${scope} using ${tool}.${customGoal}
+
+### Audit-First Safe Refactoring Invariants:
+1. **Report Before Delete (Audit-First Principle)**:
+   - Generate a markdown audit report at \`.agent/reports/dead-code-audit.md\` detailing suspected unused files/exports and confidence levels (High / Medium / Low).
+   - DO NOT delete files or exports with dynamic runtime references (e.g. Astro/Next.js dynamic routes, plugin registries, CMS schemas).
+2. **Conservative Scope**:
+   - Only remove files verified to have 0 dynamic or static references.
+   - When in doubt, document the finding in the audit report rather than deleting.
+3. **Verification**:
+   - Run typecheck and unit tests to ensure zero broken call sites.`;
     }
   },
 
@@ -455,7 +494,9 @@ The test must fail on a hand-broken fixture before you consider it done.`;
 3. **Bounded Idempotent Retries**:
    - Verify all retry mechanisms enforce maximum attempt caps, exponential backoff with jitter, and only retry idempotent operations.
 4. **Actionable Error Telemetry**:
-   - Ensure logged error messages specify the failed subsystem, input context, and actionable diagnostic guidance.`;
+   - Ensure logged error messages specify the failed subsystem, input context, and actionable diagnostic guidance.
+5. **Standalone Schema & Validation Testing**:
+   - When asserting schema validation error messages, export and test standalone validation schemas (e.g. \`schema.safeParse()\`) directly in unit tests rather than relying on heavyweight framework action mocks that may mask validation errors.`;
     }
   },
 

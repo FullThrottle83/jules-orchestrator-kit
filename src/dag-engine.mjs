@@ -493,6 +493,8 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
     let role = undefined;
     let tier = undefined;
 
+    let targetFiles = [];
+
     // Check envelope header
     const match = content.match(/<!--\s*JULES_TASK_ENVELOPE:\s*({[\s\S]*?})\s*-->/);
     if (match) {
@@ -502,6 +504,8 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
         if (meta.title) title = meta.title;
         if (meta.role) role = meta.role;
         if (meta.tier) tier = meta.tier;
+        if (Array.isArray(meta.targetFiles)) targetFiles = meta.targetFiles;
+        else if (Array.isArray(meta.referenced_paths)) targetFiles = meta.referenced_paths;
         if (Array.isArray(meta.dependsOn)) dependsOn = meta.dependsOn;
         else if (typeof meta.dependsOn === "string") dependsOn = meta.dependsOn.split(",").map((s) => s.trim()).filter(Boolean);
       } catch (_) {}
@@ -513,12 +517,29 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
         if (parsed.prompt) prompt = parsed.prompt;
         if (parsed.role) role = parsed.role;
         if (parsed.tier) tier = parsed.tier;
+        if (Array.isArray(parsed.targetFiles)) targetFiles = parsed.targetFiles;
+        else if (Array.isArray(parsed.referenced_paths)) targetFiles = parsed.referenced_paths;
         if (Array.isArray(parsed.dependsOn)) dependsOn = parsed.dependsOn;
         else if (typeof parsed.dependsOn === "string") dependsOn = parsed.dependsOn.split(",").map((s) => s.trim()).filter(Boolean);
       } catch (_) {}
     }
 
-    taskMap.set(taskId, { file, fullPath, taskId, title, prompt, role, tier, dependsOn });
+    taskMap.set(taskId, { file, fullPath, taskId, title, prompt, role, tier, dependsOn, targetFiles });
+  }
+
+  // Auto-serialize concurrent tasks that touch overlapping target files to prevent git merge conflicts
+  const fileToLastTaskId = new Map();
+  for (const [taskId, t] of taskMap.entries()) {
+    for (const rawPath of t.targetFiles || []) {
+      const norm = String(rawPath).replace(/\\/g, "/");
+      if (fileToLastTaskId.has(norm)) {
+        const priorTaskId = fileToLastTaskId.get(norm);
+        if (priorTaskId !== taskId && !t.dependsOn.includes(priorTaskId)) {
+          t.dependsOn.push(priorTaskId);
+        }
+      }
+      fileToLastTaskId.set(norm, taskId);
+    }
   }
 
   // Register each task with its dependencies that are part of this queue run
