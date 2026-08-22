@@ -39,6 +39,42 @@ limits:
       const cfg = loadConfig(tmp);
       assert.equal(cfg.version, 1);
       assert.ok(Array.isArray(cfg.scope.deny));
+      // Free-tier limits. A repository that states no tier is one the kit knows
+      // nothing about, and assuming the largest plan hands a Free account a
+      // 15-worker swarm it does not have.
+      assert.equal(cfg.tier, "free");
+      assert.equal(cfg.limits.diffKb, 50);
+      assert.equal(cfg.limits.dailyTasks, 15);
+      assert.equal(cfg.limits.concurrency, 3);
+      // …and the figure is marked as a guess, so the budget gate warns rather
+      // than hard-blocking on it.
+      assert.equal(cfg.provenance.dailyTasks, "tier");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("an unrecognised tier name falls back to free, not to the largest plan", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bogus-tier-"));
+    try {
+      fs.mkdirSync(path.join(tmp, ".agent"), { recursive: true });
+      fs.writeFileSync(path.join(tmp, ".agent", "config.yml"), "version: 1\ntier: platinum\n");
+      const cfg = loadConfig(tmp);
+      assert.equal(cfg.tier, "free");
+      assert.equal(cfg.limits.concurrency, 3);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("a stated tier still wins over the conservative default", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "stated-tier-"));
+    try {
+      fs.mkdirSync(path.join(tmp, ".agent"), { recursive: true });
+      fs.writeFileSync(path.join(tmp, ".agent", "config.yml"), "version: 1\ntier: ultra\n");
+      const cfg = loadConfig(tmp);
+      assert.equal(cfg.tier, "ultra");
+      assert.equal(cfg.limits.dailyTasks, 300);
       assert.equal(cfg.limits.diffKb, 75);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -85,14 +121,17 @@ limits:
   });
 
   it("handles null or undefined root parameter in loadConfig()", () => {
-    // Calling with null
+    // Both forms must resolve the repository root and produce an identical,
+    // fully-populated config rather than throwing on the missing argument.
     const cfgNull = loadConfig(null);
-    assert.ok(cfgNull.version);
-    assert.equal(cfgNull.limits.diffKb, 75);
-
-    // Calling with undefined
     const cfgUndefined = loadConfig(undefined);
-    assert.ok(cfgUndefined.version);
-    assert.equal(cfgUndefined.limits.diffKb, 75);
+
+    for (const cfg of [cfgNull, cfgUndefined]) {
+      assert.ok(cfg.version);
+      assert.ok(Number.isFinite(cfg.limits.diffKb));
+      assert.ok(Array.isArray(cfg.scope.deny));
+    }
+    assert.equal(cfgNull.limits.diffKb, cfgUndefined.limits.diffKb);
+    assert.equal(cfgNull._root, cfgUndefined._root);
   });
 });
