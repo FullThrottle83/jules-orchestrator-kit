@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import test, { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   computeFileHash,
@@ -9,13 +9,15 @@ import {
   verifyEvidenceManifest,
   generateEvidenceMarkdown,
   computeEvidenceHash,
+  pruneEvidenceManifests,
 } from "../src/evidence.mjs";
 import {
   planEvidenceGenerate,
   planEvidenceVerify,
   planEvidenceShow,
 } from "../src/ops/evidence-actions.mjs";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { pruneTelemetry } from "../src/telemetry.mjs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -168,5 +170,68 @@ describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+test("Evidence and telemetry rotate instead of growing without bound", async (t) => {
+  await t.test("pruneEvidenceManifests keeps the newest N by manifest timestamp", () => {
+    const root = mkdtempSync(join(tmpdir(), "jules-evd-prune-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+
+    const dir = join(root, ".agent", "evidence");
+    mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < 25; i++) {
+      writeFileSync(join(dir, `EVD-${1787000000000 + i * 1000}-${i.toString(16).padStart(8, "0")}.json`), "{}");
+    }
+    // Not an EVD manifest: the latest-pointer must survive rotation.
+    writeFileSync(join(dir, "manifest.v1.json"), "{}");
+
+    const res = pruneEvidenceManifests(root, 10);
+    assert.equal(res.pruned, 15);
+
+    const left = readdirSync(dir).filter((f) => f.startsWith("EVD-")).sort();
+    assert.equal(left.length, 10);
+    // Newest kept, oldest gone — ordered by the id timestamp, not mtime, since
+    // a clone or rsync rewrites every mtime to now.
+    assert.ok(left.includes(`EVD-${1787000000000 + 24 * 1000}-00000018.json`));
+    assert.ok(!left.includes("EVD-1787000000000-00000000.json"));
+    assert.ok(existsSync(join(dir, "manifest.v1.json")));
+  });
+
+  await t.test("pruneEvidenceManifests is a no-op below the retention limit", () => {
+    const root = mkdtempSync(join(tmpdir(), "jules-evd-noop-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    mkdirSync(join(root, ".agent", "evidence"), { recursive: true });
+    writeFileSync(join(root, ".agent", "evidence", "EVD-1787000000000-aaaaaaaa.json"), "{}");
+
+    assert.deepEqual(pruneEvidenceManifests(root, 10), { pruned: 0, kept: 1 });
+  });
+
+  await t.test("pruneTelemetry drops whole days past the window and keeps the chain intact", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "jules-telemetry-prune-"));
+    t.after(() => rmSync(stateDir, { recursive: true, force: true }));
+
+    const day = (offsetDays) =>
+      new Date(Date.now() - offsetDays * 86400000).toISOString().split("T")[0];
+
+    const old = day(40);
+    const recent = day(2);
+    for (const name of [`telemetry-${old}.jsonl`, `telemetry-${old}-1.jsonl`, `telemetry-${old}.head`]) {
+      writeFileSync(join(stateDir, name), "{}\n");
+    }
+    for (const name of [`telemetry-${recent}.jsonl`, `telemetry-${recent}.head`]) {
+      writeFileSync(join(stateDir, name), "{}\n");
+    }
+    // Ledgers are the budget record and must never be swept up with telemetry.
+    writeFileSync(join(stateDir, `ledger-${old}.jsonl`), "{}\n");
+
+    const res = pruneTelemetry(stateDir, 14);
+    assert.equal(res.pruned, 3);
+    assert.deepEqual(res.days, [old]);
+
+    const left = readdirSync(stateDir);
+    assert.ok(left.includes(`telemetry-${recent}.jsonl`));
+    assert.ok(left.includes(`ledger-${old}.jsonl`), "ledger files are not telemetry");
+    assert.ok(!left.some((f) => f.startsWith(`telemetry-${old}`)));
   });
 });
