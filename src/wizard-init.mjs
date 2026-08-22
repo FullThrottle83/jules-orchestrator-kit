@@ -116,7 +116,11 @@ export const BUILTIN_PRESETS = [
  */
 export function planInit(root = process.cwd(), options = {}) {
   const oracle = detectStackOracles(root);
-  const tierName = options.tier || "pro";
+  // Scaffolding `pro` for a caller who never stated a plan hands a free account
+  // a 100-task budget and 8 concurrent workers it does not have. The same
+  // reasoning makes FALLBACK_TIER conservative in loadConfig(); the wizard has
+  // to agree with it or the manifest guards a ceiling the runtime does not.
+  const tierName = options.tier || FALLBACK_TIER;
   // An unrecognised name resolves the same way loadConfig() resolves it, so the
   // scaffolded limits always match what the runtime will later enforce.
   const limits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
@@ -233,7 +237,7 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
     throw new Error("Non-interactive init requires explicit options or allowDefaults: true");
   }
 
-  let selectedTier = options.tier || existingConfig.tier || "pro";
+  let selectedTier = options.tier || existingConfig.tier || FALLBACK_TIER;
   let testCmd = options.testCmd;
   let buildCmd = options.buildCmd;
   let selectedPresets = options.presets;
@@ -290,12 +294,18 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
     }
   }
 
+  // `...options` first, for the same reason as in wizard-task.mjs: spreading it
+  // last let a caller-supplied `tier` overwrite the plan the user picked from
+  // the menu, so selecting Free or Ultra silently wrote whatever the CLI had
+  // passed. `selectedTier` is seeded from `options.tier`, so an explicit
+  // `--tier` still wins — it just wins by seeding the menu instead of by
+  // discarding the answer.
   const plan = planInit(root, {
+    ...options,
     tier: selectedTier,
     testCmd,
     buildCmd,
     presets: selectedPresets,
-    ...options,
   });
 
   // Atomic write plan

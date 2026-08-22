@@ -80,8 +80,8 @@ Jules automatically infers test and build verification commands via `scripts/com
 
 ## 6. Local CI Verification with Nektos Act
 
-- **Pre-Push CI Validation**: When `.github/workflows/` exists and Nektos `act` is installed, execute `act push` or `bash scripts/act/run-act.sh` to verify changes pass CI locally inside the VM before opening a PR.
-- **Log Inspection**: If local `act` CI fails, inspect `act_output.log`, resolve errors in code, and re-run verification before pushing.
+- **Pre-Push CI Validation**: When `.github/workflows/` exists and Nektos `act` is installed, execute `act push` to verify changes pass CI locally inside the VM before opening a PR. Skip this step if `act` is not on `PATH` — do not install it and do not invent a wrapper script for it.
+- **Log Inspection**: If local `act` CI fails, inspect its output, resolve errors in code, and re-run verification before pushing.
 - **Diff Payload Governor**: API forcefully truncates diff payloads > 80 KB. Keep total diff payload under 75 KB (`git diff | wc -c`).
 
 ---
@@ -101,7 +101,11 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 
 ### Standard Jules Guardrails Footer
 
-Append this footer to all Jules dispatches:
+`agentctl task create` appends this automatically, generated from your own
+`.agent/config.yml` scope — so the protected-path line lists *your* build
+manifests (`Cargo.toml`, `go.mod`, `pyproject.toml`, `composer.json`, …) and
+rebases onto *your* base branch. Fill the placeholders only for hand-written
+dispatches; run `agentctl gate` to see the full enforced set.
 
 ```text
 Read AGENTS.md and .agent/rules/jules-protocol.md BEFORE starting.
@@ -110,12 +114,12 @@ Follow all rules strictly.
 TASK: <description>
 
 HARD CONSTRAINTS:
-- Do NOT modify package.json, pnpm-lock.yaml, tsconfig.json, or .github/ files. Enforced in CI by Agent Scope Guard.
+- Do NOT modify these protected paths: <your build manifest, lockfile, CI directory, and agent rules>.
 - Diff Payload Governor: Keep total diff payload under 75 KB (`git diff | wc -c`) to prevent API truncation (~80 KB limit).
 - Falsifiable & Evidence-Based: Attach full terminal verification output to PR. Never weaken assertions or delete failing tests to force a pass.
 - Declare Scope Deviations: If modifying files outside task bounds, explicitly state rationale in PR.
-- Verify before finishing: Run full type-check, lint, and unit test suites.
-- BEFORE opening the PR: Run `git fetch origin main && git rebase origin/main`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.
-- Delete ALL temporary files (.py, .sh, .patch, debug logs) before submitting.
+- Verify before finishing: Run the project's full type-check, lint, and test commands.
+- BEFORE opening the PR: Run `git fetch origin <base> && git rebase origin/<base>`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.
+- Remove any scratch files you created for debugging before submitting. Do not delete files that are part of the project.
 ```
 

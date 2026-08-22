@@ -8,18 +8,19 @@
 ## Context
 - **Project Goals:** [Describe key architectural or business goals.]
 - **Key Files & Folders:** [List critical files, directories, or schemas, e.g. `src/auth.ts`, `schema.sql`.]
-- **Tech Stack:** [List frameworks and libraries, e.g. Node.js, Express, TypeScript, Drizzle ORM.]
+- **Tech Stack:** [List this project's languages, frameworks, and libraries.]
 
 ## Requirements & Hard Constraints
 - **Functional Requirements:** [List specific, non-negotiable functional requirements.]
 - **Hard Constraints:**
-  - Do NOT introduce third-party npm dependencies without explicit authorization.
-  - Do NOT modify command files (`package.json`, `.github/`) or Agent Scope files.
-  - Keep total diff payload strictly under 75 KB (`git diff | wc -c`).
+  - Do NOT introduce new third-party dependencies without explicit authorization.
+  - Do NOT modify this project's build manifest, lockfile, CI configuration, or agent scope files. Run `agentctl gate` to see the enforced set.
+  - Keep total diff payload strictly under {{DIFF_KB}} KB (`git diff | wc -c`).
 
 ## Verification Loop
-- **Verification Command:** Execute automated verification tests: `npm test`.
+- **Verification Command:** Execute `{{VERIFY_TEST}}`.
 - **Zero Errors Invariant:** Ensure 100% of tests pass cleanly with 0 errors before submitting.
+- **Carry the Evidence:** Paste the actual terminal output. Exit code 0 proves the process survived, not that the change works.
 
 ## Expected Artifacts
 - **Code Changes:** Clean, production-grade implementation preserving existing symbol contracts.

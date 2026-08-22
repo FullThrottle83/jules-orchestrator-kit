@@ -18,39 +18,14 @@ jobs:
         with:
           node-version: '20'
 
+      # Runs the same matcher as the local gate (src/security.mjs checkScope).
+      # The previous inline-bash version reimplemented glob matching and its
+      # sed expression was invalid, which under `bash -e` aborted the step
+      # before it evaluated a single pattern.
       - name: Verify Scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.base_ref }}
-        run: |
-          echo "Checking files modified in PR..."
-          MODIFIED_FILES=$(git diff --name-only $BASE_SHA $HEAD_SHA)
-          
-          # Read protected paths from origin/${{ github.base_ref }}
-          PROTECTED_PATHS=$(node -e "const paths = JSON.parse(require('child_process').execSync('git show origin/' + process.env.BASE_REF + ':.agent/protected-paths.json', {encoding:'utf8'})).protected; console.log(paths.join(' '));")
-          
-          echo "Protected patterns: $PROTECTED_PATHS"
-          
-          VIOLATION_FOUND=0
-          
-          # Use micromatch or similar simple matching via bash for CI simplicity. 
-          # Here we just use a simple regex grep for patterns.
-          for FILE in $MODIFIED_FILES; do
-            echo "Checking: $FILE"
-            for PATTERN in $PROTECTED_PATHS; do
-              # Convert simple glob to regex for bash
-              REGEX=$(echo "$PATTERN" | sed -e 's/\./\\./g' -e 's/\*\*/.*/g' -e 's/\*/[^/]*/g')
-              if [[ "$FILE" =~ ^$REGEX$ ]] || [[ "$FILE" =~ ^$REGEX/ ]]; then
-                echo "::error file=$FILE::File violates protected paths constraint: Matches pattern '$PATTERN'"
-                VIOLATION_FOUND=1
-              fi
-            done
-          done
-          
-          if [ $VIOLATION_FOUND -eq 1 ]; then
-            echo "::error::PR modifies protected files. Jules agent is not allowed to modify these files without explicit manual review bypass."
-            exit 1
-          fi
-          
-          echo "Scope check passed. No protected files were modified."
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: node scripts/ci-scope-guard.mjs

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { resolveRoot } from "./config.mjs";
+import { resolveRoot, loadConfig } from "./config.mjs";
 import { resolveBase } from "./git.mjs";
 import { classifyRiskTier } from "./risk.mjs";
 import { queryRemediations } from "./remediation.mjs";
@@ -62,12 +62,28 @@ export function createExecutionEnvelope(task = {}, opts = {}) {
   const taskId = task.id || opts.taskId || `task-${Date.now()}`;
   const envelopeId = `env-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-  const denyPaths = opts.forbiddenPaths || task.forbiddenPaths || [".github/**", "package-lock.json", "pnpm-lock.yaml"];
-  const allowPaths = opts.allowPaths || task.allowPaths || [];
-  const protectPaths = opts.protectPaths || task.protectPaths || ["package.json", "tsconfig.json", "AGENTS.md"];
+  // The repository's own resolved scope and verification commands, not a set of
+  // Node literals. `loadConfig` merges BUILTIN_DENY/BUILTIN_PROTECT (which are
+  // already polyglot — Cargo.toml, go.mod, pyproject.toml, composer.json) with
+  // whatever `.agent/config.yml` adds, and `resolveVerify` runs the stack
+  // detector. Hardcoding `npm test` here meant the envelope handed a Rust or
+  // Python repo a command that could not run, in the very structure whose job
+  // is to be the authoritative record of what the agent was allowed to do.
+  let config = opts.config;
+  if (!config) {
+    try {
+      config = loadConfig(root);
+    } catch (_) {
+      config = {};
+    }
+  }
+
+  const denyPaths = opts.forbiddenPaths || task.forbiddenPaths || config.scope?.deny || [];
+  const allowPaths = opts.allowPaths || task.allowPaths || config.scope?.allow || [];
+  const protectPaths = opts.protectPaths || task.protectPaths || config.scope?.protect || [];
 
   const files = task.files || opts.files || [];
-  const riskMeta = classifyRiskTier(files, { diffLines: opts.diffLines || 0 });
+  const riskMeta = classifyRiskTier(files, { diffLines: opts.diffLines || 0, config });
 
   const taskFingerprint = task.fingerprint || opts.fingerprint || null;
   const remediations = queryRemediations(root, { targetFiles: files, fingerprint: taskFingerprint, limit: 3 });
@@ -84,8 +100,8 @@ export function createExecutionEnvelope(task = {}, opts = {}) {
       protect: protectPaths,
     },
     verify: {
-      testCmd: opts.testCmd || task.testCmd || "npm test",
-      buildCmd: opts.buildCmd || task.buildCmd || "npm run build",
+      testCmd: opts.testCmd || task.testCmd || config.verify?.test || "",
+      buildCmd: opts.buildCmd || task.buildCmd || config.verify?.build || "",
     },
     riskTier: riskMeta.tier,
     budgetReservationId: opts.reservationId || null,

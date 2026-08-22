@@ -394,8 +394,21 @@ export const TIER_PRESETS = {
 /** Tier names that correspond to real vendor plans, in ascending order. */
 export const VENDOR_TIERS = ["free", "pro", "ultra"];
 
-/** The tier used when a config names one that does not exist. */
-export const FALLBACK_TIER = "ultra";
+/**
+ * The tier assumed when a repository states none, or names one that does not exist.
+ *
+ * `free` rather than `ultra`, because this is a guess about someone else's
+ * billing account and the two directions fail very differently. Guessing low
+ * costs a Pro or Ultra operator some throughput until they set `tier:` — a
+ * number they see in `agentctl doctor` and can raise in one line. Guessing high
+ * hands a Free account a 15-worker swarm and a 300-task allowance it does not
+ * have, so the first real run dispatches into `FAILED_PRECONDITION` quota
+ * rejections, which is also the worst possible first impression of the kit.
+ *
+ * The learned-ceiling logic in src/budget.mjs corrects upward from observation;
+ * nothing corrects downward from an over-generous assumption.
+ */
+export const FALLBACK_TIER = "free";
 
 /**
  * Escalation reasons that bypass the Silence Governor and alert immediately.
@@ -443,8 +456,8 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
   const verifyTimeoutMs = parsed.verify?.timeoutMs ?? parsed.verify?.timeout_ms ?? 60000;
   const autoVerify = resolveVerify(root);
 
-  const rawTier = String(process.env.JULES_TIER || parsed.tier || "ultra").toLowerCase();
-  const activeTier = TIER_PRESETS[rawTier] ? rawTier : "ultra";
+  const rawTier = String(process.env.JULES_TIER || parsed.tier || FALLBACK_TIER).toLowerCase();
+  const activeTier = TIER_PRESETS[rawTier] ? rawTier : FALLBACK_TIER;
   const tierLimits = TIER_PRESETS[activeTier];
 
   const envDailyTasks = process.env.JULES_DAILY_BUDGET !== undefined && Number.isFinite(Number(process.env.JULES_DAILY_BUDGET)) ? Number(process.env.JULES_DAILY_BUDGET) : null;
@@ -507,6 +520,18 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       discordWebhookUrl: parsed.notifications?.discord_webhook_url || parsed.notifications?.discordWebhookUrl || "",
     },
     scope: normalizeScope(parsed),
+    // Project-specific risk paths. These extend the builtin lists in risk.mjs
+    // rather than replacing them; see resolveRiskPatterns() for why. This is
+    // where a repository declares the directories that are dangerous *for it* —
+    // billing, tax rates, pricing, smart contracts — which cannot be guessed
+    // from the stack and must not be shipped as someone else's defaults.
+    risk: {
+      restricted: Array.isArray(parsed.risk?.restricted) ? parsed.risk.restricted : [],
+      consequential: Array.isArray(parsed.risk?.consequential) ? parsed.risk.consequential : [],
+      maxRoutineDiffLines: Number.isFinite(Number(parsed.risk?.max_routine_diff_lines ?? parsed.risk?.maxRoutineDiffLines))
+        ? Number(parsed.risk.max_routine_diff_lines ?? parsed.risk.maxRoutineDiffLines)
+        : 400,
+    },
     limits: {
       ...DEFAULTS.limits,
       ...tierLimits,
@@ -531,6 +556,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     runner: parsed.runner || DEFAULTS.runner,
     branchPrefix: parsed.branch_prefix || parsed.branchPrefix || DEFAULTS.branchPrefix,
     baseBranch: parsed.base_branch || parsed.baseBranch || DEFAULTS.baseBranch,
+    source: parsed.source || process.env.JULES_REPO || "",
     julesApiKeys: Array.from(new Set([
       (process.env.JULES_API_KEY || "").trim(),
       ...(process.env.JULES_API_KEYS || process.env.JULES_API_KEY_SECONDARY || "").split(",").map((k) => k.trim()),

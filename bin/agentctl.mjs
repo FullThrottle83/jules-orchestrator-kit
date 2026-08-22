@@ -663,7 +663,12 @@ async function main() {
       const { runInitWizard } = await import("../src/wizard-init.mjs");
       const res = await runInitWizard(root, {
         interactive: values.interactive !== false,
-        tier: values.tier || "pro",
+        // No `|| "pro"`: a hardcoded default here overrode both the tier picked
+        // in the menu and the tier already recorded in .agent/config.yml on a
+        // re-run. Undefined lets the wizard seed the menu from the existing
+        // config and fall back to FALLBACK_TIER when there is nothing to seed.
+        tier: values.tier,
+        allowDefaults: true,
       });
 
       if (values.json) {
@@ -1204,6 +1209,7 @@ async function main() {
             limit: { type: "string" },
             auto: { type: "boolean" },
             merge: { type: "boolean" },
+            "allow-no-checks": { type: "boolean" },
             "dry-run": { type: "boolean", short: "d" },
             json: { type: "boolean", short: "j" },
           },
@@ -1216,6 +1222,7 @@ async function main() {
             tier: values.tier,
             limit,
             auto: values.auto || values.merge,
+            allowNoChecks: values["allow-no-checks"],
             dryRun: values["dry-run"],
           });
 

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createProvider, createFailoverProvider } from "../src/provider.mjs";
-import { harvestPullRequests, evaluateStatusCheckRollup, parseTierFilter, formatHarvestTable } from "../src/ops/pr-harvest.mjs";
+import { harvestPullRequests, evaluateStatusCheckRollup, parseTierFilter, formatHarvestTable, readPrFiles } from "../src/ops/pr-harvest.mjs";
 import { checkTaskPremise, dispatch } from "../src/engine.mjs";
 import { getWebTemplate, synthesizeWebEnvelope } from "../src/web-templates.mjs";
 import { scorePromptFalsifiability } from "../src/task-optimizer.mjs";
@@ -58,6 +58,7 @@ test("Automated PR Harvester: evaluateStatusCheckRollup & triage", async (t) => 
       passing: true,
       pending: false,
       failing: false,
+      noChecks: false,
       summary: "PASSING (3)",
     });
 
@@ -69,6 +70,7 @@ test("Automated PR Harvester: evaluateStatusCheckRollup & triage", async (t) => 
       passing: false,
       pending: true,
       failing: false,
+      noChecks: false,
       summary: "PENDING (1)",
     });
 
@@ -80,10 +82,16 @@ test("Automated PR Harvester: evaluateStatusCheckRollup & triage", async (t) => 
       passing: false,
       pending: false,
       failing: true,
+      noChecks: false,
       summary: "FAILED (1)",
     });
 
-    assert.equal(evaluateStatusCheckRollup([]).passing, true);
+    // An empty rollup is an absence of evidence, not a pass. A repo without CI
+    // and a PR whose workflows have not registered yet look identical here.
+    const empty = evaluateStatusCheckRollup([]);
+    assert.equal(empty.passing, false);
+    assert.equal(empty.noChecks, true);
+    assert.equal(empty.summary, "NO_CHECKS");
   });
 
   await t.test("parseTierFilter parses strings and arrays", () => {
@@ -141,6 +149,120 @@ test("Automated PR Harvester: evaluateStatusCheckRollup & triage", async (t) => 
     assert.ok(table.includes("#101"));
     assert.ok(table.includes("docs: update guide"));
     assert.ok(table.includes("Summary: 3 total PRs · 1 eligible · 1 merged · 2 skipped"));
+  });
+
+  await t.test("a PR with no CI checks is not merged unless allowNoChecks is set", async () => {
+    const noCiPr = [
+      {
+        number: 201,
+        title: "fix: tidy helper",
+        headRefName: "jules/fix-201",
+        mergeable: "MERGEABLE",
+        files: [{ path: "src/helper.mjs", additions: 4, deletions: 2 }],
+        statusCheckRollup: [],
+      },
+    ];
+
+    const blockedMerges = [];
+    const blocked = await harvestPullRequests(process.cwd(), {
+      tier: "R0,R1",
+      auto: true,
+      execGh: async () => noCiPr,
+      mergeGh: async (n) => {
+        blockedMerges.push(n);
+        return { ok: true };
+      },
+    });
+    assert.equal(blocked.summary.merged, 0);
+    assert.equal(blockedMerges.length, 0);
+    assert.match(blocked.prs[0].reason, /--allow-no-checks/);
+
+    const allowedMerges = [];
+    const allowed = await harvestPullRequests(process.cwd(), {
+      tier: "R0,R1",
+      auto: true,
+      allowNoChecks: true,
+      execGh: async () => noCiPr,
+      mergeGh: async (n) => {
+        allowedMerges.push(n);
+        return { ok: true };
+      },
+    });
+    assert.equal(allowed.summary.merged, 1);
+    assert.equal(allowed.summary.unverified, 1);
+    assert.equal(allowed.prs[0].unverified, true);
+    assert.match(formatHarvestTable(allowed), /--allow-no-checks/);
+  });
+
+  await t.test("a large diff reaches R2 instead of auto-merging as R1", async () => {
+    const bigPr = [
+      {
+        number: 202,
+        title: "refactor: sweep",
+        headRefName: "jules/refactor-202",
+        mergeable: "MERGEABLE",
+        files: [{ path: "src/helper.mjs", additions: 3000, deletions: 2500 }],
+        statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+      },
+    ];
+
+    const res = await harvestPullRequests(process.cwd(), {
+      tier: "R0,R1",
+      auto: true,
+      execGh: async () => bigPr,
+      mergeGh: async () => ({ ok: true }),
+    });
+    assert.equal(res.prs[0].riskTier, "R2_CONSEQUENTIAL");
+    assert.equal(res.prs[0].diffLines, 5500);
+    assert.equal(res.summary.merged, 0);
+  });
+
+  await t.test("an unavailable changed-file list blocks rather than classifying R0", async () => {
+    const res = await harvestPullRequests(process.cwd(), {
+      tier: "R0,R1",
+      auto: true,
+      execGh: async () => [
+        {
+          number: 203,
+          title: "chore: unknown scope",
+          headRefName: "jules/unknown-203",
+          mergeable: "MERGEABLE",
+          statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        },
+      ],
+      mergeGh: async () => ({ ok: true }),
+    });
+    assert.equal(res.summary.merged, 0);
+    assert.equal(res.prs[0].eligible, false);
+    assert.match(res.prs[0].reason, /Changed-file list unavailable/);
+  });
+
+  await t.test("mergeability must be affirmative, not merely non-conflicting", async () => {
+    const res = await harvestPullRequests(process.cwd(), {
+      tier: "R0,R1",
+      auto: true,
+      execGh: async () => [
+        {
+          number: 204,
+          title: "docs: tweak",
+          headRefName: "jules/docs-204",
+          mergeable: "UNKNOWN",
+          files: [{ path: "docs/guide.md", additions: 1, deletions: 0 }],
+          statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        },
+      ],
+      mergeGh: async () => ({ ok: true }),
+    });
+    assert.equal(res.summary.merged, 0);
+    assert.match(res.prs[0].reason, /Not mergeable \(UNKNOWN\)/);
+  });
+
+  await t.test("readPrFiles flags a truncated file page", () => {
+    const files = Array.from({ length: 100 }, (_, i) => ({ path: `src/f${i}.mjs`, additions: 1, deletions: 0 }));
+    const info = readPrFiles({ files });
+    assert.equal(info.truncated, true);
+    assert.equal(info.known, true);
+    assert.equal(info.diffLines, 100);
   });
 });
 

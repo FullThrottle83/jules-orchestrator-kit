@@ -131,7 +131,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **602 unit tests across 83 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **658 unit tests across 83 suites passing in < 10.0s**.
 
 <br/>
 
@@ -152,7 +152,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | `dispatch` | `agentctl dispatch [-p <prompt>] [-f <file>] [-r <role>] [-t <tier>] [--check-premise] [--auto-pr] [--repoless] [--dry-run]` | Dispatches autonomous task to the active provider with pre-flight idempotency checks, payload limits, and role prompt resolution. | `0` (Dispatched), `1` (Error) |
 | `plan approve` | `agentctl plan approve <sessionId> [--dry-run] [--json]` | Approves pending execution plan for an active Jules session (`:approvePlan`) with automatic 404/503 retry backoff. | `0` (Approved), `1` (Error) |
 | `session get` | `agentctl session get <sessionId> [--dry-run] [--json]` | Retrieves live session lifecycle state from provider REST API with token rotation. | `0` (Fetched), `1` (Error) |
-| `pr harvest` | `agentctl pr harvest [--tier r0,r1] [--limit <n>] [--auto] [--dry-run]` | Discovers open agent PRs, evaluates CI checks & risk tiers, and auto-squashes green low-risk changes autonomously. | `0` (Triaged/Merged), `1` (Error) |
+| `pr harvest` | `agentctl pr harvest [--tier r0,r1] [--limit <n>] [--auto] [--allow-no-checks] [--dry-run]` | Discovers open agent PRs, evaluates CI checks & risk tiers, and auto-squashes green low-risk changes autonomously. A PR reporting **no** CI checks is skipped unless `--allow-no-checks` is passed, and an unavailable changed-file list blocks rather than classifying as low risk. | `0` (Triaged/Merged), `1` (Error) |
 | `doctor` | `agentctl doctor [--json]` | Diagnostic DAG check runner & automated transactional self-repair engine. | `0` (Healthy), `1` (Failures) |
 | `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. Non-task files (manifests, `README.md`) are skipped, and `--dry-run` previews without moving anything. | `0` (Complete) |
 | `swarm` | `agentctl swarm [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
@@ -203,13 +203,28 @@ scope:
     - ".agent/config.yml"
     - "keys/**"
 
-# Operational limits & governors
+# Plan tier. Defaults to `free` when unset — the kit will not assume you are
+# paying for a larger plan than you are. Set this to unlock your real limits.
+tier: "free"             # free | pro | ultra
+
+# Risk model for auto-merge triage. Builtin patterns cover what is dangerous in
+# any repository (CI, lockfiles, migrations, key material, IaC, auth). Add the
+# paths that are sensitive to YOUR domain — these EXTEND the builtins.
+risk:
+  restricted:            # R3 — never auto-merged
+    - "**/pricing/**"
+    - "**/billing/**"
+  consequential:         # R2 — always requires a human read
+    - "packages/api/**"
+  max_routine_diff_lines: 400
+
+# Operational limits & governors (tier defaults shown; any key here overrides)
 limits:
-  diffKb: 75             # 75 KB Diff Payload Governor limit
+  diffKb: 75             # Diff Payload Governor limit
   promptKb: 50           # Maximum prompt payload size
   dailyTasks: 300        # Task quota per rolling 24h window (not per calendar day)
   repairAttempts: 3      # Maximum repair iterations
-  concurrency: 15        # Worker slots (free: 3, pro: 8, ultra: 15)
+  concurrency: 15        # Worker slots (defaults free: 3, pro: 8, ultra: 15)
 
 # Dynamic Complexity & Cost Router — opt-in, disabled by default.
 router:

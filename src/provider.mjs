@@ -246,7 +246,7 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       const isRepoless = Boolean(task.repoless || ctx.repoless);
-      const rawRepo = task.source || ctx.source || process.env.JULES_REPO || "";
+      const rawRepo = task.source || ctx.source || config.source || process.env.JULES_REPO || "";
       if (!rawRepo && !ctx.dryRun && providerSpec.name === "jules" && !isRepoless) {
         throw new Error("Missing connected Jules repository source. Set JULES_REPO or pass source/repoless option.");
       }

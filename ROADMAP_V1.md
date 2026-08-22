@@ -11,13 +11,22 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.39.0 (Current Stable) ──► v0.40.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
- (Session API & Harvester)    (Guillotine & Trojan Fences)   (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
+ v0.40.0 (Current Stable) ──► v0.41.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ (Wizards, Guard & Universality) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.39.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.40.0)
+
+### v0.40.0: Interactive Wizard Repair, a Scope Guard That Blocks, & Universal Defaults
+- [x] **Interactive Wizard Option Merge** (`src/wizard-task.mjs`, `src/wizard-init.mjs`, `bin/agentctl.mjs`) — Both wizards spread `...options` last, and `parseArgs` puts every declared flag on that object with `undefined` for the ones not passed, so each spread overwrote the answer just typed. Interactive `agentctl task create` had been unusable since v0.29.0; `agentctl init` silently discarded the tier picked from the menu. Covered by `test/wizard-smoke.test.mjs` driving both real wizards over a fake TTY with the exact options object the CLI builds.
+- [x] **CI Scope Guard Rebuilt on `checkScope()`** (`scripts/ci-scope-guard.mjs`, `.github/workflows/agent-scope-guard.yml`) — The inline-bash guard aborted under `bash -e` before evaluating a single pattern and reported green on every PR. Replaced with a Node implementation calling the same matcher as the local gate, reading the manifest from the PR's base SHA, failing closed on an unreadable manifest, and implementing the `allow-protected-paths` label documented in `AGENTS.md`.
+- [x] **Three Fail-Opens Closed in `pr harvest --auto`** (`src/ops/pr-harvest.mjs`) — A PR with no status checks scored `passing: true` via empty-array `every()`; `diffLines` never reached `classifyRiskTier`, making the R2 threshold unreachable; and a missing file list graded `R0_COSMETIC` off the very evidence whose absence should have blocked the decision.
+- [x] **Untrusted Review Comments Fenced** (`src/review-repair.mjs`) — `createReviewRepairTask` interpolated third-party `comment.body` into a dispatch prompt without calling the `sanitizeUntrustedData()` the kit already shipped.
+- [x] **Universal Risk Model & Stack-Neutral Prompts** (`src/risk.mjs`, `.agent/prompts/`, `src/role-resolver.mjs`, `src/wizard-task.mjs`) — Builtin risk patterns no longer ship one installation's domain directories to every repository, and shipped role prompts no longer instruct Rails and Django projects to run `npm test`. Domain paths move to a `risk:` block that extends the builtins; prompts hydrate `{{VERIFY_TEST}}`-style tokens from the target repo's config.
+- [x] **Evidence & Telemetry Retention** (`src/evidence.mjs`, `src/telemetry.mjs`) — `.agent/evidence/` and `.agent/state/` grew without bound in every installation. Newest 200 manifests, 14 days of telemetry; `ledger-*.jsonl` deliberately excluded as the budget record.
+- [x] **Conservative Tier Fallback** (`src/config.mjs`) — `FALLBACK_TIER` moves from `ultra` to `free`. **Breaking:** add `tier: pro` or `tier: ultra` to `.agent/config.yml`.
 
 ### v0.39.0: Jules Session API, Automated PR Harvester & Pre-Flight Idempotency Gate
 - [x] **Jules Provider Session API & Plan Approval** (`src/provider.mjs`, `bin/agentctl.mjs`) — Implemented native `getSession(sessionId)` and `approvePlan(sessionId)` on `createProvider("jules")` and `createFailoverProvider` with 404/503 exponential backoff retry. Added CLI commands `agentctl plan approve <id>` and `agentctl session get <id>`.
@@ -135,14 +144,14 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ---
 
-## 🎯 Intermediate Target Milestones (v0.39.0 – v0.60.0)
+## 🎯 Intermediate Target Milestones (v0.41.0 – v0.60.0)
 
-### v0.39.0: Subshell Process Containment & Context Slicing
+### v0.41.0: Subshell Process Containment & Context Slicing
 - [ ] **POSIX/Win32 Process Group Guillotine (`src/engine.mjs`, `src/process.mjs`)** — Spawns subshell executions with `{ detached: true }` / new process group; implements reliable tree teardown via `process.kill(-pid, 'SIGKILL')` on POSIX and `taskkill /T /F /PID` on Windows to eliminate orphaned dev-servers, Jest/Vite watchers, and subshell zombies (preventing `EADDRINUSE` port exhaustion).
 - [ ] **Native Stdio/Stderr Sliding-Window Governor (`src/prompt-guard.mjs`, `src/ux/log-viewer.mjs`)** — Enforces bounded circular buffer limits for `stdout`/`stderr` before injecting traces into prompt envelopes, preventing V8 string length exhaustion and LLM context window overflows during verbose build/test runs.
 - [ ] **Graceful Rollback & Dirty Working Tree Hook (`src/ops/transaction.mjs`)** — Automated `git restore` and clean-up safety trap in transaction lifecycles, ensuring aborted or crashing agent runs leave zero syntax trash or fractured uncommitted states.
 
-### v0.40.0: OODA Stabilization, Semantic Oscillation & Trojan Fencing
+### v0.42.0: OODA Stabilization, Semantic Oscillation & Trojan Fencing
 - [ ] **OODA Thrash Cycle Breaker (`src/dag-engine.mjs`, `src/review-repair.mjs`)** — Rolling SHA-256 state tracking over proposed diff hunks per file during automated repair loops; immediately trips circuit breaker (Exit Code 4) upon detecting semantic ping-pong ($A \to B \to A$) to halt token drain.
 - [ ] **Unicode Trojan Source & Homoglyph Fencing (`src/security.mjs`)** — Deterministic $O(n)$ token scanner using V8 Unicode Property Escapes (`\p{Script=...}`) and NFKC normalization to block invisible Bidi overrides (CVE-2021-42574), zero-width smugglings, and mixed-script homoglyphs in agent diffs.
 

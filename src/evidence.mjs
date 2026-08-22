@@ -321,7 +321,68 @@ export function writeEvidenceManifest(root, manifest, customPath = null) {
     writeFileAtomically(latestPath, JSON.stringify(manifest, null, 2));
   } catch (_) {}
 
+  // Written at a custom path means the caller owns the location and its
+  // lifetime; only the kit's own directory is ours to rotate.
+  if (!customPath) {
+    pruneEvidenceManifests(root);
+  }
+
   return targetPath;
+}
+
+/**
+ * How many evidence manifests to keep.
+ *
+ * Two are written per verified task, so this is roughly the last hundred runs.
+ * Checkpoints (10) and handovers (20) already rotate; evidence and telemetry
+ * did not, and a fortnight of ordinary use left 305 files and 2.6 MB in a
+ * directory nothing ever read past the newest few. Unbounded growth inside
+ * `.agent/` is not just disk: `getLedgerPathsInWindow` and the doctor checks
+ * walk these directories, so every dispatch slowly pays for every run before it.
+ */
+export const EVIDENCE_RETENTION = 200;
+
+/**
+ * Removes the oldest evidence manifests beyond the retention limit.
+ *
+ * Ordered by the timestamp embedded in the manifest id rather than by mtime:
+ * a `git checkout` or an rsync rewrites mtimes and would otherwise make the
+ * pruner delete the newest evidence it has.
+ *
+ * @param {string} root
+ * @param {number} [retention=EVIDENCE_RETENTION]
+ * @returns {{ pruned: number, kept: number }}
+ */
+export function pruneEvidenceManifests(root, retention = EVIDENCE_RETENTION) {
+  const evidenceDir = join(root, ".agent", "evidence");
+  if (!existsSync(evidenceDir)) return { pruned: 0, kept: 0 };
+
+  let entries;
+  try {
+    entries = readdirSync(evidenceDir);
+  } catch (_) {
+    return { pruned: 0, kept: 0 };
+  }
+
+  const manifests = entries
+    .filter((f) => f.startsWith("EVD-") && f.endsWith(".json"))
+    .map((f) => {
+      const match = /^EVD-(\d+)-/.exec(f);
+      return { file: f, ts: match ? Number(match[1]) : 0 };
+    })
+    .sort((a, b) => b.ts - a.ts);
+
+  if (manifests.length <= retention) return { pruned: 0, kept: manifests.length };
+
+  let pruned = 0;
+  for (const { file } of manifests.slice(retention)) {
+    try {
+      unlinkSync(join(evidenceDir, file));
+      pruned++;
+    } catch (_) {}
+  }
+
+  return { pruned, kept: retention };
 }
 
 /**

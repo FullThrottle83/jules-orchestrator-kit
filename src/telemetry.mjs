@@ -8,6 +8,7 @@ import {
   statSync,
   readdirSync,
   truncateSync,
+  unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -141,6 +142,11 @@ export function appendTelemetry(rootOrOpts = resolveRoot(), kind = "event", fiel
     const dateStr = new Date().toISOString().split("T")[0];
     const headPath = join(stateDir, `telemetry-${dateStr}.head`);
 
+    // Rotation runs once per day, on the first append after the date rolls
+    // over, rather than on every call: a readdir per telemetry event would cost
+    // more than the growth it prevents.
+    const isFirstAppendToday = !existsSync(headPath);
+
     let prevHash = TELEMETRY_GENESIS_HASH;
     let activeSegmentIndex = 0;
     let headValid = false;
@@ -212,8 +218,67 @@ export function appendTelemetry(rootOrOpts = resolveRoot(), kind = "event", fiel
       { sync: false }
     );
 
+    if (isFirstAppendToday) {
+      pruneTelemetry(stateDir);
+    }
+
     return entry;
   });
+}
+
+/**
+ * Days of telemetry kept on disk.
+ *
+ * The dashboard and `agentctl status` read the current day; nothing in the kit
+ * reads further back than a fortnight, and the hash chain is per-day, so
+ * dropping whole older days leaves every retained chain verifiable. Without
+ * this the directory only grew — the largest single day observed in
+ * development was 2,387 records, and it was never going to shrink.
+ *
+ * Ledger files are deliberately not touched here: they are the budget record
+ * the rolling 24h window is computed from, and they rotate on their own terms.
+ */
+export const TELEMETRY_RETENTION_DAYS = 14;
+
+/**
+ * Deletes telemetry segments and head pointers older than the retention window.
+ *
+ * Selection is by the date encoded in the filename, not by mtime: a fresh
+ * clone or an rsync gives every file today's mtime, which would either delete
+ * everything or nothing depending on which way the comparison ran.
+ *
+ * @param {string} stateDir
+ * @param {number} [retentionDays=TELEMETRY_RETENTION_DAYS]
+ * @returns {{ pruned: number, days: string[] }}
+ */
+export function pruneTelemetry(stateDir, retentionDays = TELEMETRY_RETENTION_DAYS) {
+  let entries;
+  try {
+    entries = readdirSync(stateDir);
+  } catch (_) {
+    return { pruned: 0, days: [] };
+  }
+
+  const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const cutoff = new Date(cutoffMs).toISOString().split("T")[0];
+
+  const prunedDays = new Set();
+  let pruned = 0;
+
+  for (const name of entries) {
+    const match = /^telemetry-(\d{4}-\d{2}-\d{2})(?:-\d+)?\.(jsonl|head)$/.exec(name);
+    if (!match) continue;
+    // Lexicographic comparison is exact for ISO dates and avoids constructing
+    // a Date per file.
+    if (match[1] >= cutoff) continue;
+    try {
+      unlinkSync(join(stateDir, name));
+      pruned++;
+      prunedDays.add(match[1]);
+    } catch (_) {}
+  }
+
+  return { pruned, days: [...prunedDays].sort() };
 }
 
 /**

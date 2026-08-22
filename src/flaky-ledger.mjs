@@ -245,7 +245,10 @@ export function clearFlakyLedger(root = resolveRoot(), testCmd = null) {
  */
 export function synthesizeFlakyHealingTask(quarantinedItem, options = {}) {
   const item = typeof quarantinedItem === "string" ? { testCmd: quarantinedItem, oscillation: 0.5, fails: 3, passes: 3, n: 6 } : quarantinedItem;
-  const testCmd = item.testCmd || "npm test";
+  // The quarantined entry carries the command that actually oscillated; the
+  // config's resolved test command is the fallback. `npm test` was neither, and
+  // in a non-Node repo it produced a healing task that could not run.
+  const testCmd = item.testCmd || options.testCmd || options.config?.verify?.test || "";
   const oscillationPct = Math.round((item.oscillation || 0.4) * 100);
   const role = options.role || "janitor";
   const slug = String(testCmd).replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").slice(0, 20).toLowerCase();

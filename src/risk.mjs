@@ -5,43 +5,151 @@ export const RISK_TIERS = {
   R0: "R0_COSMETIC",     // Docs, markdown, comments, safe devDep patches
   R1: "R1_ROUTINE",      // Pure utility logic, unit tests, single package layer
   R2: "R2_CONSEQUENTIAL",// UI components, DB helpers, diff > 400 lines, bundle size impact
-  R3: "R3_RESTRICTED",   // Migrations, Auth, Pricing/VAT, Protected paths (.github, configs)
+  R3: "R3_RESTRICTED",   // Migrations, Auth, Protected paths (.github, secrets, lockfiles)
 };
 
-const RESTRICTED_PATH_PATTERNS = [
-  "**/drizzle/migrations/**",
-  "**/migrations/**",
-  "**/auth/**",
-  "**/pricing/**",
-  "**/vat/**",
-  "**/contracts/**",
-  "**/ledger/**",
+/**
+ * Paths that are dangerous to change in any repository, in any language.
+ *
+ * The bar for membership is deliberately narrow: a pattern belongs here only if
+ * an unreviewed change to it is hazardous regardless of what the project does.
+ * CI definitions execute with repository credentials, lockfiles decide which
+ * code is actually installed, migrations are one-way, and key material is key
+ * material — none of that depends on the domain.
+ *
+ * Domain risk does not generalise and is not guessed at here. A billing path,
+ * a tax-rate table, a pricing engine or a smart-contract directory is R3 in the
+ * project that owns it and noise everywhere else, so those belong in
+ * `risk.restricted` in `.agent/config.yml`. Earlier versions shipped one
+ * project's domain paths (VAT and pricing directories) plus this kit's own
+ * source files to every user, which meant everyone else's genuinely sensitive
+ * directories fell through to R1 — auto-merge eligible.
+ */
+export const BUILTIN_RESTRICTED = [
+  // Pipelines and hooks: execute with repository credentials.
   ".github/**",
   ".githooks/**",
+  ".gitlab-ci.yml",
+  ".circleci/**",
+  "Jenkinsfile",
+  "azure-pipelines.yml",
+  // The agent's own rules of engagement.
   ".agent/rules/**",
-  "wrangler.jsonc",
-  "pnpm-lock.yaml",
+  ".agent/config.yml",
+  ".agent/jules.yml",
+  ".agent/protected-paths.json",
+  // Credentials and key material.
+  "**/.env",
+  "**/.env.*",
+  "**/*.pem",
+  "**/*.key",
+  "**/*.p12",
+  "**/*.pfx",
+  "**/id_rsa*",
+  "**/.npmrc",
+  "**/.netrc",
+  // One-way schema changes, whichever tool produced them.
+  "**/migrations/**",
+  "**/migrate/**",
+  // Lockfiles decide which code actually runs, across every ecosystem.
   "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lockb",
+  "Cargo.lock",
+  "poetry.lock",
+  "uv.lock",
+  "Gemfile.lock",
+  "composer.lock",
+  "go.sum",
+  "Pipfile.lock",
+  "gradle.lockfile",
+  // Infrastructure as code: applies to live infrastructure.
+  "**/*.tf",
+  "**/*.tfvars",
+  // Authentication and authorization logic.
+  "**/auth/**",
+  "**/authentication/**",
+  "**/authorization/**",
 ];
 
-const CONSEQUENTIAL_PATH_PATTERNS = [
-  "apps/web/src/components/**",
-  "packages/db/**",
-  "src/engine.mjs",
-  "src/security.mjs",
+/**
+ * Paths that warrant a human read but are not restricted.
+ *
+ * Kept to shapes that recur across ecosystems — a component tree, a data
+ * access layer, a schema definition — rather than one repository's directory
+ * names. Project-specific additions go in `risk.consequential`.
+ */
+export const BUILTIN_CONSEQUENTIAL = [
+  "**/components/**",
+  "**/db/**",
+  "**/database/**",
+  "**/models/**",
+  "**/schema/**",
+  "**/schemas/**",
 ];
 
 const COSMETIC_EXTENSIONS = new Set([".md", ".txt", ".jsonl", ".svg"]);
+
+/** Diff size at which a change stops being routine regardless of where it lands. */
+export const DEFAULT_R2_DIFF_LINES = 400;
+
+/**
+ * Resolves the effective pattern lists for a repository.
+ *
+ * Project patterns extend the builtins rather than replacing them, mirroring
+ * how `normalizeScope` treats `scope.deny` — a config that narrows the risk
+ * model by accident is the failure this ordering prevents.
+ *
+ * @param {object} [config] - A loaded config (see loadConfig) or `{ risk: {...} }`.
+ * @returns {{ restricted: string[], consequential: string[], diffLines: number }}
+ */
+export function resolveRiskPatterns(config = {}) {
+  const risk = config.risk || {};
+  const asList = (v) => (Array.isArray(v) ? v.filter((p) => typeof p === "string" && p.trim()) : []);
+
+  return {
+    restricted: [...BUILTIN_RESTRICTED, ...asList(risk.restricted)],
+    consequential: [...BUILTIN_CONSEQUENTIAL, ...asList(risk.consequential)],
+    diffLines: Number.isFinite(Number(risk.maxRoutineDiffLines))
+      ? Number(risk.maxRoutineDiffLines)
+      : DEFAULT_R2_DIFF_LINES,
+  };
+}
+
+/**
+ * True when `file` matches `pattern` as a glob or as a basename-anchored path.
+ *
+ * The basename form is what makes a bare `Cargo.lock` also cover
+ * `crates/api/Cargo.lock`. It is anchored on a separator on purpose: a plain
+ * `endsWith` (which this used to be) also matched `vendor-Cargo.lock`.
+ *
+ * Case is folded to match `checkScope`, which folds it for deny and protect
+ * because `.GitHub/` and `.github/` are the same directory on APFS and NTFS.
+ * The two surfaces disagreeing meant a change could be blocked by the gate and
+ * still classified R1 by the harvester on macOS and Windows.
+ */
+function matchesRiskPattern(file, pattern) {
+  if (matchesGlob(file, pattern, { caseInsensitive: true })) return true;
+  if (pattern.includes("*") || pattern.includes("/")) return false;
+  const lowerFile = file.toLowerCase();
+  const lowerPat = pattern.toLowerCase();
+  return lowerFile === lowerPat || lowerFile.endsWith(`/${lowerPat}`);
+}
 
 /**
  * Classifies a set of changed files and diff metadata into a Risk Tier (R0, R1, R2, R3).
  *
  * @param {string[]} files - Array of changed file paths
- * @param {Object} [opts] - Options (diffBytes, diffLines, author)
+ * @param {Object} [opts] - Options (diffLines, config, restricted, consequential)
  * @returns {{ tier: string, reason: string, isAutoMergeAllowed: boolean, requiresHumanReview: boolean }}
  */
 export function classifyRiskTier(files = [], opts = {}) {
   const diffLines = opts.diffLines ?? 0;
+  const resolved = resolveRiskPatterns(opts.config || {});
+  const restricted = [...resolved.restricted, ...(Array.isArray(opts.restricted) ? opts.restricted : [])];
+  const consequential = [...resolved.consequential, ...(Array.isArray(opts.consequential) ? opts.consequential : [])];
+  const routineLimit = opts.maxRoutineDiffLines ?? resolved.diffLines;
 
   if (!files || files.length === 0) {
     return {
@@ -55,11 +163,11 @@ export function classifyRiskTier(files = [], opts = {}) {
   // 1. Check R3 (Restricted Paths)
   for (const rawFile of files) {
     const file = normalizePath(rawFile);
-    for (const pat of RESTRICTED_PATH_PATTERNS) {
-      if (matchesGlob(file, pat) || file.endsWith(pat)) {
+    for (const pat of restricted) {
+      if (matchesRiskPattern(file, pat)) {
         return {
           tier: RISK_TIERS.R3,
-          reason: `Matches restricted security/financial path pattern '${pat}'`,
+          reason: `Matches restricted path pattern '${pat}'`,
           isAutoMergeAllowed: false,
           requiresHumanReview: true,
         };
@@ -67,11 +175,11 @@ export function classifyRiskTier(files = [], opts = {}) {
     }
   }
 
-  // 2. Check R2 (Consequential Paths or Diff Size > 400 lines)
-  if (diffLines >= 400) {
+  // 2. Check R2 (Consequential Paths or oversized diff)
+  if (diffLines >= routineLimit) {
     return {
       tier: RISK_TIERS.R2,
-      reason: `Diff size (${diffLines} lines) exceeds R1 limit of 400 lines`,
+      reason: `Diff size (${diffLines} lines) exceeds R1 limit of ${routineLimit} lines`,
       isAutoMergeAllowed: false,
       requiresHumanReview: true,
     };
@@ -79,11 +187,11 @@ export function classifyRiskTier(files = [], opts = {}) {
 
   for (const rawFile of files) {
     const file = normalizePath(rawFile);
-    for (const pat of CONSEQUENTIAL_PATH_PATTERNS) {
-      if (matchesGlob(file, pat)) {
+    for (const pat of consequential) {
+      if (matchesRiskPattern(file, pat)) {
         return {
           tier: RISK_TIERS.R2,
-          reason: `Matches consequential component/DB path pattern '${pat}'`,
+          reason: `Matches consequential path pattern '${pat}'`,
           isAutoMergeAllowed: false,
           requiresHumanReview: true,
         };
