@@ -1,16 +1,28 @@
 import { spawnSync } from "node:child_process";
 import { classifyRiskTier, RISK_TIERS } from "../risk.mjs";
 import { checkSafetyGate } from "../../scripts/jules-merge-swarm.mjs";
-import { normalizePath } from "../config.mjs";
+import { normalizePath, loadConfig } from "../config.mjs";
 
 /**
  * Checks if GitHub CLI statusCheckRollup indicates all CI checks are green/successful.
+ *
+ * An empty rollup is NOT passing. It means one of two things, and neither is
+ * "verified": the repository has no CI at all — the common case for the repos
+ * this kit is installed into — or the workflows are queued and have not
+ * registered yet, so a harvest run seconds after the PR opens would merge ahead
+ * of the checks it claims to be waiting for. Treating "no evidence" as "good
+ * evidence" is the wrong default anywhere, and this value feeds the only
+ * irreversible action the kit takes.
+ *
+ * Operators who genuinely have no CI and want the triage anyway pass
+ * `--allow-no-checks`, which is a stated choice rather than a silent one.
+ *
  * @param {Array<object>} checks
- * @returns {{ passing: boolean, pending: boolean, failing: boolean, summary: string }}
+ * @returns {{ passing: boolean, pending: boolean, failing: boolean, noChecks: boolean, summary: string }}
  */
 export function evaluateStatusCheckRollup(checks = []) {
   if (!Array.isArray(checks) || checks.length === 0) {
-    return { passing: true, pending: false, failing: false, summary: "NO_CHECKS" };
+    return { passing: false, pending: false, failing: false, noChecks: true, summary: "NO_CHECKS" };
   }
 
   let failingCount = 0;
@@ -41,7 +53,48 @@ export function evaluateStatusCheckRollup(checks = []) {
   const passing = !failing && !pending;
 
   const summary = failing ? `FAILED (${failingCount})` : pending ? `PENDING (${pendingCount})` : `PASSING (${successCount})`;
-  return { passing, pending, failing, summary };
+  return { passing, pending, failing, noChecks: false, summary };
+}
+
+/**
+ * Reads the changed-file list off a `gh pr list --json files` entry.
+ *
+ * The distinction between "this PR changes nothing" and "gh did not tell us
+ * what it changes" is load-bearing: `classifyRiskTier([])` answers R0, which is
+ * auto-merge eligible, so a missing or truncated `files` array used to
+ * downgrade an unknown PR to the lowest risk tier. GitHub also caps the
+ * per-PR file list, so a large PR can arrive complete-looking but partial.
+ *
+ * @param {object} pr
+ * @param {number} [fileCap=100] - Page size at which the list is assumed truncated.
+ * @returns {{ known: boolean, truncated: boolean, files: string[], diffLines: number }}
+ */
+export function readPrFiles(pr = {}, fileCap = 100) {
+  if (!Array.isArray(pr.files)) {
+    return { known: false, truncated: false, files: [], diffLines: 0 };
+  }
+
+  const files = pr.files.map((f) => normalizePath(typeof f === "string" ? f : f.path || ""))
+    .filter(Boolean);
+
+  // Only summed when the entries carry line counts; a PR whose files lack them
+  // reports 0, and the caller must not read that as "a small diff".
+  let diffLines = 0;
+  let hasLineCounts = false;
+  for (const f of pr.files) {
+    if (f && typeof f === "object" && (Number.isFinite(f.additions) || Number.isFinite(f.deletions))) {
+      hasLineCounts = true;
+      diffLines += (Number(f.additions) || 0) + (Number(f.deletions) || 0);
+    }
+  }
+
+  return {
+    known: files.length > 0,
+    truncated: pr.files.length >= fileCap,
+    files,
+    diffLines: hasLineCounts ? diffLines : 0,
+    hasLineCounts,
+  };
 }
 
 /**
@@ -83,6 +136,17 @@ export async function harvestPullRequests(root = process.cwd(), options = {}) {
   const allowedTiers = parseTierFilter(options.tier);
   const isAuto = Boolean(options.auto || options.merge);
   const isDryRun = Boolean(options.dryRun);
+  const allowNoChecks = Boolean(options.allowNoChecks);
+  // Loaded once: the repository's own risk paths decide whether a PR is
+  // auto-merge eligible, and re-reading the config per PR would be pure I/O.
+  let riskConfig = options.config;
+  if (!riskConfig) {
+    try {
+      riskConfig = loadConfig(root);
+    } catch (_) {
+      riskConfig = {};
+    }
+  }
 
   let rawPrs = [];
   if (typeof options.execGh === "function") {
@@ -129,28 +193,42 @@ export async function harvestPullRequests(root = process.cwd(), options = {}) {
   const harvested = [];
 
   for (const pr of rawPrs) {
-    const files = Array.isArray(pr.files) ? pr.files.map((f) => normalizePath(f.path || f)) : [];
-    const risk = classifyRiskTier(files);
+    const fileInfo = readPrFiles(pr);
+    const files = fileInfo.files;
+    // diffLines was never passed before, which left the 400-line R2 rule in
+    // risk.mjs unreachable from the harvest path: a 5,000-line change to one
+    // unremarkable file classified R1 and auto-merged.
+    const risk = classifyRiskTier(files, { diffLines: fileInfo.diffLines, config: riskConfig });
     const checks = evaluateStatusCheckRollup(pr.statusCheckRollup || []);
     const gate = checkSafetyGate(pr.headRefName || "", root);
     const tierMatches = allowedTiers.has(risk.tier);
-    const isMergeable = pr.mergeable !== "CONFLICTING";
+    // "UNKNOWN" means GitHub is still computing mergeability. Only "MERGEABLE"
+    // is an answer; anything else is either a conflict or an absence of one.
+    const isMergeable = String(pr.mergeable || "").toUpperCase() === "MERGEABLE";
+    const checksUsable = checks.passing || (checks.noChecks && allowNoChecks);
+    const filesUsable = fileInfo.known && !fileInfo.truncated;
 
-    const eligible = checks.passing && gate.safe && tierMatches && isMergeable;
+    const eligible = checksUsable && filesUsable && gate.safe && tierMatches && isMergeable;
     let actionStatus = "SKIPPED";
     let actionReason = "";
 
-    if (!tierMatches) {
+    if (!filesUsable) {
+      actionReason = fileInfo.truncated
+        ? `Changed-file list truncated at ${files.length} entries — risk tier cannot be trusted`
+        : "Changed-file list unavailable from gh — risk tier cannot be determined";
+    } else if (!tierMatches) {
       actionReason = `Risk Tier ${risk.tier} excluded by filter (${Array.from(allowedTiers).join(",")})`;
-    } else if (!checks.passing) {
-      actionReason = `CI Checks not clean: ${checks.summary}`;
+    } else if (!checksUsable) {
+      actionReason = checks.noChecks
+        ? "No CI checks reported — pass --allow-no-checks to harvest unverified PRs"
+        : `CI Checks not clean: ${checks.summary}`;
     } else if (!gate.safe) {
       actionReason = `Safety gate locked: ${gate.reason}`;
     } else if (!isMergeable) {
-      actionReason = "Merge conflict detected";
+      actionReason = pr.mergeable ? `Not mergeable (${pr.mergeable})` : "Mergeability unknown";
     } else {
       actionStatus = "ELIGIBLE";
-      actionReason = "Ready for harvest";
+      actionReason = checks.noChecks ? "Ready for harvest (UNVERIFIED — no CI checks)" : "Ready for harvest";
     }
 
     let merged = false;
@@ -194,8 +272,14 @@ export async function harvestPullRequests(root = process.cwd(), options = {}) {
       branch: pr.headRefName,
       filesCount: files.length,
       riskTier: risk.tier,
+      riskReason: risk.reason,
+      diffLines: fileInfo.diffLines,
       ciStatus: checks.summary,
       ciPassing: checks.passing,
+      // True when this PR was allowed through without any CI evidence. Kept on
+      // the record so a report can distinguish "verified green" from "nobody
+      // checked", which the ciStatus string alone no longer conveys.
+      unverified: checks.noChecks && allowNoChecks,
       safetySafe: gate.safe,
       eligible,
       status: actionStatus,
@@ -210,6 +294,7 @@ export async function harvestPullRequests(root = process.cwd(), options = {}) {
     eligible: evaluatedPrs.filter((p) => p.eligible).length,
     merged: harvested.length,
     skipped: evaluatedPrs.filter((p) => !p.eligible).length,
+    unverified: evaluatedPrs.filter((p) => p.unverified && p.eligible).length,
   };
 
   return {
@@ -254,6 +339,11 @@ export function formatHarvestTable(harvestResult) {
   lines.push(
     `Summary: ${summary.total} total PRs · ${summary.eligible} eligible · ${summary.merged} merged · ${summary.skipped} skipped`
   );
+  if (summary.unverified > 0) {
+    lines.push(
+      `⚠️  ${summary.unverified} of the eligible PRs carry no CI checks and were admitted by --allow-no-checks.`
+    );
+  }
 
   return lines.join("\n");
 }

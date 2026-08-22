@@ -1204,6 +1204,7 @@ async function main() {
             limit: { type: "string" },
             auto: { type: "boolean" },
             merge: { type: "boolean" },
+            "allow-no-checks": { type: "boolean" },
             "dry-run": { type: "boolean", short: "d" },
             json: { type: "boolean", short: "j" },
           },
@@ -1216,6 +1217,7 @@ async function main() {
             tier: values.tier,
             limit,
             auto: values.auto || values.merge,
+            allowNoChecks: values["allow-no-checks"],
             dryRun: values["dry-run"],
           });
 
