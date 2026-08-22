@@ -27,6 +27,9 @@ export function runCmd(command, opts = {}) {
   let args = [];
   let useShell = false;
   let shellCmd = "";
+  // True when `args` came from splitting a whitespace-separated string, which
+  // means no element can itself contain whitespace. See the Windows note below.
+  let tokenized = false;
 
   if (Array.isArray(command)) {
     binary = command[0];
@@ -40,8 +43,24 @@ export function runCmd(command, opts = {}) {
       const tokens = trimmed.split(/\s+/).filter(Boolean);
       binary = tokens[0] || "";
       args = tokens.slice(1);
+      tokenized = true;
     }
   }
+
+  // Every package-manager entry point on Windows is a `.cmd` shim, and
+  // execFileSync cannot spawn one directly. `npm test` — the kit's own default
+  // verify command — therefore failed with `spawnSync npm ENOENT` on every
+  // Windows install, and the gate reported it as a plain non-zero verification
+  // rather than as an environment problem.
+  //
+  // Node's `shell: true` rebuilds the command line as `[file, ...args].join(" ")`
+  // and passes it to cmd.exe verbatim. That reconstruction is normally lossy —
+  // it does not quote an argument containing a space — but it is exact here,
+  // because these tokens were produced by splitting on whitespace in the first
+  // place. It is also only reached when the command contains no shell
+  // metacharacter, since those take the execSync branch above. An array command
+  // is excluded: its elements may legitimately contain spaces.
+  const winShim = tokenized && process.platform === "win32";
 
   if (!binary && !useShell) {
     if (opts.ignoreError) return { status: 0, stdout: "", stderr: "" };
@@ -61,7 +80,7 @@ export function runCmd(command, opts = {}) {
       : execFileSync(binary, args, {
           cwd,
           encoding: "utf-8",
-          shell: false,
+          shell: winShim,
           stdio: ["ignore", "pipe", "pipe"],
           env: opts.env || process.env,
           timeout,

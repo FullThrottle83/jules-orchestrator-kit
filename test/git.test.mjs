@@ -74,6 +74,27 @@ test("src/git.mjs Unit Tests", async (t) => {
     assert.equal(emptyIgnore.stdout, "");
   });
 
+  await t.test("runCmd: runs a package-manager shim, which on Windows is not an executable", () => {
+    // `npm` is `npm.cmd` on Windows and execFileSync cannot spawn one, so the
+    // kit's own default verify command failed with `spawnSync npm ENOENT` on
+    // every Windows install — the gate's VERIFY phase could never run there.
+    // Written against npm rather than a stub because the shim, not the
+    // argument handling, is what breaks.
+    const res = runCmd("npm --version", { cwd: tmpRoot, ignoreError: true });
+    assert.equal(res.status, 0, `npm --version failed: ${res.stderr}`);
+    assert.match(res.stdout, /^\d+\.\d+\.\d+/);
+  });
+
+  await t.test("runCmd: an array command keeps arguments that contain spaces intact", () => {
+    // The Windows shim path rebuilds the command line by joining on spaces,
+    // which is lossless only for a string that was split on whitespace. An
+    // array is exempt from it, and this is the case that would break if it
+    // were not.
+    const res = runCmd([process.execPath, "-e", "console.log(process.argv[1])", "two words"], { cwd: tmpRoot });
+    assert.equal(res.status, 0);
+    assert.equal(res.stdout, "two words");
+  });
+
   await t.test("runCmd: error handling, ignoreError, timeouts and maxBuffer", () => {
     // Non-zero exit code with ignoreError: false
     assert.throws(
