@@ -76,6 +76,9 @@ Commands:
   version               Output agentctl version
 
 Options:
+  --prompt, -p          Task prompt text — dispatch, task create and task optimize
+                        also accept it as a positional argument
+  --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)
   --role, -r            Specify specialist agent role (overseer | bolt | sentinel | janitor)
   --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:
   --check-premise       Verify task goal/oracle passes locally before burning API budget
@@ -89,6 +92,33 @@ Options:
   --json-report <path>  Write structured machine-readable JSON diagnostics report
   --help, -h            Show command help
 `);
+}
+
+/**
+ * Resolve the prompt text a command was given, from any of the three forms.
+ *
+ * The commands that take a prompt each accepted a different subset: `dispatch`
+ * took a flag, a file or a positional; `task create` took only `--prompt`; and
+ * `task optimize` took only a positional. The form an operator learned on one
+ * command then failed on the next — loudly on `task create "do the thing"`,
+ * which reported a missing prompt while holding one, and silently on
+ * `task optimize --prompt "..."`, which optimised an empty string.
+ *
+ * @param {Record<string, unknown>} values Parsed flags.
+ * @param {string[]} [positionals] Remaining free arguments.
+ * @returns {string} The prompt, or "" when none was supplied.
+ */
+function resolvePromptInput(values, positionals = []) {
+  const file = values["prompt-file"] || values.file;
+  if (file) {
+    if (!existsSync(file)) {
+      console.error(`Error: prompt file not found: ${file}`);
+      process.exit(1);
+    }
+    return readFileSync(file, "utf-8");
+  }
+  if (values.prompt) return String(values.prompt);
+  return positionals.join(" ").trim();
 }
 
 /**
@@ -121,7 +151,38 @@ function reportRunOutcome(outcome) {
     console.error(`\n   These tasks are still queued. Fix the cause above and re-run.`);
     return 1;
   }
+  if (items.some((r) => r && r.dryRun)) {
+    console.log(`   Dry run — no provider call was made and nothing was dispatched.`);
+  }
   return 0;
+}
+
+/**
+ * Render the stage, exit code and captured output of a failed verify phase.
+ *
+ * VERIFY is the one gate phase whose failure the operator has to fix in their
+ * own code, and it was the only one that printed nothing beyond "❌ FAIL" —
+ * the command's output was captured, hashed into the evidence manifest, and
+ * then discarded before anyone could read it.
+ *
+ * @param {{ stageId?: string, command?: string|null, exitCode?: number|null, stdout?: string, stderr?: string, diagnostics?: string[] }} failure
+ */
+const VERIFY_OUTPUT_TAIL_LINES = 20;
+
+function printVerifyFailure(failure) {
+  const exit = failure.exitCode === null || failure.exitCode === undefined ? "n/a" : failure.exitCode;
+  console.log(`     - Stage: ${failure.stageId || "verify"} (exit ${exit})`);
+  if (failure.command) console.log(`     - Command: ${failure.command}`);
+  for (const d of failure.diagnostics || []) console.log(`     - ${d}`);
+
+  // stderr is where a failing suite says what it expected; stdout is the
+  // fallback for the runners that report everything there.
+  const output = (failure.stderr || "").trim() || (failure.stdout || "").trim();
+  if (!output) return;
+  const lines = output.split("\n");
+  const tail = lines.slice(-VERIFY_OUTPUT_TAIL_LINES);
+  console.log(`     - Output${tail.length < lines.length ? ` (last ${VERIFY_OUTPUT_TAIL_LINES} of ${lines.length} lines)` : ""}:`);
+  for (const line of tail) console.log(`         ${line}`);
 }
 
 async function main() {
@@ -172,7 +233,7 @@ async function main() {
   switch (command) {
     case "dispatch":
     case "create": {
-      const { values } = parseArgs({
+      const { values, positionals } = parseArgs({
         args: args.slice(1),
         options: {
           title: { type: "string", short: "t" },
@@ -194,17 +255,9 @@ async function main() {
         allowPositionals: true,
       });
 
-      let promptContent = values.prompt || "";
-      if (values["prompt-file"] && existsSync(values["prompt-file"])) {
-        promptContent = readFileSync(values["prompt-file"], "utf-8");
-      }
-
-      if (!promptContent && args[1] && !args[1].startsWith("-")) {
-        promptContent = args.slice(1).join(" ");
-      }
-
+      const promptContent = resolvePromptInput(values, positionals);
       if (!promptContent) {
-        console.error("Error: --prompt or --prompt-file is required.");
+        console.error("Error: a prompt is required — pass it as --prompt, --prompt-file, or a positional argument.");
         process.exit(1);
       }
 
@@ -254,6 +307,20 @@ async function main() {
           if (session.status === "ALREADY_SATISFIED" || session.skipped) {
             console.log(`\n⚡ Task Already Satisfied (skipped dispatch):`);
             console.log(`   Reason: ${session.reason || "Verification oracle already passing on base branch."}`);
+          } else if (values["dry-run"]) {
+            // The dry run reached the provider adapter and stopped short of the
+            // call. Printing the same "Dispatched Successfully!" banner as a
+            // real dispatch made the two indistinguishable in a terminal, so a
+            // rehearsal read as work in flight and the operator waited for a
+            // session that was never going to exist.
+            console.log(`\n🧪 Dry Run — nothing was dispatched.`);
+            console.log(`   Title       : ${task.title}`);
+            console.log(`   Provider    : ${session.provider || config.provider || "jules"}`);
+            if (task.role) console.log(`   Role        : ${task.role}`);
+            if (session._routeTier) {
+              console.log(`   Router Tier : ${session._routeTier} (${session._routeReason || "n/a"})`);
+            }
+            console.log(`\n   Re-run without --dry-run to dispatch for real.`);
           } else {
             console.log(`\n✅ Task Dispatched Successfully!`);
             console.log(`   Session ID  : ${session.id}`);
@@ -324,11 +391,30 @@ async function main() {
           if (p.findings) {
             p.findings.forEach((f) => console.log(`     - [${f.severity}] ${f.type}: ${f.description}`));
           }
+          if (!p.ok && p.failure) {
+            printVerifyFailure(p.failure);
+          }
         }
         console.log(`-----------------------------------------------------`);
         console.log(`Overall Result: ${res.ok ? "APPROVED (Exit 0)" : `REJECTED (Exit ${res.code})`}\n`);
         if (!res.ok) {
-          if (res.code === 3) {
+          const failedPhase = res.phases.find((p) => !p.ok)?.phase;
+          // Exit 3 is also what a strictTestLock tamper verdict returns, so the
+          // code alone cannot pick the hint — a scope remediation for a rewritten
+          // test file sends the operator to the wrong flag entirely.
+          if (res.repairs) {
+            console.log(`💡 Remediation Hint (Exit 4 OODA Repair Exhausted):`);
+            console.log(`   • Automated self-repair could not pass tests cleanly.`);
+            console.log(`   • Review error fingerprints via: agentctl doctor\n`);
+          } else if (res.flakyVerdict?.verdict === "QUARANTINED") {
+            console.log(`💡 Remediation Hint (Exit 8 Flaky Test Quarantined):`);
+            console.log(`   • This command has alternated between pass and fail across recent runs.`);
+            console.log(`   • Fix the test's non-determinism — re-running will not clear the verdict.\n`);
+          } else if (failedPhase === "verify" || failedPhase === "evidence") {
+            console.log(`💡 Remediation Hint (Exit ${res.code} Verification Failed):`);
+            console.log(`   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.`);
+            console.log(`   • To let agentctl attempt the repair loop itself, pass: agentctl gate --fix\n`);
+          } else if (res.code === 3) {
             console.log(`💡 Remediation Hint (Exit 3 Scope Violation):`);
             console.log(`   • To allow protected files in this run, pass: agentctl gate --allow-protected`);
             console.log(`   • Or remove protected/denied paths from the diff before dispatching.\n`);
@@ -340,10 +426,6 @@ async function main() {
             console.log(`💡 Remediation Hint (Exit 6 Secret Leak Prevented):`);
             console.log(`   • High-entropy credential or secret detected in patch.`);
             console.log(`   • Scrub credential from source and rotate any exposed keys immediately.\n`);
-          } else if (res.code === 4) {
-            console.log(`💡 Remediation Hint (Exit 4 OODA Repair Exhausted):`);
-            console.log(`   • Automated self-repair could not pass tests cleanly.`);
-            console.log(`   • Review error fingerprints via: agentctl doctor\n`);
           }
         }
       }
@@ -783,11 +865,12 @@ async function main() {
     case "task": {
       const subCommand = args[1] || "create";
       if (subCommand === "create") {
-        const { values } = parseArgs({
+        const { values, positionals } = parseArgs({
           args: args.slice(2),
           options: {
             title: { type: "string", short: "t" },
             prompt: { type: "string", short: "p" },
+            "prompt-file": { type: "string", short: "f" },
             role: { type: "string", short: "r" },
             tier: { type: "string" },
             template: { type: "string" },
@@ -806,7 +889,7 @@ async function main() {
         const { runTaskCreateWizard } = await import("../src/wizard-task.mjs");
         const res = await runTaskCreateWizard(root, {
           title: values.title,
-          prompt: values.prompt,
+          prompt: resolvePromptInput(values, positionals),
           role: values.role,
           tier: values.tier,
           template: values.template,
@@ -880,6 +963,12 @@ async function main() {
           args: args.slice(2),
           options: {
             fix: { type: "boolean", short: "f" },
+            prompt: { type: "string", short: "p" },
+            // No short form here: `-f` is already --fix on this subcommand, and
+            // silently meaning two different things would be worse than one
+            // command having a flag short of full parity. `--file` predates
+            // `--prompt-file` and stays as an alias.
+            "prompt-file": { type: "string" },
             file: { type: "string" },
             dir: { type: "string", short: "d" },
             web: { type: "boolean", short: "w" },
@@ -892,16 +981,7 @@ async function main() {
 
         const { scorePromptFalsifiability, optimizeTaskPrompt } = await import("../src/task-optimizer.mjs");
         const targetDir = values.dir ? resolve(values.dir) : root;
-        let promptText = positionals.join(" ");
-
-        if (values.file) {
-          if (existsSync(values.file)) {
-            promptText = readFileSync(values.file, "utf-8");
-          } else {
-            console.error(`Error: File '${values.file}' does not exist.`);
-            process.exit(1);
-          }
-        }
+        const promptText = resolvePromptInput(values, positionals);
 
         if (values.fix) {
           const opt = optimizeTaskPrompt(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"], web: values.web });

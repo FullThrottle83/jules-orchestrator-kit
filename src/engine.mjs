@@ -357,7 +357,22 @@ export async function gate(opts = {}) {
           const runs = readVerifyRuns(root, stage.cmd);
           flakyVerdictResult = flakyVerdict(runs);
           if (flakyVerdictResult.verdict === "QUARANTINED") {
-            phases.push({ phase: "verify", ok: false, testResult, buildResult, flakyVerdict: flakyVerdictResult, executionRecords });
+            phases.push({
+              phase: "verify",
+              ok: false,
+              testResult,
+              buildResult,
+              failure: {
+                stageId: stage.id || "unit",
+                command: stage.cmd || null,
+                exitCode: res.status ?? null,
+                stdout: stdoutRedacted,
+                stderr: stderrRedacted,
+                diagnostics: [`Quarantined as flaky: ${flakyVerdictResult.reason || "alternating pass/fail across recent runs"}`],
+              },
+              flakyVerdict: flakyVerdictResult,
+              executionRecords,
+            });
             appendTelemetry(root, "gate_phase", { phase: "verify", ok: false, quarantined: true });
             appendTelemetry(root, "gate_finished", { ok: false, code: 8 });
             return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult };
@@ -413,6 +428,31 @@ export async function gate(opts = {}) {
 
   const verifyOk = !failingCmd && !testTampered;
 
+  // What actually broke. Without this the verify phase reported `ok: false` and
+  // nothing else — not the stage, not the exit code, not a line of output — so
+  // the one gate failure the operator is expected to fix themselves was the
+  // only one that told them nothing about how. Both streams are already
+  // redacted at the point they were captured.
+  const verifyFailure = failingCmd
+    ? {
+        stageId: failingCmd.stageId || failingCmd.phase || "verify",
+        command: failingCmd.command || null,
+        exitCode: failingCmd.status ?? null,
+        stdout: failingCmd.stdout || "",
+        stderr: failingCmd.stderr || "",
+        diagnostics: failingCmd.diagnostics || [],
+      }
+    : testTampered
+      ? {
+          stageId: "test-integrity",
+          command: null,
+          exitCode: null,
+          stdout: "",
+          stderr: `Test files changed during the run (${preTestHash.slice(0, 12)} → ${postTestHash.slice(0, 12)}). evidence.strictTestLock treats a passing suite that the diff also rewrote as unproven.`,
+          diagnostics: [],
+        }
+      : null;
+
   // Generate & persist Evidence Manifest
   const evidenceManifest = generateEvidenceManifest(root, {
     taskId: opts.taskId,
@@ -449,6 +489,7 @@ export async function gate(opts = {}) {
     testResult,
     buildResult,
     serverResult,
+    failure: verifyFailure,
     executionRecords,
     testIntegrity: {
       preTestHash,
