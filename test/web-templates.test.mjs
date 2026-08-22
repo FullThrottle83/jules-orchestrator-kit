@@ -11,7 +11,7 @@ import { handleMcpRequest } from "../src/mcp.mjs";
 test("listWebTemplates returns all registered web templates", () => {
   const templates = listWebTemplates();
   assert.ok(Array.isArray(templates));
-  assert.ok(templates.length >= 12);
+  assert.ok(templates.length >= 16);
   const ids = templates.map((t) => t.id);
   assert.ok(ids.includes("web-cwv"));
   assert.ok(ids.includes("web-wcag"));
@@ -25,6 +25,10 @@ test("listWebTemplates returns all registered web templates", () => {
   assert.ok(ids.includes("agent-service-isolate"));
   assert.ok(ids.includes("agent-error-paths"));
   assert.ok(ids.includes("agent-security-audit"));
+  assert.ok(ids.includes("deep-debug"));
+  assert.ok(ids.includes("deep-feature"));
+  assert.ok(ids.includes("deep-optimize"));
+  assert.ok(ids.includes("deep-harden"));
 });
 
 test("getWebTemplate retrieves specific template by id case-insensitively", () => {
@@ -216,4 +220,35 @@ test("MCP tool get_web_task_template lists templates and synthesizes envelopes",
   assert.ok(synthBody.ok);
   assert.equal(synthBody.templateId, "web-wcag");
   assert.ok(synthBody.fullEnvelope.includes("LoginForm"));
+});
+
+test("synthesizeWebEnvelope generates structured envelopes for Deep Think templates", () => {
+  const deepDebug = synthesizeWebEnvelope("deep-debug", {
+    targetPath: "src/state.mjs",
+    issueSummary: "Deadlock in directory mutex allocation",
+  });
+  assert.ok(deepDebug.fullEnvelope.includes("Deep Debug Protocol"));
+  assert.ok(deepDebug.fullEnvelope.includes("src/state.mjs"));
+  assert.ok(deepDebug.criticFocus.some((f) => f.includes("mutation falsification")));
+
+  const deepFeature = synthesizeWebEnvelope("deep-feature", {
+    featureName: "Streaming Logger",
+    targetModule: "src/logger.mjs",
+  });
+  assert.ok(deepFeature.fullEnvelope.includes("Deep Feature TDD Protocol"));
+  assert.ok(deepFeature.fullEnvelope.includes("Streaming Logger"));
+
+  const deepOptimize = synthesizeWebEnvelope("deep-optimize", {
+    targetModule: "src/engine.mjs",
+    metricTarget: ">=25% throughput improvement",
+  });
+  assert.ok(deepOptimize.fullEnvelope.includes("Benchmark-Gated Optimization Protocol"));
+  assert.ok(deepOptimize.fullEnvelope.includes(">=25% throughput improvement"));
+
+  const deepHarden = synthesizeWebEnvelope("deep-harden", {
+    targetSubsystem: "src/security.mjs",
+    threatFocus: "Unicode Bidi and zero-width smuggling",
+  });
+  assert.ok(deepHarden.fullEnvelope.includes("Adversarial Hardening Protocol"));
+  assert.ok(deepHarden.fullEnvelope.includes("Unicode Bidi and zero-width smuggling"));
 });

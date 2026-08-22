@@ -147,6 +147,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 🎯 Intermediate Target Milestones (v0.41.0 – v0.60.0)
 
 ### v0.41.0: Subshell Process Containment & Context Slicing
+- [ ] **Deep Think Task Templates & Reasoning Sandwich (`src/web-templates.mjs`, `src/wizard-task.mjs`)** — Pre-calibrated 4-phase exploration budget templates (`deep-debug`, `deep-feature`, `deep-optimize`, `deep-harden`) enforcing silent discovery, deterministic reproduction oracles, positive perimeters, and mutation falsification.
 - [ ] **POSIX/Win32 Process Group Guillotine (`src/engine.mjs`, `src/process.mjs`)** — Spawns subshell executions with `{ detached: true }` / new process group; implements reliable tree teardown via `process.kill(-pid, 'SIGKILL')` on POSIX and `taskkill /T /F /PID` on Windows to eliminate orphaned dev-servers, Jest/Vite watchers, and subshell zombies (preventing `EADDRINUSE` port exhaustion).
 - [ ] **Native Stdio/Stderr Sliding-Window Governor (`src/prompt-guard.mjs`, `src/ux/log-viewer.mjs`)** — Enforces bounded circular buffer limits for `stdout`/`stderr` before injecting traces into prompt envelopes, preventing V8 string length exhaustion and LLM context window overflows during verbose build/test runs.
 - [ ] **Graceful Rollback & Dirty Working Tree Hook (`src/ops/transaction.mjs`)** — Automated `git restore` and clean-up safety trap in transaction lifecycles, ensuring aborted or crashing agent runs leave zero syntax trash or fractured uncommitted states.

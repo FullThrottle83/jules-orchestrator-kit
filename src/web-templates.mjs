@@ -531,6 +531,160 @@ The test must fail on a hand-broken fixture before you consider it done.`;
 4. **Injection Prevention**:
    - Verify zero un-sanitized string concatenations in database queries, child process executions, file path resolutions, or HTML rendering.`;
     }
+  },
+
+  "deep-debug": {
+    id: "deep-debug",
+    name: "Deep Debug & Concurrency Race Condition Resolver",
+    description: "Deep root-cause exploration, async call-graph mapping, and deterministic reproduction of race conditions.",
+    defaultVerifyCmd: "npm test",
+    category: "Deep Think",
+    criticFocus: [
+      "Verify that async race conditions or timing bugs are deterministically reproduced with a failing test before applying fixes.",
+      "Check for lock contention, unhandled promise rejections, and memory retention in async state buffers.",
+      "Confirm mutation falsification: inverting the fix logic turns the reproduction test red.",
+      "Ensure zero new third-party dependencies and complete cross-platform timing parity (Linux/macOS/Windows)."
+    ],
+    defaultParams: {
+      targetPath: "src/",
+      issueSummary: "state desynchronization or race condition"
+    },
+    generatePrompt: (params = {}) => {
+      const target = params.targetPath || "src/";
+      const issue = params.issueSummary || params.goal || "state desynchronization or race condition";
+      const customGoal = params.goal && params.goal !== issue ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Diagnose and surgically resolve concurrency/state race condition in '${target}': ${issue}.${customGoal}
+
+### Deep Debug Protocol (Exploration & Oracle First):
+1. **Silent Discovery & Call-Graph Tracing**:
+   - Trace the lifecycle, state transitions, and async call graph across '${target}'.
+   - Map out all concurrent read/write paths, shared buffers, or event-loop ticks where state desync occurs.
+   - Do NOT write production code until the root-cause hypothesis is verified.
+2. **Deterministic Reproduction Oracle**:
+   - Formulate a deterministic test in the test suite reproducing the race condition under load or async delay.
+   - Verify the reproduction test FAILS cleanly (RED) against current code.
+3. **Surgical Implementation & Positive Perimeter**:
+   - Implement the minimal, zero-dependency fix using native runtime built-ins only.
+   - Confine modifications strictly to the identified faulty module and its test suite.
+4. **Mutation Falsification**:
+   - Invert the boolean or lock condition in your fix to prove the reproduction test turns RED (falsifiability proof).`;
+    }
+  },
+
+  "deep-feature": {
+    id: "deep-feature",
+    name: "Deep Feature TDD & Oracle Architecture",
+    description: "Oracle-first TDD architecture, contract discovery, and positive perimeter implementation.",
+    defaultVerifyCmd: "npm test",
+    category: "Deep Think",
+    criticFocus: [
+      "Ensure contract discovery aligns with existing repo error patterns ({ ok, code, error }) and JSDoc.",
+      "Verify boundary condition coverage (null/undefined, oversized buffers, empty inputs, proto-pollution).",
+      "Confirm positive operational perimeter: no edits outside designated target and test files.",
+      "Ensure clean type check, linting, and 100% test pass rate."
+    ],
+    defaultParams: {
+      featureName: "New Module Feature",
+      targetModule: "src/"
+    },
+    generatePrompt: (params = {}) => {
+      const feature = params.featureName || params.goal || "New Module Feature";
+      const modulePath = params.targetModule || "src/";
+      const customGoal = params.goal && params.goal !== feature ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Implement '${feature}' in '${modulePath}' using Oracle-First TDD Architecture.${customGoal}
+
+### Deep Feature TDD Protocol:
+1. **Contract & Interface Discovery**:
+   - Inspect adjacent modules in '${modulePath}' to match conventions, error schemas, and signatures.
+   - Define the public API contract before writing code.
+2. **TDD Oracle Formulation (Red Phase)**:
+   - Author comprehensive unit tests covering happy paths, boundary conditions, and invalid inputs.
+   - Run the test suite and confirm that newly added tests fail with expected assertions (RED).
+3. **Surgical Implementation (Green Phase)**:
+   - Implement the feature using native built-in modules only (zero new third-party dependencies).
+   - Normalize all filesystem paths for cross-platform support.
+4. **Adversarial Critic Review**:
+   - Verify memory allocations, recursion depth, and stream backpressure.
+   - Ensure 100% clean test passes with 0 lint errors across all supported platforms.`;
+    }
+  },
+
+  "deep-optimize": {
+    id: "deep-optimize",
+    name: "Deep Benchmark-Gated Performance Optimization",
+    description: "Profiling-first optimization with 5-run median benchmark gate (>=20% throughput or >=30% RAM improvement).",
+    defaultVerifyCmd: "npm test",
+    category: "Deep Think",
+    criticFocus: [
+      "Verify 5-run median benchmark comparison before and after the change.",
+      "Ensure byte-for-byte behavioral parity and zero regressions in the existing test suite.",
+      "Check for memory leaks, recursion stack limits, and catastrophic regex backtracking (O(N^2)).",
+      "Validate that hot loop optimizations do not sacrifice readability or error handling."
+    ],
+    defaultParams: {
+      targetModule: "src/",
+      metricTarget: ">=20% throughput improvement or >=30% memory reduction"
+    },
+    generatePrompt: (params = {}) => {
+      const target = params.targetModule || "src/";
+      const metric = params.metricTarget || ">=20% throughput improvement or >=30% memory reduction";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Optimize runtime execution time and memory footprint of '${target}'.${customGoal}
+
+### Benchmark-Gated Optimization Protocol:
+1. **Profiling & Baseline Measurement**:
+   - Trace hot paths, object allocations inside loops, and redundant I/O in '${target}'.
+   - Establish a reproducible benchmark measuring execution time (median of 5 runs) and heap memory.
+2. **Algorithmic Refactoring**:
+   - Eliminate redundant cloning, regex re-compilations, synchronous disk roundtrips, or O(N^2) lookups.
+   - Maintain 100% byte-for-byte behavioral parity with the existing implementation.
+3. **Benchmark Gate Verification**:
+   - Target Metric: ${metric}.
+   - Execute 5 consecutive benchmark runs to confirm statistically significant gains over baseline.
+4. **Behavioral Integrity Check**:
+   - Run the full test suite to guarantee zero regression or semantic drift.`;
+    }
+  },
+
+  "deep-harden": {
+    id: "deep-harden",
+    name: "Deep Adversarial Hardening & Chaos Mutation",
+    description: "Threat modeling, atomic I/O (safeAtomicWrite), chaos/fuzz injection, and structured error invariant gates.",
+    defaultVerifyCmd: "npm test",
+    category: "Deep Think",
+    criticFocus: [
+      "Verify TOCTOU safety and atomic file operations (temporary file + rename) for state persistence.",
+      "Check resistance to unicode smuggling, escape code stripping, and path traversal (<traversal>).",
+      "Ensure zero empty catch blocks or optimistic defaults returned from corrupt state.",
+      "Confirm mutation falsification: deliberately invalidating security checks triggers instant test failure."
+    ],
+    defaultParams: {
+      targetSubsystem: "src/",
+      threatFocus: "malformed inputs, torn writes, unhandled runtime exceptions"
+    },
+    generatePrompt: (params = {}) => {
+      const target = params.targetSubsystem || "src/";
+      const threat = params.threatFocus || "malformed inputs, torn writes, unhandled runtime exceptions";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Adversarially harden '${target}' against ${threat}.${customGoal}
+
+### Adversarial Hardening Protocol:
+1. **Threat Modeling & Vulnerability Tracing**:
+   - Audit atomic I/O: Ensure file writes use safe atomic writes (temp file + rename) to prevent torn state on crash.
+   - Audit sanitization: Verify resistance against Unicode smuggling, ANSI escape injections, and traversal paths.
+   - Audit error propagation: Replace silent catch blocks with clinical, structured error objects.
+2. **Chaos & Fuzz Test Authorship**:
+   - Author stress tests feeding proto-pollution payloads, oversized binary buffers, and simulated SIGKILL interruptions.
+   - Verify that all failure conditions emit structured error codes rather than crashing.
+3. **Mutation Falsification Gate**:
+   - Invert security checks deliberately to prove the new tests fail immediately (kill the mutant).
+4. **Regression Verification**:
+   - Ensure 100% of existing and new tests pass cleanly with zero errors.`;
+    }
   }
 };
 
