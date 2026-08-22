@@ -148,7 +148,7 @@ test("Pre-Flight Idempotency Gate: checkTaskPremise & dispatch", async (t) => {
   await t.test("checkTaskPremise returns satisfied when verifyCmd passes cleanly", async () => {
     const task = {
       title: "Already Satisfied Task",
-      verifyCmd: "node -e 'process.exit(0)'",
+      verifyCmd: 'node -e "process.exit(0)"',
     };
     const res = await checkTaskPremise(task, { root: process.cwd() });
     assert.equal(res.satisfied, true);
@@ -158,7 +158,7 @@ test("Pre-Flight Idempotency Gate: checkTaskPremise & dispatch", async (t) => {
   await t.test("checkTaskPremise returns false when verifyCmd fails", async () => {
     const task = {
       title: "Unmet Task",
-      verifyCmd: "node -e 'process.exit(1)'",
+      verifyCmd: 'node -e "process.exit(1)"',
     };
     const res = await checkTaskPremise(task, { root: process.cwd() });
     assert.equal(res.satisfied, false);
@@ -169,7 +169,7 @@ test("Pre-Flight Idempotency Gate: checkTaskPremise & dispatch", async (t) => {
     const task = {
       title: "Already Fixed Task",
       prompt: "Fix existing bug",
-      verifyCmd: "node -e 'process.exit(0)'",
+      verifyCmd: 'node -e "process.exit(0)"',
       checkPremise: true,
     };
     const session = await dispatch(task, { dryRun: true, root: process.cwd() });
