@@ -53,7 +53,7 @@ sequenceDiagram
     Orc->>Orc: resolveRolePrompt() — prepend .agent/prompts/<role>.md
     Orc->>Orc: hydratePrompt() — inject SPORE system learnings
     Orc->>Orc: buildAgentEnvelope() — nonced UNTRUSTED fences
-    Orc->>Ledger: withBudget() reserve slot (limits.dailyTasks)
+    Orc->>Ledger: withBudget() reserve slot (limits.dailyTasks, attributed to resolveAmbientIdentity())
 
     alt provider type is http — jules
         Orc->>Remote: POST /v1alpha/sessions + automationMode
@@ -70,11 +70,19 @@ sequenceDiagram
         Orc->>Local: spawnSync(cmd, args, cwd = repo root)
         Local->>Local: agent edits the local working tree in place
         Local-->>Orc: exit code + stdout
+        opt task was routed to the FAST tier
+            Orc->>Orc: git status --porcelain — list changed .js/.mjs/.cjs files
+            Orc->>Orc: node --check <file> for each — AST parse only, never executed
+            alt SyntaxError found
+                Orc->>Remote: re-dispatch the same task to the complex provider
+                Remote-->>Orc: { id, status } — result reported instead of the broken FAST output
+            end
+        end
         Orc-->>Trigger: { id, status: "completed", output }
     end
 ```
 
-When the router is enabled, a `fast`-tier task is dispatched through `createFailoverProvider([fast, complex])`, so a rate-limited fast provider transparently cascades to the primary one.
+When the router is enabled, a `fast`-tier task is dispatched through `createFailoverProvider([verifiedFast, complex])`, so a rate-limited fast provider transparently cascades to the primary one. The `fast` leg of that cascade is itself wrapped by `createSyntaxVerifiedProvider()` (`src/provider.mjs`), which is a second, independent escalation path: even a `200`/exit-`0` result from the fast tier gets its locally-changed `.js`/`.mjs`/`.cjs` files parsed with `node --check` before being trusted, and a verified syntax failure re-dispatches through the primary provider transparently. This only inspects files an **exec**-type provider mutated in the local working tree; a fast tier pointed at a remote HTTP provider has nothing local to check and the gate is a no-op.
 
 ---
 

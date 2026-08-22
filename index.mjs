@@ -23,6 +23,7 @@ export { git, runCmd, resolveBase, changedFiles, diffBytes, diffText } from "./s
 export {
   createProvider,
   createFailoverProvider,
+  createSyntaxVerifiedProvider,
   JULES_PRESET,
   CLAUDE_PRESET,
   CODEX_PRESET,
@@ -173,6 +174,7 @@ export {
   listOpenReservations,
   releaseOpenReservations,
   resolveConcurrency,
+  resolveAmbientIdentity,
   CEILING_FILE,
 } from "./src/budget.mjs";
 export { KIT_VERSION } from "./src/version.mjs";

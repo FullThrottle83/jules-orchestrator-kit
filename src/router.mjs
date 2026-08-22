@@ -3,7 +3,7 @@ import { extname } from "node:path";
 import { normalizePath } from "./config.mjs";
 import { matchesGlob } from "./security.mjs";
 import { extractPathTokens } from "./task-optimizer.mjs";
-import { createProvider, createFailoverProvider } from "./provider.mjs";
+import { createProvider, createFailoverProvider, createSyntaxVerifiedProvider } from "./provider.mjs";
 
 /**
  * Dynamic Complexity & Cost Router (Roadmap v0.33.0).
@@ -139,7 +139,7 @@ export function classifyTaskComplexity(task = {}, config = {}) {
   const isAllDeclarative = paths.length > 0 && paths.every((p) => DECLARATIVE_ASSET_EXTS.has(extname(p).toLowerCase()));
   const sensitiveHit = touchesSensitivePath(paths, config);
 
-  if (sensitiveHit && (!isAllDeclarative || sensitiveHit.path.includes(".pem") || sensitiveHit.path.includes(".key") || sensitiveHit.path.includes(".env"))) {
+  if (sensitiveHit && !isAllDeclarative) {
     return {
       tier: ROUTE_TIERS.COMPLEX,
       score: null,
@@ -256,6 +256,8 @@ export function resolveRoutedProvider(task = {}, config = {}) {
   }
 
   const fastSpec = routerCfg.fast || "gemini-flash";
-  const provider = createFailoverProvider([fastSpec, complexSpec], config);
+  const complexProvider = createProvider(complexSpec, config);
+  const verifiedFastProvider = createSyntaxVerifiedProvider(createProvider(fastSpec, config), complexProvider, config);
+  const provider = createFailoverProvider([verifiedFastProvider, complexProvider], config);
   return { provider, routed: true, classification };
 }

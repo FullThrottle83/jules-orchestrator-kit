@@ -1,5 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { classifyTaskComplexity, resolveRoutedProvider, ROUTE_TIERS } from "../src/router.mjs";
 import { dispatch } from "../src/engine.mjs";
 
@@ -121,6 +125,29 @@ describe("src/router.mjs — resolveRoutedProvider", () => {
     assert.equal(routed, true);
     assert.equal(classification.tier, ROUTE_TIERS.COMPLEX);
     assert.equal(provider.name, "jules");
+  });
+
+  it("the FAST-tier cascade actually verifies syntax and escalates when the fast provider leaves broken JS on disk", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-router-syntax-gate-"));
+    try {
+      execSync("git init -q -b main", { cwd: root });
+      writeFileSync(join(root, "broken.js"), "const x = ;\n");
+
+      const fakeFast = { name: "fake-fast", dispatch: async () => ({ id: "fast-session" }) };
+      const fakeComplex = { name: "fake-complex", dispatch: async () => ({ id: "complex-session-escalated" }) };
+
+      const { provider, classification } = resolveRoutedProvider(
+        { prompt: "Fix a typo in the README." },
+        { provider: "jules", scope: { deny: [] }, router: { enabled: true, fast: fakeFast, complex: fakeComplex } }
+      );
+      assert.equal(classification.tier, ROUTE_TIERS.FAST);
+
+      const result = await provider.dispatch({ prompt: "fix a typo" }, { root });
+      assert.equal(result.id, "complex-session-escalated");
+      assert.equal(result._syntaxEscalated, true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("Declarative Override: routes to FAST when all targeted files are non-executable formats", () => {

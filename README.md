@@ -129,9 +129,9 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Cross-Platform Parity:** Verified 100% green across Linux, macOS (Darwin), and Windows on Node 20, 22, and 24.
 * **Autonomous Self-Healing Loop:** Captures test stderr/stdout, fingerprints error traces, and feeds structured context back into automated repair turns (up to 3 attempts) before human escalation.
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
-* **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors.
+* **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **665 unit tests across 84 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **671 unit tests across 84 suites passing in < 10.0s**.
 
 <br/>
 
@@ -326,6 +326,23 @@ const { provider, classification } = resolveRoutedProvider(
   config
 );
 console.log(classification.tier); // "fast" | "complex"
+```
+
+### Syntax-Verified FAST Tier (`createSyntaxVerifiedProvider`)
+`resolveRoutedProvider()` already wraps the FAST tier with this; use it directly only when composing your own provider cascade.
+```javascript
+import { createProvider, createSyntaxVerifiedProvider, loadConfig } from "jules-orchestrator-kit";
+
+const config = loadConfig(process.cwd());
+const fast = createSyntaxVerifiedProvider(
+  createProvider("gemini-flash", config),
+  createProvider("jules", config),
+  config
+);
+
+// If gemini-flash leaves broken .js/.mjs/.cjs on disk, this transparently
+// re-dispatches through "jules" instead of returning the broken result.
+const result = await fast.dispatch({ prompt: "Fix a typo." }, { root: process.cwd() });
 ```
 
 </details>

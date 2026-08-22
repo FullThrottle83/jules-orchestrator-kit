@@ -1,5 +1,59 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join, extname } from "node:path";
 import { redactSecrets } from "./security.mjs";
+
+// Extensions node --check can parse as a script. .mjs/.cjs are unambiguous;
+// plain .js is checked as a script too — a stray top-level ESM import would
+// already have failed the Declarative/Mechanical-tier files this gate
+// actually sees, and a false SyntaxError just forces an unnecessary (but
+// harmless) escalation to the primary provider rather than a missed one.
+const SYNTAX_CHECKABLE_EXTS = new Set([".js", ".mjs", ".cjs"]);
+
+/**
+ * Lists working-tree files (relative paths) touched since the last commit,
+ * limited to JS extensions node --check can parse. Deleted files are
+ * excluded — there is nothing left on disk to check. Zero-dependency: shells
+ * out to `git status`, the same plumbing src/security.mjs and src/git.mjs
+ * already rely on.
+ */
+function listChangedSourceFiles(root) {
+  try {
+    const res = spawnSync("git", ["status", "--porcelain=v1", "--no-renames"], {
+      cwd: root,
+      encoding: "utf-8",
+    });
+    if (res.status !== 0 || !res.stdout) return [];
+    const files = [];
+    for (const line of res.stdout.split("\n")) {
+      if (!line.trim()) continue;
+      const statusCode = line.slice(0, 2);
+      if (statusCode.includes("D")) continue;
+      const filePath = line.slice(3).trim().replace(/^"|"$/g, "");
+      if (SYNTAX_CHECKABLE_EXTS.has(extname(filePath).toLowerCase())) files.push(filePath);
+    }
+    return files;
+  } catch (_) {
+    return [];
+  }
+}
+
+/**
+ * Runs the given files through V8's native `node --check` (parses the AST
+ * without executing it) and returns the first syntax failure found, or null.
+ */
+function findSyntaxError(root, files) {
+  for (const file of files) {
+    const absPath = join(root, file);
+    if (!existsSync(absPath)) continue;
+    const res = spawnSync(process.execPath, ["--check", absPath], { encoding: "utf-8" });
+    if (res.status !== 0) {
+      const stderr = redactSecrets((res.stderr || "").slice(0, 300)).trim();
+      return { file, error: stderr || `node --check exited ${res.status}` };
+    }
+  }
+  return null;
+}
 
 export const JULES_PRESET = {
   name: "jules",
@@ -352,9 +406,9 @@ export function createProvider(spec = "jules", config = {}) {
           if (!res.ok) {
             const text = await res.text().catch(() => "");
             const cleanText = text.slice(0, 500);
-            const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
-            const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
-            const retryAfterMs = parseRetryAfter(retryAfterHeader);
+            let sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
+            let retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
+            let retryAfterMs = parseRetryAfter(retryAfterHeader);
 
             if (res.status === 400 && bodyObj && typeof bodyObj === "object") {
               const lowerText = sanitizedText.toLowerCase();
@@ -382,6 +436,16 @@ export function createProvider(spec = "jules", config = {}) {
                     body,
                     signal: AbortSignal.timeout(timeoutMs),
                   });
+                  if (!res.ok) {
+                    // The retry failed too — re-derive the error context from
+                    // its response instead of reporting the pre-retry 400,
+                    // which by definition no longer describes the failure.
+                    const retryText = await res.text().catch(() => "");
+                    const cleanRetryText = retryText.slice(0, 500);
+                    sanitizedText = redactSecrets(rawToken ? cleanRetryText.split(rawToken).join("[REDACTED]") : cleanRetryText);
+                    retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
+                    retryAfterMs = parseRetryAfter(retryAfterHeader);
+                  }
                 } catch (_) {}
               }
             }
@@ -967,6 +1031,73 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
 
     validate() {
       return providerList.every((p) => typeof p.validate !== "function" || p.validate());
+    },
+  };
+}
+
+/**
+ * Wraps a FAST-tier provider so its output is verified before being trusted.
+ * Aggressive cost-router heuristics only stay safe if the cheap model cannot
+ * silently commit broken syntax: a session that returns 200 OK from
+ * `gemini-flash` after truncating a file mid-brace is otherwise
+ * indistinguishable from a genuine success until CI runs.
+ *
+ * After the fast provider's dispatch resolves, this checks the working tree
+ * for `.js`/`.mjs`/`.cjs` files changed since the last commit and parses each
+ * through V8's native `node --check` (syntax only, never executed). A
+ * SyntaxError silently re-dispatches the same task through `complexProvider`
+ * instead of surfacing the broken result — the same "the cheap tier failed,
+ * fall through" contract `createFailoverProvider` already uses for
+ * rate-limits, just triggered by a verified bad output rather than a thrown
+ * error. Sessions with no local working-tree diff (e.g. a remote HTTP
+ * provider used as the fast tier) are a no-op: there is nothing on disk to
+ * check, so the original result passes through unchanged.
+ * @param {object} fastProvider - Provider object (from createProvider) whose output gets verified.
+ * @param {object} complexProvider - Provider object to escalate to on a verified syntax failure.
+ * @param {object} config - Loaded orchestrator config (used to resolve the repo root).
+ * @returns {object} Provider object with the same interface as fastProvider.
+ */
+export function createSyntaxVerifiedProvider(fastProvider, complexProvider, config = {}) {
+  return {
+    name: fastProvider.name,
+
+    async dispatch(task = {}, ctx = {}) {
+      const result = await fastProvider.dispatch(task, ctx);
+      if (ctx.dryRun) return result;
+
+      const root = ctx.root || config._root || process.cwd();
+      const changedFiles = listChangedSourceFiles(root);
+      if (changedFiles.length === 0) return result;
+
+      const bad = findSyntaxError(root, changedFiles);
+      if (!bad) return result;
+
+      console.warn(
+        `[ROUTER ESCALATION] FAST tier ('${fastProvider.name}') emitted invalid syntax in ${bad.file} (${bad.error}). Escalating to '${complexProvider.name}'.`
+      );
+      const escalated = await complexProvider.dispatch(task, ctx);
+      return {
+        ...escalated,
+        _syntaxEscalated: true,
+        _syntaxEscalationFile: bad.file,
+        _syntaxEscalationReason: bad.error,
+      };
+    },
+
+    validate() {
+      return typeof fastProvider.validate !== "function" || fastProvider.validate();
+    },
+
+    resume(...args) {
+      return fastProvider.resume(...args);
+    },
+
+    getSession(...args) {
+      return fastProvider.getSession(...args);
+    },
+
+    approvePlan(...args) {
+      return fastProvider.approvePlan(...args);
     },
   };
 }

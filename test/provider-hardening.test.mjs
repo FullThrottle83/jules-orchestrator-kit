@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createProvider,
+  createSyntaxVerifiedProvider,
   ProviderRateLimitError,
   ProviderUnavailableError,
   ProviderSchemaError,
@@ -388,6 +390,80 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
       assert.equal(result.id, "session-degraded-ok");
     } finally {
       if (server) server.close();
+    }
+  });
+
+  await t.test("i) createSyntaxVerifiedProvider escalates to the primary provider when the FAST tier leaves broken JS on disk", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-syntax-gate-"));
+    try {
+      execSync("git init -q -b main", { cwd: root });
+      writeFileSync(join(root, "broken.js"), "const x = ;\n");
+
+      const fastProvider = { name: "fake-fast", dispatch: async () => ({ id: "fast-session" }) };
+      const complexProvider = { name: "fake-complex", dispatch: async () => ({ id: "complex-session-escalated" }) };
+      const verified = createSyntaxVerifiedProvider(fastProvider, complexProvider, {});
+
+      const result = await verified.dispatch({ prompt: "fix a typo" }, { root });
+
+      assert.equal(result.id, "complex-session-escalated");
+      assert.equal(result._syntaxEscalated, true);
+      assert.equal(result._syntaxEscalationFile, "broken.js");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("j) createSyntaxVerifiedProvider passes the FAST tier's result through untouched when its output parses cleanly", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-syntax-gate-ok-"));
+    try {
+      execSync("git init -q -b main", { cwd: root });
+      writeFileSync(join(root, "valid.js"), "const x = 1;\nmodule.exports = { x };\n");
+
+      const fastProvider = { name: "fake-fast", dispatch: async () => ({ id: "fast-session-ok" }) };
+      const complexProvider = { name: "fake-complex", dispatch: async () => { throw new Error("must not escalate"); } };
+      const verified = createSyntaxVerifiedProvider(fastProvider, complexProvider, {});
+
+      const result = await verified.dispatch({ prompt: "fix a typo" }, { root });
+
+      assert.equal(result.id, "fast-session-ok");
+      assert.equal(result._syntaxEscalated, undefined);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("k) createSyntaxVerifiedProvider is a no-op when the FAST tier leaves no local working-tree diff (e.g. a remote HTTP provider)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-syntax-gate-remote-"));
+    try {
+      execSync("git init -q -b main", { cwd: root });
+
+      const fastProvider = { name: "fake-remote-fast", dispatch: async () => ({ id: "remote-session" }) };
+      const complexProvider = { name: "fake-complex", dispatch: async () => { throw new Error("must not escalate"); } };
+      const verified = createSyntaxVerifiedProvider(fastProvider, complexProvider, {});
+
+      const result = await verified.dispatch({ prompt: "fix a typo" }, { root });
+
+      assert.equal(result.id, "remote-session");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("l) createSyntaxVerifiedProvider skips verification entirely on a dry run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-syntax-gate-dry-"));
+    try {
+      execSync("git init -q -b main", { cwd: root });
+      writeFileSync(join(root, "broken.js"), "const x = ;\n");
+
+      const fastProvider = { name: "fake-fast", dispatch: async () => ({ id: "dry-run-session" }) };
+      const complexProvider = { name: "fake-complex", dispatch: async () => { throw new Error("must not escalate"); } };
+      const verified = createSyntaxVerifiedProvider(fastProvider, complexProvider, {});
+
+      const result = await verified.dispatch({ prompt: "fix a typo" }, { root, dryRun: true });
+
+      assert.equal(result.id, "dry-run-session");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

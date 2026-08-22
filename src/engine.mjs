@@ -4,7 +4,7 @@ import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
-import { resolveDailyLimit, recordObservedCeiling, isDailyQuotaRejection } from "./budget.mjs";
+import { resolveDailyLimit, recordObservedCeiling, isDailyQuotaRejection, resolveAmbientIdentity } from "./budget.mjs";
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import fs, { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
@@ -572,7 +572,8 @@ export async function repair(failure, opts = {}) {
             { root, dryRun: opts.dryRun }
           ),
         root,
-        config.limits.dailyTasks
+        config.limits.dailyTasks,
+        { author: opts.author ? resolveAmbientIdentity(opts.author) : "ooda-repair-bot" }
       );
     } catch (err) {
       if (err instanceof ProviderRateLimitError || err instanceof ProviderUnavailableError) {
@@ -873,9 +874,10 @@ export async function dispatch(task = {}, opts = {}) {
     // consume one of the operator's finite daily task slots. Reserving here also
     // made every `npm test` burn real budget, which eventually exhausted the
     // ledger and turned the suite red for reasons unrelated to any code change.
+    const author = resolveAmbientIdentity(task.author || opts.author || null);
     const session = opts.dryRun
       ? await runDispatch()
-      : await withBudget(runDispatch, root, budget.limit, { enforce: budget.certain });
+      : await withBudget(runDispatch, root, budget.limit, { enforce: budget.certain, author });
     return classification ? { ...session, _routeTier: classification.tier, _routeReason: classification.reason } : session;
   } catch (err) {
     // A refusal for daily quota is the only authoritative statement of the

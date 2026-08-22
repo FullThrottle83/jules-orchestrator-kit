@@ -807,5 +807,26 @@ describe("src/budget.mjs — Multi-User Attribution & Identity", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("a live dispatch() attributes its budget reservation to task.author, not just the unit-level reserveBudget() call", async () => {
+    // Guards against a regression where the CLI's --author flag (and
+    // resolveAmbientIdentity) were wired up and unit-tested in isolation, but
+    // never actually threaded through engine.mjs's real dispatch() ->
+    // withBudget() call — so agentctl budget --by-user silently attributed
+    // every real task to the same default identity no matter who ran it.
+    const root = makeRoot("jok-dispatch-attr-");
+    try {
+      const config = { provider: "jules", scope: { deny: [] }, limits: { promptKb: 50, dailyTasks: 300 }, router: { enabled: false } };
+      const mockProvider = { dispatch: async () => ({ id: "sess-live-1" }) };
+
+      await dispatch({ title: "T", prompt: "Fix a typo.", author: "alice" }, { root, config, provider: mockProvider });
+
+      const status = budgetStatus(loadConfig(root), root);
+      assert.equal(status.used, 1);
+      assert.equal(status.byUser.alice.tasks, 1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 

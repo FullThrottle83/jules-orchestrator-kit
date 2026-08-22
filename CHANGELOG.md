@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Structural Flash-Router Governors, Gemini 3.7 Flash & Multi-User Budget Attribution
+
+*The router heuristics, schema-degradation adapter, and per-user budget attribution below shipped in one pass; the CLI's `--author` flag was unit-tested against `resolveAmbientIdentity()` and `reserveBudget()` directly but never actually threaded through the real `dispatch()` call, so every live task attributed to the same default identity regardless of who ran it. The V8 syntax-verification escalation gate proposed alongside the router heuristics had not been implemented at all.*
+
+#### Added
+- **Structural Flash-Router Governors (`src/router.mjs`)**: `classifyTaskComplexity()` gained three deterministic overrides ahead of the keyword scorer — a Declarative Asset Override (100% non-executable file extensions bypass the sensitive-path penalty), a Context Saturation Guard (payloads over 24 KB force the primary provider, since Flash silently truncates large files), and Mechanical Intent Fast-Tracking (`chore:`/`docs:`/`ci:`/etc. commit-style prefixes route to FAST regardless of keyword hits).
+- **`node --check` Syntax-Verification Escalation Gate (`createSyntaxVerifiedProvider`, `src/provider.mjs`)**: the FAST tier's cascade (`resolveRoutedProvider()`) now wraps the fast provider so that, after it dispatches, any `.js`/`.mjs`/`.cjs` file changed in the local working tree is parsed with `node --check` before being trusted. A verified `SyntaxError` transparently re-dispatches the same task through the primary provider instead of surfacing the broken result — the correctness backstop that makes routing aggressively to the cheap tier safe. A no-op when the fast leg is a remote HTTP provider with nothing local to check. Exported from the SDK surface (`index.mjs`).
+- **Optimistic Schema Degradation (`src/provider.mjs`)**: an HTTP 400 response mentioning deprecated fields (`temperature`, `top_p`, `thinking_budget`) is retried once with those fields stripped (`thinking_budget` mapped to `thinking_level: "high"`), and the default `gemini-flash` preset moved to `gemini-3.7-flash` (overridable via `GEMINI_FLASH_MODEL`).
+- **Zero-Dependency Multi-User Budget Attribution (`src/budget.mjs`, `src/state.mjs`, `bin/agentctl.mjs`)**: `resolveAmbientIdentity()` resolves a developer identity (`--author` flag → `GITHUB_ACTOR` → sanitized `git config user.email` → OS username → `anonymous-local`), and `agentctl budget --by-user` reports per-author task counts from the rolling-24h ledger.
+
+#### Fixed
+- **`--author` never reached the real budget reservation (`src/engine.mjs`)**: `dispatch()`'s live path calls `withBudget(runDispatch, root, budget.limit, { enforce: budget.certain })` — no `author` was ever included, so `resolveAmbientIdentity()` was exercised only by unit tests calling `reserveBudget()` directly, and `agentctl budget --by-user` silently attributed every real dispatch to the same default identity no matter who ran it. `dispatch()` now resolves `task.author || opts.author` and threads it through; the OODA auto-repair loop (`repair()` in the same file) attributes its own reservations to `ooda-repair-bot` instead of blending into a human's identity. Covered end-to-end in `test/budget.test.mjs` by a test that dispatches through a mock provider and asserts the ledger, not just the isolated `reserveBudget()` call the original tests used.
+- **Stale error context after a schema-degradation retry (`src/provider.mjs`)**: if the retried request itself failed, the reported status/`retryAfterMs` still described the original pre-retry 400 rather than the retry's own response.
+- **Dead sensitive-path carve-out in the router (`src/router.mjs`)**: a `.pem`/`.key`/`.env` special case inside the Declarative Asset Override was unreachable — none of those extensions can pass the override's own all-declarative check in the first place.
 
 ## [0.40.0] - 2026-08-22
 ### Interactive `task create` Has Been Broken Since v0.29.0, and the CI Scope Guard Never Blocked Anything
