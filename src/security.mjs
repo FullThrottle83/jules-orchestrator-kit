@@ -454,8 +454,26 @@ function secretScanVariants(addedLines) {
 // get encoded into a single CI variable.
 const BASE64_CANDIDATE = /[A-Za-z0-9+/\-_]{20,}={0,2}/g;
 
+// Budgets the decoder spends before it gives up and reports `capped`.
+//
+// The count that matters is payloads *retained* — blobs that decoded to text
+// and so could be carrying a credential. Counting every token that merely
+// matches the base64 alphabet instead made a digest indistinguishable from a
+// payload: a sha256 hex string is 64 characters of that alphabet, decodes to
+// binary, gets discarded, and used to consume a slot anyway. Any diff holding
+// 65 hashes — every lockfile bump — then tripped the cap and failed closed as
+// a CRITICAL credential leak with no credential anywhere in it.
 const BASE64_MAX_CANDIDATES = 64;
+const BASE64_MAX_TOKENS_EXAMINED = 8192;
 const BASE64_MAX_DECODED_BYTES = 64 * 1024;
+// Per-blob ceiling, so one oversized payload cannot spend the whole budget and
+// starve the blobs after it. The trade-off is deliberate: a credential buried
+// past 8 KB inside a single blob is missed, where the old code caught it only
+// by refusing to decode and then failing the entire diff closed. That refusal
+// fired on every checked-in base64 asset, and a gate that cries wolf on
+// ordinary input gets switched off. The cleartext scanners still run over the
+// raw diff regardless.
+const BASE64_MAX_BLOB_BYTES = 8 * 1024;
 
 /**
  * Share of characters that are printable ASCII (plus tab/newline/return).
@@ -480,14 +498,15 @@ function printableRatio(str) {
 function decodeBase64Blobs(text, onDecoded) {
   if (!text) return { decoded: [], capped: false };
   const decoded = [];
-  let candidates = 0;
+  let examined = 0;
+  let retained = 0;
   let bytes = 0;
   let capped = false;
 
   BASE64_CANDIDATE.lastIndex = 0;
   let match;
   while ((match = BASE64_CANDIDATE.exec(text)) !== null) {
-    if (candidates++ >= BASE64_MAX_CANDIDATES) {
+    if (examined++ >= BASE64_MAX_TOKENS_EXAMINED) {
       capped = true;
       break;
     }
@@ -497,10 +516,17 @@ function decodeBase64Blobs(text, onDecoded) {
       stdBlob += "=";
     }
 
-    if (bytes + (stdBlob.length * 3) / 4 > BASE64_MAX_DECODED_BYTES) {
+    // An oversized blob is decoded up to a bounded prefix rather than skipped
+    // outright. Base64 decodes in independent 4-character groups, so a prefix
+    // is exact, and a credential near the head of a large payload still
+    // surfaces — where skipping used to hide it and then blame the whole diff.
+    const budget = Math.min(BASE64_MAX_BLOB_BYTES, BASE64_MAX_DECODED_BYTES - bytes);
+    if (budget <= 0) {
       capped = true;
-      continue;
+      break;
     }
+    const maxChars = Math.floor(budget / 3) * 4;
+    if (stdBlob.length > maxChars) stdBlob = stdBlob.slice(0, maxChars);
 
     let plain;
     try {
@@ -509,7 +535,15 @@ function decodeBase64Blobs(text, onDecoded) {
       continue;
     }
     bytes += plain.length;
+
+    // A blob that decodes to binary has been examined and cleared. It is not a
+    // blind spot, so it must not spend a payload slot.
     if (printableRatio(plain) < 0.9) continue;
+
+    if (retained++ >= BASE64_MAX_CANDIDATES) {
+      capped = true;
+      break;
+    }
 
     decoded.push(plain);
     if (onDecoded) onDecoded(plain, rawBlob);

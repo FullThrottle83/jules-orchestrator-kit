@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { buildQueueSnapshot, reduceQueueState } from "../src/ux/queue-model.mjs";
 import { buildSwarmSnapshot, reduceSwarmState } from "../src/ux/swarm-model.mjs";
@@ -158,6 +160,65 @@ test("src/ops/swarm-actions.mjs", async (t) => {
       assert.equal(prunePlan.kind, "swarm.prune-stale-slots");
       assert.equal(prunePlan.fileMutations.length, 1);
       assert.equal(prunePlan.fileMutations[0].operation, "delete");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test("agentctl queue/swarm report per-task failures", async (t) => {
+  // The failures were always present in the result object; only `--json` ever
+  // rendered them. The human path printed a count and exited 0, so a queue
+  // where nothing dispatched was indistinguishable from a healthy one — for an
+  // operator reading the terminal and for any CI job checking the exit code.
+  const cliPath = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
+
+  function repoWithQueuedTask() {
+    const { dir, queueDir } = createTempRepo();
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+    writeFileSync(
+      join(dir, ".agent", "config.yml"),
+      "version: 1\nprovider: jules\nbase_branch: main\nverify:\n  test: \"true\"\n",
+      "utf-8"
+    );
+    writeFileSync(
+      join(queueDir, "TASK-900.md"),
+      "# Queued Task\n\n[TASK INSTRUCTIONS]\nDo the thing.\n\n[VERIFICATION ORACLE]\nTest/Verification Command: true\n",
+      "utf-8"
+    );
+    return dir;
+  }
+
+  function runCli(dir, args) {
+    const env = { ...process.env };
+    delete env.JULES_API_KEY;
+    delete env.GEMINI_API_KEY;
+    const res = spawnSync("node", [cliPath, ...args], { cwd: dir, env, encoding: "utf-8" });
+    return { code: res.status, out: `${res.stdout}${res.stderr}` };
+  }
+
+  for (const command of ["queue", "swarm"]) {
+    await t.test(`${command} exits non-zero and names the reason`, () => {
+      const dir = repoWithQueuedTask();
+      try {
+        const { code, out } = runCli(dir, [command]);
+        assert.equal(code, 1, `${command} must not report success when no task dispatched`);
+        assert.match(out, /0 ok, 1 failed/);
+        assert.match(out, /TASK-900\.md/, "the failing task must be named");
+        assert.match(out, /JULES_API_KEY/, "the actual cause must reach the operator");
+        assert.doesNotMatch(out, /undefined/);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  await t.test("a dry run still succeeds", () => {
+    const dir = repoWithQueuedTask();
+    try {
+      const { code, out } = runCli(dir, ["queue", "--dry-run"]);
+      assert.equal(code, 0);
+      assert.match(out, /1 ok, 0 failed/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

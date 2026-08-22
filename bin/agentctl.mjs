@@ -91,6 +91,38 @@ Options:
 `);
 }
 
+/**
+ * Renders the outcome of a queue or swarm run and returns the exit code.
+ *
+ * The per-task failures used to be dropped on the floor. A run where every
+ * task was rejected — no API key is the common one — still printed
+ * "Processed 3 task(s)." and exited 0, so neither an operator nor a CI job
+ * could tell a dispatched queue from a dead one. The failures were already in
+ * the result object the whole time; only `--json` ever showed them.
+ *
+ * @param {{ processed?: number, results?: Array<{file?: string, ok?: boolean, status?: string, error?: string}> }} outcome
+ * @returns {number} 0 when every task succeeded, 1 when any failed.
+ */
+function reportRunOutcome(outcome) {
+  const items = Array.isArray(outcome?.results) ? outcome.results : [];
+  const failed = items.filter((r) => r && r.ok === false);
+  const succeeded = items.length - failed.length;
+
+  console.log(`\nProcessed ${outcome?.processed ?? items.length} task(s): ${succeeded} ok, ${failed.length} failed.`);
+
+  if (failed.length > 0) {
+    console.error(`\n❌ ${failed.length} task(s) did not dispatch:`);
+    for (const f of failed) {
+      const reason = f.error || f.status || "Unknown error";
+      console.error(`   - ${f.file || f.taskId || "task"}: ${reason}`);
+    }
+    // A failed task is left in the queue rather than moved to completed/, so
+    // fixing the cause and re-running is the whole recovery procedure.
+    console.error(`\n   These tasks are still queued. Fix the cause above and re-run.`);
+    return 1;
+  }
+  return 0;
+}
 
 async function main() {
   if (command === "--help" || command === "-h") {
@@ -274,7 +306,7 @@ async function main() {
             p.violations.forEach((v) => console.log(`     - Violation: ${v.file} (Rule: ${v.rule})`));
           }
           if (p.findings) {
-            p.findings.forEach((f) => console.log(`     - Finding: ${f.id} at line ${f.line}`));
+            p.findings.forEach((f) => console.log(`     - [${f.severity}] ${f.type}: ${f.description}`));
           }
         }
         console.log(`-----------------------------------------------------`);
@@ -417,9 +449,10 @@ async function main() {
         });
         if (values.json) {
           console.log(JSON.stringify(results, null, 2));
-        } else {
-          console.log(`\nProcessed ${results.processed || results.results?.length || 0} task(s).`);
+          const anyFailed = (results.results || []).some((r) => r && r.ok === false);
+          process.exit(anyFailed ? 1 : 0);
         }
+        process.exit(reportRunOutcome(results));
       }
       process.exit(0);
       break;
@@ -439,8 +472,7 @@ async function main() {
         prompt: readFileSync(join(queueDir, f), "utf-8"),
       }));
       const results = await run(tasks, { root, config, concurrency: config.limits.concurrency || 3 });
-      console.log(`Swarm completed ${results.length} tasks.`);
-      process.exit(0);
+      process.exit(reportRunOutcome(results));
       break;
     }
 

@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   shannonEntropy,
   redactSecrets,
@@ -172,6 +173,28 @@ describe("secrets hidden behind a base64 encoding", () => {
     // base64 is not a finding, while an AWS key id is.
     assert.equal(hasEncodedSecret(b64(`password: "hunter2hunter2hunter2"`)), false);
     assert.equal(hasEncodedSecret(b64(`id = "${AWS}"`)), true);
+  });
+
+  it("does not read a wall of digests as an encoded credential", () => {
+    // A digest is 64 characters of the base64 alphabet that decodes to binary.
+    // Counting those against the decoder's payload budget made every lockfile
+    // bump — the workflow this kit advertises as ideal — fail closed as a
+    // CRITICAL leak with no credential in the diff at all. The threshold used
+    // to sit at 65 tokens, so the counts here straddle it deliberately.
+    const digests = (n) =>
+      Array.from({ length: n }, (_, i) =>
+        `+      "integrity": "sha512-${createHash("sha512").update(`pkg-${i}`).digest("base64")}",`
+      ).join("\n");
+
+    for (const n of [64, 65, 300]) {
+      const res = scanDiff(`+++ b/package-lock.json\n${digests(n)}`);
+      assert.equal(res.ok, true, `${n} integrity hashes must not read as a secret`);
+    }
+
+    // The budget still has to protect the thing it was there to protect: a real
+    // key does not become invisible by hiding behind a wall of hashes.
+    const buried = scanDiff(`+++ b/package-lock.json\n${digests(300)}\n+key: ${b64(AWS)}`);
+    assert.equal(buried.ok, false, "a real key after the digests must still be found");
   });
 
   it("bounds the work a single oversized blob can cause", () => {
