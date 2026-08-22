@@ -308,14 +308,21 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
     repoless = await confirm("Dispatch in Repoless mode (no repo source context)?", false, options);
   }
 
+  // `...options` must come first. It used to come last, and because the CLI
+  // builds its options object from parseArgs — every key present, every unpassed
+  // flag `undefined` — spreading it afterwards overwrote each answer the user
+  // had just typed with `undefined`. `agentctl task create` then died on
+  // "Task prompt cannot be empty" no matter what was entered. The locals below
+  // are all seeded from `options`, so putting them last preserves flag values
+  // while letting an interactive answer win.
   const plan = planTaskCreate(root, {
+    ...options,
     title,
     prompt: promptText,
     verifyCmd,
     autoPr,
     requirePlanApproval,
     repoless,
-    ...options,
   });
 
   // Perform Gate Preflight

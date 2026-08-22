@@ -663,7 +663,12 @@ async function main() {
       const { runInitWizard } = await import("../src/wizard-init.mjs");
       const res = await runInitWizard(root, {
         interactive: values.interactive !== false,
-        tier: values.tier || "pro",
+        // No `|| "pro"`: a hardcoded default here overrode both the tier picked
+        // in the menu and the tier already recorded in .agent/config.yml on a
+        // re-run. Undefined lets the wizard seed the menu from the existing
+        // config and fall back to FALLBACK_TIER when there is nothing to seed.
+        tier: values.tier,
+        allowDefaults: true,
       });
 
       if (values.json) {
