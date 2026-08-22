@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
+import { detectStack } from "../config.mjs";
 
 /**
  * @typedef {import("../ux/capabilities.mjs").ActionPlan} ActionPlan
@@ -72,12 +73,17 @@ export async function planDiagnosticFixes(context = {}) {
 
       if (fix.id === "config.create-default") {
         const configPath = ".agent/config.yml";
+        // Detected, not assumed. Writing `npm test` into a Rust or Python
+        // repository's config produced a manifest whose first verification run
+        // could only fail, and the stack detector already has the answer.
+        const detected = detectStack(root);
         const newContent = `# jules-orchestrator-kit configuration manifest
 version: 1
-tier: pro
+# Free-tier limits until you state your plan (free | pro | ultra).
+tier: free
 verify:
-  test: "npm test"
-  build: "npm run build"
+  test: ${JSON.stringify(detected.testCmd || "")}
+  build: ${JSON.stringify(detected.buildCmd || "")}
 `;
         const diff = createDiffPreview(configPath, "", newContent);
         const planId = `PLAN-${Date.now()}-${randomUUID().slice(0, 8)}`;

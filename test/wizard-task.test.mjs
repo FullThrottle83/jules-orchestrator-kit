@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planTaskCreate, runTaskCreateWizard } from "../src/wizard-task.mjs";
+import { planTaskCreate, runTaskCreateWizard, buildGuardrailFooter } from "../src/wizard-task.mjs";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -182,3 +182,54 @@ test("Guided Task Authoring Subsystem", async (t) => {
   });
 });
 
+
+test("Guardrail footer is derived from the repository's scope, not a Node literal", async (t) => {
+  const nodeRepo = {
+    baseBranch: "main",
+    limits: { diffKb: 75 },
+    scope: { protect: ["package.json", "tsconfig.json"], deny: [".github/**"] },
+  };
+  const rustRepo = {
+    baseBranch: "trunk",
+    limits: { diffKb: 50 },
+    scope: { protect: ["Cargo.toml", "Makefile"], deny: [".github/**"] },
+  };
+
+  await t.test("names the stack's own manifests", () => {
+    const rust = buildGuardrailFooter(rustRepo);
+    assert.match(rust, /Cargo\.toml/);
+    assert.ok(!rust.includes("package.json"), "a Rust repo must not be warned off package.json");
+    assert.ok(!rust.includes("pnpm-lock.yaml"));
+
+    const node = buildGuardrailFooter(nodeRepo);
+    assert.match(node, /package\.json/);
+    assert.ok(!node.includes("Cargo.toml"));
+  });
+
+  await t.test("honours the configured base branch and diff ceiling", () => {
+    const rust = buildGuardrailFooter(rustRepo);
+    assert.match(rust, /git fetch origin trunk && git rebase origin\/trunk/);
+    assert.match(rust, /under 50 KB/);
+  });
+
+  // "Delete ALL temporary files (.py, .sh, ...)" told a Python project's agent
+  // to delete source files.
+  await t.test("does not instruct the agent to delete files by extension", () => {
+    const footer = buildGuardrailFooter(nodeRepo);
+    assert.ok(!/\.py\b/.test(footer), "an extension list is not a definition of 'temporary'");
+    assert.match(footer, /scratch files you created/);
+  });
+
+  await t.test("caps the named paths so the footer cannot crowd out the task", () => {
+    const many = { scope: { protect: Array.from({ length: 40 }, (_, i) => `pkg${i}/manifest.toml`) } };
+    const footer = buildGuardrailFooter(many);
+    assert.match(footer, /and 28 more/);
+    assert.ok(footer.split("\n").length < 12);
+  });
+
+  await t.test("falls back to a stack-neutral line when no scope is known", () => {
+    const bare = buildGuardrailFooter({});
+    assert.match(bare, /build configuration, lockfiles, or CI workflow files/);
+    assert.ok(!bare.includes("package.json"));
+  });
+});

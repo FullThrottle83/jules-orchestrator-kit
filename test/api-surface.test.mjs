@@ -23,6 +23,7 @@ const FROZEN_SDK_EXPORTS = [
   "DagExecutor",
   "FALLBACK_TIER",
   "GUARDRAIL_FOOTER",
+  "buildGuardrailFooter",
   "HandoverError",
   "IdeScaffoldError",
   "JULES_PRESET",
@@ -252,7 +253,7 @@ describe("SDK API Surface & Exit Code Stability Lock", () => {
       `Unapproved new SDK exports detected:\n${addedExports.join("\n")}\nIf intentional, review and update FROZEN_SDK_EXPORTS snapshot.`
     );
 
-    assert.equal(actualExports.length, 205, "Total exported SDK symbols count must remain locked at 205");
+    assert.equal(actualExports.length, 206, "Total exported SDK symbols count must remain locked at 206");
   });
 
   it("ensures every exported symbol is defined and non-null", () => {

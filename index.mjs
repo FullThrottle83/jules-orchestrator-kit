@@ -97,7 +97,7 @@ export { detectStackOracles, runVerificationProbe } from "./src/wizard-oracle.mj
 export { planInit, loadPresets, runInitWizard, TIER_PROFILES, BUILTIN_PRESETS } from "./src/wizard-init.mjs";
 
 // Guided Task Authoring Subsystem
-export { planTaskCreate, runTaskCreateWizard, GUARDRAIL_FOOTER } from "./src/wizard-task.mjs";
+export { planTaskCreate, runTaskCreateWizard, GUARDRAIL_FOOTER, buildGuardrailFooter } from "./src/wizard-task.mjs";
 
 // Prompt Falsifiability & Task Optimizer Engine
 export { scorePromptFalsifiability, optimizeTaskPrompt, levenshteinDistance, extractPathTokens } from "./src/task-optimizer.mjs";

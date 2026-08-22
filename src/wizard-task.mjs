@@ -9,15 +9,78 @@ import { select, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { scorePromptFalsifiability } from "./task-optimizer.mjs";
 import { getWebTemplate, synthesizeWebEnvelope } from "./web-templates.mjs";
 
-export const GUARDRAIL_FOOTER = `
+/**
+ * Maximum protected paths to name in a prompt before summarising.
+ *
+ * The list is there to steer the agent, not to be exhaustive — the gate is what
+ * enforces it. Past ~12 entries the footer starts crowding the task itself,
+ * which is the attention-drift failure `.agent/rules/jules-protocol.md` rule 16
+ * warns about.
+ */
+const FOOTER_PROTECTED_LIMIT = 12;
+
+/**
+ * Builds the hard-constraints footer appended to every dispatched task.
+ *
+ * The protected-path line is derived from the repository's resolved scope
+ * rather than written as a literal. It used to read "Do NOT modify
+ * package.json, pnpm-lock.yaml, tsconfig.json" for every project, which was
+ * both wrong and misleading in a Rust, Go, Python or PHP repo — while
+ * `BUILTIN_PROTECT` in config.mjs already listed `Cargo.toml`, `go.mod`,
+ * `pyproject.toml` and `composer.json` for the gate. The kit knew the right
+ * answer and told the agent a different one, so the agent could edit a file the
+ * gate would then reject, burning a repair turn on an avoidable violation.
+ *
+ * @param {object} [config] - Loaded config; `scope.protect`/`scope.deny` drive the output.
+ * @param {object} [opts]
+ * @param {string} [opts.baseBranch] - Branch to rebase onto before opening the PR.
+ * @param {number} [opts.diffKb] - Diff payload ceiling in KB.
+ * @returns {string}
+ */
+export function buildGuardrailFooter(config = {}, opts = {}) {
+  const baseBranch = opts.baseBranch || config.baseBranch || "main";
+  const diffKb = opts.diffKb || config.limits?.diffKb || 75;
+
+  const scope = config.scope || {};
+
+  // Key material and git internals are enforced by the gate but pointless to
+  // name here: no agent was going to edit `id_rsa`, and each entry spends
+  // footer budget that the build manifests actually need.
+  const NOT_WORTH_NAMING = /^(\.git\/|\*\*\/\.env|\*\*\/\*\.(pem|key|p12|pfx)$|\*\*\/id_rsa|\*\*\/\.npmrc|\*\*\/\.netrc|\*\.(pem|key)$|id_rsa)/;
+
+  // `protect` comes first because that is where the stack's build manifests
+  // live — `Cargo.toml`, `go.mod`, `pyproject.toml`, `composer.json` — and
+  // those are the files an agent actually reaches for and must be warned off.
+  const paths = [...new Set(
+    [...(scope.protect || []), ...(scope.deny || [])]
+      .filter((p) => typeof p === "string" && p.trim() && !NOT_WORTH_NAMING.test(p))
+      .map((p) => p.replace(/^\*\*\//, ""))
+  )];
+
+  const shown = paths.slice(0, FOOTER_PROTECTED_LIMIT);
+  const remainder = paths.length - shown.length;
+  const protectedLine = shown.length
+    ? `- Do NOT modify these protected paths: ${shown.join(", ")}${remainder > 0 ? `, and ${remainder} more (run \`agentctl gate\` to see the full set)` : ""}.`
+    : "- Do NOT modify build configuration, lockfiles, or CI workflow files.";
+
+  return `
 ---
 HARD CONSTRAINTS:
-- Do NOT modify package.json, pnpm-lock.yaml, tsconfig.json, or .github/ files.
-- Diff Payload Governor: Keep total diff payload under 75 KB (\`git diff | wc -c\`).
+${protectedLine}
+- Diff Payload Governor: Keep total diff payload under ${diffKb} KB (\`git diff | wc -c\`).
 - Falsifiable & Evidence-Based: Attach full terminal verification output to PR. Never weaken assertions or delete failing tests to force a pass.
 - Read-Before-Write: Inspect existing symbol signatures, definitions, and call sites before making edits.
-- BEFORE opening the PR: Run \`git fetch origin main && git rebase origin/main\`, then re-verify.
+- Remove any scratch files you created for debugging before submitting. Do not delete files that are part of the project.
+- BEFORE opening the PR: Run \`git fetch origin ${baseBranch} && git rebase origin/${baseBranch}\`, then re-verify.
 `;
+}
+
+/**
+ * Stack-neutral fallback for callers with no config in hand.
+ * Prefer `buildGuardrailFooter(config)`, which names the repository's real
+ * protected paths instead of guessing at an ecosystem.
+ */
+export const GUARDRAIL_FOOTER = buildGuardrailFooter();
 
 const TRIVIAL_ORACLES = new Set(["true", "echo", ":", "false", "exit 0", "exit 1", "echo ok"]);
 
@@ -139,7 +202,7 @@ ${rawPrompt}
 [VERIFICATION ORACLE]
 Test/Verification Command: ${verifyCmd || "(None)"}
 
-${GUARDRAIL_FOOTER}`;
+${buildGuardrailFooter(config)}`;
 
   const promptAnalysis = scorePromptFalsifiability(rawPrompt, { rootDir: root, verifyCmd });
 
