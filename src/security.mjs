@@ -577,34 +577,140 @@ export function hasEncodedSecret(text) {
   return result.decoded.some((plain) => hasHighConfidenceSecret(plain));
 }
 
-export function scanDiff(diffTextStr = "", options = {}) {
-  if (!diffTextStr) return { ok: true, findings: [] };
-  const addedLines = diffTextStr
-    .split("\n")
-    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
-    .map((line) => line.slice(1))
-    .join("\n");
+/**
+ * Group the added lines of a unified diff by the file they belong to.
+ *
+ * Line numbers come from the `@@` hunk headers and count the post-image, so a
+ * reported number matches what an editor shows after the change is applied.
+ * Both the file and the number are best-effort: a fragment with no headers —
+ * the shape `wizard-task.mjs` synthesises from a prompt — yields one anonymous
+ * segment, which is exactly the old whole-diff behaviour.
+ *
+ * @param {string} diffText
+ * @returns {Array<{ file: string|null, lines: Array<{ text: string, no: number|null }> }>}
+ */
+function splitDiffByFile(diffText) {
+  const byFile = new Map();
+  let current = null;
+  let lineNo = null;
 
+  const select = (file) => {
+    if (!byFile.has(file)) byFile.set(file, { file, lines: [] });
+    current = byFile.get(file);
+  };
+
+  for (const line of diffText.split("\n")) {
+    if (line.startsWith("+++")) {
+      const name = line.slice(3).split("\t")[0].trim().replace(/^b\//, "");
+      select(name && name !== "/dev/null" ? name : null);
+      lineNo = null;
+      continue;
+    }
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(line);
+    if (hunk) {
+      lineNo = Number(hunk[1]);
+      continue;
+    }
+    if (line.startsWith("+")) {
+      if (!current) select(null);
+      current.lines.push({ text: line.slice(1), no: lineNo });
+      if (lineNo !== null) lineNo++;
+    } else if (lineNo !== null && !line.startsWith("-") && !line.startsWith("\\")) {
+      lineNo++; // A context line advances the post-image just as an added one does.
+    }
+  }
+
+  return [...byFile.values()].filter((s) => s.lines.length > 0);
+}
+
+/**
+ * Classify a block of added lines. Returns the single most severe finding, or
+ * null when the block is clean.
+ *
+ * @param {string} addedLines
+ * @returns {{ severity: string, type: string, description: string, encoded: boolean }|null}
+ */
+function classifyAddedLines(addedLines) {
   const { all: variants, normalized } = secretScanVariants(addedLines);
-  const hasHigh = variants.some((v) => hasHighConfidenceSecret(v));
+  if (variants.some((v) => hasHighConfidenceSecret(v))) {
+    return { severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", encoded: false, description: "High-confidence secret pattern detected in added diff lines" };
+  }
   // Only worth decoding when nothing was found in the clear, and only against
   // the fully-normalised text: decoding is the expensive step, and the
   // intermediate variants differ from it in ways base64 blobs do not care about.
-  const hasEncoded = !hasHigh && hasEncodedSecret(normalized);
-  const hasLow = !hasHigh && !hasEncoded && variants.some((v) => hasLowConfidenceSecret(v));
-  const findings = [];
-
-  if (hasHigh) {
-    findings.push({ severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", description: "High-confidence secret pattern detected in added diff lines" });
-  } else if (hasEncoded) {
+  if (hasEncodedSecret(normalized)) {
     // Same type as the cleartext case: every gate that blocks on
     // HIGH_CONFIDENCE_SECRET should block on this too, and a new type would
     // have silently passed through the ones not updated. The description
     // carries the difference the operator needs.
-    findings.push({ severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", description: "High-confidence secret pattern detected inside a base64-encoded value on an added diff line" });
-  } else if (hasLow) {
-    findings.push({ severity: "HIGH", type: "LOW_CONFIDENCE_SECRET", description: "Low-confidence secret or authorization token detected in added diff lines" });
+    return { severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", encoded: true, description: "High-confidence secret pattern detected inside a base64-encoded value on an added diff line" };
   }
+  if (variants.some((v) => hasLowConfidenceSecret(v))) {
+    return { severity: "HIGH", type: "LOW_CONFIDENCE_SECRET", encoded: false, description: "Low-confidence secret or authorization token detected in added diff lines" };
+  }
+  return null;
+}
+
+/**
+ * Narrow a segment-level finding to the line that produced it.
+ *
+ * Only runs on a segment that has already been flagged, so the extra pass costs
+ * nothing on a clean diff. Returns null when no single line reproduces the
+ * verdict — a credential split across a concatenation belongs to the block, not
+ * to either half of it, and guessing one of them would point the operator at an
+ * innocent line.
+ *
+ * @param {Array<{ text: string, no: number|null }>} lines
+ * @param {string} type
+ * @returns {number|null}
+ */
+function locateFindingLine(lines, type) {
+  for (const line of lines) {
+    if (line.no === null) continue;
+    const hit = classifyAddedLines(line.text);
+    if (hit && hit.type === type) return line.no;
+  }
+  return null;
+}
+
+export function scanDiff(diffTextStr = "", options = {}) {
+  if (!diffTextStr) return { ok: true, findings: [] };
+
+  const segments = splitDiffByFile(diffTextStr);
+  const findings = [];
+
+  for (const segment of segments) {
+    const hit = classifyAddedLines(segment.lines.map((l) => l.text).join("\n"));
+    if (!hit) continue;
+    const line = segment.file ? locateFindingLine(segment.lines, hit.type) : null;
+    const at = segment.file ? ` (${segment.file}${line ? `:${line}` : ""})` : "";
+    findings.push({
+      severity: hit.severity,
+      type: hit.type,
+      file: segment.file,
+      line,
+      description: `${hit.description}${at}`,
+    });
+  }
+
+  // Scanning per file loses anything that only matches across a file boundary,
+  // which the previous whole-diff join happened to catch. Rather than trade
+  // detection for attribution, fall back to the joined text when every file
+  // came back clean — the cost lands only on diffs with nothing to report.
+  if (findings.length === 0 && segments.length > 1) {
+    const hit = classifyAddedLines(segments.flatMap((s) => s.lines.map((l) => l.text)).join("\n"));
+    if (hit) {
+      findings.push({
+        severity: hit.severity,
+        type: hit.type,
+        file: null,
+        line: null,
+        description: `${hit.description} (spanning more than one file)`,
+      });
+    }
+  }
+
+  const secretsOk = findings.length === 0;
 
   const edgeRes = checkEdgeRuntimeImports(diffTextStr, options);
   if (!edgeRes.ok) {
@@ -617,12 +723,12 @@ export function scanDiff(diffTextStr = "", options = {}) {
   const crossPkgRes = checkCrossPackageImports(diffTextStr, root, options);
   if (!crossPkgRes.ok) {
     for (const v of crossPkgRes.violations) {
-      findings.push({ severity: "HIGH", type: "CROSS_PACKAGE_BOUNDARY_VIOLATION", description: v.reason });
+      findings.push({ severity: "HIGH", type: "CROSS_PACKAGE_BOUNDARY_VIOLATION", file: v.file ?? null, description: v.reason });
     }
   }
 
   return {
-    ok: !hasHigh && !hasEncoded && !hasLow && edgeRes.ok && crossPkgRes.ok,
+    ok: secretsOk && edgeRes.ok && crossPkgRes.ok,
     findings,
   };
 }

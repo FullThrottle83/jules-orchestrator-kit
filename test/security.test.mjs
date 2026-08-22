@@ -230,3 +230,91 @@ describe("secrets hidden behind a base64 encoding", () => {
     assert.equal(scanDiff(split).ok, false);
   });
 });
+
+describe("a secret finding names where the secret is", () => {
+  const AWS = "AKIA" + "IOSFODNN7EXAMPLE";
+  const b64 = (s) => Buffer.from(s).toString("base64");
+
+  const file = (name, hunkStart, lines) =>
+    [`--- a/${name}`, `+++ b/${name}`, `@@ -${hunkStart},3 +${hunkStart},4 @@`, ...lines].join("\n");
+
+  it("attributes the finding to the file and the post-image line number", () => {
+    // Without this the operator was told a credential existed somewhere in the
+    // patch and left to find it by eye across every file the agent touched.
+    const diff = [
+      file("src/util.js", 1, [" const a = 1;", "+const b = 2;"]),
+      file("src/config.js", 40, [" export default {", `+  key: "${AWS}",`]),
+    ].join("\n");
+
+    const res = scanDiff(diff);
+    assert.equal(res.ok, false);
+    assert.equal(res.findings.length, 1, "the clean file must not produce a finding");
+    assert.equal(res.findings[0].file, "src/config.js");
+    // Hunk starts at 40, the context line is 40, so the added line is 41.
+    assert.equal(res.findings[0].line, 41);
+    assert.match(res.findings[0].description, /src\/config\.js:41/);
+  });
+
+  it("reports every offending file rather than only the first", () => {
+    const diff = [
+      file("a.js", 1, [`+const k = "${AWS}";`]),
+      file("b.yml", 1, [`+  access-key-id: ${b64(AWS)}`]),
+    ].join("\n");
+
+    const res = scanDiff(diff);
+    assert.deepEqual(
+      res.findings.map((f) => f.file),
+      ["a.js", "b.yml"]
+    );
+    assert.match(res.findings[1].description, /base64-encoded/, "each file keeps its own diagnosis");
+  });
+
+  it("gives the file without a line when the line cannot be pinned down", () => {
+    // A credential split across a concatenation belongs to the block, not to
+    // either half. Naming one of the halves would point at an innocent line.
+    const diff = file("src/k.js", 7, ['+const k = "AKIA" +', '+  "IOSFODNN7EXAMPLE";']);
+    const res = scanDiff(diff);
+    assert.equal(res.ok, false);
+    assert.equal(res.findings[0].file, "src/k.js");
+    assert.equal(res.findings[0].line, null);
+    assert.doesNotMatch(res.findings[0].description, /:\d+/);
+  });
+
+  it("still catches a secret that only matches across a file boundary", () => {
+    // Scanning per file is what buys the attribution, and it is exactly what
+    // would drop this: neither half is a credential on its own.
+    const diff = [
+      file("a.js", 1, ['+const k = "AKIA" +']),
+      file("b.js", 1, ['+  "IOSFODNN7EXAMPLE";']),
+    ].join("\n");
+
+    const res = scanDiff(diff);
+    assert.equal(res.ok, false, "attribution must not be paid for with detection");
+    assert.equal(res.findings[0].file, null);
+    assert.match(res.findings[0].description, /spanning more than one file/);
+  });
+
+  it("leaves the fields null for a fragment carrying no file headers", () => {
+    // wizard-task.mjs synthesises this shape from a bare prompt.
+    const res = scanDiff(`+const k = "${AWS}";`);
+    assert.equal(res.findings[0].file, null);
+    assert.equal(res.findings[0].line, null);
+    assert.doesNotMatch(res.findings[0].description, /\(/);
+  });
+
+  it("gives each file its own decode budget", () => {
+    // The budget used to be spent across the whole diff, so a lockfile early in
+    // a patch could exhaust it and leave every later file undecoded.
+    const digests = Array.from({ length: 400 }, (_, i) =>
+      `+      "integrity": "sha512-${createHash("sha512").update(`p-${i}`).digest("base64")}",`
+    );
+    const diff = [
+      file("package-lock.json", 1, digests),
+      file("src/config.js", 1, [`+  token: ${b64(AWS)}`]),
+    ].join("\n");
+
+    const res = scanDiff(diff);
+    assert.equal(res.ok, false);
+    assert.equal(res.findings[0].file, "src/config.js");
+  });
+});
