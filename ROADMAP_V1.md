@@ -11,13 +11,20 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.38.2 (Current Stable) ──► v0.40.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
- (Universal i18n & Swarm)    (Guillotine & Trojan Fences)   (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
+ v0.39.0 (Current Stable) ──► v0.40.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ (Session API & Harvester)    (Guillotine & Trojan Fences)   (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.38.2)
+## ✅ Shipped Milestones (v0.20.0 – v0.39.0)
+
+### v0.39.0: Jules Session API, Automated PR Harvester & Pre-Flight Idempotency Gate
+- [x] **Jules Provider Session API & Plan Approval** (`src/provider.mjs`, `bin/agentctl.mjs`) — Implemented native `getSession(sessionId)` and `approvePlan(sessionId)` on `createProvider("jules")` and `createFailoverProvider` with 404/503 exponential backoff retry. Added CLI commands `agentctl plan approve <id>` and `agentctl session get <id>`.
+- [x] **Automated PR Harvester & Triage Engine** (`src/ops/pr-harvest.mjs`, `bin/agentctl.mjs`) — Added `agentctl pr harvest [--tier r0,r1] [--limit <n>] [--auto]` to discover open agent PRs, evaluate CI check rollups, map Risk Tiers (`R0_COSMETIC`, `R1_ROUTINE`), verify safety gate mutex locks (`checkSafetyGate`), and auto-squash merge green changes.
+- [x] **Pre-Flight Idempotency & Premise Verification Gate** (`src/engine.mjs`, `bin/agentctl.mjs`) — Added `--check-premise` / `--idempotent` to `agentctl dispatch` / `create`. If a task's verification oracle or goal already passes on the base branch, dispatch is skipped with status `ALREADY_SATISFIED`, saving daily API budget.
+- [x] **Automatic Swarm Conflict Serialization** (`src/dag-engine.mjs`) — `executeQueueDag` now inspects `targetFiles` / `referenced_paths`. When concurrent tasks target the same shared file, dependencies are automatically injected into the DAG to sequence them safely and prevent git merge conflicts.
+- [x] **Audit-First Dead Code Template & Headless VM Invariants** (`src/web-templates.mjs`, `src/task-optimizer.mjs`) — Added template `agent-dead-code-audit` enforcing report generation (`.agent/reports/dead-code-audit.md`) before destructive file deletions, updated `agent-error-paths` with standalone schema validation testing invariants, and added `--headless` Playwright heuristics.
 
 ### v0.20.0 – v0.30.0: Core Safety, Polyglot Stack & TUI Engine
 - [x] **Zero-Dependency Stdio MCP Server** (`src/mcp.mjs`, `bin/mcp-server.mjs`) — Standard MCP tool integration.

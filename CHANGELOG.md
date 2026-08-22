@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.39.0] - 2026-08-22
+### Jules API Session Lifecycle, Automated PR Harvester & Pre-Flight Idempotency Gate
+
+#### Added
+- **Jules Provider Session API & Plan Approval (`src/provider.mjs`, `bin/agentctl.mjs`)**: Implemented first-class `getSession(sessionId)` and `approvePlan(sessionId)` on `createProvider("jules")` and `createFailoverProvider`. Features automatic token-pool rotation and exponential backoff retry on `404 Not Found` to eliminate backend provision timing errors. Added CLI commands `agentctl plan approve <sessionId>` and `agentctl session get <sessionId>`.
+- **Automated PR Harvester & Triage Engine (`src/ops/pr-harvest.mjs`, `bin/agentctl.mjs`)**: Added `agentctl pr harvest [--tier r0,r1] [--limit <n>] [--auto]` to discover open agent PRs, evaluate CI check rollups, map Risk Tiers (`R0_COSMETIC`, `R1_ROUTINE`), verify safety gate mutex locks (`checkSafetyGate`), and auto-squash merge green changes.
+- **Pre-Flight Idempotency & Premise Verification Gate (`src/engine.mjs`, `bin/agentctl.mjs`)**: Added `--check-premise` / `--idempotent` to `agentctl dispatch` / `create`. If a task's verification oracle or goal already passes on the base branch, dispatch is skipped with status `ALREADY_SATISFIED`, saving daily API budget.
+- **Automatic Swarm Conflict Serialization (`src/dag-engine.mjs`)**: `executeQueueDag` now inspects `targetFiles` / `referenced_paths`. When concurrent tasks target the same shared file, dependencies are automatically injected into the DAG to sequence them safely and prevent git merge conflicts.
+- **Audit-First Dead Code Template (`src/web-templates.mjs`)**: Added template `agent-dead-code-audit` enforcing report generation (`.agent/reports/dead-code-audit.md`) before destructive file deletions, and updated `agent-error-paths` with standalone schema validation testing invariants.
+- **Headless Remote VM Guardrails (`src/task-optimizer.mjs`, `src/web-templates.mjs`)**: Added linting heuristics and critic focus requiring `--headless` flags and display-independent test execution for Playwright in remote Jules VMs.
+
 ## [0.38.2] - 2026-08-21
 ### Queue Runner Fidelity — Manifest Rejection & Honest Dry Runs
 
