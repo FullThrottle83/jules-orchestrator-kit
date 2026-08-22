@@ -1,3 +1,5 @@
+import { existsSync, statSync } from "node:fs";
+import { extname } from "node:path";
 import { normalizePath } from "./config.mjs";
 import { matchesGlob } from "./security.mjs";
 import { extractPathTokens } from "./task-optimizer.mjs";
@@ -18,6 +20,22 @@ export const ROUTE_TIERS = {
   FAST: "fast",
   COMPLEX: "complex",
 };
+
+export const DECLARATIVE_ASSET_EXTS = new Set([
+  ".md",
+  ".json",
+  ".yml",
+  ".yaml",
+  ".css",
+  ".svg",
+  ".csv",
+  ".txt",
+  ".toml",
+]);
+
+export const MAX_FLASH_BYTES = 24000;
+export const MAX_FLASH_FILES = 3;
+export const MECHANICAL_PREFIXES = /^(chore|style|test|docs|ci|build)(\([^)]+\))?:\s*/i;
 
 const TRIVIAL_SIGNALS = [
   /\btypo(s)?\b/i,
@@ -111,8 +129,17 @@ export function classifyTaskComplexity(task = {}, config = {}) {
   }
 
   const paths = collectReferencedPaths(task);
+  const role = String(task.role || "").toLowerCase();
+
+  if (FORCE_COMPLEX_ROLES.has(role)) {
+    return { tier: ROUTE_TIERS.COMPLEX, score: null, forced: true, reason: `Role '${role}' always routes to the primary provider` };
+  }
+
+  // 1. Declarative Asset Override: 100% declarative non-executable files bypass sensitive-path penalty
+  const isAllDeclarative = paths.length > 0 && paths.every((p) => DECLARATIVE_ASSET_EXTS.has(extname(p).toLowerCase()));
   const sensitiveHit = touchesSensitivePath(paths, config);
-  if (sensitiveHit) {
+
+  if (sensitiveHit && (!isAllDeclarative || sensitiveHit.path.includes(".pem") || sensitiveHit.path.includes(".key") || sensitiveHit.path.includes(".env"))) {
     return {
       tier: ROUTE_TIERS.COMPLEX,
       score: null,
@@ -121,14 +148,43 @@ export function classifyTaskComplexity(task = {}, config = {}) {
     };
   }
 
-  const role = String(task.role || "").toLowerCase();
-  if (FORCE_COMPLEX_ROLES.has(role)) {
-    return { tier: ROUTE_TIERS.COMPLEX, score: null, forced: true, reason: `Role '${role}' always routes to the primary provider` };
+  // 2. Context Saturation Guard: Measure target file sizes to prevent Flash truncation
+  let totalBytes = 0;
+  for (const file of paths) {
+    if (existsSync(file)) {
+      try {
+        totalBytes += statSync(file).size;
+      } catch (_) {}
+    }
+  }
+  if (totalBytes > MAX_FLASH_BYTES) {
+    return {
+      tier: ROUTE_TIERS.COMPLEX,
+      score: null,
+      forced: true,
+      reason: `Referenced files payload (${totalBytes} bytes) exceeds Flash context ceiling (${MAX_FLASH_BYTES} bytes)`,
+    };
+  }
+
+  if (isAllDeclarative && paths.length <= MAX_FLASH_FILES) {
+    return {
+      tier: ROUTE_TIERS.FAST,
+      score: -3,
+      forced: false,
+      reason: "Declarative asset override: all targeted files are non-executable formats",
+      signals: ["-3 100% declarative asset files"],
+    };
   }
 
   const text = `${task.title || ""} ${task.prompt || ""}`;
   let score = 0;
   const signals = [];
+
+  // 3. Mechanical Intent Fast-Tracking
+  if (task.title && MECHANICAL_PREFIXES.test(task.title)) {
+    score -= 2;
+    signals.push(`-2 mechanical commit prefix (${task.title.split(":")[0]})`);
+  }
 
   for (const pattern of COMPLEX_SIGNALS) {
     if (pattern.test(text)) {

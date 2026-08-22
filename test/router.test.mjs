@@ -122,6 +122,32 @@ describe("src/router.mjs — resolveRoutedProvider", () => {
     assert.equal(classification.tier, ROUTE_TIERS.COMPLEX);
     assert.equal(provider.name, "jules");
   });
+
+  it("Declarative Override: routes to FAST when all targeted files are non-executable formats", () => {
+    const res = classifyTaskComplexity(
+      {
+        title: "Update auth token documentation and localization",
+        prompt: "Update documentation in src/auth/README.md and translations in src/auth/locales/en.json.",
+        targetFiles: ["src/auth/README.md", "src/auth/locales/en.json"],
+      },
+      BASE_CONFIG
+    );
+    assert.equal(res.tier, ROUTE_TIERS.FAST);
+    assert.match(res.reason, /declarative asset override/i);
+  });
+
+  it("Mechanical Intent Fast-Track: routes chores to FAST despite technical keywords", () => {
+    const res = classifyTaskComplexity(
+      {
+        title: "chore(deps): update jsonwebtoken to patch vulnerability",
+        prompt: "Bump jsonwebtoken version in src/deps.mjs.",
+        targetFiles: ["src/deps.mjs"],
+      },
+      BASE_CONFIG
+    );
+    assert.equal(res.tier, ROUTE_TIERS.FAST);
+    assert.ok(res.signals.some((s) => s.includes("mechanical commit prefix")));
+  });
 });
 
 describe("src/engine.mjs dispatch() — router integration", () => {

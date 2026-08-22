@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { execSync } from "node:child_process";
+import { userInfo } from "node:os";
 import { resolveRoot } from "./config.mjs";
 import {
   getStateDir,
@@ -9,6 +11,46 @@ import {
   scanBudgetWindow,
   ROLLING_WINDOW_MS,
 } from "./state.mjs";
+
+/**
+ * Resolves ambient developer identity with zero dependencies and strict PII protection.
+ * Hierarchy: CLI flag -> GITHUB_ACTOR -> Git config user.email (stripped of domain) -> OS username -> anonymous-local
+ * @param {string|null} [cliOverride]
+ * @returns {string}
+ */
+export function resolveAmbientIdentity(cliOverride = null) {
+  const sanitize = (str) =>
+    (str || "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .split("@")[0] // Strip email domain to prevent PII leakage
+      .replace(/[^a-z0-9_.-]/g, ""); // Remove unsafe injection/special chars
+
+  if (cliOverride) {
+    const cleaned = sanitize(cliOverride);
+    if (cleaned) return cleaned;
+  }
+
+  if (process.env.GITHUB_ACTOR) {
+    const actor = sanitize(process.env.GITHUB_ACTOR);
+    if (actor) return `ci-${actor}`;
+  }
+
+  try {
+    const gitEmail = execSync("git config user.email", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const cleaned = sanitize(gitEmail);
+    if (cleaned) return cleaned;
+  } catch (_) {}
+
+  try {
+    const osUser = process.env.USER || process.env.USERNAME || userInfo().username;
+    const cleaned = sanitize(osUser);
+    if (cleaned) return `${cleaned}-local`;
+  } catch (_) {}
+
+  return "anonymous-local";
+}
 
 /**
  * Where the observed quota ceiling lives, outside the ledger so it survives
@@ -347,21 +389,22 @@ export function releaseOpenReservations(opts = {}) {
  */
 export function budgetStatus(config, root = resolveRoot()) {
   const resolved = resolveDailyLimit(config, root);
-  const check = checkDailyBudget(root, resolved.limit);
+  const scan = scanBudgetWindow(root);
   return {
-    used: check.used,
+    used: scan.used,
     limit: resolved.limit,
-    remaining: check.remaining,
+    remaining: Math.max(0, resolved.limit - scan.used),
+    byUser: scan.byUser || {},
     tier: config?.tier || "unknown",
     source: resolved.source,
     certain: resolved.certain,
     note: resolved.note,
     // The count is a rolling 24h window, not a calendar day — surfaced so a
     // caller reporting "used today" cannot quietly mean something else.
-    windowStart: check.windowStart || "",
+    windowStart: scan.windowStart || "",
     windowHours: ROLLING_WINDOW_MS / 3600000,
     // Only a limit we actually know may stop a dispatch.
     enforced: resolved.certain,
-    exhausted: check.used >= resolved.limit,
+    exhausted: scan.used >= resolved.limit,
   };
 }

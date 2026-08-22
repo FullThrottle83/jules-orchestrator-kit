@@ -337,5 +337,58 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
       if (server) server.close();
     }
   });
+
+  await t.test("h) Optimistic schema degradation strips deprecated parameters and retries upon HTTP 400", async () => {
+    let server;
+    let requestCount = 0;
+    const receivedBodies = [];
+
+    try {
+      server = createServer((req, res) => {
+        requestCount++;
+        let data = "";
+        req.on("data", (chunk) => {
+          data += chunk;
+        });
+        req.on("end", () => {
+          const body = JSON.parse(data || "{}");
+          receivedBodies.push(body);
+          if (body.temperature !== undefined || body.thinking_budget !== undefined) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid argument: unrecognized field temperature" }));
+          } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ id: "session-degraded-ok", state: "active" }));
+          }
+        });
+      });
+
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+      const url = `http://127.0.0.1:${port}/sessions`;
+
+      const pool = new TokenPool(["mock-token"]);
+      const provider = createProvider({
+        type: "http",
+        url,
+        headers: { "X-Goog-Api-Key": "{token}" },
+        bodyTemplate: {
+          prompt: "{prompt}",
+          temperature: 0.7,
+          thinking_budget: 2048,
+        },
+      }, { tokenPool: pool });
+
+      const result = await provider.dispatch({ prompt: "Fix bug" }, { tokenPool: pool });
+
+      assert.equal(requestCount, 2, "Must retry exactly once with sanitized payload");
+      assert.equal(receivedBodies[0].temperature, 0.7);
+      assert.equal(receivedBodies[1].temperature, undefined);
+      assert.equal(receivedBodies[1].thinking_level, "high");
+      assert.equal(result.id, "session-degraded-ok");
+    } finally {
+      if (server) server.close();
+    }
+  });
 });
 

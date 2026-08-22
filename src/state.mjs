@@ -151,7 +151,8 @@ export function scanBudgetWindow(root = resolveRoot(), opts = {}) {
       const timestamp = entry.timestamp || "";
 
       if (entry.event === "budget_reserved") {
-        const record = { timestamp, committed: false, inWindow: inWindow(timestamp) };
+        const author = entry.author || "anonymous";
+        const record = { timestamp, author, committed: false, inWindow: inWindow(timestamp) };
         if (entry.reservationId) byId.set(entry.reservationId, { reservationId: entry.reservationId, ...record });
         else anonymous.push({ reservationId: null, ...record });
       } else if (entry.event === "budget_committed") {
@@ -173,9 +174,19 @@ export function scanBudgetWindow(root = resolveRoot(), opts = {}) {
   }
 
   const open = [...byId.values(), ...anonymous].filter((r) => r.inWindow);
+  const byUser = {};
+  for (const r of open) {
+    const user = r.author || "anonymous";
+    if (!byUser[user]) byUser[user] = { tasks: 0, committed: 0, uncommitted: 0 };
+    byUser[user].tasks++;
+    if (r.committed) byUser[user].committed++;
+    else byUser[user].uncommitted++;
+  }
+
   return {
     used: open.length,
-    open: open.map(({ reservationId, timestamp, committed }) => ({ reservationId, timestamp, committed })),
+    open: open.map(({ reservationId, timestamp, author, committed }) => ({ reservationId, timestamp, author, committed })),
+    byUser,
     windowStart: new Date(cutoff).toISOString(),
   };
 }
@@ -391,7 +402,8 @@ export function reserveBudgetAtomic(stateDirOrRoot = resolveRoot(), limit = 300,
 
     const timestamp = new Date(now).toISOString();
     const reservationId = `res-${now}-${randomUUID().slice(0, 8)}`;
-    const rawPayload = { timestamp, event: "budget_reserved", reservationId, budget: limit, prevHash };
+    const author = opts.author || "anonymous-local";
+    const rawPayload = { timestamp, event: "budget_reserved", reservationId, budget: limit, author, prevHash };
     const hash = createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
     const payload = { ...rawPayload, hash };
 

@@ -40,13 +40,13 @@ export const CODEX_PRESET = {
 // Google Gemini CLI (`npm i -g @google/gemini-cli`), headless mode. Reads the
 // prompt from stdin (non-TTY input triggers headless mode without needing a
 // dangling `-p` flag), auto-approves file/shell actions, and defaults to the
-// Gemini 3.6 Flash model — a cheap, fast tier suited for trivial/mechanical
-// tasks routed by src/router.mjs. Auth via GEMINI_API_KEY (env, not CLI arg).
+// Gemini 3.7 Flash model (with fallback support) — a cheap, fast tier suited
+// for trivial/mechanical tasks routed by src/router.mjs. Auth via GEMINI_API_KEY.
 export const GEMINI_PRESET = {
   name: "gemini-flash",
   type: "exec",
   command: "gemini",
-  args: ["--model", "gemini-3.6-flash", "--approval-mode=yolo", "--output-format", "json"],
+  args: ["--model", process.env.GEMINI_FLASH_MODEL || "gemini-3.7-flash", "--approval-mode=yolo", "--output-format", "json"],
   promptViaStdin: true,
 };
 
@@ -350,32 +350,64 @@ export function createProvider(spec = "jules", config = {}) {
           }
 
           if (!res.ok) {
-            const text = await res.text();
+            const text = await res.text().catch(() => "");
             const cleanText = text.slice(0, 500);
             const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
             const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
             const retryAfterMs = parseRetryAfter(retryAfterHeader);
 
-            if (res.status === 429) {
-              pool.markRateLimited(rawToken, retryAfterMs ?? 60000);
-              lastError = new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
-                retryAfterMs: retryAfterMs ?? 60000,
-                status: 429,
-              });
-              if (pool.size > 1 && attempt < maxAttempts - 1) {
-                continue;
+            if (res.status === 400 && bodyObj && typeof bodyObj === "object") {
+              const lowerText = sanitizedText.toLowerCase();
+              if (
+                lowerText.includes("deprecated") ||
+                lowerText.includes("unrecognized") ||
+                lowerText.includes("unknown field") ||
+                lowerText.includes("temperature") ||
+                lowerText.includes("thinking_budget") ||
+                lowerText.includes("top_p")
+              ) {
+                // Optimistic Schema Degradation: Strip deprecated fields and transparently retry
+                delete bodyObj.temperature;
+                delete bodyObj.top_p;
+                delete bodyObj.top_k;
+                if (bodyObj.thinking_budget !== undefined) {
+                  delete bodyObj.thinking_budget;
+                  bodyObj.thinking_level = "high";
+                }
+                body = JSON.stringify(bodyObj);
+                try {
+                  res = await fetch(url, {
+                    method: providerSpec.method || "POST",
+                    headers,
+                    body,
+                    signal: AbortSignal.timeout(timeoutMs),
+                  });
+                } catch (_) {}
               }
-              throw lastError;
             }
 
-            if (res.status >= 500 && res.status < 600) {
-              throw new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
-                status: res.status,
-                retryAfterMs: retryAfterMs ?? undefined,
-              });
-            }
+            if (!res.ok) {
+              if (res.status === 429) {
+                pool.markRateLimited(rawToken, retryAfterMs ?? 60000);
+                lastError = new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
+                  retryAfterMs: retryAfterMs ?? 60000,
+                  status: 429,
+                });
+                if (pool.size > 1 && attempt < maxAttempts - 1) {
+                  continue;
+                }
+                throw lastError;
+              }
 
-            throw new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
+              if (res.status >= 500 && res.status < 600) {
+                throw new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
+                  status: res.status,
+                  retryAfterMs: retryAfterMs ?? undefined,
+                });
+              }
+
+              throw new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
+            }
           }
 
           pool.recordUsage(rawToken);

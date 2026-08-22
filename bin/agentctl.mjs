@@ -155,6 +155,7 @@ async function main() {
           "require-plan-approval": { type: "boolean" },
           "check-premise": { type: "boolean" },
           idempotent: { type: "boolean" },
+          author: { type: "string" },
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
         },
@@ -186,6 +187,7 @@ async function main() {
         autoPr: values["auto-pr"],
         requirePlanApproval: values["require-plan-approval"],
         checkPremise: values["check-premise"] || values.idempotent,
+        author: values.author,
       };
 
       try {
@@ -496,6 +498,27 @@ async function main() {
         if (!dryRun) {
           const after = budgetStatus(loadConfig(root), root);
           console.log(`Daily Budget : ${formatBudgetLine(after)}`);
+        }
+        process.exit(0);
+      }
+
+      if (args.includes("--by-user") || args.includes("-u")) {
+        console.log("📊 Task Budget Attribution (Rolling 24h Window)");
+        console.log(`Daily Limit : ${b.limit} Tasks | Used: ${b.used} | Remaining: ${b.remaining}\n`);
+        const users = Object.entries(b.byUser || {});
+        if (users.length === 0) {
+          console.log("  No user activity recorded in the active 24h window.\n");
+        } else {
+          console.log("  Author               Tasks  Committed  Pending");
+          console.log("  -------------------  -----  ---------  -------");
+          for (const [user, stats] of users.sort(([, a], [, b]) => b.tasks - a.tasks)) {
+            const padUser = user.padEnd(20);
+            const padTasks = String(stats.tasks).padStart(5);
+            const padCommitted = String(stats.committed).padStart(9);
+            const padPending = String(stats.uncommitted).padStart(7);
+            console.log(`  ${padUser} ${padTasks}  ${padCommitted}  ${padPending}`);
+          }
+          console.log("");
         }
         process.exit(0);
       }

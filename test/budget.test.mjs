@@ -774,3 +774,38 @@ describe("src/budget.mjs — concurrency against the plan ceiling", () => {
     }
   });
 });
+
+describe("src/budget.mjs — Multi-User Attribution & Identity", () => {
+  it("resolves and sanitizes CLI override correctly (stripping PII / domain)", async () => {
+    const { resolveAmbientIdentity } = await import("../src/budget.mjs");
+    assert.equal(resolveAmbientIdentity("Alice.Developer@company.com!"), "alice.developer");
+  });
+
+  it("prioritizes GITHUB_ACTOR when ambiently running in CI", async () => {
+    const { resolveAmbientIdentity } = await import("../src/budget.mjs");
+    const orig = process.env.GITHUB_ACTOR;
+    try {
+      process.env.GITHUB_ACTOR = "JulesReviewer_Bot";
+      assert.equal(resolveAmbientIdentity(), "ci-julesreviewer_bot");
+    } finally {
+      process.env.GITHUB_ACTOR = orig;
+    }
+  });
+
+  it("records author on budget reservation and aggregates in byUser", () => {
+    const root = makeRoot("jok-user-attr-");
+    try {
+      reserveBudget(root, 300, { author: "alice", enforce: false });
+      reserveBudget(root, 300, { author: "bob", enforce: false });
+      reserveBudget(root, 300, { author: "alice", enforce: false });
+
+      const status = budgetStatus(loadConfig(root), root);
+      assert.equal(status.used, 3);
+      assert.equal(status.byUser.alice.tasks, 2);
+      assert.equal(status.byUser.bob.tasks, 1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
