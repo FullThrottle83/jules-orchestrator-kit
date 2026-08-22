@@ -77,14 +77,14 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 ### Multi-Agent Coordination, Verification Gates & Web Envelopes
 
 - **Task Envelope Premise Validator**: Validates paths, scope, and base freshness (`agentctl task create`).
-- **Task Envelopes & Templates**: Pre-calibrated templates (`agentctl task template`): `web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`, `web-i18n`, `web-ai-access`, `agent-qa-mutation` (Mutation test falsifier), `agent-ci-falsify` (CI exit code guard), `agent-service-isolate` (Cold sandbox test decoupling), `agent-error-paths` (Provoked failure test), `agent-security-audit` (TLS/secrets/permissions guard).
+- **Task Envelopes & Templates**: Pre-calibrated templates — run `agentctl task template --list` for the current set (web: CWV/WCAG/SEO/Playwright/i18n/AI-access; agent hardening: mutation, CI falsification, service isolation, error paths, security audit).
 - **Stale-Base Gate Predicate**: Rejects PRs whose merge-base is > 25 commits behind `origin/main`.
 - **Asset Integrity Gate**: Inspects assets (`.woff2`, `.png`, `.jpg`) to ensure error pages never land silently.
 - **Edge-Runtime Import Guard**: Blocks unsupported native Node imports (`node:fs`, `node:child_process`) in Edge environments.
 
 ### Standard Jules Guardrails Footer
 
-Append this footer to all Jules dispatches:
+`agentctl task create` generates this from the repo's resolved scope (`buildGuardrailFooter`, `src/wizard-task.mjs`), so the protected-path line names this project's real manifests. Match its shape in hand-written dispatches:
 
 ```text
 Read AGENTS.md and .agent/rules/jules-protocol.md BEFORE starting.
@@ -93,13 +93,13 @@ Follow all rules strictly.
 TASK: <description>
 
 HARD CONSTRAINTS:
-- Do NOT modify package.json, pnpm-lock.yaml, tsconfig.json, or .github/ files. Enforced in CI by Agent Scope Guard.
+- Do NOT modify these protected paths: <from `agentctl gate`; here: package.json, .github/**, .agent/rules/**>. Enforced in CI by Agent Scope Guard.
 - Diff Payload Governor: Keep total diff payload under 75 KB (`git diff | wc -c`) to prevent API truncation (~80 KB limit).
 - Falsifiable & Evidence-Based: Attach full terminal verification output to PR. Never weaken assertions or delete failing tests to force a pass.
 - Declare Scope Deviations: If modifying files outside task bounds, explicitly state rationale in PR.
 - Verify before finishing: Run full type-check, lint, and unit test suites.
 - BEFORE opening the PR: Run `git fetch origin main && git rebase origin/main`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.
-- Delete ALL temporary files (.py, .sh, .patch, debug logs) before submitting.
+- Remove any scratch files you created for debugging before submitting. Do not delete files that are part of the project.
 ```
 
 ---
