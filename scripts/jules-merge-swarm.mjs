@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { classifyRiskTier, RISK_TIERS } from "../src/risk.mjs";
 import { git, resolveBase } from "../src/git.mjs";
-import { normalizePath } from "../src/config.mjs";
+import { normalizePath, loadConfig } from "../src/config.mjs";
 
 export const EXIT = Object.freeze({
   SUCCESS: 0,
@@ -155,7 +155,7 @@ export function attemptCodeMergeFile(repoRoot, relPath, oursContent, baseContent
 /**
  * Checks safety gate against active worker locks and risk tiers.
  */
-export function checkSafetyGate(branchName = "", projectRoot = process.cwd()) {
+export function checkSafetyGate(branchName = "", projectRoot = process.cwd(), opts = {}) {
   const locksDir = join(projectRoot, ".agent/state/locks");
   if (existsSync(locksDir)) {
     try {
@@ -179,7 +179,17 @@ export function checkSafetyGate(branchName = "", projectRoot = process.cwd()) {
       const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedBase}...${branchName}`], { cwd: projectRoot, raw: true, ignoreError: true }) || "";
       const files = raw.split("\0").map(normalizePath).filter(Boolean);
       if (files.length > 0) {
-        const tier = classifyRiskTier(files);
+        // The repository's own risk paths must apply here too, or the gate and
+        // the harvester classify the same branch differently.
+        let config = opts.config;
+        if (!config) {
+          try {
+            config = loadConfig(projectRoot);
+          } catch (_) {
+            config = {};
+          }
+        }
+        const tier = classifyRiskTier(files, { config });
         if (tier.tier === RISK_TIERS.R3) {
           return { safe: false, reason: `R3 Restricted Path violation: ${tier.reason}` };
         }

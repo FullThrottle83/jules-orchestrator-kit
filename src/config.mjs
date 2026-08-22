@@ -507,6 +507,18 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       discordWebhookUrl: parsed.notifications?.discord_webhook_url || parsed.notifications?.discordWebhookUrl || "",
     },
     scope: normalizeScope(parsed),
+    // Project-specific risk paths. These extend the builtin lists in risk.mjs
+    // rather than replacing them; see resolveRiskPatterns() for why. This is
+    // where a repository declares the directories that are dangerous *for it* —
+    // billing, tax rates, pricing, smart contracts — which cannot be guessed
+    // from the stack and must not be shipped as someone else's defaults.
+    risk: {
+      restricted: Array.isArray(parsed.risk?.restricted) ? parsed.risk.restricted : [],
+      consequential: Array.isArray(parsed.risk?.consequential) ? parsed.risk.consequential : [],
+      maxRoutineDiffLines: Number.isFinite(Number(parsed.risk?.max_routine_diff_lines ?? parsed.risk?.maxRoutineDiffLines))
+        ? Number(parsed.risk.max_routine_diff_lines ?? parsed.risk.maxRoutineDiffLines)
+        : 400,
+    },
     limits: {
       ...DEFAULTS.limits,
       ...tierLimits,
