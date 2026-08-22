@@ -208,6 +208,22 @@ async function main() {
         process.exit(1);
       }
 
+      // `task create --role` has always rejected a role it cannot resolve;
+      // `dispatch --role` used to drop it without a word and hand the work to a
+      // generic agent, so the two commands disagreed about what the same flag
+      // means. An explicitly typed role is a statement of intent — failing here
+      // is the only way the operator learns the prompt file is missing.
+      if (values.role) {
+        const { resolveRolePrompt } = await import("../src/role-resolver.mjs");
+        if (!resolveRolePrompt(root, values.role, { config })) {
+          console.error(
+            `Error: Unknown agent role '${values.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Overseer, Bolt, Sentinel, Janitor).`
+          );
+          console.error(`   Run 'agentctl init' to scaffold the shipped role prompts.`);
+          process.exit(1);
+        }
+      }
+
       const task = {
         title: values.title || "CLI Dispatch Task",
         prompt: promptContent,
@@ -711,6 +727,7 @@ async function main() {
           tier: { type: "string", short: "t" },
           json: { type: "boolean", short: "j" },
           "dry-run": { type: "boolean", short: "d" },
+          force: { type: "boolean", short: "f" },
         },
         allowPositionals: true,
       });
@@ -726,13 +743,38 @@ async function main() {
         allowDefaults: true,
       });
 
+      // The wizard writes the manifest; the assets the CLI's documented
+      // features actually need — AGENTS.md, the role prompts, the guardrails,
+      // the gitignore entries — used to be scaffolded only by the separate
+      // `jules-init` binary that the README's quickstart never mentions.
+      const { scaffoldRepoAssets } = await import("../src/scaffold.mjs");
+      const scaffold = scaffoldRepoAssets(root, { force: values.force });
+
       if (values.json) {
-        console.log(JSON.stringify(res, null, 2));
+        console.log(JSON.stringify({ ...res, scaffold }, null, 2));
       } else {
         console.log(`✅ Onboarding complete! Manifest generated at ${res.configPath}`);
         console.log(`   Tier: ${res.plan.tier.toUpperCase()} (${res.plan.limits.concurrency} worker(s), ${res.plan.limits.daily_tasks} daily tasks)`);
         console.log(`   Verification Test Command : "${res.plan.verify.test}"`);
         console.log(`   Active Presets            : ${res.plan.presets.join(", ")}`);
+        for (const item of scaffold.created) {
+          console.log(`   Scaffolded                : ${item}`);
+        }
+        if (scaffold.gitignore.length > 0) {
+          console.log(`   Ignored runtime state     : ${scaffold.gitignore.length} entries added to .gitignore`);
+        }
+
+        // `.agent/config.yml` and `.agent/jules.yml` are both on the gate's deny
+        // list, by design — the agent must not edit its own rules. Leaving them
+        // uncommitted meant the very first `agentctl gate` rejected the working
+        // tree for files init had just written, which reads as the tool
+        // catching the user cheating on step three.
+        console.log(`\n   Commit the manifest so the gate does not read it as an agent edit:`);
+        console.log(`     git add .agent AGENTS.md .gitignore && git commit -m "chore: add agent config"`);
+
+        const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
+        const next = resolveNextStep(root);
+        console.log(renderNextStep({ version: VERSION, root, next, budgetLine: "" }));
       }
       process.exit(0);
       break;
@@ -942,6 +984,12 @@ async function main() {
           intent: { type: "string", short: "i" },
           handover: { type: "boolean", default: true },
           json: { type: "boolean", short: "j" },
+          // Documented in the README as `rollback [sessionId | --latest]` but
+          // never registered, so the documented spelling died in parseArgs
+          // before restoreCheckpoint — which has always accepted it — was
+          // reached. Restoring the newest checkpoint is also the no-argument
+          // default, so the flag is explicit-intent sugar rather than a mode.
+          latest: { type: "boolean" },
         },
         allowPositionals: true,
       });

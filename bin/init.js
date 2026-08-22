@@ -117,53 +117,17 @@ if (detected.testCmd || detected.buildCmd) {
   console.log(`   - Build Command: ${detected.buildCmd || "(none)"}`);
 }
 
-// 2. Scaffold AGENTS.md / .agent/jules-protocol.md
-const agentsFile = path.join(targetDir, "AGENTS.md");
-const julesRulesSource = path.join(kitRoot, "JULES_RULES_TEMPLATE.md");
-
-if (!fs.existsSync(agentsFile) || isForce) {
-  if (fs.existsSync(julesRulesSource)) {
-    fs.copyFileSync(julesRulesSource, agentsFile);
-    console.log("✅ Created: AGENTS.md");
-  }
-} else {
-  const existingContent = fs.readFileSync(agentsFile, "utf-8");
-  if (!existingContent.includes("<MCP_DIRECTIVE>")) {
-    if (fs.existsSync(julesRulesSource)) {
-      const templateContent = fs.readFileSync(julesRulesSource, "utf-8");
-      fs.appendFileSync(agentsFile, `\n\n---\n\n${templateContent}`, "utf-8");
-      console.log("✅ Appended Google Jules directives to existing AGENTS.md");
-    }
-  } else {
-    console.log("ℹ️ AGENTS.md already contains Jules directives (skipped overwrite).");
-  }
+// 2-3. Scaffold AGENTS.md, .agent/ structure, role prompts, rules and workflows.
+// Shared with `agentctl init` so the two entry points cannot scaffold different
+// repositories — which is exactly what they used to do, with the README's
+// quickstart pointing at the one that scaffolded less.
+const { scaffoldRepoAssets } = await import("../src/scaffold.mjs");
+const scaffolded = scaffoldRepoAssets(targetDir, { force: isForce });
+for (const item of scaffolded.created) {
+  console.log(`✅ Created: ${item}`);
 }
 
-// 3. Scaffold .agent/ structure
 const agentDir = path.join(targetDir, ".agent");
-const rulesDir = path.join(agentDir, "rules");
-const queueDir = path.join(agentDir, "jules-queue");
-const completedQueueDir = path.join(queueDir, "completed");
-const workflowsDir = path.join(agentDir, "workflows");
-const promptsDir = path.join(agentDir, "prompts");
-
-[agentDir, rulesDir, queueDir, completedQueueDir, workflowsDir, promptsDir].forEach((d) => {
-  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-});
-
-// Scaffold .agent/prompts files
-const sourcePromptsDir = path.join(kitRoot, ".agent/prompts");
-if (fs.existsSync(sourcePromptsDir)) {
-  const promptFiles = fs.readdirSync(sourcePromptsDir);
-  promptFiles.forEach((file) => {
-    const srcPrompt = path.join(sourcePromptsDir, file);
-    const destPrompt = path.join(promptsDir, file);
-    if (!fs.existsSync(destPrompt) || isForce) {
-      fs.copyFileSync(srcPrompt, destPrompt);
-    }
-  });
-  console.log("✅ Created: .agent/prompts presets (Overseer, Bolt, Sentinel, Janitor, Task_Template)");
-}
 
 // Scaffold .agent/jules.yml
 const yamlConfigPath = path.join(agentDir, "jules.yml");
@@ -176,22 +140,6 @@ forbidden_paths: [".github/**", "**/.env*", "**/*.pem", "**/lock-manager*"]
 `;
   fs.writeFileSync(yamlConfigPath, yamlContent, "utf-8");
   console.log("✅ Created: .agent/jules.yml");
-}
-
-// Scaffold .agent/rules/dynamic-guardrails.json
-const dgcSource = path.join(kitRoot, ".agent/rules/dynamic-guardrails.json");
-const dgcTarget = path.join(rulesDir, "dynamic-guardrails.json");
-if ((!fs.existsSync(dgcTarget) || isForce) && fs.existsSync(dgcSource)) {
-  fs.copyFileSync(dgcSource, dgcTarget);
-  console.log("✅ Created: .agent/rules/dynamic-guardrails.json");
-}
-
-// Scaffold .agent/workflows/jules-review.md
-const reviewSource = path.join(kitRoot, ".agent/workflows/jules-review.md");
-const reviewTarget = path.join(workflowsDir, "jules-review.md");
-if ((!fs.existsSync(reviewTarget) || isForce) && fs.existsSync(reviewSource)) {
-  fs.copyFileSync(reviewSource, reviewTarget);
-  console.log("✅ Created: .agent/workflows/jules-review.md");
 }
 
 // Scaffold .github/workflows/jules-audit.yml
@@ -275,32 +223,10 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
   }
 }
 
-// 5b. Ensure target repository has .gitignore entries for sensitive and runtime state
-const targetGitignorePath = path.join(targetDir, ".gitignore");
-const requiredGitignoreEntries = [
-  ".env",
-  ".agent/history/",
-  ".agent/state/",
-  ".agent/jules-queue/.state/",
-  ".agent/jules-queue/failed/",
-  ".agent/jules-queue/.processing/",
-  ".agent/jules-queue/*.md",
-  "!.agent/jules-queue/README.md"
-];
-
-let gitignoreContent = fs.existsSync(targetGitignorePath)
-  ? fs.readFileSync(targetGitignorePath, "utf-8")
-  : "";
-
-const missingEntries = requiredGitignoreEntries.filter(
-  (entry) => !gitignoreContent.includes(entry)
-);
-
-if (missingEntries.length > 0) {
-  const prefix = gitignoreContent && !gitignoreContent.endsWith("\n") ? "\n" : "";
-  const addedBlock = `${prefix}# Jules Orchestrator Runtime State & Credentials\n${missingEntries.join("\n")}\n`;
-  fs.appendFileSync(targetGitignorePath, addedBlock, "utf-8");
-  console.log("✅ Added required security entries to .gitignore");
+// 5b. The .gitignore entries are written by scaffoldRepoAssets above, so the
+// two entry points cannot disagree about which runtime paths stay untracked.
+if (scaffolded.gitignore.length > 0) {
+  console.log(`✅ Added ${scaffolded.gitignore.length} runtime state entries to .gitignore`);
 }
 
 console.log("\n🎉 Google Jules Orchestration Kit successfully initialized!");

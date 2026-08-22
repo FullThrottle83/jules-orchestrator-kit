@@ -834,6 +834,15 @@ export async function dispatch(task = {}, opts = {}) {
     const roleObj = resolveRolePrompt(root, task.role);
     if (roleObj) {
       cleanPrompt = `${roleObj.content}\n\n${cleanPrompt}`.trim();
+    } else {
+      // A role reaching here comes from a task envelope or an internal
+      // synthesis rather than a typed flag, so the dispatch still proceeds with
+      // a generic agent — failing an automated heal swarm over a missing
+      // prompt file helps nobody. It must not proceed *silently* though: the
+      // caller asked for a specialist and is not getting one.
+      console.warn(
+        `⚠️  Role '${task.role}' has no prompt in .agent/prompts/ — dispatching without specialist context. Run 'agentctl init' to scaffold the shipped roles.`
+      );
     }
   }
 

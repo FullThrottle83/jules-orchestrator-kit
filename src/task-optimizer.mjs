@@ -280,7 +280,7 @@ export function scorePromptFalsifiability(promptText, options = {}) {
   } else if (!verifyCmd) {
     score -= 15;
     issues.push({ type: "MISSING_ORACLE", message: "No automated test or build verification command specified.", penalty: 15 });
-    suggestions.push("Specify a verification command using --verify (e.g. 'npm test').");
+    suggestions.push("Specify a verification command using --verify-cmd (e.g. 'npm test').");
   }
 
   // Final score clamping & letter grade assignment

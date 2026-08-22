@@ -51,15 +51,27 @@
 Get running in any repository in 3 commands (zero configuration required):
 
 ```bash
-# 1. Initialize orchestrator in your project (auto-detects Python, Rust, Go, Node, PHP, etc.)
+# 1. Scaffold config, AGENTS.md, role prompts and guardrails
+#    (auto-detects Python, Rust, Go, Node, PHP, etc.)
 npx jules-orchestrator-kit init
-
-# 2. Author a scoped, verified task envelope with guardrails & secret scrubbing
-npx jules-orchestrator-kit task create
-
-# 3. Inspect repository health & diagnostic status
-npx jules-orchestrator-kit doctor
 ```
+
+```bash
+# 2. Commit what init wrote — .agent/config.yml is on the gate's deny list by
+#    design, so leaving it uncommitted makes the first gate reject your tree
+git add .agent AGENTS.md .gitignore && git commit -m "chore: add agent config"
+```
+
+```bash
+# 3. Author a scoped, verified task envelope with guardrails & secret scrubbing
+npx jules-orchestrator-kit task create
+```
+
+> [!TIP]
+> **Not sure what to run next?**  
+> `agentctl` with no arguments reads the repository state and prints the single
+> next step — missing git repo, missing API key, empty queue, tasks ready to
+> dispatch — instead of a wall of commands.
 
 > [!TIP]
 > **Prefer a global CLI?**  
@@ -131,7 +143,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **676 unit tests across 84 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **682 unit tests across 84 suites passing in < 10.0s**.
 
 <br/>
 
@@ -146,7 +158,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 
 | Command | Usage | Description | Exit Codes |
 | :--- | :--- | :--- | :--- |
-| `init` | `agentctl init [--interactive] [--tier pro]` | Interactive onboarding wizard & stack detector generating `.agent/config.yml`. | `0` (Created) |
+| `init` | `agentctl init [--interactive] [--tier pro] [--force]` | Interactive onboarding wizard & stack detector. Generates `.agent/config.yml` and scaffolds `AGENTS.md`, the role prompts, the guardrails and the runtime `.gitignore` entries. Existing files are preserved unless `--force`. | `0` (Created) |
 | `budget` | `agentctl budget [--by-user] [--json] [reset]` | Reports rolling 24h task budget, quota headroom, and per-developer task attribution without external auth servers. | `0` (Status), `2` (Arg Error) |
 | `task create` | `agentctl task create [--title <t>] [--prompt <p>] [--template <id>] [--role <name>] [--tier fast\|complex]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing, preflight gate checks, and DAG dependency wiring. | `0` (Queued), `1` (Secret/Unfalsifiable) |
 | `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes pre-calibrated task envelopes (Web, Deep Think & Agent Hardening: `web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `agent-dead-code-audit`, `web-flaky-heal`, `web-i18n`, `web-ai-access`, `agent-qa-mutation`, `agent-ci-falsify`, `agent-service-isolate`, `agent-error-paths`, `agent-security-audit`, `deep-debug`, `deep-feature`, `deep-optimize`, `deep-harden`). | `0` (Listed/Synthesized) |
