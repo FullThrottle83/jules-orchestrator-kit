@@ -113,10 +113,10 @@ Standardized across all automation entry points (`agentctl`, `jules-dispatch`, `
 | `0` | Success — verification passed, PR opened. | Merge, or proceed to the next queue task. |
 | `1` | Pre-dispatch / arg failure; prompt > `limits.promptKb` (50 KB). | Shorten the prompt or check flags via `agentctl doctor`. |
 | `2` | API / network — HTTP 429, `FAILED_PRECONDITION` concurrency quota, timeout. | Exponential backoff; stagger swarm dispatches (`staggerMs: 1500`). |
-| `3` | Scope violation — restricted path (`.github/`, command files, `.agent/rules/`). | Drop protected files from the diff, or pass `--allow-protected` / label `allow-protected-paths`. |
-| `4` | OODA exhausted — 3 repair attempts without clean verification. | Inspect `.agent/state/` logs; fix the root cause or sharpen the repair prompt. |
+| `3` | Scope violation — restricted path (`.github/`, command files, `.agent/rules/`), or a `strictTestLock` tamper verdict. | Drop protected files from the diff, or pass `--allow-protected` / label `allow-protected-paths`. |
+| `4` | Verification failed; with `--fix`, OODA repair also exhausted. | Fix the stage the gate names — it prints stage, exit code and output. |
 | `5` | Diff payload exceeds `limits.diffKb` (default **75 KB**). | Split into smaller scoped envelopes (`npm run jules:validate-envelope`). |
-| `6` | Secret leak prevented — high-confidence key in the patch diff. | Scrub the credential from source **and revoke the leaked key immediately**. |
+| `6` | Secret leak prevented — high-confidence key; the finding names file and line. | Scrub the credential from source **and revoke the leaked key immediately**. |
 | `7` | Quota exhausted — `dailyTasks` cap (default 300) reached. | Wait for the rolling 24h budget window to open, or raise `dailyTasks` in `.agent/config.yml`. |
 | `8` | Flaky quarantine — oscillation >= 0.40 (Wilson CI interior). | Fix the non-deterministic test; OODA repair is suppressed by design, not broken. |
 

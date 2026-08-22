@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.41.0 (Current Stable) ──► v0.42.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ v0.41.1 (Current Stable) ──► v0.42.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
  (Flash-Router & Attribution) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.41.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.41.1)
+
+### v0.41.1: The Gate Knew More Than It Said
+- [x] **First-Install Blockers Closed (`src/security.mjs`, `src/scaffold.mjs`)** — A diff with 65+ integrity hashes failed closed as a CRITICAL secret leak, because a sha256 digest is 64 base64-alphabet characters and consumed a decode slot despite being discarded; and `agentctl init` left the kit's own ledgers and evidence manifests untracked in the tree the gate audits, so they came back as scope violations and then as a secret verdict. A new user hit both before dispatching anything.
+- [x] **One Scaffolding Path (`src/scaffold.mjs`, `bin/init.js`)** — `jules-init` wrote `AGENTS.md`, the role prompts and the guardrails; `agentctl init`, which the quickstart points at, wrote none of them. Both entry points now call one `scaffoldRepoAssets()`, preserving existing files unless `--force`.
+- [x] **Diagnostics That Reach the Operator (`src/security.mjs`, `src/engine.mjs`, `bin/agentctl.mjs`)** — Secret findings name the file and line; a failed VERIFY stage reports its command, exit code and output instead of a bare `❌ FAIL`; `queue` and `swarm` name each failed task and exit `1` instead of reporting success for a queue that dispatched nothing; remediation hints key on the failing phase rather than the ambiguous exit code.
+- [x] **CLI Surface Consistency (`bin/agentctl.mjs`, `src/engine.mjs`, `src/task-optimizer.mjs`)** — `dispatch --dry-run` no longer prints the same banner as a real dispatch; `rollback --latest` is a declared flag; `dispatch --role` fails closed on an unresolvable role like `task create` always did; every prompt-taking command accepts positional, `--prompt` and `--prompt-file` alike.
 
 ### v0.41.0: Structural Flash-Router Governors, Schema Degradation & Multi-User Budget Attribution
 - [x] **Deep Think Task Templates & Reasoning Sandwich (`src/web-templates.mjs`, `src/wizard-task.mjs`)** — Pre-calibrated 4-phase exploration budget templates (`deep-debug`, `deep-feature`, `deep-optimize`, `deep-harden`) enforcing silent discovery, deterministic reproduction oracles, positive perimeters, and mutation falsification.
