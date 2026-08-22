@@ -13,6 +13,14 @@ jobs:
     # finishes in ~25s on the slowest runner, so anything near this is a hang.
     timeout-minutes: 20
     strategy:
+      # A compatibility matrix exists to answer "which platforms break?".
+      # Fail-fast answers "one did, and we won't say which of the others would
+      # have". It cancelled all nine jobs here when a Linux-only policy step
+      # failed, destroying the cross-platform signal that is the entire reason
+      # the matrix is nine-way — and every cross-platform break this repository
+      # has shipped was green on Linux and red on Windows. Nine jobs at ~30s
+      # each is not a budget worth optimising against that.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node-version: ['20.x', '22.x', '24.x']
@@ -50,6 +58,17 @@ jobs:
         env:
           CI: "true"
           BASE_BRANCH: "main"
+          # Two gates guard the same protected paths — this one and
+          # agent-scope-guard.yml — and until now they took different bypasses:
+          # the scope guard honours the `allow-protected-paths` label documented
+          # in AGENTS.md, while this one only ever read an environment variable
+          # nothing set. A reviewer following the documented flow labelled the PR
+          # and this job stayed red with no way through. Mapping the label onto
+          # the variable here unifies them without giving the shipped script a
+          # second bypass path of its own. The bypass stays narrow either way:
+          # `allowProtected` skips only the protect check in src/security.mjs —
+          # deny rules, payload limits and the secret scanner all still run.
+          JULES_ALLOW_COMMAND_FILE_CHANGES: ${{ contains(github.event.pull_request.labels.*.name, 'allow-protected-paths') }}
 
   # The same gate `release.mjs` blocks on at step 1b. It was previously only
   # ever run by hand, which is how a stale README test count and an unchecked
