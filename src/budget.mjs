@@ -7,7 +7,6 @@ import {
   getStateDir,
   ensureDir,
   appendLedger,
-  checkDailyBudget,
   scanBudgetWindow,
   ROLLING_WINDOW_MS,
 } from "./state.mjs";
