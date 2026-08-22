@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.40.0 (Current Stable) ──► v0.41.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
- (Wizards, Guard & Universality) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
+ v0.41.0 (Current Stable) ──► v0.42.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ (Flash-Router & Attribution) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.40.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.41.0)
+
+### v0.41.0: Structural Flash-Router Governors, Schema Degradation & Multi-User Budget Attribution
+- [x] **Deep Think Task Templates & Reasoning Sandwich (`src/web-templates.mjs`, `src/wizard-task.mjs`)** — Pre-calibrated 4-phase exploration budget templates (`deep-debug`, `deep-feature`, `deep-optimize`, `deep-harden`) enforcing silent discovery, deterministic reproduction oracles, positive perimeters, and mutation falsification.
+- [x] **Structural Flash-Router & Anti-Truncation Governors (`src/router.mjs`, `src/provider.mjs`)** — Declarative Asset Override (non-executable formats bypass complex thresholds), Context Saturation Guard (forces Ultra on payloads >24 KB to prevent Flash truncation), Mechanical Intent Fast-Tracking (`chore:`, `docs:`, `ci:`), and V8 AST Syntax Verification (`createSyntaxVerifiedProvider`).
+- [x] **Optimistic Schema Degradation & Adaptive Quota Adapter (`src/provider.mjs`)** — Auto-detects and sanitizes deprecated generative parameters (`temperature`, `thinking_budget` -> `thinking_level: "high"`) on HTTP 400 responses, with AIMD elastic backoff and Gemini 3.7 Flash support.
+- [x] **Zero-Dependency Multi-User Budget Attribution (`src/budget.mjs`, `src/state.mjs`, `bin/agentctl.mjs`)** — Ambient developer identity resolution (`--author`, `GITHUB_ACTOR`, sanitized git email) with PII stripping, SHA-256 ledger binding, and `agentctl budget --by-user` quota dashboard.
 
 ### v0.40.0: Interactive Wizard Repair, a Scope Guard That Blocks, & Universal Defaults
 - [x] **Interactive Wizard Option Merge** (`src/wizard-task.mjs`, `src/wizard-init.mjs`, `bin/agentctl.mjs`) — Both wizards spread `...options` last, and `parseArgs` puts every declared flag on that object with `undefined` for the ones not passed, so each spread overwrote the answer just typed. Interactive `agentctl task create` had been unusable since v0.29.0; `agentctl init` silently discarded the tier picked from the menu. Covered by `test/wizard-smoke.test.mjs` driving both real wizards over a fake TTY with the exact options object the CLI builds.
@@ -144,18 +150,12 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ---
 
-## 🎯 Intermediate Target Milestones (v0.41.0 – v0.60.0)
+## 🎯 Intermediate Target Milestones (v0.42.0 – v0.60.0)
 
-### v0.41.0: Subshell Process Containment & Context Slicing
-- [ ] **Deep Think Task Templates & Reasoning Sandwich (`src/web-templates.mjs`, `src/wizard-task.mjs`)** — Pre-calibrated 4-phase exploration budget templates (`deep-debug`, `deep-feature`, `deep-optimize`, `deep-harden`) enforcing silent discovery, deterministic reproduction oracles, positive perimeters, and mutation falsification.
-- [ ] **Structural Flash-Router & Anti-Truncation Governors (`src/router.mjs`, `src/provider.mjs`)** — Declarative Asset Override (non-executable formats bypass complex thresholds), Context Saturation Guard (forces Ultra on payloads >24 KB to prevent Flash truncation), Mechanical Intent Fast-Tracking (`chore:`, `docs:`, `ci:`), and V8 AST Syntax Verification.
-- [ ] **Optimistic Schema Degradation & Adaptive Quota Adapter (`src/provider.mjs`)** — Auto-detects and sanitizes deprecated generative parameters (`temperature`, `thinking_budget` -> `thinking_level: "high"`) on HTTP 400 responses, with AIMD elastic backoff and Gemini 3.7 Flash support.
-- [ ] **Zero-Dependency Multi-User Budget Attribution (`src/budget.mjs`, `src/state.mjs`, `bin/agentctl.mjs`)** — Ambient developer identity resolution (`--author`, `GITHUB_ACTOR`, sanitized git email) with PII stripping, SHA-256 ledger binding, and `agentctl budget --by-user` quota dashboard.
+### v0.42.0: Subshell Process Containment & Trojan Fencing
 - [ ] **POSIX/Win32 Process Group Guillotine (`src/engine.mjs`, `src/process.mjs`)** — Spawns subshell executions with `{ detached: true }` / new process group; implements reliable tree teardown via `process.kill(-pid, 'SIGKILL')` on POSIX and `taskkill /T /F /PID` on Windows to eliminate orphaned dev-servers, Jest/Vite watchers, and subshell zombies (preventing `EADDRINUSE` port exhaustion).
 - [ ] **Native Stdio/Stderr Sliding-Window Governor (`src/prompt-guard.mjs`, `src/ux/log-viewer.mjs`)** — Enforces bounded circular buffer limits for `stdout`/`stderr` before injecting traces into prompt envelopes, preventing V8 string length exhaustion and LLM context window overflows during verbose build/test runs.
 - [ ] **Graceful Rollback & Dirty Working Tree Hook (`src/ops/transaction.mjs`)** — Automated `git restore` and clean-up safety trap in transaction lifecycles, ensuring aborted or crashing agent runs leave zero syntax trash or fractured uncommitted states.
-
-### v0.42.0: OODA Stabilization, Semantic Oscillation & Trojan Fencing
 - [ ] **OODA Thrash Cycle Breaker (`src/dag-engine.mjs`, `src/review-repair.mjs`)** — Rolling SHA-256 state tracking over proposed diff hunks per file during automated repair loops; immediately trips circuit breaker (Exit Code 4) upon detecting semantic ping-pong ($A \to B \to A$) to halt token drain.
 - [ ] **Unicode Trojan Source & Homoglyph Fencing (`src/security.mjs`)** — Deterministic $O(n)$ token scanner using V8 Unicode Property Escapes (`\p{Script=...}`) and NFKC normalization to block invisible Bidi overrides (CVE-2021-42574), zero-width smugglings, and mixed-script homoglyphs in agent diffs.
 

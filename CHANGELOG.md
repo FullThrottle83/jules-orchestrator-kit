@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.41.0] - 2026-08-22
 ### Structural Flash-Router Governors, Gemini 3.7 Flash & Multi-User Budget Attribution
 
 *The router heuristics, schema-degradation adapter, and per-user budget attribution below shipped in one pass; the CLI's `--author` flag was unit-tested against `resolveAmbientIdentity()` and `reserveBudget()` directly but never actually threaded through the real `dispatch()` call, so every live task attributed to the same default identity regardless of who ran it. The V8 syntax-verification escalation gate proposed alongside the router heuristics had not been implemented at all.*
