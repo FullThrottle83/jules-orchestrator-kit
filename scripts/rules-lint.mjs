@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { checkRulesBudget } from "../src/rules_budget.mjs";
+import { checkRulesBudget } from "../src/rules-budget.mjs";
 
 const root = process.cwd();
 const res = checkRulesBudget(root);

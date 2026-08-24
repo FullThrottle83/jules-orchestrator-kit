@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkRulesBudget, compileRules, verifyRulesSentinel } from "../src/rules_budget.mjs";
+import { checkRulesBudget, compileRules, verifyRulesSentinel } from "../src/rules-budget.mjs";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

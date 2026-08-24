@@ -1893,7 +1893,7 @@ async function main() {
 
     case "rules": {
       const subcmd = args[1] || "check";
-      const { checkRulesBudget, compileRules } = await import("../src/rules_budget.mjs");
+      const { checkRulesBudget, compileRules } = await import("../src/rules-budget.mjs");
 
       if (subcmd === "check") {
         const { values } = parseArgs({

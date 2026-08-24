@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { rmSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory } from "../src/remediation.mjs";
-import { createExecutionEnvelope, verifyExecutionEnvelope } from "../src/execution_envelope.mjs";
+import { createExecutionEnvelope, verifyExecutionEnvelope } from "../src/execution-envelope.mjs";
 
 describe("Remediation Subsystem & Envelope Hydration", () => {
   const testRoot = join(process.cwd(), ".agent/test-remediation-" + Date.now());

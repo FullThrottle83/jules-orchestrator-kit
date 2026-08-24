@@ -6,7 +6,7 @@ import {
   createExecutionEnvelope,
   verifyExecutionEnvelope,
   hashExecutionEnvelope,
-} from "../src/execution_envelope.mjs";
+} from "../src/execution-envelope.mjs";
 import {
   appendLedger,
   verifyLedgerIntegrity,

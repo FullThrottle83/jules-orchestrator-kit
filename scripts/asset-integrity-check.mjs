@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { checkAssetIntegrity } from "../src/asset_integrity.mjs";
+import { checkAssetIntegrity } from "../src/asset-integrity.mjs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
