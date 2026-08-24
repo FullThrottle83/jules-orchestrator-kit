@@ -43,13 +43,12 @@ Jules automatically infers test and build verification commands via `scripts/com
 
 ### Canonical Operator Commands (authoritative)
 
-Operations run **only** via `agentctl`. Standalone helper scripts were removed as shims. **This supersedes any older `scripts/*.mjs` path from a stored memory or another repo** — if one is not in `package.json`, it is stale; use the equivalent here instead of burning repair turns on `ENOENT`.
+Operations run **only** via `agentctl`. Standalone `scripts/*.mjs` shims were removed; if one is not in `package.json`, it is stale.
 
-- Locks: `agentctl lock acquire <agent> <task_id> <file_path...>` (positional, no `--unattended`; conflict exits `1` naming the holder) · `lock status` · `lock release <task_id>`. *(was `scripts/lock-manager.mjs`)*
-- Learnings: `agentctl learning add "<trigger>" "<solution>"` — both args required; regenerates `.agent/SYSTEM_LEARNINGS.md`, never hand-edit it. *(was `scripts/add-learning.mjs`)*
-- Flaky tests: `agentctl flaky status` · `agentctl flaky heal` · `agentctl flaky reset`
-- Escalations: `agentctl escalate <session_id>` · `agentctl escalate --status` · `agentctl escalate --flush`
-- Prompt hydration: `agentctl hydrate [prompt]` · Self-audit: `npm run jules:audit` · Doc drift: `npm run jules:doc-sync`
+- Locks: `agentctl lock acquire <agent> <task_id> <file_path...>` (conflict exits `1` naming the holder) · `lock status` · `lock release <task_id>`.
+- Learnings: `agentctl learning add "<trigger>" "<solution>"` — both args required; regenerates `.agent/SYSTEM_LEARNINGS.md`, never hand-edit it.
+- Flaky tests: `agentctl flaky status|heal|reset` · Escalations: `agentctl escalate <session_id>|--status|--flush`.
+- Prompt hydration: `agentctl hydrate [prompt]` · Self-audit: `npm run jules:audit` · Doc drift: `npm run jules:doc-sync`.
 - Use `JULES_DRY_RUN=1` when exercising dispatch paths so no session is spent.
 
 ---
@@ -65,8 +64,8 @@ Operations run **only** via `agentctl`. Standalone helper scripts were removed a
 - **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
 - **Rebase Before PR**: Fetch latest `main`, rebase onto `origin/main`, re-execute verification suite. If the resulting diff is empty, close/abort PR without pushing.
 - **Diff Payload Governor**: API forcefully truncates diff payloads > 80 KB. Keep total diff payload under 75 KB (`git diff | wc -c`).
-- **Google Labs Exploration Budget Protocol**: Execute complex tasks across 3 discrete phases: (1) Discovery & Symbol Tracing (silent inspection, write NO code), (2) Oracle & Test Formulation, and (3) Surgical Implementation & Verification. Proven to increase Hit@5 accuracy from 33% to 57%.
-- **Critic Agent Steering (Adversarial Pre-Review)**: Jules' internal Critic Agent must evaluate proposed patches for edge-case failures, $O(n^2)$ complexity regressions, unhandled parameters, and layout shifts (CLS) prior to final PR submission. In test suites, verify deliberate logic mutations turn tests red (mutation falsification).
+- **Exploration Budget Protocol**: For complex tasks, run 3 phases — (1) silent Discovery & Symbol Tracing (no code), (2) Oracle & Test Formulation, (3) Surgical Implementation & Verification. Raises Hit@5 from 33% to 57%.
+- **Critic Agent Pre-Review**: Evaluate patches for edge-case failures, $O(n^2)$ regressions, unhandled parameters, and CLS before opening the PR. In test changes, prove deliberate mutations turn tests red.
 
 ---
 
@@ -77,7 +76,8 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 ### Multi-Agent Coordination, Verification Gates & Web Envelopes
 
 - **Task Envelope Premise Validator**: Validates paths, scope, and base freshness (`agentctl task create`).
-- **Task Envelopes & Templates**: Pre-calibrated templates — run `agentctl task template --list` for the current set (web: CWV/WCAG/SEO/Playwright/i18n/AI-access; agent hardening: mutation, CI falsification, service isolation, error paths, security audit).
+- **Task Envelopes & Templates**: Pre-calibrated, stack-agnostic templates — run `agentctl task template --list` for the current set. Web: CWV/WCAG/SEO/Playwright/i18n/AI-access. Agent hardening: dead-code audit, QA mutation, CI falsification, service isolation, error paths, security audit. Universal (work in any language the detector recognises, since verify commands hydrate from config): `agent-dep-audit` (deps/supply chain), `agent-doc-drift` (docs vs shipped surface), `agent-config-audit` (typed config + secret hygiene), `agent-api-contract` (route/handler + error-shape parity). Deep Think: debug/feature/optimize/harden.
+- **Specialist Roles**: Eight personas ship as stack-neutral prompts in `.agent/prompts/`, selected with `agentctl dispatch --role <name>` (case-insensitive): `overseer`, `bolt`, `sentinel`, `janitor`, `a11y`, `scribe`, `spectator`, `alchemist`. They hydrate `{{VERIFY_TEST}}`/`{{VERIFY_LINT}}`/`{{DIFF_KB}}`/`{{BASE_BRANCH}}` from the target repo so a non-Node project is never told to run `npm test`.
 - **Stale-Base Gate Predicate**: Rejects PRs whose merge-base is > 25 commits behind `origin/main`.
 - **Asset Integrity Gate**: Inspects assets (`.woff2`, `.png`, `.jpg`) to ensure error pages never land silently.
 - **Edge-Runtime Import Guard**: Blocks unsupported native Node imports (`node:fs`, `node:child_process`) in Edge environments.
@@ -124,9 +124,8 @@ Standardized across all automation entry points (`agentctl`, `jules-dispatch`, `
 
 ## 7. Release Protocol & Automated Versioning
 
-Whenever bumping the package version in `package.json`:
-1. Document changes under `CHANGELOG.md`.
-2. Update version string in `package.json`.
-3. Push `main` first. The pipeline refuses to release a commit CI has not verified.
-4. Execute `npm run release` (or `node scripts/release.mjs`). It blocks on the test suite, the doc-sync gate, and a green CI run for `HEAD` before tagging git (`v<version>`), pushing to `origin`, and creating the official GitHub Release via `gh release create`. Use `--skip-ci-check` only when `gh` is unavailable.
+Whenever bumping the version:
+1. Add a `CHANGELOG.md` entry, then bump `package.json`.
+2. Push `main` first — the pipeline refuses to release a commit CI has not verified.
+3. Run `npm run release`. It blocks on tests, the doc-sync gate, and a green CI matrix for `HEAD` before tagging `v<version>`, pushing, and creating the GitHub Release via `gh release create`. `--skip-ci-check` only when `gh` is unavailable.
 

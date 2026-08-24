@@ -11,13 +11,18 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.42.0 (Current Stable) ──► v0.43.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
- (Universal Rules & Contracts) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
+ v0.43.0 (Current Stable) ──► v0.44.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ (Roles & Universal Envelopes) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.42.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.43.0)
+
+### v0.43.0: Documented Specialist Roles Ship As Prompts, & Universal Stack-Agnostic Envelopes
+- [x] **Four Missing Specialist Roles Shipped (`.agent/prompts/`)** — The rules template advertised A11y, Scribe, Spectator and Alchemist as specialist personas, but no prompt file existed for any of them, so `agentctl dispatch --role a11y` resolved to `null` on every install. Added stack-neutral prompts for all four (WCAG/focus/measured contrast, metadata/JSON-LD/canonical parity with honest claims, headless E2E with no sleep-based waits, and schema/reversibility/data-loss review for migrations). They hydrate `{{VERIFY_TEST}}`/`{{VERIFY_LINT}}`/`{{DIFF_KB}}`/`{{BASE_BRANCH}}` from the target repo's config, like the original four.
+- [x] **Four Universal, Stack-Agnostic Task Templates (`src/web-templates.mjs`)** — `agent-dep-audit`, `agent-doc-drift`, `agent-config-audit` and `agent-api-contract` work in any stack the detector recognises (Cargo, Go, Python, PHP, .NET, Java, Ruby, Elixir, Node) because their prompts name no package manager or language and the verification command is hydrated from `config.verify.test`. Each carries a real, locally-falsifiable oracle rather than a "best practice" claim.
+- [x] **Coverage & Documentation Parity (`test/role-prompts.test.mjs`, `test/web-templates.test.mjs`, `AGENTS.md`, `JULES_RULES_TEMPLATE.md`, `EXAMPLES.md`, `README.md`)** — A new test asserts every documented role has a prompt file; the template tests assert the universal block contains no npm/npx/node tooling and synthesizes through `planTaskCreate` with a non-Node verify command. Both rule files stay inside the 10,000-char budget.
 
 ### v0.42.0: Universal Rules Governance, All-In-One Check Gate & Stack Contracts
 - [x] **First-Class Rules CLI Subcommands (`bin/agentctl.mjs`, `src/rules-budget.mjs`)** — Added `agentctl rules check` (token and line budget linter preventing silent LLM context truncation) and `agentctl rules compile` (SHA-256 and byte-length anti-truncation sentinels).

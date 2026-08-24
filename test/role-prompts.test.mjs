@@ -12,6 +12,21 @@ test("Role prompts are stack-neutral", async (t) => {
   // .agent/prompts/), so every `agentctl init` in any language gets them. They
   // used to carry this kit's own contribution rules: "npm test", "npm run
   // lint", and a ban on third-party npm packages in favour of Node built-ins.
+  await t.test("every documented specialist role ships as a prompt file", () => {
+    // JULES_RULES_TEMPLATE.md advertises these personas. A `--role` flag whose
+    // prompt is missing resolves to null, so a documented role with no file is
+    // a broken promise rather than an undocumented feature. Names are matched
+    // case-insensitively by resolveRolePrompt, so the on-disk filename can be
+    // Title-Case without affecting dispatch.
+    const required = ["overseer", "bolt", "sentinel", "janitor", "a11y", "scribe", "spectator", "alchemist"];
+    const present = readdirSync(SHIPPED_PROMPTS)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => f.replace(/\.md$/i, "").toLowerCase());
+    for (const role of required) {
+      assert.ok(present.includes(role), `documented role "${role}" must have a prompt file in .agent/prompts/`);
+    }
+  });
+
   await t.test("no shipped role prompt hardcodes an ecosystem's commands", () => {
     const offenders = [];
     for (const file of readdirSync(SHIPPED_PROMPTS).filter((f) => f.endsWith(".md"))) {

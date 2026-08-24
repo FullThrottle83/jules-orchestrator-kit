@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   getWebTemplate,
   listWebTemplates,
@@ -11,7 +12,7 @@ import { handleMcpRequest } from "../src/mcp.mjs";
 test("listWebTemplates returns all registered web templates", () => {
   const templates = listWebTemplates();
   assert.ok(Array.isArray(templates));
-  assert.ok(templates.length >= 16);
+  assert.ok(templates.length >= 20);
   const ids = templates.map((t) => t.id);
   assert.ok(ids.includes("web-cwv"));
   assert.ok(ids.includes("web-wcag"));
@@ -25,6 +26,10 @@ test("listWebTemplates returns all registered web templates", () => {
   assert.ok(ids.includes("agent-service-isolate"));
   assert.ok(ids.includes("agent-error-paths"));
   assert.ok(ids.includes("agent-security-audit"));
+  assert.ok(ids.includes("agent-dep-audit"));
+  assert.ok(ids.includes("agent-doc-drift"));
+  assert.ok(ids.includes("agent-config-audit"));
+  assert.ok(ids.includes("agent-api-contract"));
   assert.ok(ids.includes("deep-debug"));
   assert.ok(ids.includes("deep-feature"));
   assert.ok(ids.includes("deep-optimize"));
@@ -251,4 +256,74 @@ test("synthesizeWebEnvelope generates structured envelopes for Deep Think templa
   });
   assert.ok(deepHarden.fullEnvelope.includes("Adversarial Hardening Protocol"));
   assert.ok(deepHarden.fullEnvelope.includes("Unicode Bidi and zero-width smuggling"));
+});
+
+test("universal templates are stack-neutral and carry falsifiable oracles", () => {
+  // These templates ship to Cargo, go.mod, pyproject, composer, Gemfile, Maven
+  // and .NET repositories via `agentctl init`, so they must not bake in npm,
+  // npx, node, or a single language's tooling. The verify command is supplied
+  // by the caller from config.verify.test (already resolved by the stack
+  // detector), so it can be `cargo test`, `go test ./...`, `pytest`, etc.
+  const source = readFileSync(new URL("../src/web-templates.mjs", import.meta.url), "utf-8");
+
+  // Isolate the block of universal templates so a coincidental npm reference
+  // elsewhere in the file cannot make this test pass accidentally. The
+  // per-template defaultVerifyCmd line is the framework's placeholder, which
+  // callers override from the target repo's stack config — strip it so the
+  // check measures the prompt text a Rust/Go/Python project would actually
+  // receive, not the harness default.
+  const universalBlockStart = source.indexOf('"agent-dep-audit"');
+  const universalBlock = source
+    .slice(universalBlockStart)
+    .replace(/^\s*defaultVerifyCmd:[^\n]*$/gm, "");
+  const forbidden = [/\bnpm (?:test|run|install|ci|audit)\b/, /\bnpx\b/, /\bnode_modules\b/, /\bpackage\.json\b/];
+  for (const pattern of forbidden) {
+    assert.doesNotMatch(
+      universalBlock,
+      pattern,
+      "universal (agent-dep-*) templates must not hardcode Node/JS tooling"
+    );
+  }
+
+  // Each universal template must still name a real, locally-falsifiable oracle
+  // rather than a "best practice" claim no test can exercise.
+  const dep = synthesizeWebEnvelope("agent-dep-audit", {});
+  assert.equal(dep.templateId, "agent-dep-audit");
+  assert.ok(dep.prompt.includes("Offline Verification Oracle"));
+  assert.ok(dep.prompt.includes("fail on a hand-broken fixture"));
+  assert.ok(dep.criticFocus.some((f) => /cve|advisory|network/i.test(f)));
+
+  const drift = synthesizeWebEnvelope("agent-doc-drift", {});
+  assert.equal(drift.templateId, "agent-doc-drift");
+  assert.ok(drift.prompt.includes("Command & Flag Inventory"));
+  assert.ok(drift.criticFocus.some((f) => /\.env\.example|environment variables/i.test(f)));
+
+  const cfg = synthesizeWebEnvelope("agent-config-audit", {});
+  assert.equal(cfg.templateId, "agent-config-audit");
+  assert.ok(cfg.prompt.includes("fail closed"));
+  assert.ok(cfg.prompt.includes("redact"));
+  assert.ok(cfg.criticFocus.some((f) => /fail[- ]open|truthy/i.test(f)));
+
+  const api = synthesizeWebEnvelope("agent-api-contract", {});
+  assert.equal(api.templateId, "agent-api-contract");
+  assert.ok(api.prompt.includes("Route/Handler Parity"));
+  assert.ok(api.prompt.includes("stack trace"));
+  assert.ok(api.criticFocus.some((f) => /orphan|unhandled/i.test(f)));
+
+  // verifyCmd is overridable for non-Node stacks without editing the template.
+  const rust = synthesizeWebEnvelope("agent-dep-audit", {}, { verifyCmd: "cargo test --workspace" });
+  assert.equal(rust.verifyCmd, "cargo test --workspace");
+  assert.ok(rust.fullEnvelope.includes("cargo test --workspace"));
+});
+
+test("universal templates resolve through planTaskCreate for a non-Node verify command", () => {
+  const plan = planTaskCreate(process.cwd(), {
+    template: "agent-config-audit",
+    verifyCmd: "pytest",
+    allowUnverifiable: false,
+  });
+  assert.ok(plan.ok, `plan should be accepted: ${plan.error || ""}`);
+  assert.ok(plan.fullPrompt.includes("fail closed"));
+  assert.ok(plan.taskFileContent.includes("pytest"));
+  assert.ok(!plan.fullPrompt.includes("npm test"));
 });
