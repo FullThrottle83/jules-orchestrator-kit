@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, extname } from "node:path";
 import { redactSecrets } from "./security.mjs";
+import { resolveWindowsSpawn } from "./git.mjs";
 
 // Extensions node --check can parse as a script. .mjs/.cjs are unambiguous;
 // plain .js is checked as a script too — a stray top-level ESM import would
@@ -509,10 +510,18 @@ export function createProvider(spec = "jules", config = {}) {
 
         const processedArgs = filteredArgs.map((arg) => interpolateString(arg, data));
 
-        const res = spawnSync(command, processedArgs, {
+        // `claude`, `gemini` and `codex` are npm-installed CLI binaries, which on
+        // Windows are `.cmd` shims that `spawnSync(..., { shell: false })` cannot
+        // start (CreateProcess cannot run a batch file). Route them through
+        // cmd.exe with per-argument quoting instead (P-08); on other platforms
+        // this is a null and the command spawns directly as before.
+        const winSpawn = resolveWindowsSpawn(command, processedArgs, process.env);
+
+        const res = spawnSync(winSpawn ? winSpawn.file : command, winSpawn ? winSpawn.args : processedArgs, {
           cwd: config._root || process.cwd(),
           encoding: "utf-8",
           shell: false,
+          windowsVerbatimArguments: Boolean(winSpawn && winSpawn.verbatim),
           input: providerSpec.promptViaStdin ? data.prompt : undefined,
           timeout: providerSpec.timeoutMs || 900000,
           maxBuffer: 32 * 1024 * 1024,

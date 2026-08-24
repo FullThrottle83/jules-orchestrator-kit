@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { git, changedFiles, diffText } from "../git.mjs";
-import { resolveRoot } from "../config.mjs";
+import { resolveRoot, isWindowsAbsolutePath } from "../config.mjs";
 
 export class CheckpointError extends Error {
   constructor(message, opts = {}) {
@@ -9,6 +9,29 @@ export class CheckpointError extends Error {
     this.name = "CheckpointError";
     this.code = opts.code || 1;
   }
+}
+
+// Checkpoint ids are used verbatim as the snapshot filename under
+// `.agent/state/checkpoints/`. An id that is not a single plain filename —
+// `../…`, `C:\…`, `\\server\share`, or any value carrying a separator — would
+// let a restore read (or a create write) outside that directory. Ids are
+// therefore restricted to one `[A-Za-z0-9]`-led filename component, and the
+// drive/UNC spellings are rejected explicitly on top of the whitelist
+// (`SEC-02` / `P-01`).
+const CHECKPOINT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function assertSafeCheckpointId(id) {
+  if (
+    typeof id !== "string" ||
+    id.length === 0 ||
+    isWindowsAbsolutePath(id) ||
+    !CHECKPOINT_ID_RE.test(id)
+  ) {
+    throw new CheckpointError(
+      `Invalid checkpoint session id '${id}': expected a plain filename (letters, digits, '.', '_', '-') without path separators.`
+    );
+  }
+  return id;
 }
 
 /**
@@ -29,6 +52,7 @@ export function getCheckpointDir(root = resolveRoot()) {
  * @returns {object} Checkpoint metadata
  */
 export function createCheckpoint(sessionId = `session-${Date.now()}`, options = {}) {
+  const safeId = assertSafeCheckpointId(sessionId);
   const root = options.root || resolveRoot();
   const dir = getCheckpointDir(root);
 
@@ -47,7 +71,7 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
 
   const snapshot = {
     version: 1,
-    id: sessionId,
+    id: safeId,
     timestamp: new Date().toISOString(),
     headSha,
     branch,
@@ -55,7 +79,7 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
     diffContent,
   };
 
-  const snapshotPath = join(dir, `${sessionId}.json`);
+  const snapshotPath = join(dir, `${safeId}.json`);
   writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), "utf-8");
 
   // Keep last 10 checkpoints
@@ -82,6 +106,10 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
     }
     targetId = list[0].id;
   }
+
+  // A caller-supplied id becomes a filename here; reject anything that is not
+  // a plain filename before `join` can turn it into a path escape (`P-01`).
+  targetId = assertSafeCheckpointId(targetId);
 
   const snapshotFile = join(dir, `${targetId}.json`);
   if (!existsSync(snapshotFile)) {

@@ -80,6 +80,31 @@ export function normalizePath(p) {
 }
 
 /**
+ * True when a path is a Windows absolute path and therefore can never name a
+ * file inside a repository checked out to a normal relative location.
+ *
+ * Covered spellings (after `normalizePath` folds `\` to `/`):
+ *
+ *   - Drive-qualified: `C:/...`, `C:\...`
+ *   - Drive-relative:  `C:foo` — on Windows this resolves against the *current
+ *     directory of drive C:*, which is never the repository root and so is an
+ *     escape even without a leading slash.
+ *   - UNC: `//server/share`, `\\server\share`
+ *
+ * A POSIX absolute path (`/etc/passwd`) is intentionally NOT matched here:
+ * the existing `startsWith("/")` check already covers it, and the two spellings
+ * need to stay distinguishable in messages.
+ *
+ * @param {string} p
+ * @returns {boolean}
+ */
+export function isWindowsAbsolutePath(p) {
+  if (!p || typeof p !== "string") return false;
+  const norm = normalizePath(p);
+  return /^[A-Za-z]:/.test(norm) || norm.startsWith("//");
+}
+
+/**
  * Reduces a repo-relative path to a canonical form for pattern matching:
  * separators normalised, duplicate slashes collapsed, `.` segments dropped,
  * `..` segments resolved, and any leading `./` or trailing `/` removed.

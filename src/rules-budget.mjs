@@ -45,8 +45,14 @@ export function checkRulesBudget(root = process.cwd(), opts = {}) {
 
     try {
       const content = readFileSync(fullPath, "utf-8");
-      const charCount = content.length;
-      const lineCount = content.split("\n").length;
+      // A CRLF checkout inflates the character count by one `\r` per line, so
+      // the identical rules file passes as LF and fails as CRLF — a false
+      // budget violation that depends purely on git's autocrlf setting rather
+      // than the content. Normalise line endings before measuring (P-12) so the
+      // budget counts the rule text, not the line-ending dialect.
+      const normalized = content.replace(/\r\n/g, "\n");
+      const charCount = normalized.length;
+      const lineCount = normalized.split("\n").length;
 
       if (charCount > maxChars) {
         violations.push({

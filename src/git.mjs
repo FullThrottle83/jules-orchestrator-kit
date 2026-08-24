@@ -1,6 +1,6 @@
 import { execFileSync, execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { normalizePath } from "./config.mjs";
 
 
@@ -17,6 +17,118 @@ export class GateError extends Error {
 
 const DEFAULT_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024; // 10 MB
+
+// Windows cmd.exe quoting. `.cmd`/`.bat` shims (npm.cmd, claude.cmd, …) cannot
+// be spawned by CreateProcess, so they must run through cmd.exe, and the
+// command line cmd.exe sees must round-trip every argv element exactly. The
+// rules below follow the C runtime's argument parser and cmd.exe's meta-char
+// escaping — the same algorithm cross-spawn uses — reimplemented here so the
+// kit stays dependency-free.
+
+// Characters cmd.exe treats specially outside double quotes.
+const WINDOWS_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
+// A real Windows executable, which CreateProcess can start without a shell.
+const WINDOWS_NATIVE_EXE = /\.(?:com|exe)$/i;
+// An npm-style cmd shim, which re-parses its own arguments and therefore needs
+// its meta chars double-escaped.
+const WINDOWS_CMD_SHIM = /node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i;
+
+/** Escapes cmd.exe meta characters in a command *name*. */
+export function windowsEscapeCommand(command) {
+  return String(command).replace(WINDOWS_META_CHARS, "^$1");
+}
+
+/**
+ * Quotes a single argv element for cmd.exe.
+ *
+ * @param {string} arg
+ * @param {boolean} [doubleEscapeMetaChars] true when the command is a cmd-shim
+ *   that will re-parse its own arguments (node_modules/.bin/*.cmd).
+ * @returns {string}
+ */
+export function windowsEscapeArgument(arg, doubleEscapeMetaChars = false) {
+  let ret = String(arg);
+  // Backslash runs immediately before a double quote: double the backslashes
+  // and escape the quote.
+  ret = ret.replace(/(?=(\\+?)?)\1"/g, '$1$1\\"');
+  // A backslash run at the very end will sit in front of the closing quote we
+  // add next: double it so it stays literal.
+  ret = ret.replace(/(?=(\\+?)?)\1$/, "$1$1");
+  ret = `"${ret}"`;
+  ret = ret.replace(WINDOWS_META_CHARS, "^$1");
+  if (doubleEscapeMetaChars) ret = ret.replace(WINDOWS_META_CHARS, "^$1");
+  return ret;
+}
+
+/**
+ * Resolves `binary` against PATH + PATHEXT on Windows.
+ *
+ * @param {string} binary
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string | null}
+ */
+function resolveWindowsCommand(binary, env) {
+  const pathExt = (env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").map((e) => e.trim()).filter(Boolean);
+  const hasSeparator = /[\\/]/.test(binary) || /^[A-Za-z]:/.test(binary);
+
+  const candidates = [];
+  if (hasSeparator) {
+    candidates.push(binary);
+    for (const ext of pathExt) candidates.push(binary + ext);
+  } else {
+    const dirs = (env.PATH || "").split(delimiter).filter(Boolean);
+    for (const dir of dirs) {
+      for (const ext of pathExt) candidates.push(join(dir, binary + ext));
+      candidates.push(join(dir, binary));
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(candidate)) return candidate;
+    } catch (_) {}
+  }
+  return null;
+}
+
+/**
+ * Builds the spawn arguments that correctly execute `binary` with `args` on
+ * Windows, handling the `.cmd`/`.bat` shims package managers and CLI providers
+ * install. Returns null on non-Windows so callers keep spawning the binary
+ * directly (`P-07`).
+ *
+ * @param {string} binary
+ * @param {string[]} args
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {NodeJS.Platform} [platform]
+ * @returns {{ file: string, args: string[], verbatim: boolean } | null}
+ */
+export function resolveWindowsSpawn(binary, args, env = process.env, platform = process.platform) {
+  if (platform !== "win32") return null;
+
+  const argArray = (args || []).map((a) => String(a));
+  const resolved = resolveWindowsCommand(binary, env);
+
+  // A native executable is spawned directly — its argv needs no quoting.
+  if (resolved && WINDOWS_NATIVE_EXE.test(resolved)) {
+    return { file: resolved, args: argArray, verbatim: false };
+  }
+
+  // Everything else (`.cmd`, `.bat`, or an unresolved name) goes through
+  // cmd.exe. The `/s /c` invocation plus one outer quote pair is the shape
+  // cmd.exe expects so the pre-quoted argv parses back into the same elements.
+  const commandName = resolved || binary;
+  const doubleEscape = WINDOWS_CMD_SHIM.test(resolved || commandName);
+  const shellCommand = [windowsEscapeCommand(commandName)]
+    .concat(argArray.map((a) => windowsEscapeArgument(a, doubleEscape)))
+    .join(" ");
+
+  return {
+    file: process.env.ComSpec || "cmd.exe",
+    args: ["/d", "/s", "/c", `"${shellCommand}"`],
+    verbatim: true,
+  };
+}
 
 export function runCmd(command, opts = {}) {
   const cwd = opts.cwd || process.cwd();
@@ -53,14 +165,23 @@ export function runCmd(command, opts = {}) {
   // Windows install, and the gate reported it as a plain non-zero verification
   // rather than as an environment problem.
   //
-  // Node's `shell: true` rebuilds the command line as `[file, ...args].join(" ")`
-  // and passes it to cmd.exe verbatim. That reconstruction is normally lossy —
-  // it does not quote an argument containing a space — but it is exact here,
-  // because these tokens were produced by splitting on whitespace in the first
-  // place. It is also only reached when the command contains no shell
-  // metacharacter, since those take the execSync branch above. An array command
-  // is excluded: its elements may legitimately contain spaces.
+  // A whitespace-split string command is re-run under `shell: true`: Node
+  // rebuilds the command line as `[file, ...args].join(" ")` and passes it to
+  // cmd.exe verbatim. That reconstruction is normally lossy — it does not quote
+  // an argument containing a space — but it is exact here, because these tokens
+  // were produced by splitting on whitespace in the first place, and none of
+  // them can contain a shell metacharacter (those took the execSync branch).
+  //
+  // An *array* command cannot use that trick: its elements may legitimately
+  // contain spaces, so the same join would corrupt argv. Arrays are therefore
+  // wrapped in cmd.exe with every element quoted per the C-runtime + cmd.exe
+  // rules, which preserves argv exactly while still letting the shell resolve
+  // the `.cmd` shim (P-07).
   const winShim = tokenized && process.platform === "win32";
+  const winSpawn =
+    !useShell && !winShim && process.platform === "win32"
+      ? resolveWindowsSpawn(binary, args, opts.env || process.env)
+      : null;
 
   if (!binary && !useShell) {
     if (opts.ignoreError) return { status: 0, stdout: "", stderr: "" };
@@ -77,10 +198,11 @@ export function runCmd(command, opts = {}) {
           timeout,
           maxBuffer,
         })
-      : execFileSync(binary, args, {
+      : execFileSync(winSpawn ? winSpawn.file : binary, winSpawn ? winSpawn.args : args, {
           cwd,
           encoding: "utf-8",
           shell: winShim,
+          windowsVerbatimArguments: Boolean(winSpawn && winSpawn.verbatim),
           stdio: ["ignore", "pipe", "pipe"],
           env: opts.env || process.env,
           timeout,

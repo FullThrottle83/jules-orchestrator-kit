@@ -1,7 +1,7 @@
 import { openSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, existsSync, lstatSync, unlinkSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
-import { canonicalizePath } from "./config.mjs";
+import { canonicalizePath, isWindowsAbsolutePath } from "./config.mjs";
 import { detectCrossPackageBoundaryViolations } from "./stack-detector.mjs";
 
 export const HIGH_CONFIDENCE_PATTERNS = [
@@ -208,34 +208,118 @@ export function anonymizePii(text) {
  * @param {string} globPattern
  * @param {{ caseInsensitive?: boolean }} [opts]
  */
+/**
+ * Matches one `/`-free glob segment against one `/`-free path segment.
+ *
+ * Only `*` (zero or more characters) and `?` (exactly one) are special; every
+ * other character — including regex metacharacters like `(`, `+`, `.`, `[` —
+ * is matched literally, preserving the escaping behaviour the old regex
+ * translation had. A segment that is exactly `*` keeps its historical one-or-
+ * more semantics, so `*` cannot match an empty segment.
+ *
+ * Implemented with the classic greedy-star wildcard algorithm rather than a
+ * compiled regex: a segment like `*a*a*a*a*a*a*b` translated to
+ * `^[^/]*a[^/]*a…$` and backtracked exponentially on a long run of `a`s, so
+ * this path must never build a regex. The algorithm scans each character a
+ * bounded number of times and cannot blow up the way the regex could.
+ *
+ * @param {string} str
+ * @param {string} pattern
+ * @param {boolean} [caseInsensitive]
+ * @returns {boolean}
+ */
+function matchGlobSegment(str, pattern, caseInsensitive = false) {
+  if (pattern === "*") return str.length > 0;
+
+  let s = caseInsensitive ? str.toLowerCase() : str;
+  let p = caseInsensitive ? pattern.toLowerCase() : pattern;
+
+  let si = 0;
+  let pi = 0;
+  let star = -1;
+  let matchIdx = 0;
+
+  while (si < s.length) {
+    if (pi < p.length && (p[pi] === "?" || p[pi] === s[si])) {
+      si++;
+      pi++;
+    } else if (pi < p.length && p[pi] === "*") {
+      star = pi;
+      matchIdx = si;
+      pi++;
+    } else if (star !== -1) {
+      pi = star + 1;
+      matchIdx++;
+      si = matchIdx;
+    } else {
+      return false;
+    }
+  }
+
+  while (pi < p.length && p[pi] === "*") pi++;
+  return pi === p.length;
+}
+
+/**
+ * Linear-time glob matcher over `/`-split segments.
+ *
+ * `**` matches zero or more whole segments; every other pattern segment
+ * matches exactly one path segment via `matchGlobSegment`. This is a
+ * bottom-up dynamic program with a rolling array: O(n·m) time and O(m) memory
+ * for n path and m pattern segments, and it builds no regex at all.
+ *
+ * The previous implementation translated `**` into overlapping dot-star and
+ * start-anchored `(?: … |^)` alternations (`SEC-01`). Anchored against `$`, a
+ * pattern like `*a*a*a*a*a*a*a*a*b` or a chain of globstars caused catastrophic
+ * backtracking — the match time grew exponentially with input length and a
+ * hostile deny rule or file list could stall the dispatch gate. The DP
+ * replaces every one of those constructs with a bounded scan.
+ *
+ * @param {string[]} pathSegs
+ * @param {string[]} patSegs
+ * @param {boolean} [caseInsensitive]
+ * @returns {boolean}
+ */
+function matchGlobSegments(pathSegs, patSegs, caseInsensitive = false) {
+  const n = pathSegs.length;
+  const m = patSegs.length;
+
+  // next[j] answers "does pathSegs[i+1..] match patSegs[j..]?". Seeded for the
+  // empty-path row (i = n): only true when every remaining pattern segment is
+  // `**`, since those are the only segments that can match zero path segments.
+  let next = new Array(m + 1).fill(false);
+  next[m] = true;
+  for (let j = m - 1; j >= 0; j--) {
+    next[j] = patSegs[j] === "**" && next[j + 1];
+  }
+
+  for (let i = n - 1; i >= 0; i--) {
+    const cur = new Array(m + 1).fill(false);
+    // cur[m] stays false: a path segment remains but the pattern is exhausted.
+    for (let j = m - 1; j >= 0; j--) {
+      if (patSegs[j] === "**") {
+        // Consume this segment and keep `**` (next[j]), or match zero segments
+        // and move on (cur[j + 1]).
+        cur[j] = next[j] || cur[j + 1];
+      } else if (matchGlobSegment(pathSegs[i], patSegs[j], caseInsensitive)) {
+        cur[j] = next[j + 1];
+      }
+    }
+    next = cur;
+  }
+
+  return next[0];
+}
+
 export function matchesGlob(filePath, globPattern, opts = {}) {
   if (!filePath || !globPattern) return false;
   const file = canonicalizePath(filePath);
   const pattern = canonicalizePath(globPattern);
-  const flags = opts.caseInsensitive ? "i" : "";
+  const caseInsensitive = Boolean(opts.caseInsensitive);
 
-  if (opts.caseInsensitive ? file.toLowerCase() === pattern.toLowerCase() : file === pattern) return true;
+  if (caseInsensitive ? file.toLowerCase() === pattern.toLowerCase() : file === pattern) return true;
 
-  const parts = pattern.split("/");
-  const regexParts = parts.map((part) => {
-    if (part === "**") return "___GLOBSTAR___";
-    if (part === "*") return "[^/]+";
-    const escaped = part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return escaped.replace(/\\\*/g, "[^/]*").replace(/\\\?/g, ".");
-  });
-
-  let regexStr = regexParts.join("/");
-  regexStr = regexStr
-    .replace(/^___GLOBSTAR___\//g, "(?:.*/|^)")
-    .replace(/\/___GLOBSTAR___$/g, "(?:/.*|$)")
-    .replace(/\/___GLOBSTAR___\//g, "(?:/|/.+/|/)")
-    .replace(/___GLOBSTAR___/g, ".*");
-
-  try {
-    return new RegExp(`^${regexStr}$`, flags).test(file);
-  } catch (_) {
-    return false;
-  }
+  return matchGlobSegments(file.split("/"), pattern.split("/"), caseInsensitive);
 }
 
 export function isForbiddenPath(filePath, config = {}) {
@@ -256,8 +340,19 @@ export function checkScope(files = [], scope = {}, opts = {}) {
     const file = canonicalizePath(rawFile);
 
     // A path that climbs out of the repository root can never be legitimate and
-    // must not be silently pattern-matched against repo-relative rules.
-    if (file === ".." || file.startsWith("../") || file.startsWith("/")) {
+    // must not be silently pattern-matched against repo-relative rules. This
+    // covers every spelling: POSIX absolute (`/etc/passwd`) and traversal
+    // (`../`, `..`), Windows drive-qualified and drive-relative (`C:\...`,
+    // `C:/...`, `C:foo`), and UNC (`\\server\share`, `//server/share`). The raw
+    // spelling is checked as well as the canonical one, because canonicalisation
+    // folds a leading `//` UNC into `/` and the check must fail on both.
+    if (
+      file === ".." ||
+      file.startsWith("../") ||
+      file.startsWith("/") ||
+      isWindowsAbsolutePath(rawFile) ||
+      isWindowsAbsolutePath(file)
+    ) {
       violations.push({ file, reason: "Path escapes the repository root", rule: "deny", pattern: "<traversal>" });
       continue;
     }
@@ -393,6 +488,59 @@ export function checkCrossPackageImports(diffOrText = "", root = process.cwd(), 
 // regex without changing how the value renders, copies, or authenticates.
 const INVISIBLE_CHARS = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\uFEFF]/g;
 
+// Unicode lookalikes that NFKD does NOT decompose. Full-width and other
+// compatibility forms are handled by String#normalize("NFKD") below; these are
+// the Cyrillic/Greek/Latin homoglyphs that survive NFKD because they are
+// distinct code points with no compatibility decomposition. A credential
+// scanner without this table can be defeated by a single substituted glyph,
+// e.g. `ghp_` spelled with Cyrillic `р`.
+const CONFUSABLE_TO_ASCII = new Map([
+  // Cyrillic
+  ["А", "A"], ["В", "B"], ["Е", "E"], ["К", "K"], ["М", "M"], ["Н", "H"],
+  ["О", "O"], ["Р", "P"], ["С", "C"], ["Т", "T"], ["У", "Y"], ["Х", "X"],
+  ["а", "a"], ["е", "e"], ["о", "o"], ["р", "p"], ["с", "c"], ["у", "y"],
+  ["х", "x"], ["і", "i"], ["ј", "j"], ["ѕ", "s"],
+  // Greek
+  ["Α", "A"], ["Β", "B"], ["Ε", "E"], ["Ζ", "Z"], ["Η", "H"], ["Ι", "I"],
+  ["Κ", "K"], ["Μ", "M"], ["Ν", "N"], ["Ο", "O"], ["Ρ", "P"], ["Τ", "T"],
+  ["Υ", "Y"], ["Χ", "X"], ["ο", "o"], ["ι", "i"], ["ν", "v"], ["υ", "u"],
+  ["ρ", "p"], ["τ", "t"], ["χ", "x"],
+  // Other Unicode lookalikes
+  ["ſ", "s"], // U+017F LATIN SMALL LETTER LONG S
+  ["K", "K"], // U+212A KELVIN SIGN
+]);
+
+/**
+ * Reduces the confusable spellings a credential can hide behind to plain
+ * ASCII before the secret patterns run (`SEC-04`).
+ *
+ *   1. NFKD decomposes full-width and other compatibility forms
+ *      (`ｇｈｐ＿…` → `ghp_…`).
+ *   2. Combining marks the decomposition may leave behind are stripped
+ *      (`e\u0301` → `e`).
+ *   3. The curated lookalike table maps Cyrillic/Greek/Latin homoglyphs that
+ *      NFKD cannot see through to their ASCII target.
+ *
+ * This is the zero-dependency subset of Unicode TR39 confusable handling; the
+ * full confusables data table is intentionally omitted so the kit keeps
+ * shipping with no runtime dependencies.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function normalizeSecretText(str) {
+  if (!str || typeof str !== "string") return str;
+  let out = str;
+  try {
+    out = out.normalize("NFKD");
+  } catch (_) {}
+  out = out.replace(/[\u0300-\u036f]/g, "");
+  for (const [from, to] of CONFUSABLE_TO_ASCII) {
+    out = out.split(from).join(to);
+  }
+  return out;
+}
+
 // A credential split across a source-level string concatenation is invisible to
 // a line-oriented scanner. This is not only an evasion technique — formatters
 // wrap long string literals exactly this way, so it also happens by accident.
@@ -442,9 +590,14 @@ function secretScanVariants(addedLines) {
 
   const hexDecoded = tryHexDecodeTokens(dejoined);
   const pctDecoded = tryPercentDecode(dejoined);
+  // Confusable / NFKD normalisation runs over both the raw text and the
+  // concatenation-collapsed text, so a credential that is both split across a
+  // source-level join AND spelled with homoglyphs still surfaces.
+  const confusable = normalizeSecretText(stripped);
+  const confusableDejoined = normalizeSecretText(dejoined);
 
   return {
-    all: [...new Set([addedLines, stripped, dejoined, hexDecoded, pctDecoded])],
+    all: [...new Set([addedLines, stripped, dejoined, hexDecoded, pctDecoded, confusable, confusableDejoined])],
     normalized: dejoined,
   };
 }
