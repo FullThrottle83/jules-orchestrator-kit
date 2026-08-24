@@ -41,7 +41,9 @@ Usage: agentctl <command> [options]
 
 Commands:
   dispatch | create     Dispatch a single task to an AI agent (--role <name>, --tier fast|complex, --check-premise)
+  check                 Run all-in-one CI security, rules, and stack verification gate
   gate | audit          Run CI security and verification gate against current branch
+  rules <action>        Audit rule token budgets or compile rule sentinels (check | compile)
   queue                 Run pending task queue (--dag, --concurrency <n>)
   swarm                 Run parallel task swarm
   mcp                   Start stdio Model Context Protocol (MCP) server
@@ -343,6 +345,7 @@ async function main() {
       break;
     }
 
+    case "check":
     case "gate":
     case "audit": {
       const { values } = parseArgs({
@@ -1883,6 +1886,76 @@ async function main() {
         process.exit(res.ok ? 0 : 1);
       } else {
         console.error(`Unknown evidence subaction: ${subAction}. Use generate | verify | show.`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case "rules": {
+      const subcmd = args[1] || "check";
+      const { checkRulesBudget, compileRules } = await import("../src/rules_budget.mjs");
+
+      if (subcmd === "check") {
+        const { values } = parseArgs({
+          args: args.slice(2),
+          options: {
+            json: { type: "boolean", short: "j" },
+            "max-chars": { type: "string" },
+            "max-lines": { type: "string" },
+          },
+          allowPositionals: true,
+        });
+
+        const res = checkRulesBudget(root, {
+          maxChars: values["max-chars"] ? Number(values["max-chars"]) : undefined,
+          maxLines: values["max-lines"] ? Number(values["max-lines"]) : undefined,
+        });
+
+        if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log("\n📏 agentctl Rules Budget & Line Audit");
+          console.log("-----------------------------------------------------");
+          if (res.ok) {
+            console.log("✅ All agent rule files are within safe character (<10,000) and line (<250) limits.");
+          } else {
+            console.log("❌ RULES BUDGET VIOLATIONS DETECTED:");
+            for (const v of res.violations) {
+              console.log(`  - ${v.path}: ${v.reason}`);
+            }
+            console.log("\n💡 Remediation: Trim prose rules or convert textual learnings into AST lints / assertions.");
+          }
+          console.log("-----------------------------------------------------\n");
+        }
+        process.exit(res.ok ? 0 : 1);
+      } else if (subcmd === "compile") {
+        const { values } = parseArgs({
+          args: args.slice(2),
+          options: {
+            out: { type: "string", short: "o" },
+            json: { type: "boolean", short: "j" },
+          },
+          allowPositionals: true,
+        });
+
+        const res = compileRules(root);
+        if (values.out) {
+          const { writeFileSync } = await import("node:fs");
+          const { resolve } = await import("node:path");
+          writeFileSync(resolve(root, values.out), res.compiled, "utf-8");
+          if (values.json) {
+            console.log(JSON.stringify({ ok: true, out: values.out, sha256: res.sha256, bodyLen: res.bodyLen, sources: res.sources }, null, 2));
+          } else {
+            console.log(`✅ Compiled ${res.sources.length} rule source(s) into ${values.out} (SHA-256: ${res.sha256.slice(0, 12)}..., ${res.bodyLen} bytes)`);
+          }
+        } else if (values.json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(res.compiled);
+        }
+        process.exit(0);
+      } else {
+        console.error(`Unknown rules action: "${subcmd}". Usage: agentctl rules [check | compile]`);
         process.exit(1);
       }
       break;

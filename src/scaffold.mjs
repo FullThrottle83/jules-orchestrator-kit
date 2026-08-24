@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync, appendFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { detectPolyglotStack, detectEdgeRuntime } from "./stack-detector.mjs";
 
 const KIT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -78,6 +79,136 @@ function copyDir(srcDir, destDir, force) {
 }
 
 /**
+ * Generate stack-tailored contract templates (SPEC.md, CONSTRAINTS.md, DESIGN.md).
+ *
+ * @param {string} root - Project root
+ * @param {{ force?: boolean }} [options]
+ * @returns {string[]} Created contract file names
+ */
+export function scaffoldContracts(root = process.cwd(), options = {}) {
+  const force = Boolean(options.force);
+  const created = [];
+
+  const specPath = join(root, "SPEC.md");
+  if (!existsSync(specPath) || force) {
+    const specContent = `# SPEC — System & Product Contract
+
+## Product
+- Brief 1–2 sentence description of the system and target users.
+
+## Core Loop
+- Step-by-step lifecycle from input/event to final response/artifact.
+
+## Goals
+- [Goal 1: Core invariant functionality that MUST work]
+- [Goal 2: Performance, throughput, or latency targets]
+- [Goal 3: Test coverage & reliability criteria]
+
+## Non-Goals
+- [Explicit out-of-scope feature or abstraction]
+- [Out-of-scope third-party dependencies or integrations]
+
+## Definition of Done
+- All verification test suites pass cleanly with 0 errors
+- Zero security vulnerabilities and zero leaked secrets
+- Diff size stays within the configured limit (<= 75 KB)
+`;
+    writeFileSync(specPath, specContent, "utf-8");
+    created.push("SPEC.md");
+  }
+
+  const constraintsPath = join(root, "CONSTRAINTS.md");
+  if (!existsSync(constraintsPath) || force) {
+    const edgeInfo = detectEdgeRuntime(root);
+    const stackInfo = detectPolyglotStack(root);
+
+    let constraintsContent = "";
+    if (edgeInfo.edgePlatform === "cloudflare") {
+      constraintsContent = `# CONSTRAINTS — Cloudflare Workers / workerd
+
+## Runtime Invariants
+- Zero unbundled \`node:*\` imports in \`src/\` (rely on standard Web APIs or polyfilled modules)
+- Bundle size: Max 10 MB total
+- RAM memory limit: 128 MB
+- Database & KV: Batch operations via \`db.batch([])\`, zero unbounded query loops
+- Static content: Zero client-side JavaScript for static content
+`;
+    } else if (stackInfo.stack === "cargo") {
+      constraintsContent = `# CONSTRAINTS — Rust Architecture
+
+## Runtime & Safety Invariants
+- Zero \`unsafe\` blocks unless explicitly audited and documented
+- No unhandled \`.unwrap()\` or \`.expect()\` in production/request-handling code paths
+- Clippy compliance: \`cargo clippy -- -D warnings\` must pass with 0 warnings
+- Strict error propagation using \`Result<T, E>\` / \`thiserror\` / \`anyhow\`
+`;
+    } else if (stackInfo.stack === "go") {
+      constraintsContent = `# CONSTRAINTS — Go Architecture
+
+## Runtime & Safety Invariants
+- Deterministic builds: \`CGO_ENABLED=0\`
+- Explicit error handling: Never discard \`err\` returns (\`_ = err\` is strictly prohibited)
+- Data race free: \`go test -race ./...\` must pass with 0 failures
+- Strict struct tagging and deterministic serialization
+`;
+    } else if (["python", "poetry", "uv", "pipenv"].includes(stackInfo.stack)) {
+      constraintsContent = `# CONSTRAINTS — Python Architecture
+
+## Runtime & Safety Invariants
+- Strict type annotations on all function signatures (\`mypy --strict\` passes)
+- Zero unpinned dependencies in production manifests
+- Lint & format cleanly with \`ruff\` or \`flake8\`/\`black\`
+- Pytest suite passes 100% cleanly
+`;
+    } else {
+      constraintsContent = `# CONSTRAINTS — Technical Invariants
+
+## Architecture & Code Quality
+- Zero third-party runtime dependencies in core orchestration/shared packages
+- Diff Payload Budget: Keep diffs under 75 KB to prevent truncation
+- Strict Test Lock: Never weaken assertions or delete failing tests to force green status
+- Cross-Platform: Normalize all filesystem paths to POSIX slashes (\`/\`)
+`;
+    }
+
+    writeFileSync(constraintsPath, constraintsContent, "utf-8");
+    created.push("CONSTRAINTS.md");
+  }
+
+  // If web/UI stack is detected (Astro, Next, Svelte, Vue, React, Tailwind), scaffold DESIGN.md
+  const isWeb = existsSync(join(root, "astro.config.mjs")) ||
+    existsSync(join(root, "next.config.js")) ||
+    existsSync(join(root, "next.config.mjs")) ||
+    existsSync(join(root, "svelte.config.js")) ||
+    existsSync(join(root, "tailwind.config.js")) ||
+    existsSync(join(root, "tailwind.config.mjs")) ||
+    existsSync(join(root, "tailwind.config.ts"));
+
+  const designPath = join(root, "DESIGN.md");
+  if (isWeb && (!existsSync(designPath) || force)) {
+    const designContent = `# DESIGN — Visual Tokens & Design System
+
+## Typography
+- Headings: Clean sans-serif / geometric font
+- Body: Readable system font / sans-serif
+
+## Tokens (@theme)
+- Consistent spacing scale (4px, 8px, 16px, 24px, 32px, 48px)
+- Strict color tokens for surfaces, text, and borders
+
+## Hard UI Rules
+- Zero client-side JS for purely static content
+- Accessible contrast ratios (WCAG AA minimum 4.5:1)
+- Explicit hover, focus-visible, and active states on all interactive elements
+`;
+    writeFileSync(designPath, designContent, "utf-8");
+    created.push("DESIGN.md");
+  }
+
+  return created;
+}
+
+/**
  * Scaffold the repository assets the CLI's documented features depend on.
  *
  * This is the single source of truth for both entry points. `agentctl init`
@@ -90,7 +221,7 @@ function copyDir(srcDir, destDir, force) {
  * routine way to pick up new presets and must not overwrite local edits.
  *
  * @param {string} [root=process.cwd()]
- * @param {{ force?: boolean }} [options]
+ * @param {{ force?: boolean, contracts?: boolean }} [options]
  * @returns {{ created: string[], gitignore: string[] }}
  */
 export function scaffoldRepoAssets(root = process.cwd(), options = {}) {
@@ -126,6 +257,12 @@ export function scaffoldRepoAssets(root = process.cwd(), options = {}) {
   }
   if (copyDir(join(KIT_ROOT, ".agent/workflows"), join(agentDir, "workflows"), force) > 0) {
     created.push(".agent/workflows/");
+  }
+
+  // Scaffold contract documents (SPEC.md, CONSTRAINTS.md, DESIGN.md)
+  if (options.contracts !== false) {
+    const contracts = scaffoldContracts(root, options);
+    created.push(...contracts);
   }
 
   // isTaskFile() skips README.md, so the queue can carry its own explanation

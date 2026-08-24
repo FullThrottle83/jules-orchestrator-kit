@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.42.0] - 2026-08-24
+### Universal Rules Governance, All-In-One Check Gate & Stack Contracts
+
+*Brings first-class rules governance commands (`agentctl rules check`, `agentctl rules compile`), an all-in-one CI check gate (`agentctl check`), and stack-tailored contract template generation (`SPEC.md`, `CONSTRAINTS.md`, `DESIGN.md`) across 24+ polyglot stacks.*
+
+#### Added
+- **First-Class Rules CLI Subcommands (`agentctl rules`, `bin/agentctl.mjs`)**: Added `agentctl rules check` to audit instruction files (`AGENTS.md`, `.agent/rules/*.md`, etc.) against token and line budgets (<10,000 chars, <250 lines) to prevent silent LLM context truncation. Added `agentctl rules compile` to bundle modular rules into a single prompt block protected by SHA-256 and byte-length anti-truncation sentinels (`JULES_RULES_SENTINEL BEGIN/END`).
+- **All-In-One CI Verification Gate (`agentctl check`, `bin/agentctl.mjs`)**: Added `check` as a unified entrypoint for CI pipelines, running secret scanning, scope guard, diff payload budget (<75 KB), rules budget, and stack-detected test/build commands in one shot.
+- **Stack-Tailored Contract Template Scaffolding (`src/scaffold.mjs`)**: Added `scaffoldContracts()` integrated into `agentctl init` / `scaffoldRepoAssets`. Generates `SPEC.md`, `CONSTRAINTS.md` (tailored with specific runtime constraints for Cloudflare Workers / workerd, Rust/Cargo, Go, Python, and TypeScript/Node), and `DESIGN.md` for UI/web stacks.
+- **Rules CLI Test Suite (`test/rules-cli.test.mjs`)**: Added 11 unit and integration tests verifying rules audit, compilation sentinels, and multi-stack contract generation.
+
 ## [0.41.1] - 2026-08-23
 ### The Gate Knew More Than It Said
 

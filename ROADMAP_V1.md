@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.41.1 (Current Stable) ──► v0.42.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
- (Flash-Router & Attribution) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
+ v0.42.0 (Current Stable) ──► v0.43.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
+ (Universal Rules & Contracts) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.41.1)
+## ✅ Shipped Milestones (v0.20.0 – v0.42.0)
+
+### v0.42.0: Universal Rules Governance, All-In-One Check Gate & Stack Contracts
+- [x] **First-Class Rules CLI Subcommands (`bin/agentctl.mjs`, `src/rules-budget.mjs`)** — Added `agentctl rules check` (token and line budget linter preventing silent LLM context truncation) and `agentctl rules compile` (SHA-256 and byte-length anti-truncation sentinels).
+- [x] **All-In-One CI Verification Gate (`agentctl check`, `bin/agentctl.mjs`)** — Added `check` command to run secret scanning, scope guard, diff payload limits (<75 KB), rules budget, and auto-detected stack verification suites in one unified command.
+- [x] **Stack-Tailored Contract Template Scaffolding (`src/scaffold.mjs`)** — Automatically generates `SPEC.md`, stack-tailored `CONSTRAINTS.md` (Cloudflare/workerd, Rust, Go, Python, Node/TS), and `DESIGN.md` for UI projects on `agentctl init`.
+- [x] **Rules CLI Test Suite (`test/rules-cli.test.mjs`)** — Added 11 unit/integration tests covering rules budget checking, sentinel generation, and stack contract tailoring.
 
 ### v0.41.1: The Gate Knew More Than It Said
 - [x] **First-Install Blockers Closed (`src/security.mjs`, `src/scaffold.mjs`)** — A diff with 65+ integrity hashes failed closed as a CRITICAL secret leak, because a sha256 digest is 64 base64-alphabet characters and consumed a decode slot despite being discarded; and `agentctl init` left the kit's own ledgers and evidence manifests untracked in the tree the gate audits, so they came back as scope violations and then as a secret verdict. A new user hit both before dispatching anything.
