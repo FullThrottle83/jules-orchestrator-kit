@@ -196,6 +196,11 @@ describe("P-07: Windows .cmd shim spawning (quoting helpers)", () => {
       assert.ok(spec.args[3].includes(join(dir, "fake.cmd")), "command name is present in the cmd line");
       assert.ok(spec.args[3].includes('^"two^ words^"'), "space-bearing arg is quoted");
       assert.equal(spec.verbatim, true);
+
+      // Explicit ComSpec in environment is respected
+      const customEnv = { PATH: dir, PATHEXT: ".cmd", ComSpec: "C:\\Windows\\system32\\cmd.exe" };
+      const customSpec = resolveWindowsSpawn("fake", ["run"], customEnv, "win32");
+      assert.equal(customSpec.file, "C:\\Windows\\system32\\cmd.exe");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

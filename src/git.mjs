@@ -124,7 +124,7 @@ export function resolveWindowsSpawn(binary, args, env = process.env, platform = 
     .join(" ");
 
   return {
-    file: process.env.ComSpec || "cmd.exe",
+    file: (env && env.ComSpec) || "cmd.exe",
     args: ["/d", "/s", "/c", `"${shellCommand}"`],
     verbatim: true,
   };
