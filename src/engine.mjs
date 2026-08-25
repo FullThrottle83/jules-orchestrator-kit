@@ -12,7 +12,7 @@ import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { appendTelemetry as appendTelemetryUnsafe } from "./telemetry.mjs";
 
-import { spawn } from "node:child_process";
+import { spawnProcessGroup, killProcessTree } from "./process.mjs";
 import { resolveAffectedTests, executeQueueDag } from "./dag-engine.mjs";
 import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory } from "./remediation.mjs";
 import { hydratePrompt, harvestFailure } from "./memory.mjs";
@@ -1117,8 +1117,11 @@ ${
 
 /**
  * Live Dev Server & SSR Hydration Smoke Prober.
- * Spawns the server in a detached process group, polls the URL via globalThis.fetch,
- * intercepts SSR hydration errors, and cleanly kills the process group in a finally block.
+ * Spawns the server as a detached process-group leader, polls the URL via
+ * globalThis.fetch, intercepts SSR hydration errors, and guillotines the
+ * whole process group in a finally block (SIGTERM, then SIGKILL after a
+ * grace period for processes that ignore polite signals) so no watcher or
+ * background child survives to hold the port and cause EADDRINUSE.
  * @param {object} serverConfig
  * @param {string} serverConfig.command
  * @param {string} [serverConfig.url="http://localhost:3000"]
@@ -1144,9 +1147,8 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
   let stderrLogs = "";
 
   try {
-    child = spawn(shellBin, shellArgs, {
+    child = spawnProcessGroup(shellBin, shellArgs, {
       cwd: root,
-      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
     });
@@ -1235,11 +1237,11 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
   } finally {
     if (child && child.pid) {
       try {
-        if (isWin) {
-          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-        } else {
-          process.kill(-child.pid, "SIGTERM");
-        }
+        // Group guillotine: SIGTERM the whole process group, escalate to
+        // SIGKILL after the grace period if any descendant ignores it
+        // (Windows: taskkill /T /F). Already-dead groups report success, so
+        // every early-return path above still lands here harmlessly.
+        killProcessTree(child);
       } catch (_) {}
     }
   }

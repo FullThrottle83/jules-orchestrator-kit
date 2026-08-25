@@ -2,6 +2,7 @@ import { execFileSync, execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { normalizePath } from "./config.mjs";
+import { killProcessTree } from "./process.mjs";
 
 
 export const NET_GUARD_PRELOAD_URL = new URL("./preload-net-guard.mjs", import.meta.url).href;
@@ -188,11 +189,18 @@ export function runCmd(command, opts = {}) {
     throw new GateError("Empty command provided");
   }
 
+  // Every child is spawned `detached` so it becomes the leader of its own
+  // process group (POSIX setsid / Windows process-tree root). A timed-out
+  // command's shell dies on Node's SIGTERM kill while its background
+  // grandchildren — servers, watchers, Jest workers — survive orphaned and
+  // hold their ports. Group leadership is what lets the catch block below
+  // guillotine the whole tree via `err.pid`.
   try {
     const stdout = useShell
       ? execSync(shellCmd, {
           cwd,
           encoding: "utf-8",
+          detached: true,
           stdio: ["ignore", "pipe", "pipe"],
           env: opts.env || process.env,
           timeout,
@@ -202,6 +210,7 @@ export function runCmd(command, opts = {}) {
           cwd,
           encoding: "utf-8",
           shell: winShim,
+          detached: true,
           windowsVerbatimArguments: Boolean(winSpawn && winSpawn.verbatim),
           stdio: ["ignore", "pipe", "pipe"],
           env: opts.env || process.env,
@@ -211,6 +220,19 @@ export function runCmd(command, opts = {}) {
 
     return { status: 0, stdout: String(stdout || "").trim(), stderr: "" };
   } catch (err) {
+    // Containment: whatever the direct child left behind in its process
+    // group — after a timeout kill or a failed exit — must not outlive this
+    // call. `err.pid` is the detached group leader's pid, so one negative-pid
+    // SIGTERM (with SIGKILL escalation after the grace period) reaps every
+    // orphaned descendant. The cleanup itself must never throw: an
+    // already-dead group reports success, and a cleanup failure must not
+    // replace the real error the caller is about to see.
+    if (err && err.pid) {
+      try {
+        killProcessTree(err.pid, { graceMs: opts.graceMs });
+      } catch (_) {}
+    }
+
     const isTimeout = err.code === "ETIMEDOUT" || (err.signal === "SIGTERM" && err.killed);
     const isNobufs = err.code === "ENOBUFS" || (err.message && err.message.includes("maxBuffer"));
 

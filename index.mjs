@@ -20,6 +20,7 @@ export {
 export { sanitizeUntrustedData, buildAgentEnvelope } from "./src/prompt-guard.mjs";
 export { isolateMcpStdout, writeMcpFrame } from "./src/mcp.mjs";
 export { git, runCmd, resolveBase, changedFiles, diffBytes, diffText } from "./src/git.mjs";
+export { spawnProcessGroup, killProcessTree } from "./src/process.mjs";
 export {
   createProvider,
   createFailoverProvider,

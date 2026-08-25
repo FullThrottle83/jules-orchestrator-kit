@@ -122,6 +122,7 @@ const FROZEN_SDK_EXPORTS = [
   "isolateMcpStdout",
   "journalDone",
   "journalIntent",
+  "killProcessTree",
   "levenshteinDistance",
   "listCheckpoints",
   "listHandovers",
@@ -203,6 +204,7 @@ const FROZEN_SDK_EXPORTS = [
   "secretInput",
   "select",
   "shannonEntropy",
+  "spawnProcessGroup",
   "spinner",
   "styleText",
   "synthesizeFlakyHealingTask",
@@ -255,7 +257,7 @@ describe("SDK API Surface & Exit Code Stability Lock", () => {
       `Unapproved new SDK exports detected:\n${addedExports.join("\n")}\nIf intentional, review and update FROZEN_SDK_EXPORTS snapshot.`
     );
 
-    assert.equal(actualExports.length, 208, "Total exported SDK symbols count must remain locked at 208");
+    assert.equal(actualExports.length, 210, "Total exported SDK symbols count must remain locked at 210");
   });
 
   it("ensures every exported symbol is defined and non-null", () => {
