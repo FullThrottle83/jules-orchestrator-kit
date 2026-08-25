@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.43.0] - 2026-08-24
+### Documented Specialist Roles Ship As Prompts, & Universal Stack-Agnostic Envelopes
+
+*Closes the gap where `JULES_RULES_TEMPLATE.md` advertised four specialist personas (A11y, Scribe, Spectator, Alchemist) that had no prompt file behind them — `--role a11y` resolved to `null` on every install — and adds four task templates that work in Cargo, Go, Python, PHP, .NET, Java, Ruby and Elixir repositories instead of only Node/web projects.*
+
+#### Added
+- **Four specialist role prompts ship in `.agent/prompts/`**: `A11y.md` (WCAG 2.2, keyboard/focus, measured contrast), `Scribe.md` (metadata, JSON-LD, canonical/OpenGraph parity, honest claims), `Spectator.md` (headless E2E, deterministic assertions, no `waitForTimeout`, state isolation), and `Alchemist.md` (schema constraints, reversible migrations, no silent data loss). All four are stack-neutral and hydrate `{{VERIFY_TEST}}`, `{{VERIFY_LINT}}`, `{{DIFF_KB}}` and `{{BASE_BRANCH}}` from the target repository's config the same way Bolt, Sentinel, Janitor and Overseer already did, so a non-Node project is never told to run `npm test`.
+- **Four universal, stack-agnostic task envelopes (`src/web-templates.mjs`)**: `agent-dep-audit` (pinned/checksummed dependency resolution, stale-lockfile gate, install-script scrutiny, offline — no advisory API calls), `agent-doc-drift` (documented CLI flags, env vars and SDK exports reconciled against the actual shipped surface), `agent-config-audit` (typed config loading, fail-closed required values, secret redaction in logs and errors), and `agent-api-contract` (route/handler parity, boundary input validation, one consistent error shape across REST/RPC surfaces). Each prompt names no package manager or language; the verification command is supplied by the caller from `config.verify.test`, which the stack detector already resolved.
+- **Test that every documented specialist role ships a prompt file** (`test/role-prompts.test.mjs`), and **tests for the four universal templates including a stack-neutrality assertion that pins no npm/npx/node tooling in their prompt text** (`test/web-templates.test.mjs`).
+
+#### Changed
+- **`scaffoldRepoAssets()` now lists all eight roles** in its created-files summary instead of only the original four (`src/scaffold.mjs`).
+- **`AGENTS.md`, `JULES_RULES_TEMPLATE.md`, `README.md` and `EXAMPLES.md`** document the eight personas (with `--role` invocation) and the universal envelopes. Both rule files stay within the 10,000-character budget enforced by `agentctl rules check`; prose was tightened rather than truncated.
+
+#### Notes
+- `p6.md` referenced in the session that produced this release was not attached to the workspace and could not be reviewed. The improvements above come from auditing the kit against its own documentation.
+
 ## [0.42.0] - 2026-08-24
 ### Universal Rules Governance, All-In-One Check Gate & Stack Contracts
 

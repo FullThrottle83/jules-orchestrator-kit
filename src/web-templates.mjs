@@ -685,6 +685,178 @@ The test must fail on a hand-broken fixture before you consider it done.`;
 4. **Regression Verification**:
    - Ensure 100% of existing and new tests pass cleanly with zero errors.`;
     }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Universal / stack-agnostic templates.
+  //
+  // The earlier templates were written for web frontends and Node projects, but
+  // `agentctl init` runs in Rust, Go, Python, PHP, .NET, Java, Ruby and Elixir
+  // repositories too. A template whose verification oracle is "npm test" or
+  // "npx lhci" is useless in a Cargo or pyproject checkout. Each template below
+  // therefore:
+  //   - names no specific package manager, framework or language in its prompt;
+  //   - defaults defaultVerifyCmd to the placeholder "npm test" ONLY because
+  //     synthesizeWebEnvelope lets the caller (planTaskCreate) override it from
+  //     config.verify.test, which the stack detector already resolved — so a
+  //     Rust repo dispatches `cargo test` here without the prompt ever naming
+  //     it; and
+  //   - carries a real, locally-falsifiable oracle rather than a "best practice"
+  //     claim no test can exercise.
+  // ---------------------------------------------------------------------------
+
+  "agent-dep-audit": {
+    id: "agent-dep-audit",
+    name: "Dependency & Supply-Chain Integrity Audit",
+    description: "Audit lockfile integrity, pinning, and install-time scripts across any language's dependency manifest without contacting a vulnerability database.",
+    defaultVerifyCmd: "npm test",
+    category: "Supply Chain & Dependencies",
+    criticFocus: [
+      "Verify every declared dependency resolves to a pinned, checksummed artifact in the committed lockfile; no floating ranges, no branch/tag refs, no unpinned git/http sources.",
+      "Confirm no install/postinstall lifecycle script runs unchecked code, and that any such script is pinned to a version or audited inline rather than fetched at install time.",
+      "Check that the lockfile in the diff is the one the current manifest resolves to — a stale lockfile that does not satisfy the manifest fails the gate, not a warning.",
+      "Ensure newly added dependencies are actually imported by in-scope source; a dependency present in the manifest but unused by the codebase is bloat, not a requirement.",
+      "Do not fetch a CVE database or contact any advisory API from the verification step. The template verifies pinning and integrity, which is falsifiable offline; known-vulnerability triage is a separate human decision."
+    ],
+    defaultParams: {
+      manifestScope: "the project's dependency manifest and lockfile"
+    },
+    generatePrompt: (params = {}) => {
+      const scope = params.manifestScope || "the project's dependency manifest and lockfile";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Audit dependency and supply-chain integrity for ${scope}.${customGoal}
+
+### Supply-Chain Integrity Invariants:
+1. **Pinned, Checksummed Resolution**:
+   - Every direct and transitive dependency in the manifest must resolve to an exact, checksummed entry in the committed lockfile. No floating version ranges, no branch or tag refs, no unpinned VCS sources.
+   - If the project uses a lockfile format that records hashes, verify each newly added or changed entry carries its expected integrity hash.
+2. **Stale Lockfile Gate**:
+   - The lockfile in the diff must satisfy the manifest as it stands after the change. A lockfile that no longer resolves the declared requirements fails the audit; do not regenerate it as part of an unrelated change.
+3. **Install-Time Script Scrutiny**:
+   - Enumerate every lifecycle / postinstall / build script that executes on install. Each one must either be unnecessary (and removed), pinned to a fixed version, or audited inline with a one-line justification in the PR.
+4. **Reachability, Not Hoarding**:
+   - A newly added dependency must be imported by in-scope source. If it is present in the manifest but no source references it, remove it.
+5. **Offline Verification Oracle**:
+   - Add or extend a repository-local check that the manifest and lockfile agree (a lockfile-staleness assertion using the project's own tooling, e.g. \`pip install --dry-run\`, \`cargo verify-project\`, \`go mod verify\`, \`bundle check\`, or an equivalent for the detected stack). It must run without network access and fail on a hand-broken fixture.`;
+    }
+  },
+
+  "agent-doc-drift": {
+    id: "agent-doc-drift",
+    name: "Documentation & Command-Surface Drift Audit",
+    description: "Cross-check documented commands, flags, environment variables and SDK exports against the actual CLI/SDK surface, fixing or deleting stale references.",
+    defaultVerifyCmd: "npm test",
+    category: "Docs & Maintenance",
+    criticFocus: [
+      "Verify every documented CLI subcommand, flag and exit code exists in the actual command parser; a README example referencing a removed flag is a defect, not a cosmetic issue.",
+      "Check that environment variables named in docs and .env.example are actually read by source, and that every variable source reads is documented — undocumented configuration is a trap for the next operator.",
+      "Confirm public SDK exports listed in docs match what the package entry point actually exports; a documented symbol that does not exist breaks a consumer on upgrade.",
+      "Prefer deleting a stale claim over weakening it. If a feature was removed, remove its documentation; do not leave a paragraph that hedges around it.",
+      "Paste the diff of the command/flag/export inventory the audit was based on, so the claim is reproducible rather than asserted."
+    ],
+    defaultParams: {
+      docScope: "README, docs/, and inline command help"
+    },
+    generatePrompt: (params = {}) => {
+      const scope = params.docScope || "README, docs/, and inline command help";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Audit ${scope} for drift against the actual command surface, configuration and public SDK, and correct every confirmed mismatch.${customGoal}
+
+### Documentation Drift Invariants:
+1. **Command & Flag Inventory**:
+   - Enumerate every subcommand, flag, positional argument and exit code the CLI parser actually defines. Compare it against every code block in the documentation that invokes the tool.
+   - A documented command that errors with \"unknown command\" or \"unknown flag\" fails the audit. Fix the doc or the parser — but do not silently add a flag just to satisfy a stale example.
+2. **Configuration Parity**:
+   - Every environment variable or config key the source reads must appear in the documented configuration reference and, where applicable, in \`.env.example\`.
+   - Every variable listed in \`.env.example\` or the config reference must be read somewhere in source. Entries that name a variable nothing reads are stale.
+3. **Public Surface Parity**:
+   - For a library, every export named in the API reference must be importable from the package entry point. Every exported, documented symbol must still exist.
+4. **Delete, Don't Hedge**:
+   - When a feature was removed, delete its documentation rather than leaving a paragraph that hedges or says \"formerly\". A reader who was never going to use it does not need its history.
+5. **Evidence**:
+   - Attach the inventory (commands, env vars, exports) the audit compared against. A claim that \"the docs are in sync\" without the underlying list is not a result.`;
+    }
+  },
+
+  "agent-config-audit": {
+    id: "agent-config-audit",
+    name: "Configuration, Defaults & Secret-Hygiene Audit",
+    description: "Audit configuration loading, default safety, and secret handling across any stack — env vars, config files, and secret redaction in logs.",
+    defaultVerifyCmd: "npm test",
+    category: "Security & Operations",
+    criticFocus: [
+      "Verify every configuration value has a safe default or fails closed with an actionable error; a missing required value must never silently become undefined, an empty string, or 'true'.",
+      "Confirm no secret is logged at any level — including debug — and that error messages, stack traces and telemetry redact tokens, passwords and connection strings before they are emitted.",
+      "Check that boolean/number config is parsed into its type, not passed through as a string that only happens to be truthy; 'false' as a string is a classic fail-open.",
+      "Ensure .env or equivalent secret files are gitignored, that .env.example contains no real values, and that the audit does not itself commit a secret to prove the gate works.",
+      "Do not weaken the secret scanner to silence a finding; remove the secret and rotate it if it was ever committed."
+    ],
+    defaultParams: {
+      configScope: "application configuration and environment loading"
+    },
+    generatePrompt: (params = {}) => {
+      const scope = params.configScope || "application configuration and environment loading";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Audit ${scope} for safe defaults, typed loading, and secret hygiene.${customGoal}
+
+### Configuration & Secret Invariants:
+1. **Safe Defaults, Fail-Closed Required Values**:
+   - Every configuration key must either have an explicitly documented safe default, or fail closed at load time with an actionable error naming the missing variable.
+   - Never let a missing required value degrade to \`undefined\`, an empty string, or a truthy string that masks the misconfiguration.
+2. **Typed Loading**:
+   - Parse booleans, numbers and durations into their types. A string \`\"false\"\` is truthy in most languages; a config that compares it against the boolean \`false\` fails open.
+   - Reject unknown or misspelled keys rather than silently ignoring them — a typo in an env var name otherwise looks like a default.
+3. **Secret Hygiene in Logs & Errors**:
+   - No secret may appear in a log line at any level, including debug. Redact tokens, passwords, API keys and connection strings in error messages, stack traces and telemetry payloads before they are emitted.
+   - Verify redaction by triggering a representative error path and asserting the output does not contain the configured secret value.
+4. **Secret Files Stay Out of Version Control**:
+   - Confirm \`.env\` and equivalent secret-bearing files are ignored by version control, and that the example/template file contains no real credentials — only placeholders.
+   - If the audit finds a committed secret, the fix is to remove it and rotate the credential, not to relax the scanner.
+5. **Falsifiable Oracle**:
+   - Add a test that loads config with a missing required value and asserts it fails closed; and a test that a representative secret is redacted from a logged error. Both must fail before the fix and pass after.`;
+    }
+  },
+
+  "agent-api-contract": {
+    id: "agent-api-contract",
+    name: "API Contract & Error-Code Consistency Audit",
+    description: "Audit request/response handlers against their declared routes, schemas and error codes — universal across REST, GraphQL and RPC surfaces.",
+    defaultVerifyCmd: "npm test",
+    category: "API & Contracts",
+    criticFocus: [
+      "Verify every declared route/RPC method has a registered handler, and every registered handler is reachable through a declared route — orphaned handlers and unhandled routes are both defects.",
+      "Confirm request bodies, query params and path params are validated against a declared schema before reaching handler logic; unvalidated input is the root cause the schema exists to prevent.",
+      "Check that error responses share a single documented shape ({ ok, code, error } or the stack's convention) and that no handler leaks a stack trace, internal path, or upstream error body to the caller.",
+      "Ensure success and error status codes are consistent across the surface — a 200 with { error: ... } body or a 500 for a validation failure both break contract-aware clients.",
+      "Do not weaken a test to accept an inconsistent response; fix the handler or the contract so they agree."
+    ],
+    defaultParams: {
+      apiScope: "the HTTP/RPC API surface"
+    },
+    generatePrompt: (params = {}) => {
+      const scope = params.apiScope || "the HTTP/RPC API surface";
+      const customGoal = params.goal ? `\n- **Target Focus**: ${params.goal}` : "";
+
+      return `Audit ${scope} for route/handler parity, input validation and a consistent error contract.${customGoal}
+
+### API Contract Invariants:
+1. **Route/Handler Parity**:
+   - Enumerate every declared route, method or RPC operation and confirm it resolves to a registered handler. Enumerate every registered handler and confirm it is reachable through a declared route.
+   - An orphaned handler is dead code; an unhandled declared route is a 404/501 waiting to happen. Both fail the audit.
+2. **Input Validation at the Boundary**:
+   - Every request body, query parameter and path parameter must be validated against a declared schema before it reaches handler logic. Reject unknown fields rather than silently dropping them.
+   - Validation failures must return the documented client-error status (typically 4xx), never a 500, and must name the offending field.
+3. **One Error Shape, No Leaks**:
+   - Every error response must use the project's single documented error shape (for example \`{ ok: false, code, error }\`). No handler may emit a different ad-hoc shape.
+   - Never return a stack trace, filesystem path, upstream credential, or raw upstream error body to the caller. Log those server-side and return a stable, documented error code.
+4. **Status-Code Consistency**:
+   - Success responses use the appropriate 2xx/3xx; client errors use 4xx; server errors use 5xx. A 200 with an \`error\` field, or a 500 for a bad request, breaks every contract-aware client.
+5. **Contract Test Oracle**:
+   - Add or extend a table-driven test that, for each route in the inventory, asserts: the route resolves to a handler, an invalid payload returns the documented 4xx shape, and an unauthenticated/unauthorized request returns the documented status without a body leak. The test must fail on a hand-introduced orphan route or a leaking error before the fix.`;
+    }
   }
 };
 

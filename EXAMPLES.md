@@ -152,7 +152,11 @@ Connect `jules-orchestrator-kit` directly as a stdio Model Context Protocol serv
 
 ## Pattern 6: Specialist Agent Roles
 
-Leverage pre-configured specialist role prompts from `.agent/prompts/`:
+Leverage pre-configured specialist role prompts from `.agent/prompts/`. Every
+role is stack-neutral: the prompt hydrates `{{VERIFY_TEST}}`,
+`{{VERIFY_LINT}}`, `{{DIFF_KB}}` and `{{BASE_BRANCH}}` from your repository's
+config, so a Cargo or pyproject checkout gets `cargo test`/`pytest`, not
+`npm test`.
 
 ```bash
 # Dispatch performance optimization using Bolt role
@@ -166,6 +170,13 @@ agentctl dispatch --role sentinel \
 # Dispatch tech debt cleanup using Janitor role
 agentctl dispatch --role janitor \
   --prompt "Remove dead code and unused imports in src/utils.mjs"
+
+# Audit accessibility (A11y), metadata (Scribe), E2E (Spectator), or
+# review a database migration (Alchemist) — role names are case-insensitive.
+agentctl dispatch --role a11y --prompt "Audit focus management in the checkout modal"
+agentctl dispatch --role scribe --prompt "Audit canonical URLs and OpenGraph tags on /pricing"
+agentctl dispatch --role spectator --prompt "Add headless multi-viewport regression tests for the nav"
+agentctl dispatch --role alchemist --prompt "Review the new migration for reversibility and data-loss risk"
 ```
 
 ---
@@ -187,4 +198,36 @@ agentctl task create --template web-wcag
 # 4. Optimize a frontend prompt with structured verification probes
 agentctl task optimize "Audit Core Web Vitals and optimize LCP in src/dashboard.mjs" --fix
 ```
+
+---
+
+## Pattern 8: Universal, Stack-Agnostic Task Envelopes
+
+Four templates work in **any** language the stack detector recognises — Cargo,
+Go, Python, PHP, .NET, Java, Ruby, Elixir and Node alike — because their
+verification command is hydrated from your `.agent/config.yml` rather than
+hardcoded. Each carries a locally-falsifiable oracle rather than a
+"best-practice" claim no test can exercise.
+
+```bash
+# Dependency / supply-chain integrity: pinned, checksummed resolution,
+# stale-lockfile gate, install-script scrutiny (offline — no advisory API calls).
+agentctl task create --template agent-dep-audit
+
+# Documentation / command-surface drift: reconcile documented CLI flags,
+# environment variables and SDK exports against what actually ships.
+agentctl task create --template agent-doc-drift
+
+# Configuration & secret hygiene: typed config loading, fail-closed defaults,
+# and verification that secrets are redacted from logs and error messages.
+agentctl task create --template agent-config-audit
+
+# API contract consistency: route/handler parity, boundary input validation,
+# and one documented error shape across a REST or RPC surface.
+agentctl task create --template agent-api-contract
+```
+
+The verify command for a non-Node project is picked up automatically — for
+example, a Rust repository dispatches `cargo test --workspace` against the
+same envelope without the template ever naming Cargo.
 
