@@ -11,13 +11,17 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.1 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.52.2 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.1)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.2)
+
+### v0.52.2: Zero-Test Oracle Bootstrapping & Git Remote Origin Auto-Detection
+- [x] **Zero-Test Oracle Bootstrapping on Empty Test Oracle (`src/stack-detector.mjs`)** — Allows `agentctl bootstrap` to proceed without `--force` when `verify.test` is empty, updating config in-place while preserving tier, daily tasks, and presets.
+- [x] **Git Remote Origin Auto-Detection for Provider Dispatch (`src/git.mjs`, `src/provider.mjs`)** — Parses `owner/repo` from `remote.origin.url` across SSH and HTTPS formats, allowing zero-config live and dry-run dispatches.
 
 ### v0.52.1: Onboarding Usability Hardening, Lockfile Detection & Subcommand Help
 - [x] **Queue Task Ghost False Positive Elimination (`src/ops/next-step.mjs`)** — Filters queue tasks using `isTaskFile(f, queueDir)` to prevent `.agent/jules-queue/README.md` from being reported as a queued task.

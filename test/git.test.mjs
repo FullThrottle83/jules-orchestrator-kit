@@ -13,6 +13,8 @@ import {
   showFromOrigin,
   worktreeRemove,
   worktreePrune,
+  parseGitHubRepo,
+  resolveGitRemoteOrigin,
   GateError,
   NET_GUARD_FLAG,
   NET_GUARD_PRELOAD_URL,
@@ -239,5 +241,35 @@ test("src/git.mjs Unit Tests", async (t) => {
         rmSync(wtDir, { recursive: true, force: true });
       } catch (_) {}
     }
+  });
+
+  await t.test("parseGitHubRepo extracts owner/repo from SSH, HTTPS, and auth URLs", () => {
+    // SSH format
+    assert.equal(parseGitHubRepo("git@github.com:owner/my-repo.git"), "owner/my-repo");
+    assert.equal(parseGitHubRepo("git@github.com:owner/my-repo"), "owner/my-repo");
+    assert.equal(parseGitHubRepo("ssh://git@github.com/owner/my-repo.git"), "owner/my-repo");
+
+    // HTTPS format
+    assert.equal(parseGitHubRepo("https://github.com/owner/my-repo.git"), "owner/my-repo");
+    assert.equal(parseGitHubRepo("https://github.com/owner/my-repo"), "owner/my-repo");
+    assert.equal(parseGitHubRepo("https://token:x@github.com/owner/my-repo.git"), "owner/my-repo");
+    assert.equal(parseGitHubRepo("git://github.com/owner/my-repo.git"), "owner/my-repo");
+
+    // Non-GitHub or invalid
+    assert.equal(parseGitHubRepo("https://gitlab.com/owner/my-repo.git"), "");
+    assert.equal(parseGitHubRepo("https://bitbucket.org/owner/my-repo.git"), "");
+    assert.equal(parseGitHubRepo("not a url"), "");
+    assert.equal(parseGitHubRepo(""), "");
+    assert.equal(parseGitHubRepo(null), "");
+  });
+
+  await t.test("resolveGitRemoteOrigin extracts repo from configured git remote", () => {
+    runCmd(["git", "init", "-b", "main"], { cwd: tmpRoot });
+    // Without remote
+    assert.equal(resolveGitRemoteOrigin(tmpRoot), "");
+
+    // With remote
+    runCmd(["git", "remote", "add", "origin", "git@github.com:test-owner/test-repo.git"], { cwd: tmpRoot });
+    assert.equal(resolveGitRemoteOrigin(tmpRoot), "test-owner/test-repo");
   });
 });

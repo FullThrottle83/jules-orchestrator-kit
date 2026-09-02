@@ -466,5 +466,20 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  await t.test("m) createProvider('jules').dispatch auto-resolves source from git remote origin", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-remote-origin-"));
+    try {
+      execSync("git init -q -b main", { cwd: root });
+      execSync("git remote add origin git@github.com:my-org/my-project.git", { cwd: root });
+
+      const p = createProvider("jules");
+      const session = await p.dispatch({ prompt: "do something" }, { root, dryRun: true });
+      assert.equal(session.data.source, "sources/github/my-org/my-project");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
+
 

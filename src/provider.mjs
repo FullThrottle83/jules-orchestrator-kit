@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, extname } from "node:path";
 import { redactSecrets } from "./security.mjs";
-import { resolveWindowsSpawn } from "./git.mjs";
+import { resolveWindowsSpawn, resolveGitRemoteOrigin } from "./git.mjs";
 
 // Extensions node --check can parse as a script. .mjs/.cjs are unambiguous;
 // plain .js is checked as a script too — a stray top-level ESM import would
@@ -301,7 +301,9 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       const isRepoless = Boolean(task.repoless || ctx.repoless);
-      const rawRepo = task.source || ctx.source || config.source || process.env.JULES_REPO || "";
+      const root = ctx.root || config.root || process.cwd();
+      const detectedRepo = resolveGitRemoteOrigin(root);
+      const rawRepo = task.source || ctx.source || config.source || process.env.JULES_REPO || detectedRepo || "";
       if (!rawRepo && !ctx.dryRun && providerSpec.name === "jules" && !isRepoless) {
         throw new Error("Missing connected Jules repository source. Set JULES_REPO or pass source/repoless option.");
       }

@@ -663,8 +663,28 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
   const detected = detectPolyglotStack(root);
   const configPath = join(root, ".agent", "config.yml");
   const hasConfig = existsSync(configPath);
+  let existingTestCmd = "";
+  if (hasConfig) {
+    try {
+      const raw = readFileSync(configPath, "utf-8");
+      const match = raw.match(/^\s*test:\s*["']?(.*?)["']?\s*$/m) || raw.match(/^\s*test_cmd:\s*["']?(.*?)["']?\s*$/m);
+      if (match) {
+        existingTestCmd = match[1].trim();
+      }
+    } catch (_) {}
+  }
+
+  let hasPkgTest = false;
+  if (existsSync(join(root, "package.json"))) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+      hasPkgTest = Boolean(pkg?.scripts?.test);
+    } catch (_) {}
+  }
+
   const hasRealTestSuite =
-    hasConfig ||
+    (hasConfig && Boolean(existingTestCmd)) ||
+    hasPkgTest ||
     existsSync(join(root, "phpunit.xml")) ||
     existsSync(join(root, "pest.php")) ||
     existsSync(join(root, "turbo.json")) ||
@@ -672,7 +692,7 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
     existsSync(join(root, "nx.json"));
 
   if (!options.force && hasRealTestSuite) {
-    return { bootstrapped: false, reason: "EXISTING_VERIFICATION_ORACLE", testCmd: detected.testCmd };
+    return { bootstrapped: false, reason: "EXISTING_VERIFICATION_ORACLE", testCmd: existingTestCmd || (hasPkgTest ? detected.testCmd : "") };
   }
 
   let testCmd = "";
@@ -697,8 +717,41 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
     mkdirSync(join(root, ".agent"), { recursive: true });
   } catch (_) {}
 
-  const cfg = `version: 1\nprovider: jules\ntier: ultra\nverify:\n  test: "${testCmd}"\n  build: "${detected.buildCmd || ""}"\nlimits:\n  diff_kb: 75\n  daily_tasks: 300\n  repair_attempts: 3\nbranch_prefix: agent/\nbase_branch: main\n`;
-  writeFileSync(configPath, cfg, "utf-8");
+  if (hasConfig) {
+    try {
+      let rawConfig = readFileSync(configPath, "utf-8");
+      if (/^\s*test:\s*.*$/m.test(rawConfig)) {
+        rawConfig = rawConfig.replace(/^\s*test:\s*.*$/m, `  test: "${testCmd}"`);
+      } else if (/^\s*verify:\s*$/m.test(rawConfig)) {
+        rawConfig = rawConfig.replace(/^\s*verify:\s*$/m, `verify:\n  test: "${testCmd}"`);
+      } else {
+        rawConfig += `\nverify:\n  test: "${testCmd}"\n`;
+      }
+      if (detected.buildCmd && /^\s*build:\s*["']?["']?\s*$/m.test(rawConfig)) {
+        rawConfig = rawConfig.replace(/^\s*build:\s*.*$/m, `  build: "${detected.buildCmd}"`);
+      }
+      writeFileSync(configPath, rawConfig, "utf-8");
+    } catch (_) {}
+  } else {
+    const cfg = `version: 1\nprovider: jules\ntier: free\nverify:\n  test: "${testCmd}"\n  build: "${detected.buildCmd || ""}"\nlimits:\n  diff_kb: 75\n  daily_tasks: 15\n  repair_attempts: 3\nbranch_prefix: agent/\nbase_branch: main\n`;
+    writeFileSync(configPath, cfg, "utf-8");
+  }
+
+  const julesPath = join(root, ".agent", "jules.yml");
+  if (existsSync(julesPath)) {
+    try {
+      let rawJules = readFileSync(julesPath, "utf-8");
+      if (/^\s*test_cmd:\s*.*$/m.test(rawJules)) {
+        rawJules = rawJules.replace(/^\s*test_cmd:\s*.*$/m, `test_cmd: "${testCmd}"`);
+      } else {
+        rawJules += `\ntest_cmd: "${testCmd}"\n`;
+      }
+      if (detected.buildCmd && /^\s*build_cmd:\s*["']?["']?\s*$/m.test(rawJules)) {
+        rawJules = rawJules.replace(/^\s*build_cmd:\s*.*$/m, `build_cmd: "${detected.buildCmd}"`);
+      }
+      writeFileSync(julesPath, rawJules, "utf-8");
+    } catch (_) {}
+  }
 
   return { bootstrapped: true, stack: detected.stack, testCmd, configPath };
 }

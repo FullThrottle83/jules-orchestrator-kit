@@ -157,12 +157,13 @@ test("P0-01: Jules REST v1alpha Provider Alignment", async (t) => {
     const oldRepo = process.env.JULES_REPO;
     process.env.JULES_API_KEY = "test-key";
     delete process.env.JULES_REPO;
+    const tmpEmpty = mkdtempSync(join(tmpdir(), "jules-no-repo-"));
 
     try {
       const provider = createProvider("jules");
       await assert.rejects(
         async () => {
-          await provider.dispatch({ prompt: "missing source" }, { dryRun: false });
+          await provider.dispatch({ prompt: "missing source" }, { root: tmpEmpty, dryRun: false });
         },
         (err) => {
           assert.match(err.message, /Missing connected Jules repository source/);
@@ -172,6 +173,7 @@ test("P0-01: Jules REST v1alpha Provider Alignment", async (t) => {
     } finally {
       if (oldKey) process.env.JULES_API_KEY = oldKey;
       if (oldRepo) process.env.JULES_REPO = oldRepo;
+      rmSync(tmpEmpty, { recursive: true, force: true });
     }
   });
 

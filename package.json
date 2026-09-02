@@ -1,6 +1,6 @@
 {
   "name": "jules-orchestrator-kit",
-  "version": "0.52.1",
+  "version": "0.52.2",
   "description": "Zero-dependency safety gatekeeper, test oracle generator, and multi-agent coordination protocol for Google Jules (jules) autonomous agents.",
   "repository": {
     "type": "git",

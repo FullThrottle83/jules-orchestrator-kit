@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.2] - 2026-09-02
+### Zero-Test Oracle Bootstrapping & Git Remote Origin Auto-Detection
+
+*Addresses follow-up onboarding edge cases: enables zero-test oracle bootstrapping on freshly initialized configs without forced overwrites, and adds automatic GitHub repository resolution from git remote origin.*
+
+#### Fixed
+- **Zero-Test Oracle Bootstrapping on Empty Verify Command (`src/stack-detector.mjs`, `test/stack-detector.test.mjs`)**:
+  - `bootstrapZeroTestRepo` now inspects existing `verify.test` and only treats it as an established oracle if it is a non-empty command. When initialized with `verify.test: ""`, `agentctl bootstrap` proceeds directly without requiring `--force`.
+  - Config updates now modify `verify.test` (and `verify.build`) and `.agent/jules.yml` in-place, preserving user-selected `tier`, `limits.daily_tasks`, and active presets instead of wiping them with a hardcoded template.
+  - Subsequent bootstrap calls correctly reject with `EXISTING_VERIFICATION_ORACLE` citing the generated oracle.
+- **Git Remote Origin Repository Resolution for Dispatch (`src/git.mjs`, `src/provider.mjs`, `test/git.test.mjs`, `test/provider-hardening.test.mjs`)**:
+  - Implemented and exported `parseGitHubRepo(url)` to parse `owner/repo` across SSH (`git@github.com:owner/repo.git`, `ssh://...`), HTTPS, git-protocol, and authenticated URLs.
+  - Implemented and exported `resolveGitRemoteOrigin(root)` to query `git config --get remote.origin.url`.
+  - `createProvider().dispatch` now falls back to the local repository's git remote origin when neither `task.source`, `ctx.source`, `config.source`, nor `JULES_REPO` are supplied, allowing out-of-the-box dispatching in cloned repositories.
+
 ## [0.52.1] - 2026-09-02
 ### Onboarding Usability Hardening, Lockfile Detection & Subcommand Help
 

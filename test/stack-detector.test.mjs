@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo } from "../src/stack-detector.mjs";
@@ -108,6 +108,34 @@ test("bootstrapZeroTestRepo - generates verification oracle for zero-test reposi
     assert.equal(res.stack, "php");
     assert.ok(res.testCmd.includes("php -l"));
     assert.ok(existsSync(join(tmp, ".agent", "config.yml")));
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("bootstrapZeroTestRepo - succeeds on existing config with empty verify.test and preserves tier", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "bootstrap-empty-oracle-"));
+  try {
+    mkdirSync(join(tmp, ".agent"), { recursive: true });
+    const initialConfig = `version: 1\nprovider: jules\ntier: free\nlimits:\n  daily_tasks: 15\nverify:\n  test: ""\n  build: ""\n`;
+    writeFileSync(join(tmp, ".agent", "config.yml"), initialConfig);
+
+    // First bootstrap without --force must succeed because verify.test is empty
+    const res = bootstrapZeroTestRepo(tmp);
+    assert.equal(res.bootstrapped, true);
+    assert.ok(res.testCmd.includes(".agent/smoke.test.mjs"));
+
+    // Verify config was updated in place and preserved tier: free
+    const updated = readFileSync(join(tmp, ".agent", "config.yml"), "utf-8");
+    assert.ok(updated.includes("tier: free"));
+    assert.ok(updated.includes("daily_tasks: 15"));
+    assert.ok(updated.includes('test: "node --test .agent/smoke.test.mjs"'));
+
+    // Second bootstrap without --force must be refused with EXISTING_VERIFICATION_ORACLE
+    const res2 = bootstrapZeroTestRepo(tmp);
+    assert.equal(res2.bootstrapped, false);
+    assert.equal(res2.reason, "EXISTING_VERIFICATION_ORACLE");
+    assert.equal(res2.testCmd, "node --test .agent/smoke.test.mjs");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

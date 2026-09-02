@@ -412,3 +412,49 @@ export function worktreeRemove(root = process.cwd(), targetDir = "") {
 export function worktreePrune(root = process.cwd()) {
   return git(["worktree", "prune"], { cwd: root });
 }
+
+/**
+ * Extract 'owner/repo' from a git remote URL if it points to GitHub.
+ * Handles SSH (git@github.com:owner/repo.git), HTTPS (https://github.com/owner/repo.git),
+ * protocol prefixes (ssh://, git://) and URL-embedded credentials.
+ * @param {string} remoteUrl
+ * @returns {string} 'owner/repo' or '' if invalid/not GitHub
+ */
+export function parseGitHubRepo(remoteUrl) {
+  if (!remoteUrl || typeof remoteUrl !== "string") return "";
+  const trimmed = remoteUrl.trim();
+
+  // Match git@github.com:owner/repo(.git)
+  const sshMatch = trimmed.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
+  if (sshMatch) {
+    return `${sshMatch[1]}/${sshMatch[2]}`;
+  }
+
+  // Match https://github.com/owner/repo(.git), http, ssh://, git://
+  try {
+    const urlObj = new URL(trimmed.startsWith("git@") ? `ssh://${trimmed}` : trimmed);
+    if (urlObj.hostname.toLowerCase() === "github.com") {
+      const parts = urlObj.pathname.replace(/^\/+/, "").replace(/\.git$/i, "").split("/");
+      if (parts.length >= 2 && parts[0] && parts[1]) {
+        return `${parts[0]}/${parts[1]}`;
+      }
+    }
+  } catch (_) {}
+
+  return "";
+}
+
+/**
+ * Attempt to resolve 'owner/repo' from the local repository's git remote origin.
+ * @param {string} [root=process.cwd()]
+ * @returns {string}
+ */
+export function resolveGitRemoteOrigin(root = process.cwd()) {
+  try {
+    const raw = git(["config", "--get", "remote.origin.url"], { cwd: root, ignoreError: true });
+    return parseGitHubRepo(raw);
+  } catch (_) {
+    return "";
+  }
+}
+
