@@ -11,13 +11,18 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.6 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.52.7 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.6)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.7)
+
+### v0.52.7: CI Runtime Defense & Egress Security Hardening
+- [x] **Linux eBPF Runtime Security (`.github/workflows/*.yml`)** — Integrates `step-security/harden-runner` across all workflows to monitor runtime processes and audit network egress.
+- [x] **Secret Exfiltration Prevention (`.github/`)** — Protects high-privilege tokens (`NPM_TOKEN`, `JULES_API_KEY`) from network exfiltration at runner kernel level.
+- [x] **Cross-Platform Execution Gate (`.github/workflows/jules-audit.yml`)** — Configures Linux-only execution guard (`if: runner.os == 'Linux'`) across multi-OS matrix jobs.
 
 ### v0.52.6: GitHub Actions Security Hardening & Zizmor CI Gate
 - [x] **Composite Action Template Injection Defense (`.github/actions/setup-jules/action.yml`)** — Binds inputs strictly through environment variables before shell invocation, eliminating command injection risks.

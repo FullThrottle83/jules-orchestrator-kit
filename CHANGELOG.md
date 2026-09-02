@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.7] - 2026-09-03
+### CI Runtime Defense & Egress Security Hardening
+
+*Secures runner execution environments with Linux eBPF runtime monitoring and network egress auditing.*
+
+#### Added
+- **Linux eBPF Runtime Security & Network Auditing (`.github/workflows/*.yml`)**:
+  - Integrated `step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1` (# v2.21.1) across all GitHub Actions workflows (`publish.yml`, `jules-nightly.yml`, `jules-audit.yml`, `agent-scope-guard.yml`).
+  - Added runtime network egress auditing to prevent credential exfiltration of high-privilege tokens (`NPM_TOKEN`, `JULES_API_KEY`).
+  - Configured Linux-only execution gate (`if: runner.os == 'Linux'`) for multi-platform matrices.
+
 ## [0.52.6] - 2026-09-03
 ### GitHub Actions Security Hardening & Zizmor CI Gate
 
