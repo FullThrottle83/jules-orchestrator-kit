@@ -98,8 +98,6 @@ test("Stack Oracle & Verification Probes", async (t) => {
 
       const res = detectStackOracles(tmpDir);
       assert.equal(res.candidates.testCmd, "pytest");
-      // If flake8 or ruff isn't installed in this environment, lintCmd should not be flake8 .
-      const { hasBinary } = res;
       // res.candidates.lintCmd should be a string (empty if uninstalled, or valid command if installed)
       assert.equal(typeof res.candidates.lintCmd, "string");
       assert.equal(typeof res.candidates.typecheckCmd, "string");
