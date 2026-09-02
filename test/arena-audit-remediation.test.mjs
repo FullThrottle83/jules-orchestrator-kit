@@ -131,7 +131,7 @@ test("Arena Audit Remediation Suite", async (t) => {
       mkdirSync(join(tmpDir, ".agent"), { recursive: true });
       writeFileSync(
         join(tmpDir, ".agent", "config.yml"),
-        "version: 1\ntier: free\nprovider: jules\nverify:\n  test: node -e 'process.exit(188)'\n"
+        "version: 1\ntier: free\nprovider: jules\nverify:\n  test: node -e \"process.exit(188)\"\n"
       );
       writeFileSync(join(tmpDir, "index.js"), "console.log('hello');\n");
       execFileSync("git", ["add", "."], { cwd: tmpDir });
