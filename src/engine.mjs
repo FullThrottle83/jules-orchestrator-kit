@@ -173,6 +173,7 @@ export async function gate(opts = {}) {
   // Phase 1: Scope Guard (Fetch trusted config strictly from origin/base using single normalizeScope)
   let trustedScope = config.scope;
   let trustedVerify = config.verify;
+  let trustedDiffKb = 75;
 
   const trustedConfigRaw = showFromOrigin(root, base, ".agent/config.yml") || showFromOrigin(root, base, ".agent/jules.yml");
   if (trustedConfigRaw) {
@@ -180,6 +181,9 @@ export async function gate(opts = {}) {
       const parsed = parseYaml(trustedConfigRaw);
       // CRITICAL B1 FIX: normalizeScope ensures BUILTIN_DENY is ALWAYS merged with user deny rules
       trustedScope = normalizeScope(parsed);
+      if (parsed.limits?.diff_kb || parsed.limits?.diffKb) {
+        trustedDiffKb = Number(parsed.limits.diff_kb || parsed.limits.diffKb) || 75;
+      }
       if (parsed.verify || parsed.test_cmd || parsed.build_cmd) {
         trustedVerify = {
           setup: parsed.verify?.setup || config.verify.setup,
@@ -200,6 +204,9 @@ export async function gate(opts = {}) {
   } else {
     // CRITICAL H-c FIX: Fall back strictly to normalizeScope({}) (built-ins only), never HEAD config
     trustedScope = normalizeScope({});
+    if (opts.config?.limits?.diffKb || opts.config?.limits?.diff_kb) {
+      trustedDiffKb = Number(opts.config.limits.diffKb || opts.config.limits.diff_kb) || 75;
+    }
   }
 
   const scopeResult = checkScope(files, trustedScope, {
@@ -218,7 +225,8 @@ export async function gate(opts = {}) {
   }
 
   // Phase 2: Diff Payload Governor
-  const limitBytes = (config.limits.diffKb || 75) * 1024;
+  // Bound to trusted base commit config strictly; uncommitted disk config cannot raise limit in committed mode.
+  const limitBytes = trustedDiffKb * 1024;
   const payloadOk = bytes <= limitBytes;
   phases.push({ phase: "payload", ok: payloadOk, bytes, limitBytes });
   appendTelemetry(root, "gate_phase", { phase: "payload", ok: payloadOk });

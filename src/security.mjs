@@ -795,14 +795,85 @@ function splitDiffByFile(diffText) {
   return [...byFile.values()].filter((s) => s.lines.length > 0);
 }
 
+const CANDIDATE_TOKEN_REGEX = /[A-Za-z0-9_-]{24,}/g;
+
+/**
+ * Checks for high-entropy continuous tokens (>= 24 chars, entropy > 4.5) on added lines.
+ * Filters out URLs, SRI hashes (sha512-, sha256-, sha384-), and lockfiles to eliminate false positives.
+ *
+ * @param {string} text - Text to scan
+ * @param {string|null} [file=null] - File path associated with the text
+ * @returns {boolean}
+ */
+export function hasHighEntropyToken(text = "", file = null) {
+  if (!text || typeof text !== "string") return false;
+  if (
+    file &&
+    (file.endsWith(".lock") ||
+      file.endsWith(".lockb") ||
+      file.includes("package-lock.json") ||
+      file.includes("pnpm-lock.yaml") ||
+      file.includes("yarn.lock") ||
+      file.includes("Cargo.lock") ||
+      file.includes("composer.lock"))
+  ) {
+    return false;
+  }
+
+  const lines = text.split("\n");
+  for (const rawLine of lines) {
+    if (
+      rawLine.includes("://") ||
+      rawLine.includes("data:image/") ||
+      rawLine.includes("sha512-") ||
+      rawLine.includes("sha256-") ||
+      rawLine.includes("sha384-")
+    ) {
+      continue;
+    }
+
+    CANDIDATE_TOKEN_REGEX.lastIndex = 0;
+    let match;
+    while ((match = CANDIDATE_TOKEN_REGEX.exec(rawLine)) !== null) {
+      const token = match[0];
+      if (token.startsWith("sha512-") || token.startsWith("sha256-")) continue;
+      if (token.length >= 24) {
+        // If the token is a formatted base64 blob, distinguish binary assets and plain prose
+        if (token.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(token)) {
+          try {
+            const plain = Buffer.from(token, "base64").toString("utf-8");
+            const pr = printableRatio(plain);
+            if (pr < 0.9) {
+              // Ordinary binary asset (e.g. icon/font/wasm) - do not trip on binary entropy
+              continue;
+            }
+            // If it decodes to text, check decoded plain text entropy
+            if (shannonEntropy(plain) > 4.5) {
+              return true;
+            }
+            continue;
+          } catch (_) {}
+        }
+
+        const ent = shannonEntropy(token);
+        if (ent > 4.5) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Classify a block of added lines. Returns the single most severe finding, or
  * null when the block is clean.
  *
  * @param {string} addedLines
+ * @param {string|null} [file=null]
  * @returns {{ severity: string, type: string, description: string, encoded: boolean }|null}
  */
-function classifyAddedLines(addedLines) {
+function classifyAddedLines(addedLines, file = null) {
   const { all: variants, normalized, base64Normalized } = secretScanVariants(addedLines);
   if (variants.some((v) => hasHighConfidenceSecret(v))) {
     return { severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", encoded: false, description: "High-confidence secret pattern detected in added diff lines" };
@@ -820,6 +891,9 @@ function classifyAddedLines(addedLines) {
   if (variants.some((v) => hasLowConfidenceSecret(v))) {
     return { severity: "HIGH", type: "LOW_CONFIDENCE_SECRET", encoded: false, description: "Low-confidence secret or authorization token detected in added diff lines" };
   }
+  if (hasHighEntropyToken(addedLines, file)) {
+    return { severity: "HIGH", type: "HIGH_ENTROPY_TOKEN", encoded: false, description: "High-entropy token detected in added diff lines (potential unstructured secret or API key)" };
+  }
   return null;
 }
 
@@ -834,12 +908,13 @@ function classifyAddedLines(addedLines) {
  *
  * @param {Array<{ text: string, no: number|null }>} lines
  * @param {string} type
+ * @param {string|null} [file=null]
  * @returns {number|null}
  */
-function locateFindingLine(lines, type) {
+function locateFindingLine(lines, type, file = null) {
   for (const line of lines) {
     if (line.no === null) continue;
-    const hit = classifyAddedLines(line.text);
+    const hit = classifyAddedLines(line.text, file);
     if (hit && hit.type === type) return line.no;
   }
   return null;
@@ -859,8 +934,10 @@ export function checkTestTampering(diffOrText = "", options = {}) {
 
   const violations = [];
   const lines = diffOrText.split("\n");
+  let lastOldFile = null;
   let currentFile = null;
-  let currentLineNo = null;
+  let currentOldLineNo = null;
+  let currentNewLineNo = null;
 
   const isTestFile = (f) => {
     if (!f) return false;
@@ -898,18 +975,32 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     { pattern: /\bassert\.(?:isFalse|isNotOk)\s*\(\s*false\s*(?:,[^)]*)?\)/i, desc: "Vacuous falsity assertion (assert.isFalse(false))" },
   ];
 
+  const ASSERTION_PATTERN = /(?:\b(?:assert(?:\.[a-zA-Z0-9_$]+)?|expect|t\.(?:assert|expect|is|equal|true|false|Errorf|Fatalf)|require\.[a-zA-Z0-9_$]+)\b|assert!|assert_eq!|assert_ne!)/i;
+  const isCommentLine = (str) => /^\s*(?:\/\/|\/\*|\*|#|--|;)/.test(str);
+
+  const fileAssertions = new Map();
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if ((line.startsWith("+++ ") || line.startsWith("+++ b/") || line.startsWith("+++ /dev/null")) && !line.startsWith("++++")) {
-      const target = line.slice(3).split("\t")[0].trim().replace(/^b\//, "");
-      currentFile = target && target !== "/dev/null" ? target : null;
-      currentLineNo = null;
+
+    if ((line.startsWith("--- ") || line.startsWith("--- a/")) && !line.startsWith("----")) {
+      const orig = line.slice(3).split("\t")[0].trim().replace(/^a\//, "");
+      lastOldFile = orig && orig !== "/dev/null" ? orig : null;
       continue;
     }
 
-    const hunkMatch = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(line);
+    if ((line.startsWith("+++ ") || line.startsWith("+++ b/") || line.startsWith("+++ /dev/null")) && !line.startsWith("++++")) {
+      const target = line.slice(3).split("\t")[0].trim().replace(/^b\//, "");
+      currentFile = target && target !== "/dev/null" ? target : lastOldFile;
+      currentOldLineNo = null;
+      currentNewLineNo = null;
+      continue;
+    }
+
+    const hunkMatch = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(line);
     if (hunkMatch) {
-      currentLineNo = Number(hunkMatch[1]);
+      currentOldLineNo = Number(hunkMatch[1]);
+      currentNewLineNo = Number(hunkMatch[2]);
       continue;
     }
 
@@ -917,17 +1008,29 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       continue;
     }
 
-    if (line.startsWith("+") && !line.startsWith("+++")) {
+    if (!fileAssertions.has(currentFile)) {
+      fileAssertions.set(currentFile, { removed: [], added: 0 });
+    }
+    const fileStats = fileAssertions.get(currentFile);
+
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      const deletedText = line.slice(1);
+      if (!isCommentLine(deletedText) && ASSERTION_PATTERN.test(deletedText)) {
+        fileStats.removed.push({ line: currentOldLineNo, text: deletedText });
+      }
+      if (currentOldLineNo !== null) currentOldLineNo++;
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
       const addedText = line.slice(1);
+      let isVacuous = false;
 
       // Check skip injections
       for (const skipRule of SKIP_INJECTIONS) {
         if (skipRule.pattern.test(addedText)) {
           violations.push({
             file: currentFile,
-            line: currentLineNo,
+            line: currentNewLineNo,
             type: "TEST_SKIP_INJECTION",
-            reason: `Test Tamper Guard: ${skipRule.desc} found in ${currentFile}${currentLineNo ? `:${currentLineNo}` : ""}`,
+            reason: `Test Tamper Guard: ${skipRule.desc} found in ${currentFile}${currentNewLineNo ? `:${currentNewLineNo}` : ""}`,
           });
         }
       }
@@ -935,28 +1038,51 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       // Check vacuous assertions
       for (const vacuousRule of VACUOUS_ASSERTIONS) {
         if (vacuousRule.pattern.test(addedText)) {
+          isVacuous = true;
           violations.push({
             file: currentFile,
-            line: currentLineNo,
+            line: currentNewLineNo,
             type: "VACUOUS_ASSERTION",
-            reason: `Test Tamper Guard: ${vacuousRule.desc} detected in ${currentFile}${currentLineNo ? `:${currentLineNo}` : ""}`,
+            reason: `Test Tamper Guard: ${vacuousRule.desc} detected in ${currentFile}${currentNewLineNo ? `:${currentNewLineNo}` : ""}`,
           });
         }
       }
 
       // Check commented-out assertions
+      let isCommented = false;
       if (COMMENTED_ASSERTION.test(line)) {
+        isCommented = true;
         violations.push({
           file: currentFile,
-          line: currentLineNo,
+          line: currentNewLineNo,
           type: "COMMENTED_ASSERTION",
-          reason: `Test Tamper Guard: Commented-out test assertion detected in ${currentFile}${currentLineNo ? `:${currentLineNo}` : ""}`,
+          reason: `Test Tamper Guard: Commented-out test assertion detected in ${currentFile}${currentNewLineNo ? `:${currentNewLineNo}` : ""}`,
         });
       }
 
-      if (currentLineNo !== null) currentLineNo++;
-    } else if (currentLineNo !== null && !line.startsWith("-") && !line.startsWith("\\")) {
-      currentLineNo++;
+      // If valid non-vacuous, non-commented assertion is added, increment added count
+      if (!isVacuous && !isCommented && !isCommentLine(addedText) && ASSERTION_PATTERN.test(addedText)) {
+        fileStats.added++;
+      }
+
+      if (currentNewLineNo !== null) currentNewLineNo++;
+    } else if (!line.startsWith("\\")) {
+      if (currentOldLineNo !== null) currentOldLineNo++;
+      if (currentNewLineNo !== null) currentNewLineNo++;
+    }
+  }
+
+  for (const [file, stats] of fileAssertions.entries()) {
+    if (stats.removed.length > stats.added) {
+      const unreplaced = stats.removed.slice(stats.added);
+      for (const item of unreplaced) {
+        violations.push({
+          file,
+          line: item.line,
+          type: "ASSERTION_REMOVAL",
+          reason: `Test Tamper Guard: Assertion removed without replacement in ${file}${item.line ? `:${item.line}` : ""}: "${item.text.trim()}"`,
+        });
+      }
     }
   }
 
@@ -973,9 +1099,9 @@ export function scanDiff(diffTextStr = "", options = {}) {
   const findings = [];
 
   for (const segment of segments) {
-    const hit = classifyAddedLines(segment.lines.map((l) => l.text).join("\n"));
+    const hit = classifyAddedLines(segment.lines.map((l) => l.text).join("\n"), segment.file);
     if (!hit) continue;
-    const line = segment.file ? locateFindingLine(segment.lines, hit.type) : null;
+    const line = segment.file ? locateFindingLine(segment.lines, hit.type, segment.file) : null;
     const at = segment.file ? ` (${segment.file}${line ? `:${line}` : ""})` : "";
     findings.push({
       severity: hit.severity,
@@ -991,7 +1117,7 @@ export function scanDiff(diffTextStr = "", options = {}) {
   // detection for attribution, fall back to the joined text when every file
   // came back clean — the cost lands only on diffs with nothing to report.
   if (findings.length === 0 && segments.length > 1) {
-    const hit = classifyAddedLines(segments.flatMap((s) => s.lines.map((l) => l.text)).join("\n"));
+    const hit = classifyAddedLines(segments.flatMap((s) => s.lines.map((l) => l.text)).join("\n"), null);
     if (hit) {
       findings.push({
         severity: hit.severity,

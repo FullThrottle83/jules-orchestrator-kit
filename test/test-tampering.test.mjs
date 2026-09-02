@@ -121,4 +121,73 @@ test("Test Assertion Anti-Tampering & Weakening Detection", async (t) => {
     assert.equal(res.ok, false);
     assert.ok(res.diagnostics.length > 0);
   });
+
+  await t.test("detects removed assertions without replacement (ASSERTION_REMOVAL)", () => {
+    const diff = [
+      "diff --git a/test/auth.test.mjs b/test/auth.test.mjs",
+      "--- a/test/auth.test.mjs",
+      "+++ b/test/auth.test.mjs",
+      "@@ -10,4 +10,3 @@",
+      "-    assert.equal(token.isValid(), true);",
+      "-    assert.equal(token.isExpired(), false);",
+      "+    console.log(\"done\");",
+      "   });",
+    ].join("\n");
+
+    const res = checkTestTampering(diff);
+    assert.equal(res.ok, false);
+    assert.ok(res.violations.some((v) => v.type === "ASSERTION_REMOVAL"));
+    assert.equal(res.violations.filter((v) => v.type === "ASSERTION_REMOVAL").length, 2);
+    assert.match(res.violations[0].reason, /Assertion removed without replacement/);
+  });
+
+  await t.test("allows legitimate 1-to-1 assertion replacement/refactoring", () => {
+    const diff = [
+      "diff --git a/test/auth.test.mjs b/test/auth.test.mjs",
+      "--- a/test/auth.test.mjs",
+      "+++ b/test/auth.test.mjs",
+      "@@ -10,3 +10,3 @@",
+      "-    assert.equal(token.isValid(), true);",
+      "+    assert.strictEqual(token.isValid(), true);",
+      "   });",
+    ].join("\n");
+
+    const res = checkTestTampering(diff);
+    assert.equal(res.ok, true);
+    assert.equal(res.violations.length, 0);
+  });
+
+  await t.test("detects deleted test file containing assertions (+++ /dev/null)", () => {
+    const diff = [
+      "diff --git a/test/auth.test.mjs b/test/auth.test.mjs",
+      "--- a/test/auth.test.mjs",
+      "+++ /dev/null",
+      "@@ -1,5 +0,0 @@",
+      "-test(\"auth\", () => {",
+      "-  assert.ok(token);",
+      "-  expect(user).toBeDefined();",
+      "-});",
+    ].join("\n");
+
+    const res = checkTestTampering(diff);
+    assert.equal(res.ok, false);
+    assert.ok(res.violations.some((v) => v.type === "ASSERTION_REMOVAL"));
+    assert.equal(res.violations[0].file, "test/auth.test.mjs");
+  });
+
+  await t.test("allowTestModifications: true bypasses assertion removal check", () => {
+    const diff = [
+      "diff --git a/test/auth.test.mjs b/test/auth.test.mjs",
+      "--- a/test/auth.test.mjs",
+      "+++ b/test/auth.test.mjs",
+      "@@ -10,3 +10,1 @@",
+      "-    assert.equal(token.isValid(), true);",
+      "-    assert.equal(token.isExpired(), false);",
+    ].join("\n");
+
+    const res = checkTestTampering(diff, { allowTestModifications: true });
+    assert.equal(res.ok, true);
+    assert.equal(res.violations.length, 0);
+  });
 });
+

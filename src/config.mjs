@@ -35,13 +35,13 @@ export const BUILTIN_DENY = [
   "**/*.pem",
   "**/*.key",
   "**/id_rsa*",
-  ".agent/config.yml",
-  ".agent/jules.yml",
   ".agent/jules-queue/**",
   ".github/**",
 ];
 
 export const BUILTIN_PROTECT = [
+  ".agent/config.yml",
+  ".agent/jules.yml",
   ".agent/rules/**",
   ".agent/SYSTEM_LEARNINGS.md",
   ".agent/knowledge/**",

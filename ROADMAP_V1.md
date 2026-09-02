@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.4 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.52.5 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.4)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.5)
+
+### v0.52.5: Security Cage & Gate Hardening (Vulnerabilities A–D)
+- [x] **Assertion Removal Tamper Guard (`src/security.mjs`)** — Detects test deletion bypass (`ASSERTION_REMOVAL`) when `-` assertion lines are deleted without replacement in test files.
+- [x] **Diff Payload Governor Base-Commit Binding (`src/engine.mjs`)** — Binds payload limits strictly to `trustedConfigRaw.limits` from the base commit, preventing uncommitted disk config from inflating ceilings in `--mode committed`.
+- [x] **Onboarding Scope Catch-22 Resolution (`src/config.mjs`)** — Moves `.agent/config.yml` and `.agent/jules.yml` to `BUILTIN_PROTECT`, allowing `--allow-protected` and `allow-protected-paths` to land configs while keeping agents gated out.
+- [x] **Shannon Entropy Diff Scanner (`src/security.mjs`)** — Adds `hasHighEntropyToken()` to `scanDiff` detecting unstructured secrets (>4.5 entropy, $\ge 24$ chars) while eliminating false positives for SRI hashes, URLs, binary base64 blobs, and lockfiles.
 
 ### v0.52.4: Arena Adversarial Audit Remediation & Integrity Hardening
 - [x] **Base64 Line-Wrapped Secret Smuggling (`src/security.mjs`)** — Collapses whitespace and newlines between adjacent base64 characters (RFC 4648 PEM keys, template literals, and quoted chunks) before base64 candidate decoding.

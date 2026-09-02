@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.5] - 2026-09-02
+### Security Cage & Gate Hardening (Vulnerabilities A–D)
+
+*Remediates four security vulnerabilities and systemic limits exposed by deep Arena stress-testing.*
+
+#### Fixed
+- **Test Deletion Bypass Tamper Guard (`src/security.mjs`, `test/test-tampering.test.mjs`, `test/hardening-vulnerabilities.test.mjs`)**:
+  - Tracked pre-image (`oldLineNo`) and post-image (`newLineNo`) line numbers from unified diff hunk headers in `checkTestTampering`.
+  - Detected removed assertions (`-`) lacking equivalent added non-vacuous assertions in test files, raising `ASSERTION_REMOVAL` violations.
+  - Tracked whole test file deletions (`+++ /dev/null`) via original file headers (`--- a/...`).
+- **Diff Payload Governor Base-Commit Binding (`src/engine.mjs`, `test/hardening-vulnerabilities.test.mjs`)**:
+  - Bound `limitBytes` in `gate()` strictly to `trustedConfigRaw.limits` from the base commit, preventing uncommitted disk config from inflating the diff ceiling in `--mode committed`.
+- **Onboarding PR Scope Catch-22 Resolution (`src/config.mjs`, `test/hardening-vulnerabilities.test.mjs`)**:
+  - Moved `.agent/config.yml` and `.agent/jules.yml` from `BUILTIN_DENY` to `BUILTIN_PROTECT`, allowing `--allow-protected` and `allow-protected-paths` to land configs while keeping agents gated out.
+
+#### Added
+- **Shannon Entropy Diff Scanner (`src/security.mjs`, `index.mjs`, `test/api-surface.test.mjs`, `test/hardening-vulnerabilities.test.mjs`)**:
+  - Implemented and exported `hasHighEntropyToken()` to detect unstructured tokens ($\ge 24$ chars, Shannon entropy $> 4.5$) on added diff lines as `HIGH_ENTROPY_TOKEN`.
+  - Filtered out Subresource Integrity hashes (`sha512-`, `sha256-`), URLs (`://`), binary base64 blobs (via `printableRatio`), and lockfiles to eliminate false positives.
+
 ## [0.52.4] - 2026-09-02
 ### Arena Adversarial Audit Remediation & Integrity Hardening
 

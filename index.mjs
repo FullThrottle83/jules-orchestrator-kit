@@ -14,6 +14,7 @@ export {
   checkScope,
   scanDiff,
   hasEncodedSecret,
+  hasHighEntropyToken,
   checkEdgeRuntimeImports,
   checkCrossPackageImports,
   checkTestTampering,

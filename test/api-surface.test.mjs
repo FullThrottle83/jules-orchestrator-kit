@@ -130,6 +130,7 @@ const FROZEN_SDK_EXPORTS = [
   "git",
   "harvestFailure",
   "hasEncodedSecret",
+  "hasHighEntropyToken",
   "hashExecutionEnvelope",
   "hydratePrompt",
   "input",
@@ -283,7 +284,7 @@ describe("SDK API Surface & Exit Code Stability Lock", () => {
       `Unapproved new SDK exports detected:\n${addedExports.join("\n")}\nIf intentional, review and update FROZEN_SDK_EXPORTS snapshot.`
     );
 
-    assert.equal(actualExports.length, 236, "Total exported SDK symbols count must remain locked at 236");
+    assert.equal(actualExports.length, 237, "Total exported SDK symbols count must remain locked at 237");
   });
 
   it("ensures every exported symbol is defined and non-null", () => {
