@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.2 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.52.3 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.2)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.3)
+
+### v0.52.3: Jules Session Patch Ingestion, Edge Webhooks & Subprocess Hardening
+- [x] **Jules API Activity Patch Ingestion (`src/session-ops.mjs`, `src/provider.mjs`)** — Fixes `listActivities` sessionId TypeError and adds support for Jules API `changeSet.gitPatch.unidiffPatch` artifacts in `extractSessionPatch`.
+- [x] **Subprocess Hardening via `runCmd` (`src/coverage.mjs`, `src/mutation.mjs`, `src/perf.mjs`)** — Replaces raw `execSync` with safety-hardened `runCmd` with `{ ignoreError: true }` across coverage, mutation, and perf monitors.
+- [x] **Edge Runtime Webhook Support (`src/webhook.mjs`)** — Refactors `verifySignature` and `parseWebhookPayload` to use `Uint8Array`, `TextEncoder`, and `TextDecoder`.
+- [x] **Whack-a-Mole Prompt Injection Defense (`src/remediation.mjs`)** — Encloses oscillating test names in `<UNTRUSTED>` fencing tags.
 
 ### v0.52.2: Zero-Test Oracle Bootstrapping & Git Remote Origin Auto-Detection
 - [x] **Zero-Test Oracle Bootstrapping on Empty Test Oracle (`src/stack-detector.mjs`)** — Allows `agentctl bootstrap` to proceed without `--force` when `verify.test` is empty, updating config in-place while preserving tier, daily tasks, and presets.

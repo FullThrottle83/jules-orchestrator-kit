@@ -953,7 +953,7 @@ export function createProvider(spec = "jules", config = {}) {
         if (ctx.pageSize) params.set("pageSize", String(ctx.pageSize));
         if (ctx.pageToken) params.set("pageToken", String(ctx.pageToken));
         const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
-        const res = await this.getSession("", { ...ctx, customUrl: url });
+        const res = await this.getSession(sessionId, { ...ctx, customUrl: url });
         return {
           activities: res?.raw?.activities || [],
           nextPageToken: res?.raw?.nextPageToken,

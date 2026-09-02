@@ -241,4 +241,17 @@ describe("src/webhook.mjs", () => {
       await new Promise((resolve) => server.close(resolve));
     }
   });
+
+  it("verifySignature and parseWebhookPayload support Uint8Array on Edge runtimes", () => {
+    const rawText = JSON.stringify({ hello: "edge" });
+    const encoder = new TextEncoder();
+    const uint8Payload = encoder.encode(rawText);
+    const validHmac = createHmac("sha256", secret).update(uint8Payload).digest("hex");
+
+    const ok = verifySignature(uint8Payload, `sha256=${validHmac}`, secret);
+    assert.equal(ok, true);
+
+    const parsed = parseWebhookPayload(uint8Payload);
+    assert.deepEqual(parsed, { hello: "edge" });
+  });
 });

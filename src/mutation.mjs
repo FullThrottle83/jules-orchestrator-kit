@@ -1,8 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, isAbsolute } from "node:path";
-import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { diffText } from "./git.mjs";
+import { diffText, runCmd } from "./git.mjs";
 
 /**
  * @typedef {Object} MutationCandidate
@@ -574,22 +573,17 @@ export function executeMutant(mutant, options = {}) {
       stdout = execResult.stdout || "";
       stderr = execResult.stderr || "";
     } else {
-      try {
-        stdout = execSync(testCmd, {
-          cwd: root,
-          timeout: timeoutMs,
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, CI: "true", JULES_MUTATION_RUN: "true" },
-          encoding: "utf-8",
-        });
-        exitCode = 0;
-      } catch (execErr) {
-        exitCode = execErr.status || execErr.statusCode || 1;
-        stdout = execErr.stdout ? execErr.stdout.toString() : "";
-        stderr = execErr.stderr ? execErr.stderr.toString() : execErr.message;
-        if (execErr.code === "ETIMEDOUT" || execErr.killed) {
-          status = "TIMEOUT";
-        }
+      const execResult = runCmd(testCmd, {
+        cwd: root,
+        timeout: timeoutMs,
+        env: { ...process.env, CI: "true", JULES_MUTATION_RUN: "true" },
+        ignoreError: true,
+      });
+      exitCode = execResult.status;
+      stdout = execResult.stdout;
+      stderr = execResult.stderr;
+      if (execResult.status === 124 || stderr.includes("ETIMEDOUT")) {
+        status = "TIMEOUT";
       }
     }
 

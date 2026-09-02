@@ -480,6 +480,28 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  await t.test("n) listActivities correctly queries session activities endpoint", async () => {
+    let requestedUrl = "";
+    const server = createServer((req, res) => {
+      requestedUrl = req.url;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ activities: [{ id: "act-1", originator: "agent" }] }));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    const url = `http://127.0.0.1:${port}/sessions`;
+
+    try {
+      const p = createProvider({ type: "http", url });
+      const result = await p.listActivities("sess-123");
+      assert.equal(result.activities.length, 1);
+      assert.equal(result.activities[0].id, "act-1");
+      assert.ok(requestedUrl.includes("/sess-123/activities"));
+    } finally {
+      server.close();
+    }
+  });
 });
 
 

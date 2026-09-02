@@ -71,6 +71,44 @@ test("Jules Power-User Session Operations & Lifecycle Engine", async (t) => {
     assert.ok(res.files.includes("calc.js"));
   });
 
+  await t.test("extractSessionPatch extracts unidiffPatch from Jules changeSet artifact", async () => {
+    const samplePatch = `diff --git a/calc.js b/calc.js
+--- a/calc.js
++++ b/calc.js
+@@ -1 +1,2 @@
+ export function add(a, b) { return a + b; }
++export function div(a, b) { return a / b; }
+`;
+
+    const mockProvider = {
+      async getSession(id) {
+        return { id, raw: { outputs: [] } };
+      },
+      async listActivities() {
+        return {
+          activities: [
+            {
+              artifacts: [
+                {
+                  changeSet: {
+                    gitPatch: {
+                      unidiffPatch: samplePatch,
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        };
+      },
+    };
+
+    const res = await extractSessionPatch("session-456", { provider: mockProvider, root: tmpdir() });
+    assert.equal(res.ok, true);
+    assert.ok(res.patch.includes("export function div"));
+    assert.ok(res.files.includes("calc.js"));
+  });
+
   await t.test("applySessionPatch validates and applies patch cleanly to git working tree", async () => {
     const repoDir = createTempGitRepo();
     try {

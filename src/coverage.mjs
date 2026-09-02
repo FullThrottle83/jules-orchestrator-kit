@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, mkdtempSync, rmSync, existsSync, realpathSyn
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+import { runCmd } from "./git.mjs";
 import { resolveVerify } from "./config.mjs";
 
 /**
@@ -136,23 +136,15 @@ export function runV8Coverage(testCmd, options = {}) {
       }
     }
 
-    let stdout = "";
-    let stderr = "";
-    let exitCode = 0;
-
-    try {
-      stdout = execSync(cmd, {
-        cwd: root,
-        env,
-        timeout: timeoutMs,
-        stdio: ["ignore", "pipe", "pipe"],
-        encoding: "utf-8",
-      });
-    } catch (err) {
-      exitCode = err.status || 1;
-      stdout = err.stdout ? String(err.stdout) : "";
-      stderr = err.stderr ? String(err.stderr) : err.message;
-    }
+    const res = runCmd(cmd, {
+      cwd: root,
+      env,
+      timeout: timeoutMs,
+      ignoreError: true,
+    });
+    const exitCode = res.status;
+    const stdout = res.stdout;
+    const stderr = res.stderr;
 
     const coverageByFile = new Map();
     const files = existsSync(tempCoverageDir) ? readdirSync(tempCoverageDir) : [];

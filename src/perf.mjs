@@ -1,5 +1,5 @@
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { execSync } from "node:child_process";
+import { runCmd } from "./git.mjs";
 import { resolveVerify } from "./config.mjs";
 
 /**
@@ -41,19 +41,15 @@ export function measureEventLoopDelay(target, options = {}) {
         }
       }
 
-      try {
-        stdout = execSync(cmd, {
-          cwd: root,
-          env,
-          timeout: timeoutMs,
-          stdio: ["ignore", "pipe", "pipe"],
-          encoding: "utf-8",
-        });
-      } catch (err) {
-        exitCode = err.status || 1;
-        stdout = err.stdout ? String(err.stdout) : "";
-        stderr = err.stderr ? String(err.stderr) : err.message;
-      }
+      const execResult = runCmd(cmd, {
+        cwd: root,
+        env,
+        timeout: timeoutMs,
+        ignoreError: true,
+      });
+      exitCode = execResult.status;
+      stdout = execResult.stdout;
+      stderr = execResult.stderr;
     }
   } finally {
     histogram.disable();

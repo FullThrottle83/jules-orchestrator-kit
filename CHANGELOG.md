@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.3] - 2026-09-02
+### Jules Session Patch Ingestion, Edge Webhooks & Subprocess Hardening
+
+*Hardens subprocess execution across coverage, mutation, and perf engines; enables Jules API artifact patch ingestion; implements Edge runtime TextEncoder/Uint8Array webhooks and Whack-a-Mole prompt fencing.*
+
+#### Fixed
+- **Jules API Activity Patch Ingestion (`src/session-ops.mjs`, `src/provider.mjs`, `test/session-ops.test.mjs`, `test/provider-hardening.test.mjs`)**:
+  - Fixed `listActivities` in `provider.mjs` which called `getSession("", ...)` with empty string causing a `TypeError`.
+  - Added support in `extractSessionPatch` for Google Jules API artifact structure (`art.changeSet.gitPatch.unidiffPatch` and `art.gitPatch.unidiffPatch`).
+- **Dynamic `execSync` Subprocess Hardening (`src/coverage.mjs`, `src/mutation.mjs`, `src/perf.mjs`)**:
+  - Replaced raw `execSync` with safety-hardened `runCmd` with `{ ignoreError: true }`, ensuring cross-platform `.cmd` shim resolution, execution timeouts, maxBuffer guards, and graceful handling of intended mutation test failures.
+
+#### Added
+- **Edge Runtime Webhook Support (`src/webhook.mjs`, `test/webhook.test.mjs`)**:
+  - Refactored `verifySignature` and `parseWebhookPayload` to use `Uint8Array`, `TextEncoder`, and `TextDecoder`, preventing runtime crashes on Vercel Edge and Cloudflare Workers.
+- **Whack-a-Mole Prompt Injection Defense (`src/remediation.mjs`, `test/whack-a-mole.test.mjs`)**:
+  - Enclosed oscillating test names inside `<UNTRUSTED>` fencing tags in the synthesized prompt directive.
+
 ## [0.52.2] - 2026-09-02
 ### Zero-Test Oracle Bootstrapping & Git Remote Origin Auto-Detection
 

@@ -480,25 +480,27 @@ export function verifySignature(payload, signatureHeader, secret) {
   if (!/^[0-9a-fA-F]{64}$/.test(hexSignature)) return false;
 
   const hmac = createHmac("sha256", secret);
-  const bodyBuf = Buffer.isBuffer(payload) ? payload : Buffer.from(payload, "utf-8");
+  const encoder = new TextEncoder();
+  const bodyBuf = payload instanceof Uint8Array ? payload : encoder.encode(payload);
   const digest = `sha256=${hmac.update(bodyBuf).digest("hex")}`;
 
-  const sigBuf = Buffer.from(signatureHeader, "utf-8");
-  const digestBuf = Buffer.from(digest, "utf-8");
+  const sigBuf = encoder.encode(signatureHeader);
+  const digestBuf = encoder.encode(digest);
 
-  if (sigBuf.length !== digestBuf.length) return false;
+  if (sigBuf.byteLength !== digestBuf.byteLength) return false;
   return timingSafeEqual(sigBuf, digestBuf);
 }
 
 /**
  * Parse incoming webhook body buffer into a JS object.
- * @param {Buffer} bodyBuf 
+ * @param {Buffer|Uint8Array|string} bodyBuf 
  * @param {string} contentType 
  * @returns {object} Parsed JSON payload
  */
 export function parseWebhookPayload(bodyBuf, contentType = "application/json") {
-  if (!bodyBuf || bodyBuf.length === 0) return {};
-  const str = bodyBuf.toString("utf-8").trim();
+  if (!bodyBuf || (bodyBuf.length === 0 && bodyBuf.byteLength === 0)) return {};
+  const decoder = new TextDecoder();
+  const str = (bodyBuf instanceof Uint8Array ? decoder.decode(bodyBuf) : String(bodyBuf)).trim();
   if (!str) return {};
 
   if (contentType.includes("application/x-www-form-urlencoded")) {

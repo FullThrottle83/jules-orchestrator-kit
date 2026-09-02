@@ -68,17 +68,25 @@ export async function extractSessionPatch(sessionId, opts = {}) {
   // 2. Inspect activity artifacts and logs if patch wasn't in top-level output
   for (const act of activities) {
     if (act.pullRequest) pr = act.pullRequest;
-    if (act.gitPatch || act.patch || act.diff) {
-      patch = patch || act.gitPatch || act.patch || act.diff;
+    if (act.gitPatch || act.patch || act.diff || act.changeSet?.gitPatch?.unidiffPatch) {
+      patch = patch || act.gitPatch || act.patch || act.diff || act.changeSet?.gitPatch?.unidiffPatch;
     }
-    if (act.artifacts && Array.isArray(act.artifacts)) {
-      for (const art of act.artifacts) {
-        if (art.patch || art.diff || (typeof art.content === "string" && art.content.startsWith("diff --git"))) {
-          patch = patch || art.patch || art.diff || art.content;
-        }
-        if (art.path || art.filename) {
-          files.add(art.path || art.filename);
-        }
+    const artifactList = [
+      ...(Array.isArray(act.artifacts) ? act.artifacts : []),
+      ...(Array.isArray(act.artifactsCreated?.artifacts) ? act.artifactsCreated.artifacts : []),
+    ];
+    for (const art of artifactList) {
+      const artPatch =
+        art.patch ||
+        art.diff ||
+        art.changeSet?.gitPatch?.unidiffPatch ||
+        art.gitPatch?.unidiffPatch ||
+        (typeof art.content === "string" && art.content.startsWith("diff --git") ? art.content : "");
+      if (artPatch) {
+        patch = patch || artPatch;
+      }
+      if (art.path || art.filename) {
+        files.add(art.path || art.filename);
       }
     }
     if (act.changedFiles && Array.isArray(act.changedFiles)) {

@@ -285,7 +285,7 @@ export function createWhackAMoleDetector(opts = {}) {
       const oscillatingTests = [...cycleTests];
 
       const testSummary = oscillatingTests.length > 0 ? oscillatingTests.join(" <-> ") : "tests";
-      const promptDirective = `[WHACK_A_MOLE_WARNING] You are trapped in a local optimization cycle where fixing one test breaks another (${testSummary}). Do not add more conditional edge-case band-aids. Revert recent patches and refactor the core logic cleanly.`;
+      const promptDirective = `[WHACK_A_MOLE_WARNING] You are trapped in a local optimization cycle where fixing one test breaks another (<UNTRUSTED>${testSummary}</UNTRUSTED>). Do not add more conditional edge-case band-aids. Revert recent patches and refactor the core logic cleanly.`;
 
       return {
         whackAMole: true,
