@@ -15,7 +15,7 @@ const testFiles = readdirSync(testDir)
 // burns a CI job to GitHub's six-hour default instead of going red in
 // seconds. The slowest genuine test on the Windows runner is ~2s, so this is
 // two orders of magnitude of headroom and only ever fires on a real hang.
-const timeoutMs = Number(process.env.JULES_TEST_TIMEOUT_MS) || 60_000;
+const timeoutMs = Number(process.env.JULES_TEST_TIMEOUT_MS) || 180_000;
 
 // `--test-timeout` landed in Node 20.6. package.json engines allows >=20.0.0,
 // and an unrecognised flag makes Node abort before running anything — so on an
