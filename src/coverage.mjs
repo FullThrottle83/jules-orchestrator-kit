@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync, mkdtempSync, rmSync, existsSync } from "node:fs";
-import { join, resolve, isAbsolute } from "node:path";
+import { readFileSync, readdirSync, mkdtempSync, rmSync, existsSync, realpathSync } from "node:fs";
+import { join, resolve, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
@@ -174,10 +174,20 @@ export function runV8Coverage(testCmd, options = {}) {
                 relPath = relPath.replace(/^file:\/\//, "");
               }
             }
+
+            let resolvedRoot = root;
+            try {
+              if (existsSync(root)) resolvedRoot = realpathSync(root);
+            } catch (_) {}
+
+            try {
+              if (existsSync(relPath)) relPath = realpathSync(relPath);
+            } catch (_) {}
+
             if (isAbsolute(relPath)) {
-              relPath = relPath.replace(root, "").replace(/^[/\\]+/, "");
+              relPath = relative(resolvedRoot, relPath);
             }
-            relPath = relPath.replace(/\\/g, "/");
+            relPath = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
 
             if (!isExcludedFromCoverage(relPath)) {
               if (!coverageByFile.has(relPath)) {
