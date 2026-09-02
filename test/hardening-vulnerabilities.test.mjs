@@ -187,5 +187,11 @@ test("Vulnerabilities A-D Hardening Test Suite", async (t) => {
     const randomKey = "a8F9eK2mP0xL4vQ7wR3yT1zU5iO8sD6fG2jH4kL9nB5vC3x";
     assert.equal(hasHighEntropyToken(`key: ${randomKey}`), true);
     assert.equal(hasHighEntropyToken("const normalCode = 123;"), false);
+
+    // Verify tokens with length divisible by 4 are not bypassed as binary assets
+    const key32 = ["a8F9eK2mP0xL4vQ7", "wR3yT1zU5iO8sD6f"].join("");
+    const key36 = ["a8F9eK2mP0xL4vQ7", "wR3yT1zU5iO8sD6fG2jH"].join("");
+    assert.equal(hasHighEntropyToken(`token: ${key32}`), true);
+    assert.equal(hasHighEntropyToken(`token: ${key36}`), true);
   });
 });

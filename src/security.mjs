@@ -844,14 +844,19 @@ export function hasHighEntropyToken(text = "", file = null) {
             const plain = Buffer.from(token, "base64").toString("utf-8");
             const pr = printableRatio(plain);
             if (pr < 0.9) {
-              // Ordinary binary asset (e.g. icon/font/wasm) - do not trip on binary entropy
+              // Ordinary binary asset (e.g. icon/font/wasm) - do not trip on binary entropy.
+              // Only treat as binary asset if sufficiently large (>= 256 chars);
+              // shorter tokens (24-255 chars) are keys/secrets/hashes, not embedded assets.
+              if (token.length >= 256) {
+                continue;
+              }
+            } else {
+              // If it decodes to text, check decoded plain text entropy
+              if (shannonEntropy(plain) > 4.5) {
+                return true;
+              }
               continue;
             }
-            // If it decodes to text, check decoded plain text entropy
-            if (shannonEntropy(plain) > 4.5) {
-              return true;
-            }
-            continue;
           } catch (_) {}
         }
 

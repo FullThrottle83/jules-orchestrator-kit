@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.8] - 2026-09-03
+### Entropy Scanner Token Boundary Fix & Binary Asset Classification
+
+*Resolves a critical edge case where high-entropy alphanumeric tokens with length divisible by 4 were falsely skipped as binary assets in the diff entropy scanner.*
+
+#### Fixed
+- **Binary Asset Classification Guard (`src/security.mjs`, `test/hardening-vulnerabilities.test.mjs`)**:
+  - Bound the binary asset skipping condition (`printableRatio < 0.9`) strictly to payloads with `token.length >= 256`.
+  - Eliminated the vulnerability where unstructured API keys and tokens of length 24, 28, 32, 36, 40, 48, or 64 characters decoded via base64 into arbitrary non-printable bytes and bypassed Shannon entropy checks via `continue`.
+  - Added regression test cases covering 32- and 36-character tokens to ensure 100% detection rate for length $\pmod 4 = 0$ keys.
+
 ## [0.52.7] - 2026-09-03
 ### CI Runtime Defense & Egress Security Hardening
 

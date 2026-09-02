@@ -11,13 +11,17 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.7 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.52.8 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.7)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.8)
+
+### v0.52.8: Entropy Scanner Token Boundary Fix
+- [x] **Binary Asset Classification Guard (`src/security.mjs`)** — Restricts binary asset skipping (`printableRatio < 0.9`) to tokens $\ge 256$ chars, preventing length $\pmod 4 = 0$ keys from bypassing entropy checks.
+- [x] **High-Entropy Token Hardening (`test/hardening-vulnerabilities.test.mjs`)** — Added regression coverage for 32- and 36-character unstructured secret tokens.
 
 ### v0.52.7: CI Runtime Defense & Egress Security Hardening
 - [x] **Linux eBPF Runtime Security (`.github/workflows/*.yml`)** — Integrates `step-security/harden-runner` across all workflows to monitor runtime processes and audit network egress.
