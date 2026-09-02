@@ -59,7 +59,7 @@ test("Live Dev Server & SSR Hydration Smoke Probing", async (t) => {
   await t.test("c) handles server startup timeout gracefully", async () => {
     const res = await probeDevServer(
       {
-        command: `"${process.execPath}" -e "setTimeout(()=>{}, 10000)"`,
+        command: 'node -e "setTimeout(()=>{}, 10000)"',
         url: "http://127.0.0.1:59999", // Unused port
         timeoutMs: 800,
       },
