@@ -16,6 +16,7 @@ export {
   hasEncodedSecret,
   checkEdgeRuntimeImports,
   checkCrossPackageImports,
+  checkTestTampering,
 } from "./src/security.mjs";
 export { sanitizeUntrustedData, buildAgentEnvelope } from "./src/prompt-guard.mjs";
 export { isolateMcpStdout, writeMcpFrame } from "./src/mcp.mjs";
@@ -76,7 +77,26 @@ export {
 } from "./src/execution-envelope.mjs";
 export { checkAssetIntegrity } from "./src/asset-integrity.mjs";
 export { classifyRiskTier, RISK_TIERS } from "./src/risk.mjs";
-export { recordRemediation, queryRemediations } from "./src/remediation.mjs";
+export { recordRemediation, queryRemediations, createThrashDetector, createWhackAMoleDetector } from "./src/remediation.mjs";
+export {
+  runMutationTest,
+  generateMutants,
+  generateDiffMutants,
+  executeMutant,
+  getStringLiteralRanges,
+  getFileStringLiteralLineMap,
+  MUTATION_RULES,
+  isExcludedFromMutation,
+} from "./src/mutation.mjs";
+export {
+  runV8Coverage,
+  mapV8RangesToLines,
+  calculateDiffCoverage,
+  extractAddedLinesFromDiff,
+  isExcludedFromCoverage,
+} from "./src/coverage.mjs";
+export { runStabilityProbe } from "./src/stability.mjs";
+export { measureEventLoopDelay } from "./src/perf.mjs";
 export { DagExecutor, DagCycleError } from "./src/dag-engine.mjs";
 export { journalIntent, journalDone, reapOrphanedIntents, reapStaleMutexDirs } from "./src/journal.mjs";
 
@@ -159,6 +179,11 @@ export {
   assertFileSize,
   assertFilePatterns,
   assertFileExists,
+  assertMutation,
+  assertTestIntegrity,
+  assertDiffCoverage,
+  assertTestStability,
+  assertEventLoopLag,
   runAssertion,
   formatBytes,
   resolveBytesLimit,

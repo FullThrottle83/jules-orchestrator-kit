@@ -143,7 +143,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **741 unit tests across 91 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **790 unit tests across 91 suites passing in < 10.0s**.
 
 <br/>
 
@@ -170,8 +170,13 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. Non-task files (manifests, `README.md`) are skipped, and `--dry-run` previews without moving anything. | `0` (Complete) |
 | `swarm` | `agentctl swarm [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
 | `check` / `gate` / `audit`| `agentctl check [--mode working-tree] [--fix] [--json] [--json-report <path>]` | Runs security, secret scanning, rules budget audit, and tiered verification gates (with declarative assertion support) against working tree or branch. | `0` (Approved), `1` (Budget/Arg), `3` (Scope), `4` (Verify), `5` (Diff >75K), `6` (Secret), `8` (Flaky) |
+| `mutate` / `mutation` | `agentctl mutate [--min-score <n>] [--max-mutants <n>] [--cmd <testCmd>] [--json]` | Runs zero-dependency diff mutation testing harness on changed hunks with operator inversion and safety rollback. | `0` (Passed), `1` (Score Low) |
+| `coverage` | `agentctl coverage [--min <pct>] [--cmd <testCmd>] [--base <ref>] [--json]` | Runs native zero-dependency V8 diff coverage check against added diff lines. | `0` (Passed), `1` (Low Coverage) |
+| `probe` / `stability` | `agentctl probe [--repeat <n>] [--min <passRate>] [--cmd <testCmd>] [--json]` | Probes test suite flakiness across N consecutive iterations with oscillation detection. | `0` (Passed), `1` (Flaky) |
+| `perf` / `event-loop` | `agentctl perf [--max-ms <n>] [--cmd <testCmd>] [--json]` | Monitors Node.js Event Loop delay and Big-O lag to prevent main-thread event loop starvation. | `0` (Healthy), `1` (Lag Exceeded) |
+| `fix` | `agentctl fix [--file <path>] [--task] [--dry-run] [--json]` | Auto-repairs failure traces from piped stdin (`npm test 2>&1 \| agentctl fix`) or synthesizes OODA queue tasks. | `0` (Resolved), `1` (Failed) |
 | `rules` | `agentctl rules <check\|compile> [--out <path>] [--json]` | Audits instruction files against character/line budgets or compiles unified rules block with SHA-256 and length anti-truncation sentinels. | `0` (Valid/Compiled), `1` (Violations) |
-| `assert` | `agentctl assert [--dir <d>] [--file <f>] [--max-mb <n>] [--gzip] [--targets <g>] [--patterns <p>] [--json] [--json-report <p>]` | Runs declarative zero-dependency verification assertion primitives (`assert:dir-size`, `assert:file-size`, `assert:file-patterns`, `assert:exists`). | `0` (Passed), `1` (Assertion Failed) |
+| `assert` | `agentctl assert [--dir <d>] [--file <f>] [--max-mb <n>] [--gzip] [--targets <g>] [--patterns <p>] [--json] [--json-report <p>]` | Runs declarative zero-dependency verification assertion primitives (`assert:dir-size`, `assert:file-size`, `assert:file-patterns`, `assert:exists`, `assert:mutation`, `assert:test-integrity`, `assert:diff-coverage`, `assert:test-stability`, `assert:event-loop-lag`). | `0` (Passed), `1` (Assertion Failed) |
 | `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
 | `resume` | `agentctl resume <sessionId> --response "<reply>"` | Streams engineer response back into active Google Jules warm session context window. | `0` (Resumed), `1` (Error) |
 | `test-gen` | `agentctl test-gen --title <t> --spec <s> [--run]` | Scaffolds falsifiable unit tests, verifies RED failure state, and locks test in `scope.deny`. | `0` (Scaffolded/Red) |

@@ -43,6 +43,11 @@ Commands:
   dispatch | create     Dispatch a single task to an AI agent (--role <name>, --tier fast|complex, --check-premise)
   check                 Run all-in-one CI security, rules, and stack verification gate
   gate | audit          Run CI security and verification gate against current branch
+  mutate | mutation     Run zero-dependency diff mutation testing harness (--min-score, --max-mutants)
+  coverage              Run native zero-dependency V8 diff coverage check (--min, --cmd)
+  probe | stability     Run test flakiness stability probe across N repetitions (--repeat, --cmd)
+  perf | event-loop     Monitor Node.js event loop delay and Big-O lag (--max-ms, --cmd)
+  fix                   Auto-repair from piped terminal logs or error trace (npm test 2>&1 | agentctl fix)
   rules <action>        Audit rule token budgets or compile rule sentinels (check | compile)
   queue                 Run pending task queue (--dag, --concurrency <n>)
   swarm                 Run parallel task swarm
@@ -434,6 +439,284 @@ async function main() {
       }
 
       process.exit(typeof res.code === "number" ? res.code : 0);
+      break;
+    }
+
+    case "mutate":
+    case "mutation": {
+      const { runMutationTest } = await import("../src/mutation.mjs");
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          base: { type: "string", short: "b", default: config.baseBranch || "main" },
+          mode: { type: "string", short: "m", default: "working-tree" },
+          "working-tree": { type: "boolean" },
+          staged: { type: "boolean" },
+          committed: { type: "boolean" },
+          "min-score": { type: "string", default: "80" },
+          "max-mutants": { type: "string", default: "20" },
+          cmd: { type: "string" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      let selectedMode = values.mode || "working-tree";
+      if (values.staged) selectedMode = "staged";
+      if (values.committed) selectedMode = "committed";
+      if (values["working-tree"]) selectedMode = "working-tree";
+
+      const minScore = Number(values["min-score"]) || 80;
+      const maxMutants = Number(values["max-mutants"]) || 20;
+      const testCmd = values.cmd || config.verify?.test || "npm test";
+
+      if (!values.json) {
+        console.log(`\n🧬 Jules Diff Mutation Testing Harness (Base: ${values.base}, Mode: ${selectedMode})`);
+        console.log(`------------------------------------------------------------------`);
+        console.log(`Evaluating candidate mutants against test command: "${testCmd}"...\n`);
+      }
+
+      const report = runMutationTest({
+        root,
+        base: values.base,
+        mode: selectedMode,
+        minScore,
+        maxMutants,
+        testCmd,
+      });
+
+      if (values.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.log(`Mutation Test Results:`);
+        console.log(`  • Total Mutants Evaluated : ${report.totalMutants}`);
+        console.log(`  • Mutants Killed (Fail)   : ${report.killedMutants} ✅`);
+        console.log(`  • Mutants Survived (Pass) : ${report.survivedMutants} ${report.survivedMutants > 0 ? "⚠️" : ""}`);
+        console.log(`  • Errors / Timeouts       : ${report.errorMutants}`);
+        console.log(`  • Mutation Score          : ${report.mutationScore}% (Required: ${report.minScore}%)`);
+        console.log(`  • Duration                : ${report.durationMs}ms\n`);
+
+        if (report.survivors.length > 0) {
+          console.log(`⚠️ Survived Mutants (Tests passed despite corrupted implementation):`);
+          for (const s of report.survivors) {
+            console.log(`  - [${s.mutant.mutationType}] ${s.mutant.file}:${s.mutant.line}`);
+            console.log(`    Original: ${s.mutant.originalLine.trim()}`);
+            console.log(`    Mutated : ${s.mutant.mutatedLine.trim()}`);
+            console.log(`    Reason  : ${s.mutant.description}\n`);
+          }
+        }
+
+        console.log(`------------------------------------------------------------------`);
+        console.log(`Overall Result: ${report.ok ? "APPROVED (Exit 0)" : "REJECTED (Mutation score below threshold — Exit 1)"}\n`);
+      }
+
+      process.exit(report.ok ? 0 : 1);
+      break;
+    }
+
+    case "coverage": {
+      const { runV8Coverage, calculateDiffCoverage, diffText, resolveRoot } = await import("../index.mjs");
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          min: { type: "string", short: "m" },
+          "min-coverage": { type: "string" },
+          cmd: { type: "string", short: "c" },
+          base: { type: "string", short: "b" },
+          mode: { type: "string" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const root = resolveRoot();
+      const minCoverage = values.min ? parseFloat(values.min) : (values["min-coverage"] ? parseFloat(values["min-coverage"]) : 100);
+      const diffStr = diffText(root, values.base || "main", values.mode || "working-tree");
+
+      const covRes = runV8Coverage(values.cmd, { root });
+      const report = calculateDiffCoverage(covRes.coverageByFile, diffStr, { root, minCoverage });
+
+      if (values.json) {
+        console.log(JSON.stringify({ ...report, testPass: covRes.ok }, null, 2));
+      } else {
+        console.log(`\n📊 V8 Native Diff Coverage Report (Base: ${values.base || "main"})`);
+        console.log(`------------------------------------------------------------------`);
+        console.log(`  Target Min Coverage : ${report.minCoverage}%`);
+        console.log(`  Achieved Coverage   : ${report.score}%`);
+        console.log(`  Covered Added Lines : ${report.coveredLines} / ${report.totalLines}`);
+        console.log(`  Missed Lines Count  : ${report.missedLines}`);
+
+        if (report.missedLines > 0) {
+          console.log(`\n❌ Uncovered Added Lines by File:`);
+          for (const [file, lines] of Object.entries(report.missedByFile)) {
+            console.log(`  - ${file}: lines ${lines.join(", ")}`);
+          }
+        }
+
+        console.log(`------------------------------------------------------------------`);
+        console.log(`Overall Result: ${report.ok && covRes.ok ? "APPROVED (Exit 0)" : "REJECTED (Coverage below threshold — Exit 1)"}\n`);
+      }
+
+      process.exit(report.ok && covRes.ok ? 0 : 1);
+      break;
+    }
+
+    case "probe":
+    case "stability": {
+      const { runStabilityProbe, resolveRoot } = await import("../index.mjs");
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          repeat: { type: "string", short: "r" },
+          iterations: { type: "string", short: "n" },
+          min: { type: "string", short: "m" },
+          "min-pass-rate": { type: "string" },
+          cmd: { type: "string", short: "c" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const root = resolveRoot();
+      const repeat = values.repeat ? parseInt(values.repeat, 10) : (values.iterations ? parseInt(values.iterations, 10) : 5);
+      const minPassRate = values.min ? parseFloat(values.min) : (values["min-pass-rate"] ? parseFloat(values["min-pass-rate"]) : 1.0);
+
+      const report = runStabilityProbe(values.cmd, { root, repeat, minPassRate });
+
+      if (values.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.log(`\n🎲 Test Flakiness Stability Probe (${report.repeat} iterations)`);
+        console.log(`------------------------------------------------------------------`);
+        console.log(`  Required Pass Rate  : ${Math.round(minPassRate * 100)}%`);
+        console.log(`  Observed Pass Rate  : ${Math.round(report.passRate * 100)}% (${report.passes}/${report.repeat} passed)`);
+        console.log(`  Test Oscillation    : ${report.oscillation}`);
+        console.log(`  Total Duration      : ${report.durationMs}ms`);
+
+        if (report.failures > 0) {
+          console.log(`\n❌ Failed Iterations:`);
+          for (const r of report.runs.filter((run) => !run.pass)) {
+            console.log(`  - Iteration #${r.iteration}: Exit Code ${r.exitCode} (${r.durationMs}ms)`);
+          }
+        }
+
+        console.log(`------------------------------------------------------------------`);
+        console.log(`Overall Result: ${report.ok ? "APPROVED (Deterministic 100% Pass — Exit 0)" : "REJECTED (Flaky / Intermittent Failures — Exit 1)"}\n`);
+      }
+
+      process.exit(report.ok ? 0 : 1);
+      break;
+    }
+
+    case "perf":
+    case "event-loop": {
+      const { measureEventLoopDelay, resolveRoot } = await import("../index.mjs");
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          "max-ms": { type: "string", short: "m" },
+          threshold: { type: "string", short: "t" },
+          cmd: { type: "string", short: "c" },
+          resolution: { type: "string", short: "r" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const root = resolveRoot();
+      const maxDelayMs = values["max-ms"] ? parseFloat(values["max-ms"]) : (values.threshold ? parseFloat(values.threshold) : 50);
+      const resolution = values.resolution ? parseInt(values.resolution, 10) : 10;
+
+      const report = measureEventLoopDelay(values.cmd, { root, maxDelayMs, resolution });
+
+      if (values.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.log(`\n⏱️ Node.js Event Loop Lag & Big-O Monitor`);
+        console.log(`------------------------------------------------------------------`);
+        console.log(`  Threshold Max / p99 : ${report.thresholdMs}ms`);
+        console.log(`  Observed p99 Delay  : ${report.p99Ms}ms`);
+        console.log(`  Observed Max Delay  : ${report.maxMs}ms`);
+        console.log(`  Observed Mean Delay : ${report.meanMs}ms`);
+        console.log(`  Total Test Duration : ${report.durationMs}ms`);
+        console.log(`  Exit Code           : ${report.exitCode}`);
+        console.log(`------------------------------------------------------------------`);
+        console.log(`Overall Result: ${report.ok ? "APPROVED (Event Loop Healthy — Exit 0)" : "REJECTED (High Event Loop Lag / O(n^2) Starvation — Exit 1)"}\n`);
+      }
+
+      process.exit(report.ok ? 0 : 1);
+      break;
+    }
+
+    case "fix": {
+      const { repair, planTaskCreate, resolveRoot, redactSecrets } = await import("../index.mjs");
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          input: { type: "string", short: "i" },
+          file: { type: "string", short: "f" },
+          cmd: { type: "string", short: "c" },
+          task: { type: "boolean", short: "t" },
+          author: { type: "string" },
+          json: { type: "boolean", short: "j" },
+          "dry-run": { type: "boolean" },
+        },
+        allowPositionals: true,
+      });
+
+      const root = resolveRoot();
+      let errorInput = "";
+
+      if (values.file && existsSync(values.file)) {
+        errorInput = readFileSync(values.file, "utf-8");
+      } else if (values.input) {
+        errorInput = values.input;
+      } else if (positionals.slice(1).length > 0) {
+        errorInput = positionals.slice(1).join(" ");
+      } else if (!process.stdin.isTTY) {
+        errorInput = readFileSync(0, "utf-8");
+      }
+
+      if (!errorInput.trim()) {
+        console.error("❌ Error: No error log or failure input provided. Pipe stdout/stderr via `npm test 2>&1 | agentctl fix` or provide --file/--input.");
+        process.exit(1);
+      }
+
+      const cleanTrace = redactSecrets(errorInput);
+
+      if (values.task) {
+        // Synthesize task envelope for queue
+        const taskEnvelope = planTaskCreate(root, {
+          prompt: `Fix the following test/build failure:\n\n${cleanTrace.slice(0, 4000)}`,
+          title: "Automated Failure Repair",
+          verifyCmd: values.cmd || "npm test",
+        });
+
+        if (values.json) {
+          console.log(JSON.stringify(taskEnvelope, null, 2));
+        } else {
+          console.log(`\n📋 Synthesized OODA Repair Task Envelope:`);
+          console.log(`  ID     : ${taskEnvelope.taskId}`);
+          console.log(`  Verify : ${taskEnvelope.verifyCmd}`);
+          console.log(`  Prompt : ${taskEnvelope.prompt.slice(0, 100)}...`);
+        }
+        process.exit(0);
+      } else {
+        console.log(`\n🔧 Dispatching OODA Repair Loop for captured failure trace...`);
+        const repairRes = await repair(
+          { stderr: cleanTrace, command: values.cmd || "verify" },
+          { root, dryRun: values["dry-run"], author: values.author }
+        );
+
+        if (values.json) {
+          console.log(JSON.stringify(repairRes, null, 2));
+        } else {
+          console.log(`------------------------------------------------------------------`);
+          console.log(`Repair Status: ${repairRes.ok ? "RESOLVED (Exit 0)" : `FAILED (${repairRes.finalStatus} — Exit 1)`}`);
+        }
+
+        process.exit(repairRes.ok ? 0 : 1);
+      }
       break;
     }
 

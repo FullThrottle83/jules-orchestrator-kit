@@ -14,7 +14,7 @@ import { appendTelemetry as appendTelemetryUnsafe } from "./telemetry.mjs";
 
 import { spawn } from "node:child_process";
 import { resolveAffectedTests, executeQueueDag } from "./dag-engine.mjs";
-import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory } from "./remediation.mjs";
+import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory, createWhackAMoleDetector } from "./remediation.mjs";
 import { hydratePrompt, harvestFailure } from "./memory.mjs";
 import { resolveRolePrompt } from "./role-resolver.mjs";
 
@@ -593,17 +593,23 @@ export async function repair(failure, opts = {}) {
     threshold: 2,
     cooldownMs: 60000,
   });
+  const whackAMole = createWhackAMoleDetector({
+    maxHistory: Math.max(maxRetries + 2, 8),
+    threshold: 2,
+  });
 
   let currentFailure = failure;
   const initialFingerprint = fingerprintFailureState(currentFailure, root);
   breaker.observe(initialFingerprint);
+  whackAMole.recordTestOutcome(currentFailure.stderr || currentFailure.message);
+  let extraPromptDirective = null;
 
   for (let n = 1; n <= maxRetries; n++) {
     if (progressBus && progressToken) {
       progressBus.reportProgress(progressToken, Math.round((n / maxRetries) * 100), 100, `OODA Repair attempt ${n}/${maxRetries}`);
     }
 
-    const repairPrompt = buildRepairPrompt(currentFailure, n, config);
+    const repairPrompt = buildRepairPrompt(currentFailure, n, config, extraPromptDirective);
     let session;
     try {
       session = await withBudget(
@@ -657,6 +663,7 @@ export async function repair(failure, opts = {}) {
     const gateRes = await gate({ root, config, fix: false, progressBus, progressToken });
     if (gateRes.ok) {
       breaker.reset();
+      whackAMole.reset();
       recordRemediation(root, {
         fingerprint: initialFingerprint,
         symptom: currentFailure.stderr || currentFailure.message || "Failure resolved by OODA repair",
@@ -668,6 +675,12 @@ export async function repair(failure, opts = {}) {
 
     currentFailure = gateRes.phases.find((p) => p.phase === "verify")?.testResult || failure;
     const currentFingerprint = fingerprintFailureState(currentFailure, root);
+
+    // Whack-a-Mole test-oscillation check
+    const whackCheck = whackAMole.recordTestOutcome(currentFailure.stderr || currentFailure.message);
+    if (whackCheck.whackAMole) {
+      extraPromptDirective = whackCheck.promptDirective;
+    }
 
     const check = breaker.observe(currentFingerprint);
     if (check.tripped) {
@@ -800,13 +813,16 @@ export async function pollSessionState(provider, session, opts = {}) {
   return { ...session, status: String(session.status || "COMPLETED").toUpperCase() };
 }
 
-function buildRepairPrompt(failure, attempt, _config) {
+function buildRepairPrompt(failure, attempt, _config, extraPromptDirective = null) {
   const cleanStderr = redactSecrets(failure.stderr || failure.stdout || "Unknown Error");
 
   let escalationStrategy = "DIRECT_REPAIR";
   let escalationDirective = "1. Ground your fix strictly in the error log below. Do NOT guess file contents or function signatures.";
 
-  if (attempt === 2) {
+  if (extraPromptDirective) {
+    escalationStrategy = "WHACK_A_MOLE_PIVOT";
+    escalationDirective = `1. ARCHITECTURAL PIVOT: ${extraPromptDirective}`;
+  } else if (attempt === 2) {
     escalationStrategy = "DIAGNOSTIC_ANALYSIS";
     escalationDirective = "1. DIAGNOSE FIRST: Two attempts have failed. Analyze if the root cause is in a different file or component than where the previous patch was applied.";
   } else if (attempt >= 3) {

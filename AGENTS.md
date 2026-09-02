@@ -46,6 +46,7 @@ Jules automatically infers test and build verification commands via `scripts/com
 Operations run **only** via `agentctl`. Standalone `scripts/*.mjs` shims were removed; if one is not in `package.json`, it is stale.
 
 - Locks: `agentctl lock acquire <agent> <task_id> <file_path...>` (conflict exits `1` naming the holder) · `lock status` · `lock release <task_id>`.
+- Verification Gates: `agentctl mutate` · `agentctl coverage` · `agentctl probe` · `agentctl perf` · `npm test 2>&1 | agentctl fix`.
 - Learnings: `agentctl learning add "<trigger>" "<solution>"` — both args required; regenerates `.agent/SYSTEM_LEARNINGS.md`, never hand-edit it.
 - Flaky tests: `agentctl flaky status|heal|reset` · Escalations: `agentctl escalate <session_id>|--status|--flush`.
 - Prompt hydration: `agentctl hydrate [prompt]` · Self-audit: `npm run jules:audit` · Doc drift: `npm run jules:doc-sync`.
@@ -76,8 +77,8 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 ### Multi-Agent Coordination, Verification Gates & Web Envelopes
 
 - **Task Envelope Premise Validator**: Validates paths, scope, and base freshness (`agentctl task create`).
-- **Task Envelopes & Templates**: Pre-calibrated, stack-agnostic templates — run `agentctl task template --list` for the current set. Web: CWV/WCAG/SEO/Playwright/i18n/AI-access. Agent hardening: dead-code audit, QA mutation, CI falsification, service isolation, error paths, security audit. Universal (work in any language the detector recognises, since verify commands hydrate from config): `agent-dep-audit` (deps/supply chain), `agent-doc-drift` (docs vs shipped surface), `agent-config-audit` (typed config + secret hygiene), `agent-api-contract` (route/handler + error-shape parity). Deep Think: debug/feature/optimize/harden.
-- **Specialist Roles**: Eight personas ship as stack-neutral prompts in `.agent/prompts/`, selected with `agentctl dispatch --role <name>` (case-insensitive): `overseer`, `bolt`, `sentinel`, `janitor`, `a11y`, `scribe`, `spectator`, `alchemist`. They hydrate `{{VERIFY_TEST}}`/`{{VERIFY_LINT}}`/`{{DIFF_KB}}`/`{{BASE_BRANCH}}` from the target repo so a non-Node project is never told to run `npm test`.
+- **Task Envelopes & Templates**: Pre-calibrated, stack-agnostic templates (`agentctl task template --list`): Web (CWV/WCAG/SEO/Playwright/i18n/AI-access), Hardening (dead-code, mutation, CI falsify, isolation, error-paths, security), Universal (`agent-dep-audit`, `agent-doc-drift`, `agent-config-audit`, `agent-api-contract`), Deep Think (`debug`, `feature`, `optimize`, `harden`).
+- **Specialist Roles**: Eight personas in `.agent/prompts/` selected via `agentctl dispatch --role <name>`: `overseer`, `bolt`, `sentinel`, `janitor`, `a11y`, `scribe`, `spectator`, `alchemist`.
 - **Stale-Base Gate Predicate**: Rejects PRs whose merge-base is > 25 commits behind `origin/main`.
 - **Asset Integrity Gate**: Inspects assets (`.woff2`, `.png`, `.jpg`) to ensure error pages never land silently.
 - **Edge-Runtime Import Guard**: Blocks unsupported native Node imports (`node:fs`, `node:child_process`) in Edge environments.

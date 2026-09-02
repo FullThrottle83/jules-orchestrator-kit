@@ -753,7 +753,7 @@ function splitDiffByFile(diffText) {
   };
 
   for (const line of diffText.split("\n")) {
-    if (line.startsWith("+++")) {
+    if ((line.startsWith("+++ ") || line.startsWith("+++ b/") || line.startsWith("+++ /dev/null")) && !line.startsWith("++++")) {
       const name = line.slice(3).split("\t")[0].trim().replace(/^b\//, "");
       select(name && name !== "/dev/null" ? name : null);
       lineNo = null;
@@ -826,6 +826,104 @@ function locateFindingLine(lines, type) {
   return null;
 }
 
+/**
+ * Detects test file assertion tampering, weakening, or test skips.
+ *
+ * @param {string} diffOrText - Unified git diff
+ * @param {Object} [options]
+ * @param {boolean} [options.allowTestModifications=false]
+ * @returns {{ ok: boolean, violations: Array<{ file: string, type: string, line?: number, reason: string }> }}
+ */
+export function checkTestTampering(diffOrText = "", options = {}) {
+  if (!diffOrText || typeof diffOrText !== "string") return { ok: true, violations: [] };
+  if (options.allowTestModifications === true) return { ok: true, violations: [] };
+
+  const violations = [];
+  const lines = diffOrText.split("\n");
+  let currentFile = null;
+  let currentLineNo = null;
+
+  const isTestFile = (f) => {
+    if (!f) return false;
+    const n = f.replace(/\\/g, "/").toLowerCase();
+    return (
+      n.includes(".test.") ||
+      n.includes(".spec.") ||
+      n.includes("_test.") ||
+      n.includes("/test/") ||
+      n.includes("/tests/") ||
+      n.includes("/__tests__/")
+    );
+  };
+
+  const SKIP_INJECTIONS = [
+    { pattern: /\b(?:it|test|describe|context)\.skip\s*\(/i, desc: "Injected test skip (.skip())" },
+    { pattern: /\b(?:xit|xtest|xdescribe)\s*\(/i, desc: "Injected disabled test (xit/xtest/xdescribe)" },
+    { pattern: /@pytest\.mark\.skip/i, desc: "Injected Pytest skip decorator (@pytest.mark.skip)" },
+    { pattern: /\bt\.Skip\s*\(/i, desc: "Injected Go test skip (t.Skip())" },
+    { pattern: /#\[ignore\]/i, desc: "Injected Rust test ignore attribute (#[ignore])" },
+    { pattern: /\/\/\s*@ts-ignore/i, desc: "Injected TypeScript ignore comment (// @ts-ignore)" },
+    { pattern: /\/\/\s*@ts-nocheck/i, desc: "Injected TypeScript nocheck directive (// @ts-nocheck)" },
+  ];
+
+  const COMMENTED_ASSERTION = /^\+\s*(?:\/\/|\/\*)\s*(?:expect\(|assert\.|assert\(|t\.expect|t\.assert)/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if ((line.startsWith("+++ ") || line.startsWith("+++ b/") || line.startsWith("+++ /dev/null")) && !line.startsWith("++++")) {
+      const target = line.slice(3).split("\t")[0].trim().replace(/^b\//, "");
+      currentFile = target && target !== "/dev/null" ? target : null;
+      currentLineNo = null;
+      continue;
+    }
+
+    const hunkMatch = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(line);
+    if (hunkMatch) {
+      currentLineNo = Number(hunkMatch[1]);
+      continue;
+    }
+
+    if (!currentFile || !isTestFile(currentFile)) {
+      continue;
+    }
+
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      const addedText = line.slice(1);
+
+      // Check skip injections
+      for (const skipRule of SKIP_INJECTIONS) {
+        if (skipRule.pattern.test(addedText)) {
+          violations.push({
+            file: currentFile,
+            line: currentLineNo,
+            type: "TEST_SKIP_INJECTION",
+            reason: `Test Tamper Guard: ${skipRule.desc} found in ${currentFile}${currentLineNo ? `:${currentLineNo}` : ""}`,
+          });
+        }
+      }
+
+      // Check commented-out assertions
+      if (COMMENTED_ASSERTION.test(line)) {
+        violations.push({
+          file: currentFile,
+          line: currentLineNo,
+          type: "COMMENTED_ASSERTION",
+          reason: `Test Tamper Guard: Commented-out test assertion detected in ${currentFile}${currentLineNo ? `:${currentLineNo}` : ""}`,
+        });
+      }
+
+      if (currentLineNo !== null) currentLineNo++;
+    } else if (currentLineNo !== null && !line.startsWith("-") && !line.startsWith("\\")) {
+      currentLineNo++;
+    }
+  }
+
+  return {
+    ok: violations.length === 0,
+    violations,
+  };
+}
+
 export function scanDiff(diffTextStr = "", options = {}) {
   if (!diffTextStr) return { ok: true, findings: [] };
 
@@ -880,8 +978,15 @@ export function scanDiff(diffTextStr = "", options = {}) {
     }
   }
 
+  const tamperingRes = checkTestTampering(diffTextStr, options);
+  if (!tamperingRes.ok) {
+    for (const v of tamperingRes.violations) {
+      findings.push({ severity: "CRITICAL", type: "TEST_TAMPERING_DETECTED", file: v.file ?? null, line: v.line ?? null, description: v.reason });
+    }
+  }
+
   return {
-    ok: secretsOk && edgeRes.ok && crossPkgRes.ok,
+    ok: secretsOk && edgeRes.ok && crossPkgRes.ok && tamperingRes.ok,
     findings,
   };
 }

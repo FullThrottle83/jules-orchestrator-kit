@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.51.0] - 2026-09-02
+### Asymmetric Mechanical Falsification, AST Mutation Testing, V8 Diff Coverage & Big-O Lag Guards
+
+*Brings zero-dependency mechanical falsification to AI-generated patches with transactional AST mutation testing, native V8 diff coverage mapping, OODA thrash & Whack-a-Mole test-oscillation cycle detection, flakiness stability probing, and Node.js Event Loop Delay / Big-O performance guards.*
+
+#### Added
+- **Diff-Hunk Mutation Testing Engine (`src/mutation.mjs`, `agentctl mutate`, `assert:mutation`)**: Evaluates agent-authored code against transactional operator inversion (`===`/`!==`, `>=`/$<$, `&&`/`||`, `true`/`false`, `+`/`-`) with multiline string/template/comment shielding (`getFileStringLiteralLineMap`) and shadow disk rollback.
+- **Native Zero-Dep V8 Diff Coverage Enforcer (`src/coverage.mjs`, `agentctl coverage`, `assert:diff-coverage`)**: Harnesses `NODE_V8_COVERAGE` to map raw block hit counts to added `+` git diff hunks with zero external coverage tooling.
+- **Whack-a-Mole Test-Oscillation Cycle Detector (`src/remediation.mjs`, `src/engine.mjs`)**: Tracks test failure bitvectors and rolling SHA-256 state tuples in OODA loops to halt infinite oscillation ($Test_A \to Test_B \to Test_A$) and inject architectural anti-local-maximum guidance.
+- **Flakiness Stability Prober (`src/stability.mjs`, `agentctl probe`, `assert:test-stability`)**: Executes target suites across $N$ isolated passes to reject intermittent timing races and non-deterministic flakiness before merge.
+- **Node.js Event Loop Lag & Big-O Guard (`src/perf.mjs`, `agentctl perf`, `assert:event-loop-lag`)**: Monitors Event Loop Delay via `node:perf_hooks.monitorEventLoopDelay` ($p99$, mean, max) to detect main-thread event loop starvation and catastrophic regex backtracking.
+- **Unix Stdin Stream Pipeline (`agentctl fix`)**: Enables piping failure traces and logs directly into automated OODA repair (`npm test 2>&1 | agentctl fix`) or task envelope synthesis.
+
 ## [0.43.0] - 2026-08-24
 ### Documented Specialist Roles Ship As Prompts, & Universal Stack-Agnostic Envelopes
 

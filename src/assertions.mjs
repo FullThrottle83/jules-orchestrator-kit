@@ -3,6 +3,12 @@ import { resolve, relative, join, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 import { checkAssetIntegrity } from "./asset-integrity.mjs";
 import { checkRulesBudget } from "./rules-budget.mjs";
+import { runMutationTest } from "./mutation.mjs";
+import { checkTestTampering } from "./security.mjs";
+import { runV8Coverage, calculateDiffCoverage } from "./coverage.mjs";
+import { runStabilityProbe } from "./stability.mjs";
+import { measureEventLoopDelay } from "./perf.mjs";
+import { diffText } from "./git.mjs";
 
 /**
  * Normalizes path to POSIX slashes.
@@ -488,6 +494,204 @@ export function assertFileExists(config = {}, root = process.cwd()) {
 }
 
 /**
+ * Asserts that mutation testing score meets minimum threshold.
+ */
+export function assertMutation(config = {}, root = process.cwd()) {
+  const minScore = typeof config.minScore === "number" ? config.minScore : 80;
+  const maxMutants = typeof config.maxMutants === "number" ? config.maxMutants : 20;
+  const testCmd = config.testCmd || config.cmd || "npm test";
+
+  const report = runMutationTest({
+    root,
+    minScore,
+    maxMutants,
+    testCmd,
+    base: config.base || "main",
+    mode: config.mode || "working-tree",
+    files: Array.isArray(config.files) ? config.files : config.file ? [config.file] : undefined,
+    executor: config.executor,
+  });
+
+  const diagnostics = [];
+  if (!report.ok) {
+    diagnostics.push(
+      `Mutation score ${report.mutationScore}% below required threshold of ${minScore}% (${report.killedMutants}/${report.totalMutants} killed, ${report.survivedMutants} survived).`
+    );
+    for (const survivor of report.survivors) {
+      diagnostics.push(`  - Survivor in ${survivor.mutant.file}:${survivor.mutant.line}: "${survivor.mutant.mutatedLine.trim()}" (${survivor.mutant.description})`);
+    }
+  }
+
+  return {
+    ok: report.ok,
+    mutationScore: report.mutationScore,
+    minScore: report.minScore,
+    totalMutants: report.totalMutants,
+    killedMutants: report.killedMutants,
+    survivedMutants: report.survivedMutants,
+    diagnostics,
+    metrics: {
+      mutationScore: report.mutationScore,
+      minScore: report.minScore,
+      totalMutants: report.totalMutants,
+      killedMutants: report.killedMutants,
+      survivedMutants: report.survivedMutants,
+    },
+  };
+}
+
+/**
+ * Asserts that no test file assertion weakening or skip injections occurred.
+ */
+export function assertTestIntegrity(config = {}, root = process.cwd()) {
+  let diffStr = config.diffStr;
+  if (!diffStr) {
+    try {
+      diffStr = diffText(root, config.base || "main", config.mode || "working-tree");
+    } catch (_) {
+      diffStr = "";
+    }
+  }
+
+  const res = checkTestTampering(diffStr, config);
+  const diagnostics = (res.violations || []).map((v) => v.reason);
+
+  return {
+    ok: res.ok,
+    violations: res.violations || [],
+    diagnostics,
+    metrics: {
+      violationCount: res.violations?.length || 0,
+    },
+  };
+}
+
+/**
+ * Asserts that newly added implementation lines meet the minimum diff coverage percentage.
+ */
+export function assertDiffCoverage(config = {}, root = process.cwd()) {
+  let diffStr = config.diffStr;
+  if (!diffStr) {
+    try {
+      diffStr = diffText(root, config.base || "main", config.mode || "working-tree");
+    } catch (_) {
+      diffStr = "";
+    }
+  }
+
+  const covRes = runV8Coverage(config.cmd || config.testCmd, {
+    root,
+    timeoutMs: config.timeoutMs,
+  });
+
+  const diffCov = calculateDiffCoverage(covRes.coverageByFile, diffStr, {
+    root,
+    minCoverage: typeof config.minCoverage === "number" ? config.minCoverage : (typeof config.min === "number" ? config.min : 100),
+  });
+
+  const diagnostics = [];
+  if (!diffCov.ok) {
+    diagnostics.push(diffCov.summary);
+    for (const [file, missed] of Object.entries(diffCov.missedByFile)) {
+      diagnostics.push(`Uncovered added lines in ${file}: lines ${missed.join(", ")}`);
+    }
+  }
+
+  return {
+    ok: diffCov.ok && covRes.ok,
+    score: diffCov.score,
+    minCoverage: diffCov.minCoverage,
+    totalLines: diffCov.totalLines,
+    coveredLines: diffCov.coveredLines,
+    missedLines: diffCov.missedLines,
+    missedByFile: diffCov.missedByFile,
+    diagnostics,
+    metrics: {
+      diffCoverageScore: diffCov.score,
+      uncoveredLinesCount: diffCov.missedLines,
+    },
+  };
+}
+
+/**
+ * Asserts that a test suite executes deterministically across multiple consecutive repetitions.
+ */
+export function assertTestStability(config = {}, root = process.cwd()) {
+  const repeat = config.repeat || config.iterations || 5;
+  const minPassRate = typeof config.minPassRate === "number" ? config.minPassRate : 1.0;
+
+  const probe = runStabilityProbe(config.cmd || config.testCmd, {
+    root,
+    repeat,
+    minPassRate,
+    timeoutMs: config.timeoutMs,
+  });
+
+  const diagnostics = [];
+  if (!probe.ok) {
+    diagnostics.push(probe.summary);
+    const failedRuns = probe.runs.filter((r) => !r.pass);
+    for (const r of failedRuns) {
+      diagnostics.push(`Iteration ${r.iteration} failed (exit ${r.exitCode})`);
+    }
+  }
+
+  return {
+    ok: probe.ok,
+    repeat: probe.repeat,
+    passes: probe.passes,
+    failures: probe.failures,
+    passRate: probe.passRate,
+    oscillation: probe.oscillation,
+    diagnostics,
+    metrics: {
+      passRate: probe.passRate,
+      oscillation: probe.oscillation,
+      failuresCount: probe.failures,
+    },
+  };
+}
+
+/**
+ * Asserts that Node.js Event Loop delay remains within acceptable thresholds during execution.
+ */
+export function assertEventLoopLag(config = {}, root = process.cwd()) {
+  const maxDelayMs = config.maxDelayMs || config.maxMs || config.thresholdMs || 50;
+  const resolution = config.resolution || 10;
+
+  const res = measureEventLoopDelay(config.cmd || config.testCmd, {
+    root,
+    maxDelayMs,
+    resolution,
+    timeoutMs: config.timeoutMs,
+  });
+
+  const diagnostics = [];
+  if (!res.ok) {
+    diagnostics.push(res.summary);
+    if (res.exitCode !== 0) {
+      diagnostics.push(`Command failed with exit code ${res.exitCode}`);
+    } else {
+      diagnostics.push(`Event loop delay exceeded threshold: p99=${res.p99Ms}ms (max allowed: ${maxDelayMs}ms)`);
+    }
+  }
+
+  return {
+    ok: res.ok,
+    maxMs: res.maxMs,
+    p99Ms: res.p99Ms,
+    meanMs: res.meanMs,
+    thresholdMs: maxDelayMs,
+    diagnostics,
+    metrics: {
+      eventLoopP99Ms: res.p99Ms,
+      eventLoopMaxMs: res.maxMs,
+      eventLoopMeanMs: res.meanMs,
+    },
+  };
+}
+
+/**
  * Dispatches and executes an assertion primitive.
  */
 export function runAssertion(stage = {}, root = process.cwd()) {
@@ -542,6 +746,46 @@ export function runAssertion(stage = {}, root = process.cwd()) {
       };
       break;
     }
+
+    case "mutation":
+    case "mutation-testing":
+    case "mutation-score":
+    case "mutation_score":
+      res = assertMutation(stage, root);
+      break;
+
+    case "test-integrity":
+    case "anti-tamper":
+    case "test-tamper":
+    case "test_integrity":
+      res = assertTestIntegrity(stage, root);
+      break;
+
+    case "diff-coverage":
+    case "diff_coverage":
+    case "coverage":
+    case "patch-coverage":
+    case "patch_coverage":
+    case "v8-coverage":
+      res = assertDiffCoverage(stage, root);
+      break;
+
+    case "test-stability":
+    case "test_stability":
+    case "stability":
+    case "flaky-probe":
+    case "stability-probe":
+      res = assertTestStability(stage, root);
+      break;
+
+    case "event-loop-lag":
+    case "event-loop-delay":
+    case "event_loop_lag":
+    case "event_loop_delay":
+    case "perf-lag":
+    case "perf_lag":
+      res = assertEventLoopLag(stage, root);
+      break;
 
     case "exists":
     case "file-exists":

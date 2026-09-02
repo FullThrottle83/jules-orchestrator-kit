@@ -11,13 +11,21 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.43.0 (Current Stable) ──► v0.44.0 (Process & Security) ──► v0.50.0 (Anti-Tamper & Mutation) ──► v0.60.0 (Swarm & Leases) ──► v1.0.0 (Production Kernel)
- (Roles & Universal Envelopes) (Guillotine & Trojan Fences)  (Diff Mutation & Anti-Tamper)   (Distributed Leases & DAG)   (Enterprise Hardened)
+ v0.51.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Asymmetric Falsification)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.43.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.51.0)
+
+### v0.51.0: Asymmetric Mechanical Falsification, AST Mutation Testing & V8 Diff Coverage
+- [x] **Diff-Hunk Mutation Testing Engine (`src/mutation.mjs`, `agentctl mutate`, `assert:mutation`)** — Transactional operator inversion (`===`/`!==`, `>=`/$<$, `&&`/`||`, `true`/`false`, `+`/`-`) with multiline string/template literal shielding (`getFileStringLiteralLineMap`) and automatic shadow disk rollback.
+- [x] **Native Zero-Dep V8 Diff Coverage Enforcer (`src/coverage.mjs`, `agentctl coverage`, `assert:diff-coverage`)** — Zero-dependency coverage extraction using Node native `NODE_V8_COVERAGE`, translating byte offset ranges to 1-indexed line hit counts against added `+` diff hunks.
+- [x] **Whack-a-Mole Test-Oscillation Cycle Detector (`src/remediation.mjs`, `src/engine.mjs`)** — Tracks test failure sets and rolling SHA-256 state tuples across repair attempts, switching to `WHACK_A_MOLE_PIVOT` strategy upon detecting 2-cycle or 3-cycle oscillation.
+- [x] **Flakiness Stability Prober (`src/stability.mjs`, `agentctl probe`, `assert:test-stability`)** — Executes target suites across $N$ isolated passes with mathematical oscillation tracking to reject intermittent timing races before merge.
+- [x] **Node.js Event Loop Delay & Big-O Guard (`src/perf.mjs`, `agentctl perf`, `assert:event-loop-lag`)** — Samples $p99$, mean, and max event loop delay via `node:perf_hooks` to protect against main-thread starvation and catastrophic regex backtracking.
+- [x] **Unix Stdin Stream Pipeline (`agentctl fix`)** — Direct terminal piping (`npm test 2>&1 | agentctl fix`) with secret scrubbing and automated OODA repair dispatch.
 
 ### v0.43.0: Documented Specialist Roles Ship As Prompts, & Universal Stack-Agnostic Envelopes
 - [x] **Four Missing Specialist Roles Shipped (`.agent/prompts/`)** — The rules template advertised A11y, Scribe, Spectator and Alchemist as specialist personas, but no prompt file existed for any of them, so `agentctl dispatch --role a11y` resolved to `null` on every install. Added stack-neutral prompts for all four (WCAG/focus/measured contrast, metadata/JSON-LD/canonical parity with honest claims, headless E2E with no sleep-based waits, and schema/reversibility/data-loss review for migrations). They hydrate `{{VERIFY_TEST}}`/`{{VERIFY_LINT}}`/`{{DIFF_KB}}`/`{{BASE_BRANCH}}` from the target repo's config, like the original four.
