@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.0] - 2026-09-02
+### Jules Power-User Session Operations, Patch Application, Failure Retries & Full MCP Tools Suite
+
+*Integrates high-leverage power-user operations and remote session management primitives from the broader Jules open-source ecosystem into a zero-dependency architecture with transactional safety.*
+
+#### Added
+- **Power-User Session Operations Engine (`src/session-ops.mjs`, `agentctl patch`, `agentctl retry`, `agentctl prune`)**:
+  - `extractSessionPatch(sessionId, opts)`: Extracts raw git diff patch, pull request metadata, and affected file lists from completed Jules session outputs and activity artifacts.
+  - `applySessionPatch(sessionId, opts)`: Runs `git apply --check` safety verification before applying patches directly to local working tree, with optional `--save <path>` disk output.
+  - `retrySession(sessionId, opts)`: Extracts terminal failure traces and error activities from failed sessions, synthesizes an OODA retry envelope (`[PREVIOUS_ATTEMPT_FAILURE_DIAGNOSTIC]`), and dispatches replacement session.
+  - `pruneSessions(opts)`: Queries and batch-archives or deletes stale/completed sessions with human duration age cutoffs (`7d`, `24h`, `30m`).
+  - `parseAgeDuration(str)`: Zero-dependency duration parser supporting days, hours, minutes, seconds, and weeks.
+- **Provider Remote Lifecycle Endpoints (`src/provider.mjs`)**:
+  - Implemented `listSessions()`, `listActivities()`, `archiveSession()`, `deleteSession()`, and `listSources()` across `createProvider`, `createFailoverProvider`, and `createSyntaxVerifiedProvider`.
+- **Full Model Context Protocol (MCP) Server Tools Suite (`src/mcp.mjs`, 17 tools total)**:
+  - Added MCP tools: `jules_list_sessions`, `jules_list_activities`, `jules_get_session_output`, `jules_archive_session`, `jules_delete_session`, `jules_retry_session`, `jules_apply_patch`, `jules_list_sources`, and `jules_prune_sessions`.
+- **API Surface Extension (`index.mjs`, `test/api-surface.test.mjs`)**:
+  - Exported `extractSessionPatch`, `applySessionPatch`, `retrySession`, `pruneSessions`, and `parseAgeDuration` with locked SDK snapshot at 236 symbols.
+
 ## [0.51.0] - 2026-09-02
 ### Asymmetric Mechanical Falsification, AST Mutation Testing, V8 Diff Coverage & Big-O Lag Guards
 

@@ -69,6 +69,9 @@ Commands:
   resume                Resume warm session with human response (--response "<text>")
   plan approve <id>     Approve pending plan for a Jules session (:approvePlan)
   session get <id>      Retrieve remote session status from provider API
+  patch <id>            Extract and test/apply git patch from a Jules session (--apply, --save)
+  retry <id>            Retry failed session with automated failure-trace injection (--role)
+  prune                 Batch-archive or delete stale sessions via Jules API (--age 7d, --yes)
   pr harvest            Triage, verify CI, and auto-merge low-risk agent PRs (--auto, --tier r0,r1)
   escalate              Dispatch or manage webhook escalation incidents (--flush, --status, --clear)
   flaky                 Manage Wilson-quarantined tests and dispatch healing swarm (status | heal | reset)
@@ -717,6 +720,147 @@ async function main() {
 
         process.exit(repairRes.ok ? 0 : 1);
       }
+      break;
+    }
+
+    case "patch": {
+      const { applySessionPatch, resolveRoot } = await import("../index.mjs");
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          session: { type: "string", short: "s" },
+          apply: { type: "boolean", short: "a" },
+          save: { type: "string" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const sessionId = values.session || positionals[0] || positionals[1];
+      if (!sessionId) {
+        console.error("❌ Error: Missing required session ID. Usage: agentctl patch <session_id> [--apply] [--save <path>]");
+        process.exit(1);
+      }
+
+      const root = resolveRoot();
+      const res = await applySessionPatch(sessionId, {
+        root,
+        apply: Boolean(values.apply),
+        save: values.save,
+      });
+
+      if (values.json) {
+        console.log(JSON.stringify(res, null, 2));
+      } else if (!res.ok) {
+        console.error(`\n❌ Failed to extract or apply patch for session ${sessionId}:`);
+        console.error(`   ${res.error || "Unknown error"}\n`);
+      } else {
+        console.log(`\n📦 Session Git Patch (${sessionId})`);
+        console.log(`------------------------------------------------------------------`);
+        console.log(`  Modified Files      : ${res.files && res.files.length > 0 ? res.files.join(", ") : "None"}`);
+        console.log(`  git apply --check   : ${res.checkPassed ? "✅ CLEAN PASS" : "❌ CONFLICT"}`);
+        console.log(`  Applied to Disk     : ${res.patchApplied ? "✅ APPLIED" : "DRY-RUN ONLY (--apply to write)"}`);
+        if (values.save) {
+          console.log(`  Saved to File       : ${values.save}`);
+        }
+        if (!values.apply && !values.save && res.patch) {
+          console.log(`\n--- Patch Content ---\n${res.patch}\n---------------------\n`);
+        }
+      }
+
+      process.exit(res.ok ? 0 : 1);
+      break;
+    }
+
+    case "retry": {
+      const { retrySession, resolveRoot } = await import("../index.mjs");
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          session: { type: "string", short: "s" },
+          role: { type: "string", short: "r" },
+          title: { type: "string", short: "t" },
+          "without-failure": { type: "boolean" },
+          "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const sessionId = values.session || positionals[0] || positionals[1];
+      if (!sessionId) {
+        console.error("❌ Error: Missing required session ID. Usage: agentctl retry <session_id> [--role <role>]");
+        process.exit(1);
+      }
+
+      const root = resolveRoot();
+      const res = await retrySession(sessionId, {
+        root,
+        role: values.role,
+        title: values.title,
+        withFailure: values["without-failure"] ? false : true,
+        dryRun: Boolean(values["dry-run"]),
+      });
+
+      if (values.json) {
+        console.log(JSON.stringify(res, null, 2));
+      } else {
+        console.log(`\n🔄 Session Retry Dispatched!`);
+        console.log(`------------------------------------------------------------------`);
+        console.log(`  Original Session    : ${res.originalSessionId}`);
+        console.log(`  New Session ID      : ${res.newSession?.id || "N/A"}`);
+        console.log(`  Failure Trace Added : ${res.failureReason ? "YES" : "NO"}`);
+        console.log(`------------------------------------------------------------------\n`);
+      }
+
+      process.exit(res.ok ? 0 : 1);
+      break;
+    }
+
+    case "prune": {
+      const { pruneSessions, resolveRoot } = await import("../index.mjs");
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          age: { type: "string", short: "a" },
+          state: { type: "string", short: "s" },
+          delete: { type: "boolean" },
+          "dry-run": { type: "boolean", short: "d" },
+          yes: { type: "boolean", short: "y" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const root = resolveRoot();
+      const dryRun = values["dry-run"] || (!values.yes && !values.delete);
+      const res = await pruneSessions({
+        root,
+        age: values.age || "7d",
+        state: values.state,
+        delete: Boolean(values.delete),
+        dryRun,
+      });
+
+      if (values.json) {
+        console.log(JSON.stringify(res, null, 2));
+      } else {
+        console.log(`\n🧹 Session Pruning Report (${dryRun ? "DRY RUN" : "EXECUTED"})`);
+        console.log(`------------------------------------------------------------------`);
+        console.log(`  Filter Age Cutoff   : ${values.age || "7d"}`);
+        console.log(`  Filter Target State : ${values.state || "ALL"}`);
+        console.log(`  Matched Sessions    : ${res.matchedCount}`);
+        console.log(`  Archived / Deleted  : ${res.archivedCount}`);
+        console.log(`------------------------------------------------------------------`);
+        for (const s of res.sessions) {
+          console.log(`  - [${s.action}] ${s.id} (State: ${s.state || "UNKNOWN"})`);
+        }
+        if (dryRun && res.matchedCount > 0) {
+          console.log(`\n💡 Re-run with --yes to archive matched sessions.\n`);
+        }
+      }
+
+      process.exit(0);
       break;
     }
 

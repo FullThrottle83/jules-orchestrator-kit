@@ -8,6 +8,13 @@ import { reapOrphanedIntents, reapStaleMutexDirs } from "./journal.mjs";
 import { readTelemetry } from "./telemetry.mjs";
 import { ProgressBus } from "./mcp-progress.mjs";
 import { KIT_VERSION } from "./version.mjs";
+import { createProvider } from "./provider.mjs";
+import {
+  extractSessionPatch,
+  applySessionPatch,
+  retrySession,
+  pruneSessions,
+} from "./session-ops.mjs";
 
 export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
@@ -194,6 +201,113 @@ export const MCP_TOOLS = [
         category: { type: "string", description: "Category (e.g. 'EDGE', 'DATABASE', 'GENERAL')" },
       },
       required: ["trigger", "solution"],
+    },
+  },
+  {
+    name: "jules_list_sessions",
+    description: "List remote Jules coding sessions with optional pagination and state filtering.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pageSize: { type: "number", description: "Maximum number of sessions to return (default 50)" },
+        pageToken: { type: "string", description: "Page token for cursor pagination" },
+      },
+    },
+  },
+  {
+    name: "jules_list_activities",
+    description: "List execution activities, logs, and error outputs for a specific Jules session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Jules session ID" },
+        pageSize: { type: "number", description: "Maximum number of activities to return" },
+        pageToken: { type: "string", description: "Page token for pagination" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "jules_get_session_output",
+    description: "Extract the git diff patch, pull request metadata, and changed files from a Jules session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Jules session ID" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "jules_archive_session",
+    description: "Archive a Jules coding session to clean up the dashboard.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Jules session ID to archive" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "jules_delete_session",
+    description: "Permanently delete a Jules coding session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Jules session ID to delete" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "jules_retry_session",
+    description: "Retry a failed Jules session by extracting failure diagnostics and dispatching a new OODA repair session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Original failed Jules session ID" },
+        role: { type: "string", description: "Optional specialist role override" },
+        withFailure: { type: "boolean", description: "Include previous failure diagnostic in retry prompt (default true)" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "jules_apply_patch",
+    description: "Extract and apply a Jules session's git patch to the local workspace with git apply safety verification.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Jules session ID to extract patch from" },
+        apply: { type: "boolean", description: "If true, applies the patch; if false, runs git apply --check dry-run" },
+        save: { type: "string", description: "Optional file path to save raw patch diff to" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "jules_list_sources",
+    description: "List connected GitHub repository sources available to the Jules account.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pageSize: { type: "number", description: "Maximum number of sources to return" },
+        pageToken: { type: "string", description: "Page token for pagination" },
+      },
+    },
+  },
+  {
+    name: "jules_prune_sessions",
+    description: "Batch-archive or prune old/completed Jules sessions matching age and state filters.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        age: { type: "string", description: "Age cutoff string (e.g. '7d', '24h', '30m')" },
+        state: { type: "string", description: "Target session state to filter (e.g. 'FAILED', 'COMPLETED')" },
+        dryRun: { type: "boolean", description: "If true, previews sessions without modifying (default true)" },
+        delete: { type: "boolean", description: "If true, permanently deletes instead of archiving" },
+      },
     },
   },
 ];
@@ -427,6 +541,169 @@ export async function handleMcpRequest(request, opts = {}) {
           id,
           result: {
             content: [{ type: "text", text: JSON.stringify({ ok: true, ...envelope }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_list_sessions") {
+        const provider = createProvider(config.provider || "jules", config);
+        const res = await provider.listSessions({ root, pageSize: args.pageSize, pageToken: args.pageToken });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, ...res }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_list_activities") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        const provider = createProvider(config.provider || "jules", config);
+        const res = await provider.listActivities(args.sessionId, { root, pageSize: args.pageSize, pageToken: args.pageToken });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, ...res }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_get_session_output") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        const res = await extractSessionPatch(args.sessionId, { root, config });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_archive_session") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        const provider = createProvider(config.provider || "jules", config);
+        const res = await provider.archiveSession(args.sessionId, { root });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, ...res }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_delete_session") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        const provider = createProvider(config.provider || "jules", config);
+        const res = await provider.deleteSession(args.sessionId, { root });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, ...res }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_retry_session") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        const res = await retrySession(args.sessionId, {
+          root,
+          config,
+          role: args.role,
+          withFailure: args.withFailure !== false,
+        });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_apply_patch") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        const res = await applySessionPatch(args.sessionId, {
+          root,
+          config,
+          apply: Boolean(args.apply),
+          save: args.save,
+        });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_list_sources") {
+        const provider = createProvider(config.provider || "jules", config);
+        const res = await provider.listSources({ root, pageSize: args.pageSize, pageToken: args.pageToken });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, ...res }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_prune_sessions") {
+        const res = await pruneSessions({
+          root,
+          config,
+          age: args.age || "7d",
+          state: args.state,
+          delete: Boolean(args.delete),
+          dryRun: args.dryRun !== false,
+        });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           },
         };
       }

@@ -229,3 +229,13 @@ export {
   getHandoverDir,
   HandoverError,
 } from "./src/ops/handover.mjs";
+
+// Jules Power-User Session Operations & Lifecycle Engine
+export {
+  extractSessionPatch,
+  applySessionPatch,
+  retrySession,
+  pruneSessions,
+  parseAgeDuration,
+} from "./src/session-ops.mjs";
+

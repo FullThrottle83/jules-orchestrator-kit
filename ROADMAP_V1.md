@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.51.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Asymmetric Falsification)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.52.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.51.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.0)
+
+### v0.52.0: Jules Power-User Session Operations, Patch Application & Full MCP Tools Suite
+- [x] **Power-User Session Operations Engine (`src/session-ops.mjs`, `agentctl patch`, `agentctl retry`, `agentctl prune`)** — Zero-dependency session patch extractor, `git apply --check` safety harness, failure-activity OODA retry injector, and batch session pruner with human duration filters.
+- [x] **Provider Remote Lifecycle Endpoints (`src/provider.mjs`)** — Native `listSessions`, `listActivities`, `archiveSession`, `deleteSession`, and `listSources` with transparent failover and syntax-verification provider delegations.
+- [x] **Comprehensive Model Context Protocol (MCP) Tools Suite (`src/mcp.mjs`, 17 tools total)** — Full lifecycle remote management tools for Jules agents and orchestrators.
+- [x] **API Surface & Frozen SDK Snapshot Expansion (`index.mjs`, `test/api-surface.test.mjs`)** — Locked at 236 exported symbols.
 
 ### v0.51.0: Asymmetric Mechanical Falsification, AST Mutation Testing & V8 Diff Coverage
 - [x] **Diff-Hunk Mutation Testing Engine (`src/mutation.mjs`, `agentctl mutate`, `assert:mutation`)** — Transactional operator inversion (`===`/`!==`, `>=`/$<$, `&&`/`||`, `true`/`false`, `+`/`-`) with multiline string/template literal shielding (`getFileStringLiteralLineMap`) and automatic shadow disk rollback.

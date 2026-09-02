@@ -25,7 +25,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 3);
     assert.equal(Array.isArray(res.result.tools), true);
-    assert.equal(res.result.tools.length, 8);
+    assert.equal(res.result.tools.length, 17);
     assert.deepEqual(res.result.tools, MCP_TOOLS);
     const names = res.result.tools.map((t) => t.name);
     assert.deepEqual(names, [
@@ -37,6 +37,15 @@ test("Model Context Protocol (MCP) Server", async (t) => {
       "optimize_jules_prompt",
       "get_web_task_template",
       "record_system_learning",
+      "jules_list_sessions",
+      "jules_list_activities",
+      "jules_get_session_output",
+      "jules_archive_session",
+      "jules_delete_session",
+      "jules_retry_session",
+      "jules_apply_patch",
+      "jules_list_sources",
+      "jules_prune_sessions",
     ]);
   });
 
@@ -220,5 +229,29 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(resInvalidDiffLines.jsonrpc, "2.0");
     assert.equal(resInvalidDiffLines.id, 204);
     assert.equal(resInvalidDiffLines.error.code, -32602);
+  });
+
+  await t.test("executes new Jules lifecycle MCP tool calls", async () => {
+    // missing sessionId error
+    const resMissingSession = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 301,
+      method: "tools/call",
+      params: { name: "jules_get_session_output", arguments: {} },
+    });
+    assert.equal(resMissingSession.error.code, -32602);
+
+    // dry-run session listing
+    const resList = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 302,
+        method: "tools/call",
+        params: { name: "jules_list_sessions", arguments: {} },
+      },
+      { config: { provider: "jules" } }
+    );
+    assert.equal(resList.jsonrpc, "2.0");
+    assert.equal(resList.id, 302);
   });
 });

@@ -691,9 +691,9 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       if (providerSpec.type === "http") {
-        const getSessionUrlTemplate = providerSpec.getSessionUrl || `${providerSpec.url}/${sessionId}`;
+        const getSessionUrlTemplate = ctx.customUrl || providerSpec.getSessionUrl || `${providerSpec.url}/${sessionId}`;
         const urlData = { sessionId, ...ctx };
-        const url = interpolateString(getSessionUrlTemplate, urlData);
+        const url = ctx.customUrl || interpolateString(getSessionUrlTemplate, urlData);
 
         const headerData = { ...urlData, token: rawToken };
         const headers = {};
@@ -720,8 +720,9 @@ export function createProvider(spec = "jules", config = {}) {
           let res;
           try {
             res = await fetch(url, {
-              method: "GET",
+              method: ctx.method || "GET",
               headers,
+              body: ctx.body ? JSON.stringify(ctx.body) : undefined,
               signal: AbortSignal.timeout(timeoutMs),
             });
           } catch (err) {
@@ -816,9 +817,9 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       if (providerSpec.type === "http") {
-        const approvePlanUrlTemplate = providerSpec.approvePlanUrl || `${providerSpec.url}/${sessionId}:approvePlan`;
+        const approvePlanUrlTemplate = ctx.customUrl || providerSpec.approvePlanUrl || `${providerSpec.url}/${sessionId}:approvePlan`;
         const urlData = { sessionId, ...ctx };
-        const url = interpolateString(approvePlanUrlTemplate, urlData);
+        const url = ctx.customUrl || interpolateString(approvePlanUrlTemplate, urlData);
 
         const headerData = { ...urlData, token: rawToken };
         const headers = {};
@@ -917,6 +918,94 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       throw new Error(`Unsupported provider type: ${providerSpec.type}`);
+    },
+
+    async listSessions(ctx = {}) {
+      if (!ctx || typeof ctx !== "object") ctx = {};
+      if (ctx.dryRun) return { sessions: [], raw: {} };
+      if (providerSpec.type === "http") {
+        const baseUrl = providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions";
+        const params = new URLSearchParams();
+        if (ctx.pageSize) params.set("pageSize", String(ctx.pageSize));
+        if (ctx.pageToken) params.set("pageToken", String(ctx.pageToken));
+        const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+        const res = await this.getSession("", { ...ctx, customUrl: url });
+        return {
+          sessions: res?.raw?.sessions || [],
+          nextPageToken: res?.raw?.nextPageToken,
+          raw: res?.raw || {},
+        };
+      }
+      return { sessions: [], raw: {} };
+    },
+
+    async listActivities(sessionId, ctx = {}) {
+      if (!sessionId || typeof sessionId !== "string") {
+        throw new TypeError("listActivities() requires a valid sessionId string");
+      }
+      if (!ctx || typeof ctx !== "object") ctx = {};
+      if (ctx.dryRun) return { activities: [], raw: {} };
+      if (providerSpec.type === "http") {
+        const baseUrl = `${providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions"}/${sessionId}/activities`;
+        const params = new URLSearchParams();
+        if (ctx.pageSize) params.set("pageSize", String(ctx.pageSize));
+        if (ctx.pageToken) params.set("pageToken", String(ctx.pageToken));
+        const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+        const res = await this.getSession("", { ...ctx, customUrl: url });
+        return {
+          activities: res?.raw?.activities || [],
+          nextPageToken: res?.raw?.nextPageToken,
+          raw: res?.raw || {},
+        };
+      }
+      return { activities: [], raw: {} };
+    },
+
+    async archiveSession(sessionId, ctx = {}) {
+      if (!sessionId || typeof sessionId !== "string") {
+        throw new TypeError("archiveSession() requires a valid sessionId string");
+      }
+      if (!ctx || typeof ctx !== "object") ctx = {};
+      if (ctx.dryRun) return { id: sessionId, archived: true, raw: {} };
+      if (providerSpec.type === "http") {
+        const url = `${providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions"}/${sessionId}:archive`;
+        const res = await this.approvePlan(sessionId, { ...ctx, customUrl: url });
+        return { id: sessionId, archived: true, raw: res?.raw || {} };
+      }
+      return { id: sessionId, archived: true, raw: {} };
+    },
+
+    async deleteSession(sessionId, ctx = {}) {
+      if (!sessionId || typeof sessionId !== "string") {
+        throw new TypeError("deleteSession() requires a valid sessionId string");
+      }
+      if (!ctx || typeof ctx !== "object") ctx = {};
+      if (ctx.dryRun) return { id: sessionId, deleted: true, raw: {} };
+      if (providerSpec.type === "http") {
+        const url = `${providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions"}/${sessionId}`;
+        const res = await this.getSession("", { ...ctx, customUrl: url, method: "DELETE" });
+        return { id: sessionId, deleted: true, raw: res?.raw || {} };
+      }
+      return { id: sessionId, deleted: true, raw: {} };
+    },
+
+    async listSources(ctx = {}) {
+      if (!ctx || typeof ctx !== "object") ctx = {};
+      if (ctx.dryRun) return { sources: [], raw: {} };
+      if (providerSpec.type === "http") {
+        const baseUrl = "https://jules.googleapis.com/v1alpha/sources";
+        const params = new URLSearchParams();
+        if (ctx.pageSize) params.set("pageSize", String(ctx.pageSize));
+        if (ctx.pageToken) params.set("pageToken", String(ctx.pageToken));
+        const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+        const res = await this.getSession("", { ...ctx, customUrl: url });
+        return {
+          sources: res?.raw?.sources || [],
+          nextPageToken: res?.raw?.nextPageToken,
+          raw: res?.raw || {},
+        };
+      }
+      return { sources: [], raw: {} };
     },
   };
 }
@@ -1038,6 +1127,26 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
       }
     },
 
+    async listSessions(ctx = {}) {
+      return providerList[0].listSessions(ctx);
+    },
+
+    async listActivities(sessionId, ctx = {}) {
+      return providerList[0].listActivities(sessionId, ctx);
+    },
+
+    async archiveSession(sessionId, ctx = {}) {
+      return providerList[0].archiveSession(sessionId, ctx);
+    },
+
+    async deleteSession(sessionId, ctx = {}) {
+      return providerList[0].deleteSession(sessionId, ctx);
+    },
+
+    async listSources(ctx = {}) {
+      return providerList[0].listSources(ctx);
+    },
+
     validate() {
       return providerList.every((p) => typeof p.validate !== "function" || p.validate());
     },
@@ -1107,6 +1216,26 @@ export function createSyntaxVerifiedProvider(fastProvider, complexProvider, conf
 
     approvePlan(...args) {
       return fastProvider.approvePlan(...args);
+    },
+
+    listSessions(...args) {
+      return typeof fastProvider.listSessions === "function" ? fastProvider.listSessions(...args) : { sessions: [] };
+    },
+
+    listActivities(...args) {
+      return typeof fastProvider.listActivities === "function" ? fastProvider.listActivities(...args) : { activities: [] };
+    },
+
+    archiveSession(...args) {
+      return typeof fastProvider.archiveSession === "function" ? fastProvider.archiveSession(...args) : { id: args[0], archived: true };
+    },
+
+    deleteSession(...args) {
+      return typeof fastProvider.deleteSession === "function" ? fastProvider.deleteSession(...args) : { id: args[0], deleted: true };
+    },
+
+    listSources(...args) {
+      return typeof fastProvider.listSources === "function" ? fastProvider.listSources(...args) : { sources: [] };
     },
   };
 }

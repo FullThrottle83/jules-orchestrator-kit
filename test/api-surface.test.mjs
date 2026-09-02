@@ -43,6 +43,7 @@ const FROZEN_SDK_EXPORTS = [
   "acquireLock",
   "anonymizePii",
   "appendLedger",
+  "applySessionPatch",
   "assertDirSize",
   "assertDiffCoverage",
   "assertEventLoopLag",
@@ -102,6 +103,7 @@ const FROZEN_SDK_EXPORTS = [
   "exportJsonReport",
   "extractAddedLinesFromDiff",
   "extractPathTokens",
+  "extractSessionPatch",
   "extractPrUrls",
   "findSubprojectRoot",
   "fingerprintFailureState",
@@ -158,6 +160,7 @@ const FROZEN_SDK_EXPORTS = [
   "multiSelect",
   "normalizePath",
   "optimizeTaskPrompt",
+  "parseAgeDuration",
   "parseProcStat",
   "parseRetryAfter",
   "parseWebhookPayload",
@@ -167,6 +170,7 @@ const FROZEN_SDK_EXPORTS = [
   "probeDevServer",
   "pruneCheckpoints",
   "pruneHandovers",
+  "pruneSessions",
   "pushReservationManifest",
   "queryRemediations",
   "readActiveCeiling",
@@ -200,6 +204,7 @@ const FROZEN_SDK_EXPORTS = [
   "resolveWorkspaceBoundary",
   "resolveWorkspaceExecutionBoundary",
   "restoreCheckpoint",
+  "retrySession",
   "rollbackBudgetReservation",
   "routeWebhookEvent",
   "run",
@@ -278,7 +283,7 @@ describe("SDK API Surface & Exit Code Stability Lock", () => {
       `Unapproved new SDK exports detected:\n${addedExports.join("\n")}\nIf intentional, review and update FROZEN_SDK_EXPORTS snapshot.`
     );
 
-    assert.equal(actualExports.length, 231, "Total exported SDK symbols count must remain locked at 231");
+    assert.equal(actualExports.length, 236, "Total exported SDK symbols count must remain locked at 236");
   });
 
   it("ensures every exported symbol is defined and non-null", () => {
