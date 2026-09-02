@@ -112,3 +112,42 @@ test("bootstrapZeroTestRepo - generates verification oracle for zero-test reposi
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("detectPolyglotStack - package manager lockfiles and missing scripts.test", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "pm-test-"));
+  try {
+    // 1. package.json without scripts.test returns empty testCmd
+    writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "no-tests", scripts: { build: "tsc" } }));
+    let res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "node");
+    assert.equal(res.testCmd, "");
+    assert.equal(res.buildCmd, "npm run build");
+
+    // 2. pnpm-lock.yaml detection
+    writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "pnpm-app", scripts: { test: "vitest", build: "vite build" } }));
+    writeFileSync(join(tmp, "pnpm-lock.yaml"), "lockfileVersion: '9.0'");
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "pnpm");
+    assert.equal(res.testCmd, "pnpm test");
+    assert.equal(res.buildCmd, "pnpm run build");
+    rmSync(join(tmp, "pnpm-lock.yaml"));
+
+    // 3. yarn.lock detection
+    writeFileSync(join(tmp, "yarn.lock"), "# yarn lockfile v1");
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "yarn");
+    assert.equal(res.testCmd, "yarn test");
+    assert.equal(res.buildCmd, "yarn build");
+    rmSync(join(tmp, "yarn.lock"));
+
+    // 4. bun.lock (modern text format)
+    writeFileSync(join(tmp, "bun.lock"), "lockfileVersion: 1");
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "bun");
+    assert.equal(res.testCmd, "bun test");
+    rmSync(join(tmp, "bun.lock"));
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+

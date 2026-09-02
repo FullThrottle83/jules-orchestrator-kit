@@ -517,8 +517,8 @@ describe("Suggested Tasks Scanner", () => {
 
       const tasks = scanCodebaseForTodos(tmpDir);
       assert.equal(tasks.length, 2);
-      assert.ok(tasks.some((t) => t.tag === "TODO" && t.priority === "MEDIUM"));
-      assert.ok(tasks.some((t) => t.tag === "FIXME" && t.priority === "HIGH"));
+      assert.ok(tasks.some((t) => t.tag === "TODO" && t.type === "TODO" && t.priority === "MEDIUM"));
+      assert.ok(tasks.some((t) => t.tag === "FIXME" && t.type === "FIXME" && t.priority === "HIGH"));
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

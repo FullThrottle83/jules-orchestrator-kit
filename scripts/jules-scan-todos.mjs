@@ -24,9 +24,9 @@ export function scanCodebaseForTodos(dir = process.cwd()) {
           const lines = content.split("\n");
           lines.forEach((line, idx) => {
             if (line.includes("TODO:")) {
-              todos.push({ file: full, line: idx + 1, text: line.trim(), tag: "TODO", priority: "MEDIUM" });
+              todos.push({ file: full, line: idx + 1, text: line.trim(), tag: "TODO", type: "TODO", priority: "MEDIUM" });
             } else if (line.includes("FIXME:")) {
-              todos.push({ file: full, line: idx + 1, text: line.trim(), tag: "FIXME", priority: "HIGH" });
+              todos.push({ file: full, line: idx + 1, text: line.trim(), tag: "FIXME", type: "FIXME", priority: "HIGH" });
             }
           });
         }

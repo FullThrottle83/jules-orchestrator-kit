@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.1] - 2026-09-02
+### Onboarding Usability Hardening, Lockfile Detection & Subcommand Help
+
+*Resolves 7 onboarding friction points and usability bugs identified during first-install testing on Node.js, Python/pytest, and zero-test repositories.*
+
+#### Fixed
+- **Queue Task Ghost False Positive (`src/ops/next-step.mjs`, `test/next-step.test.mjs`)**: Filtered queue directory files using `isTaskFile(f, queueDir)` instead of blind extension matching, preventing `.agent/jules-queue/README.md` from being reported as a pending queued task immediately after `agentctl init`.
+- **Contract Files Post-Init Commit Hint (`bin/agentctl.mjs`, `README.md`)**: Dynamically constructed the post-init `git add` recommendation to include `SPEC.md`, `CONSTRAINTS.md`, and UI contracts alongside `.agent`, `AGENTS.md`, and `.gitignore` to avoid immediate doctor warnings.
+- **Subcommand `--help` Interception (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Delegated subcommand help flags (`agentctl <subcommand> --help`) to `formatCommandHelp` using registry descriptors rather than dumping global top-level help. Registered command descriptors for `mutate`, `coverage`, `gate`, `probe`, `perf`, `dispatch`, and `bootstrap`.
+- **Non-Interactive Initialization Support (`bin/agentctl.mjs`, `src/wizard-task.mjs`)**: Added `--non-interactive`, `--no-interactive`, and `-y`/`--yes` CLI flags to `init` and `task create` for CI/scripted onboarding.
+- **TODO Annotation Scanner Field Alignment (`scripts/jules-scan-todos.mjs`, `bin/agentctl.mjs`, `src/wizard-task.mjs`)**: Added `type` alongside `tag` on scanned annotations, resolving `[undefined]` rendering in CLI scan output and task creation wizard.
+- **Stack Detector Zero-Test Ternary Bug (`src/stack-detector.mjs`, `test/stack-detector.test.mjs`)**: Fixed `scripts.test ? "npm test" : ""` ternary to correctly return empty test script when `package.json` defines no test script, prompting users toward `agentctl bootstrap` instead of failing gate on missing scripts.
+- **Polyglot Lockfile & Linter Availability Detection (`src/stack-detector.mjs`, `src/wizard-oracle.mjs`)**: Added detection for `pnpm-lock.yaml`, `yarn.lock`, `bun.lock` (text format), and verified system PATH availability via `hasBinary()` before declaring `golangci-lint`, `flake8`, `ruff`, and `mypy` as required verification oracles.
+
+#### Added
+- **Roadmap v1.0.0 OODA Attempt Diff Retention (`ROADMAP_V1.md`)**: Registered target milestone for persisting intermediate working tree failure patches under `.agent/state/ooda/*.patch` for developer inspection via `agentctl patch --attempt <n>`.
+
 ## [0.52.0] - 2026-09-02
 ### Jules Power-User Session Operations, Patch Application, Failure Retries & Full MCP Tools Suite
 

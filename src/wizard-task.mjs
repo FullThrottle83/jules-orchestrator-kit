@@ -280,14 +280,15 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
       if (useTodo) {
         const selectedTodo = await select(
           todos.slice(0, 10).map((t) => ({
-            label: `[${t.type}] ${t.text} (${t.file}:${t.line})`,
+            label: `[${t.type || t.tag || "TODO"}] ${t.text} (${t.file}:${t.line})`,
             value: t,
           })),
           "Select TODO Candidate",
           options
         );
-        title = `Fix ${selectedTodo.type}: ${selectedTodo.text.slice(0, 40)}`;
-        promptText = `Resolve ${selectedTodo.type} in ${selectedTodo.file} at line ${selectedTodo.line}: ${selectedTodo.text}`;
+        const todoKind = selectedTodo.type || selectedTodo.tag || "TODO";
+        title = `Fix ${todoKind}: ${selectedTodo.text.slice(0, 40)}`;
+        promptText = `Resolve ${todoKind} in ${selectedTodo.file} at line ${selectedTodo.line}: ${selectedTodo.text}`;
       }
     }
 

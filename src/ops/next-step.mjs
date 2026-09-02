@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { isTaskFile } from "../engine.mjs";
 
 /**
  * Work out the one thing the operator should do next.
@@ -66,7 +67,7 @@ export function resolveNextStep(root, env = process.env) {
   const fallbackQueueDir = join(root, ".agent", "queue");
   const queueDir = existsSync(primaryQueueDir) ? primaryQueueDir : fallbackQueueDir;
   const queued = existsSync(queueDir)
-    ? readdirSync(queueDir).filter((f) => f.endsWith(".md") || f.endsWith(".json") || f.endsWith(".yml")).length
+    ? readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir)).length
     : 0;
   if (queued > 0) {
     return {

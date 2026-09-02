@@ -59,7 +59,7 @@ npx jules-orchestrator-kit init
 ```bash
 # 2. Commit what init wrote — .agent/config.yml is on the gate's deny list by
 #    design, so leaving it uncommitted makes the first gate reject your tree
-git add .agent AGENTS.md .gitignore && git commit -m "chore: add agent config"
+git add .agent AGENTS.md SPEC.md CONSTRAINTS.md .gitignore && git commit -m "chore: add agent config"
 ```
 
 ```bash
@@ -143,7 +143,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **797 unit tests across 91 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **802 unit tests across 91 suites passing in < 10.0s**.
 
 <br/>
 

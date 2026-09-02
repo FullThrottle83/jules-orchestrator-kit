@@ -210,8 +210,12 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
     setupCmd = "npx drizzle-kit push";
   }
 
-  if (existsSync(join(projectRoot, "bunfig.toml")) || existsSync(join(projectRoot, "bun.lockb"))) {
-    const triggerFile = existsSync(join(projectRoot, "bunfig.toml")) ? "bunfig.toml" : "bun.lockb";
+  if (existsSync(join(projectRoot, "bunfig.toml")) || existsSync(join(projectRoot, "bun.lockb")) || existsSync(join(projectRoot, "bun.lock"))) {
+    const triggerFile = existsSync(join(projectRoot, "bunfig.toml"))
+      ? "bunfig.toml"
+      : existsSync(join(projectRoot, "bun.lockb"))
+      ? "bun.lockb"
+      : "bun.lock";
     return { ...container, stack: "bun", setupCmd, testCmd: "bun test", buildCmd: "bun run build", triggerFile };
   }
   if (existsSync(join(projectRoot, "deno.json")) || existsSync(join(projectRoot, "deno.jsonc"))) {
@@ -219,20 +223,38 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
     return { ...container, stack: "deno", setupCmd, testCmd: "deno test", buildCmd: "deno task build", triggerFile };
   }
   if (existsSync(join(projectRoot, "package.json"))) {
-    let testScript = "npm test";
-    let buildScript = "npm run build";
+    const hasPnpm = existsSync(join(projectRoot, "pnpm-lock.yaml"));
+    const hasYarn = existsSync(join(projectRoot, "yarn.lock"));
+    const hasBun = existsSync(join(projectRoot, "bun.lock")) || existsSync(join(projectRoot, "bun.lockb"));
+    const pm = hasPnpm ? "pnpm" : hasYarn ? "yarn" : hasBun ? "bun" : "npm";
+    const triggerFile = hasPnpm
+      ? "pnpm-lock.yaml"
+      : hasYarn
+      ? "yarn.lock"
+      : hasBun
+      ? (existsSync(join(projectRoot, "bun.lock")) ? "bun.lock" : "bun.lockb")
+      : "package.json";
+
+    let testScript = "";
+    let buildScript = "";
     try {
       const pkg = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
       if (pkg && typeof pkg === "object") {
         const scripts = pkg.scripts || {};
-        testScript = scripts.test ? "npm test" : "npm test";
-        buildScript = scripts.build ? "npm run build" : "";
+        if (scripts.test) {
+          testScript = pm === "yarn" ? "yarn test" : `${pm} test`;
+        } else if (pm === "bun") {
+          testScript = "bun test";
+        }
+        if (scripts.build) {
+          buildScript = pm === "yarn" ? "yarn build" : `${pm} run build`;
+        }
       }
     } catch (_) {
-      testScript = "npm test";
-      buildScript = "npm run build";
+      testScript = "";
+      buildScript = "";
     }
-    return { ...container, stack: "node", setupCmd, testCmd: testScript, buildCmd: buildScript, triggerFile: "package.json" };
+    return { ...container, stack: pm === "npm" ? "node" : pm, setupCmd, testCmd: testScript, buildCmd: buildScript, triggerFile };
   }
 
   // 7. .NET / C# / F# / PHP / Python root file extension fallback

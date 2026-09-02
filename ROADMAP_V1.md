@@ -11,13 +11,22 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.52.1 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.1)
+
+### v0.52.1: Onboarding Usability Hardening, Lockfile Detection & Subcommand Help
+- [x] **Queue Task Ghost False Positive Elimination (`src/ops/next-step.mjs`)** — Filters queue tasks using `isTaskFile(f, queueDir)` to prevent `.agent/jules-queue/README.md` from being reported as a queued task.
+- [x] **Contract Files Post-Init Commit Hint (`bin/agentctl.mjs`)** — Dynamically builds `git add` line including `SPEC.md`, `CONSTRAINTS.md`, and UI contracts alongside `.agent` and `AGENTS.md`.
+- [x] **Subcommand-Specific `--help` Formatting (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)** — Routes subcommand help to `formatCommandHelp` using registry descriptors; added descriptors for `mutate`, `coverage`, `gate`, `probe`, `perf`, `dispatch`, and `bootstrap`.
+- [x] **Non-Interactive CI Initialization (`bin/agentctl.mjs`, `src/wizard-task.mjs`)** — Added `--non-interactive`, `--no-interactive`, and `-y`/`--yes` CLI options.
+- [x] **TODO Scanner Field Parity (`scripts/jules-scan-todos.mjs`, `bin/agentctl.mjs`)** — Emits both `type` and `tag` on scanned items to fix `[undefined]` rendering.
+- [x] **Stack Detector Zero-Test Fallback (`src/stack-detector.mjs`)** — Fixed `scripts.test ? "npm test" : ""` ternary bug to return empty testCmd when no test script is declared.
+- [x] **Polyglot Lockfile & Linter Availability Checks (`src/stack-detector.mjs`, `src/wizard-oracle.mjs`)** — Added `pnpm-lock.yaml`, `yarn.lock`, `bun.lock` detection and `hasBinary` guards before setting linter commands.
 
 ### v0.52.0: Jules Power-User Session Operations, Patch Application & Full MCP Tools Suite
 - [x] **Power-User Session Operations Engine (`src/session-ops.mjs`, `agentctl patch`, `agentctl retry`, `agentctl prune`)** — Zero-dependency session patch extractor, `git apply --check` safety harness, failure-activity OODA retry injector, and batch session pruner with human duration filters.
@@ -216,6 +225,8 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
   - Stress testing with 50+ concurrent worker slots across 100k+ file repositories with zero lock contention or memory leaks.
 - [ ] **Comprehensive Multi-Language Enterprise Test Matrix**:
   - Automated CI test fixtures for polyglot environments (Node, Python, Go, Rust, .NET, PHP, Java, Flutter).
+- [ ] **OODA Attempt Diff Retention & Inspection (`.agent/state/ooda/*.patch`, `agentctl patch --attempt <n>`)**:
+  - Retains intermediate working tree diffs and failure traces across OODA repair turns so developers can inspect failed hypotheses when an agent exhausts its retry budget.
 
 ---
 

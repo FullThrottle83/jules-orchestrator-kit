@@ -62,4 +62,49 @@ test("Stack Oracle & Verification Probes", async (t) => {
     assert.equal(res.ok, false);
     assert.equal(res.code, 1);
   });
+
+  await t.test("hasBinary accurately detects existing and missing commands", async () => {
+    const { hasBinary } = await import("../src/wizard-oracle.mjs");
+    assert.equal(hasBinary("node"), true);
+    assert.equal(hasBinary("git"), true);
+    assert.equal(hasBinary("non_existent_binary_xyz_12345"), false);
+  });
+
+  await t.test("detects pnpm scripts when pnpm-lock.yaml is present", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-oracle-pnpm-"));
+    try {
+      writeFileSync(
+        join(tmpDir, "package.json"),
+        JSON.stringify({
+          name: "pnpm-app",
+          scripts: { test: "vitest", build: "vite build", lint: "eslint ." },
+        })
+      );
+      writeFileSync(join(tmpDir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'");
+
+      const res = detectStackOracles(tmpDir);
+      assert.equal(res.candidates.testCmd, "pnpm test");
+      assert.equal(res.candidates.buildCmd, "pnpm run build");
+      assert.equal(res.candidates.lintCmd, "pnpm run lint");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("detects Python pytest oracle without crashing when linters are missing", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-oracle-python-"));
+    try {
+      writeFileSync(join(tmpDir, "requirements.txt"), "pytest>=7.0.0\n");
+
+      const res = detectStackOracles(tmpDir);
+      assert.equal(res.candidates.testCmd, "pytest");
+      // If flake8 or ruff isn't installed in this environment, lintCmd should not be flake8 .
+      const { hasBinary } = res;
+      // res.candidates.lintCmd should be a string (empty if uninstalled, or valid command if installed)
+      assert.equal(typeof res.candidates.lintCmd, "string");
+      assert.equal(typeof res.candidates.typecheckCmd, "string");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

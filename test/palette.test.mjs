@@ -48,6 +48,26 @@ test("src/ops/command-registry.mjs", async (t) => {
     assert.ok(helpText.includes("Usage: agentctl doctor"));
     assert.ok(helpText.includes("Description:"));
     assert.ok(helpText.includes("Flags:"));
+
+    const mutate = getCommandDescriptor("mutate");
+    assert.ok(mutate);
+    const mutateHelp = formatCommandHelp(mutate);
+    assert.ok(mutateHelp.includes("Usage: agentctl mutate"));
+    assert.ok(mutateHelp.includes("--min-score"));
+    assert.ok(mutateHelp.includes("--max-mutants"));
+
+    const init = getCommandDescriptor("init");
+    assert.ok(init);
+    const initHelp = formatCommandHelp(init);
+    assert.ok(initHelp.includes("--non-interactive"));
+    assert.ok(initHelp.includes("--yes"));
+
+    const tc = getCommandDescriptor("task create");
+    assert.ok(tc);
+    const tcHelp = formatCommandHelp(tc);
+    assert.ok(tcHelp.includes("--verify-cmd"));
+    assert.ok(tcHelp.includes("--role"));
+    assert.ok(tcHelp.includes("--tier"));
   });
 
   await t.test("formatRegistryJson formats JSON registry payload", () => {

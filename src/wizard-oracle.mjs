@@ -1,7 +1,27 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { detectStack, parseYaml } from "./config.mjs";
 import { runCmd } from "./git.mjs";
+
+/**
+ * Check if a command-line binary is available on the system PATH.
+ * @param {string} binName
+ * @returns {boolean}
+ */
+export function hasBinary(binName) {
+  if (!binName || typeof binName !== "string") return false;
+  const bin = binName.trim().split(/\s+/)[0];
+  if (!bin) return false;
+  try {
+    const isWin = process.platform === "win32";
+    const checker = isWin ? "where" : "which";
+    const res = spawnSync(checker, [bin], { stdio: "ignore" });
+    return res.status === 0;
+  } catch (_) {
+    return false;
+  }
+}
 
 /**
  * Inspect repository topology, workspace structure, and manifests to infer candidate verification oracles.
@@ -37,18 +57,24 @@ export function detectStackOracles(root = process.cwd()) {
 
   const packages = [];
 
-  // Check Node.json package.json scripts
+  // Check Node.js package.json scripts
   const pkgPath = join(root, "package.json");
   if (existsSync(pkgPath)) {
     try {
       const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
       const scripts = pkg.scripts || {};
+      const hasPnpm = existsSync(join(root, "pnpm-lock.yaml")) || existsSync(join(root, "pnpm-workspace.yaml"));
+      const hasYarn = existsSync(join(root, "yarn.lock"));
+      const hasBun = existsSync(join(root, "bun.lock")) || existsSync(join(root, "bun.lockb")) || existsSync(join(root, "bunfig.toml"));
+      const pm = hasPnpm ? "pnpm" : hasYarn ? "yarn" : hasBun ? "bun" : "npm";
 
-      if (scripts.test) candidates.testCmd = candidates.testCmd || "npm test";
-      if (scripts.build) candidates.buildCmd = candidates.buildCmd || "npm run build";
-      if (scripts.lint) candidates.lintCmd = "npm run lint";
+      if (scripts.test) candidates.testCmd = candidates.testCmd || (pm === "yarn" ? "yarn test" : `${pm} test`);
+      if (scripts.build) candidates.buildCmd = candidates.buildCmd || (pm === "yarn" ? "yarn build" : `${pm} run build`);
+      if (scripts.lint) candidates.lintCmd = pm === "yarn" ? "yarn lint" : `${pm} run lint`;
       if (scripts.typecheck || scripts["type-check"]) {
-        candidates.typecheckCmd = scripts.typecheck ? "npm run typecheck" : "npm run type-check";
+        candidates.typecheckCmd = scripts.typecheck
+          ? (pm === "yarn" ? "yarn typecheck" : `${pm} run typecheck`)
+          : (pm === "yarn" ? "yarn type-check" : `${pm} run type-check`);
       } else if (existsSync(join(root, "tsconfig.json"))) {
         candidates.typecheckCmd = "npx tsc --noEmit";
       }
@@ -69,7 +95,9 @@ export function detectStackOracles(root = process.cwd()) {
   if (stack.includes("go") || existsSync(join(root, "go.mod"))) {
     candidates.testCmd = candidates.testCmd || "go test ./...";
     candidates.buildCmd = candidates.buildCmd || "go build ./...";
-    candidates.lintCmd = candidates.lintCmd || "golangci-lint run";
+    if (hasBinary("golangci-lint")) {
+      candidates.lintCmd = candidates.lintCmd || "golangci-lint run";
+    }
     candidates.typecheckCmd = candidates.typecheckCmd || "go vet ./...";
   }
 
@@ -77,8 +105,14 @@ export function detectStackOracles(root = process.cwd()) {
   if (stack.includes("pytest") || existsSync(join(root, "pyproject.toml")) || existsSync(join(root, "requirements.txt"))) {
     candidates.testCmd = candidates.testCmd || "pytest";
     candidates.buildCmd = candidates.buildCmd || "";
-    candidates.lintCmd = candidates.lintCmd || "flake8 .";
-    candidates.typecheckCmd = candidates.typecheckCmd || "mypy .";
+    if (hasBinary("flake8")) {
+      candidates.lintCmd = candidates.lintCmd || "flake8 .";
+    } else if (hasBinary("ruff")) {
+      candidates.lintCmd = candidates.lintCmd || "ruff check .";
+    }
+    if (hasBinary("mypy")) {
+      candidates.typecheckCmd = candidates.typecheckCmd || "mypy .";
+    }
   }
 
   // Discover subpackages if monorepo

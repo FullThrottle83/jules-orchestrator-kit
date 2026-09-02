@@ -228,9 +228,16 @@ async function main() {
     process.exit(0);
   }
 
-  // Intercept --help / -h on any subcommand (e.g. `agentctl init --help`)
+  // Resolve --help / -h on subcommands (e.g. `agentctl init --help`, `agentctl mutate --help`)
   const subArgs = args.slice(1);
   if (subArgs.includes("--help") || subArgs.includes("-h")) {
+    const { getCommandDescriptor, formatCommandHelp } = await import("../src/ops/command-registry.mjs");
+    const subSub = subArgs[0] && !subArgs[0].startsWith("-") ? `${command} ${subArgs[0]}` : command;
+    const desc = getCommandDescriptor(subSub) || getCommandDescriptor(command);
+    if (desc) {
+      console.log(formatCommandHelp(desc));
+      process.exit(0);
+    }
     printHelp();
     process.exit(0);
   }
@@ -1236,6 +1243,9 @@ async function main() {
         args: args.slice(1),
         options: {
           interactive: { type: "boolean", short: "i" },
+          "non-interactive": { type: "boolean" },
+          "no-interactive": { type: "boolean" },
+          yes: { type: "boolean", short: "y" },
           tier: { type: "string", short: "t" },
           json: { type: "boolean", short: "j" },
           "dry-run": { type: "boolean", short: "d" },
@@ -1244,9 +1254,11 @@ async function main() {
         allowPositionals: true,
       });
 
+      const isInteractive = values.interactive !== false && !values["non-interactive"] && !values["no-interactive"] && !values.yes;
+
       const { runInitWizard } = await import("../src/wizard-init.mjs");
       const res = await runInitWizard(root, {
-        interactive: values.interactive !== false,
+        interactive: isInteractive,
         // No `|| "pro"`: a hardcoded default here overrode both the tier picked
         // in the menu and the tier already recorded in .agent/config.yml on a
         // re-run. Undefined lets the wizard seed the menu from the existing
@@ -1267,7 +1279,11 @@ async function main() {
       } else {
         console.log(`✅ Onboarding complete! Manifest generated at ${res.configPath}`);
         console.log(`   Tier: ${res.plan.tier.toUpperCase()} (${res.plan.limits.concurrency} worker(s), ${res.plan.limits.daily_tasks} daily tasks)`);
-        console.log(`   Verification Test Command : "${res.plan.verify.test}"`);
+        if (res.plan.verify.test) {
+          console.log(`   Verification Test Command : "${res.plan.verify.test}"`);
+        } else {
+          console.log(`   Verification Test Command : None detected (run "agentctl bootstrap" to create a test oracle)`);
+        }
         console.log(`   Active Presets            : ${res.plan.presets.join(", ")}`);
         for (const item of scaffold.created) {
           console.log(`   Scaffolded                : ${item}`);
@@ -1281,8 +1297,10 @@ async function main() {
         // uncommitted meant the very first `agentctl gate` rejected the working
         // tree for files init had just written, which reads as the tool
         // catching the user cheating on step three.
-        console.log(`\n   Commit the manifest so the gate does not read it as an agent edit:`);
-        console.log(`     git add .agent AGENTS.md .gitignore && git commit -m "chore: add agent config"`);
+        const rootContracts = ["SPEC.md", "CONSTRAINTS.md", "DESIGN.md"].filter((f) => existsSync(join(root, f)));
+        const filesToAdd = [".agent", "AGENTS.md", ...rootContracts, ".gitignore"].filter((f) => existsSync(join(root, f)));
+        console.log(`\n   Commit the manifest and contracts so the gate does not read them as agent edits:`);
+        console.log(`     git add ${filesToAdd.join(" ")} && git commit -m "chore: add agent config"`);
 
         const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
         const next = resolveNextStep(root);
@@ -1310,11 +1328,18 @@ async function main() {
             "auto-pr": { type: "boolean" },
             "require-plan-approval": { type: "boolean" },
             repoless: { type: "boolean" },
+            interactive: { type: "boolean", short: "i" },
+            "non-interactive": { type: "boolean" },
+            "no-interactive": { type: "boolean" },
+            yes: { type: "boolean", short: "y" },
             json: { type: "boolean", short: "j" },
             "dry-run": { type: "boolean", short: "d" },
           },
           allowPositionals: true,
         });
+
+        const isNonInteractive = Boolean(values["non-interactive"] || values["no-interactive"] || values.yes);
+        const isInteractive = values.interactive === true ? true : (isNonInteractive ? false : undefined);
 
         const { runTaskCreateWizard } = await import("../src/wizard-task.mjs");
         const res = await runTaskCreateWizard(root, {
@@ -1328,6 +1353,7 @@ async function main() {
           autoPr: values["auto-pr"],
           requirePlanApproval: values["require-plan-approval"],
           repoless: values.repoless,
+          interactive: isInteractive,
         });
 
         if (values.json) {
@@ -1475,7 +1501,7 @@ async function main() {
       const todos = scanCodebaseForTodos(root);
       console.log(`\n🔍 Scanned ${todos.length} TODO/FIXME annotation(s).`);
       for (const t of todos.slice(0, 10)) {
-        console.log(`   - ${t.file}:${t.line} [${t.type}] ${t.text}`);
+        console.log(`   - ${t.file}:${t.line} [${t.type || t.tag || "TODO"}] ${t.text}`);
       }
       if (todos.length > 10) {
         console.log(`   ... and ${todos.length - 10} more.`);

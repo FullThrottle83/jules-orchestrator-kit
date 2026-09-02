@@ -100,8 +100,8 @@ limits:
       fs.writeFileSync(path.join(tmp, "package.json"), "invalid json {");
       const res = detectStack(tmp);
       assert.equal(res.stack, "node");
-      assert.equal(res.testCmd, "npm test");
-      assert.equal(res.buildCmd, "npm run build");
+      assert.equal(res.testCmd, "");
+      assert.equal(res.buildCmd, "");
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -113,7 +113,7 @@ limits:
       fs.writeFileSync(path.join(tmp, "package.json"), "{}");
       const res = detectStack(tmp);
       assert.equal(res.stack, "node");
-      assert.equal(res.testCmd, "npm test");
+      assert.equal(res.testCmd, "");
       assert.equal(res.buildCmd, "");
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

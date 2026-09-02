@@ -76,11 +76,26 @@ describe("src/ops/next-step.mjs", () => {
     try {
       mkdirSync(join(dir, ".agent", "queue"), { recursive: true });
       writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\n");
-      writeFileSync(join(dir, ".agent", "queue", "task-1.json"), "{}");
+      writeFileSync(join(dir, ".agent", "queue", "task-1.md"), "# Task ID: 1\n\nFix issue");
 
       const step = resolveNextStep(dir, WITH_KEY);
       assert.equal(step.id, "queue");
       assert.match(step.headline, /1 task/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not count queue README.md as a pending task", () => {
+    const dir = gitDir("jok-next-queue-readme-");
+    try {
+      mkdirSync(join(dir, ".agent", "jules-queue"), { recursive: true });
+      writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\n");
+      writeFileSync(join(dir, ".agent", "jules-queue", "README.md"), "# Task Queue\nExplanation");
+
+      const step = resolveNextStep(dir, WITH_KEY);
+      assert.notEqual(step.id, "queue");
+      assert.equal(step.id, "ready");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
