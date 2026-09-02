@@ -182,4 +182,10 @@ test("Vulnerabilities A-D Hardening Test Suite", async (t) => {
     assert.equal(res.ok, true);
     assert.equal(res.findings.length, 0);
   });
+
+  await t.test("D: hasHighEntropyToken evaluates raw strings directly", () => {
+    const randomKey = "a8F9eK2mP0xL4vQ7wR3yT1zU5iO8sD6fG2jH4kL9nB5vC3x";
+    assert.equal(hasHighEntropyToken(`key: ${randomKey}`), true);
+    assert.equal(hasHighEntropyToken("const normalCode = 123;"), false);
+  });
 });
