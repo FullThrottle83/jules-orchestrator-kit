@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.5 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.52.6 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.5)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.6)
+
+### v0.52.6: GitHub Actions Security Hardening & Zizmor CI Gate
+- [x] **Composite Action Template Injection Defense (`.github/actions/setup-jules/action.yml`)** — Binds inputs strictly through environment variables before shell invocation, eliminating command injection risks.
+- [x] **Least-Privilege Token Permissions (`.github/workflows/*.yml`)** — Adds explicit `permissions: contents: read` to all workflows.
+- [x] **Credential Leak & Cache Poisoning Protection (`.github/`)** — Sets `persist-credentials: false` on checkouts and `package-manager-cache: false` on publish.
+- [x] **Action Pinning & Zizmor Security Gate (`.github/`)** — Pins all workflow actions to immutable commit SHAs and integrates automated `zizmor` static security auditing.
 
 ### v0.52.5: Security Cage & Gate Hardening (Vulnerabilities A–D)
 - [x] **Assertion Removal Tamper Guard (`src/security.mjs`)** — Detects test deletion bypass (`ASSERTION_REMOVAL`) when `-` assertion lines are deleted without replacement in test files.

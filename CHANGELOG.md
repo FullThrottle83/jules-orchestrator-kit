@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.6] - 2026-09-03
+### GitHub Actions Security Hardening & Zizmor CI Gate
+
+*Eliminates CI/CD attack vectors, secures composite actions against template injection, and integrates zizmor static security auditing into the gatekeeper matrix.*
+
+#### Fixed
+- **Composite Action Template Injection (`.github/actions/setup-jules/action.yml`)**:
+  - Bound action inputs (`action`, `title`, `prompt`, `base_branch`) strictly to environment variables (`$INPUT_ACTION`, `$INPUT_TITLE`, `$INPUT_PROMPT`, `$BASE_BRANCH`) before shell invocation, eliminating arbitrary code and subshell execution risks.
+- **Windows `cmd.exe` Redirection Operator Conflict (`test/server-probe.test.mjs`)**:
+  - Replaced arrow function `()=>{}` with `function(){}` in timeout fixture commands to prevent `cmd.exe` from misinterpreting `>` as a stream redirection operator.
+
+#### Security
+- **Least-Privilege GitHub Actions Permissions (`.github/workflows/*.yml`)**:
+  - Declared explicit top-level and job-level `permissions: contents: read` across all workflow definitions (`agent-scope-guard.yml`, `jules-audit.yml`, `jules-nightly.yml`), eliminating overprivileged default token scopes.
+- **Credential Leak Prevention via Git Persistence (`.github/workflows/*.yml`)**:
+  - Configured `persist-credentials: false` across all `actions/checkout` steps to prevent `GITHUB_TOKEN` from lingering in `.git/config`.
+- **Action Pinning & Supply Chain Hardening (`.github/`)**:
+  - Pinned all workflow actions (`checkout`, `setup-node`, `cache`, `zizmor-action`) to immutable full commit SHAs.
+- **Cache Poisoning Prevention (`.github/workflows/publish.yml`)**:
+  - Disabled package manager caching (`package-manager-cache: false`) in release publish pipeline to protect npm deployment tokens from tainted PR build caches.
+- **Automated Zizmor Security Audit Gate (`.github/workflows/jules-audit.yml`)**:
+  - Added the `zizmor` security scanner job (`zizmorcore/zizmor-action`) running on every push and PR to enforce 0 GitHub Actions security findings.
+
 ## [0.52.5] - 2026-09-02
 ### Security Cage & Gate Hardening (Vulnerabilities A–D)
 
