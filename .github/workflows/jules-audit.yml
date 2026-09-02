@@ -6,12 +6,17 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   audit-and-test:
     runs-on: ${{ matrix.os }}
     # Without this a hung test runs to GitHub's six-hour default. The suite
     # finishes in ~25s on the slowest runner, so anything near this is a hang.
     timeout-minutes: 20
+    permissions:
+      contents: read
     strategy:
       # A compatibility matrix exists to answer "which platforms break?".
       # Fail-fast answers "one did, and we won't say which of the others would
@@ -26,17 +31,18 @@ jobs:
         node-version: ['20.x', '22.x', '24.x']
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: ${{ matrix.node-version }}
 
       - name: Cache OODA state & ledgers
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: .agent/state/
           key: ooda-state-${{ runner.os }}-${{ github.run_id }}
@@ -68,18 +74,21 @@ jobs:
   doc-sync:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           # This job runs the suite to measure test counts, and parts of that
           # suite resolve a git base. actions/checkout defaults to depth 1,
           # under which those tests fail — so the full history is not optional
           # here for the same reason it is not optional for the matrix job.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: '22.x'
 
@@ -88,4 +97,23 @@ jobs:
 
       - name: Run Documentation Sync Gate
         run: npm run jules:doc-sync
+
+  zizmor:
+    name: GitHub Actions Security Audit (zizmor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99 # v0.6.3
+        with:
+          advanced-security: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

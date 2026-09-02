@@ -32,7 +32,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Node.js Environment
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
       with:
         node-version: '>=20.0.0'
 
@@ -44,17 +44,20 @@ runs:
         JULES_TIER: ${{ inputs.tier }}
         JULES_DRY_RUN: ${{ inputs.dry_run }}
         BASE_BRANCH: ${{ inputs.base_branch }}
+        INPUT_ACTION: ${{ inputs.action }}
+        INPUT_TITLE: ${{ inputs.title }}
+        INPUT_PROMPT: ${{ inputs.prompt }}
       run: |
-        if [ "${{ inputs.action }}" = "dispatch" ]; then
-          npx jules-orchestrator-kit dispatch --title "${{ inputs.title }}" --prompt "${{ inputs.prompt }}"
-        elif [ "${{ inputs.action }}" = "gate" ]; then
-          npx jules-orchestrator-kit gate --base "${{ inputs.base_branch }}"
-        elif [ "${{ inputs.action }}" = "scan" ]; then
+        if [ "$INPUT_ACTION" = "dispatch" ]; then
+          npx jules-orchestrator-kit dispatch --title "$INPUT_TITLE" --prompt "$INPUT_PROMPT"
+        elif [ "$INPUT_ACTION" = "gate" ]; then
+          npx jules-orchestrator-kit gate --base "$BASE_BRANCH"
+        elif [ "$INPUT_ACTION" = "scan" ]; then
           npx jules-orchestrator-kit scan
-        elif [ "${{ inputs.action }}" = "queue" ]; then
+        elif [ "$INPUT_ACTION" = "queue" ]; then
           npx jules-orchestrator-kit queue
-        elif [ "${{ inputs.action }}" = "doctor" ]; then
+        elif [ "$INPUT_ACTION" = "doctor" ]; then
           npx jules-orchestrator-kit doctor
         else
-          npx jules-orchestrator-kit ${{ inputs.action }}
+          npx jules-orchestrator-kit "$INPUT_ACTION"
         fi
