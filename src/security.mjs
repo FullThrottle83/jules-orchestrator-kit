@@ -588,6 +588,11 @@ function secretScanVariants(addedLines) {
   // Collapse method concatenations like .concat("...") or .join("")
   dejoined = dejoined.replace(/\.concat\(\s*["'`]/g, "").replace(/\.join\(\s*["'`]{2}\s*\)/g, "");
 
+  // Collapse whitespace/newlines between adjacent base64 characters (including line-wrapped PEM/base64, template literals, and quoted string chunks)
+  const base64Dejoined = stripped
+    .replace(/([A-Za-z0-9+/=_-])\s*[\r\n]+\s*(?=[A-Za-z0-9+/=_-])/g, "$1")
+    .replace(/([A-Za-z0-9+/=_-])["'`]\s*(?:\+\s*)?[\r\n]+\s*["'`]?([A-Za-z0-9+/=_-])/g, "$1$2");
+
   const hexDecoded = tryHexDecodeTokens(dejoined);
   const pctDecoded = tryPercentDecode(dejoined);
   // Confusable / NFKD normalisation runs over both the raw text and the
@@ -597,8 +602,9 @@ function secretScanVariants(addedLines) {
   const confusableDejoined = normalizeSecretText(dejoined);
 
   return {
-    all: [...new Set([addedLines, stripped, dejoined, hexDecoded, pctDecoded, confusable, confusableDejoined])],
+    all: [...new Set([addedLines, stripped, dejoined, base64Dejoined, hexDecoded, pctDecoded, confusable, confusableDejoined])],
     normalized: dejoined,
+    base64Normalized: base64Dejoined,
   };
 }
 
@@ -725,9 +731,22 @@ function decodeBase64Blobs(text, onDecoded) {
  * @returns {boolean}
  */
 export function hasEncodedSecret(text) {
+  if (!text) return false;
   const result = decodeBase64Blobs(text);
   if (result.capped) return true; // Fail closed if cap exceeded
-  return result.decoded.some((plain) => hasHighConfidenceSecret(plain));
+  if (result.decoded.some((plain) => hasHighConfidenceSecret(plain))) return true;
+
+  if (text.includes("\n") || text.includes("\r")) {
+    const collapsed = text
+      .replace(/([A-Za-z0-9+/=_-])\s*[\r\n]+\s*(?=[A-Za-z0-9+/=_-])/g, "$1")
+      .replace(/([A-Za-z0-9+/=_-])["'`]\s*(?:\+\s*)?[\r\n]+\s*["'`]?([A-Za-z0-9+/=_-])/g, "$1$2");
+    if (collapsed !== text) {
+      const collapsedResult = decodeBase64Blobs(collapsed);
+      if (collapsedResult.capped) return true;
+      if (collapsedResult.decoded.some((plain) => hasHighConfidenceSecret(plain))) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -784,14 +803,14 @@ function splitDiffByFile(diffText) {
  * @returns {{ severity: string, type: string, description: string, encoded: boolean }|null}
  */
 function classifyAddedLines(addedLines) {
-  const { all: variants, normalized } = secretScanVariants(addedLines);
+  const { all: variants, normalized, base64Normalized } = secretScanVariants(addedLines);
   if (variants.some((v) => hasHighConfidenceSecret(v))) {
     return { severity: "CRITICAL", type: "HIGH_CONFIDENCE_SECRET", encoded: false, description: "High-confidence secret pattern detected in added diff lines" };
   }
   // Only worth decoding when nothing was found in the clear, and only against
   // the fully-normalised text: decoding is the expensive step, and the
   // intermediate variants differ from it in ways base64 blobs do not care about.
-  if (hasEncodedSecret(normalized)) {
+  if (hasEncodedSecret(normalized) || (base64Normalized && hasEncodedSecret(base64Normalized))) {
     // Same type as the cleartext case: every gate that blocks on
     // HIGH_CONFIDENCE_SECRET should block on this too, and a new type would
     // have silently passed through the ones not updated. The description
@@ -868,6 +887,17 @@ export function checkTestTampering(diffOrText = "", options = {}) {
 
   const COMMENTED_ASSERTION = /^\+\s*(?:\/\/|\/\*)\s*(?:expect\(|assert\.|assert\(|t\.expect|t\.assert)/i;
 
+  const VACUOUS_ASSERTIONS = [
+    { pattern: /\bassert(?:\.ok)?\s*\(\s*true\s*(?:,[^)]*)?\)/i, desc: "Vacuous truth assertion (assert.ok(true))" },
+    { pattern: /\bassert\.(?:strictEqual|deepStrictEqual|equal|deepEqual)\s*\(\s*([^,]+?)\s*,\s*\1\s*(?:,[^)]*)?\)/i, desc: "Vacuous identity assertion (assert.equal(X, X))" },
+    { pattern: /\bexpect\s*\(\s*true\s*\)\s*\.(?:toBe|toEqual)\s*\(\s*true\s*\)/i, desc: "Vacuous truth expectation (expect(true).toBe(true))" },
+    { pattern: /\bexpect\s*\(\s*([^)]+?)\s*\)\s*\.(?:toBe|toEqual)\s*\(\s*\1\s*\)/i, desc: "Vacuous identity expectation (expect(X).toBe(X))" },
+    { pattern: /\bexpect\s*\(\s*true\s*\)\s*\.toBeTruthy\s*\(/i, desc: "Vacuous truth expectation (expect(true).toBeTruthy())" },
+    { pattern: /\bexpect\s*\(\s*false\s*\)\s*\.toBeFalsy\s*\(/i, desc: "Vacuous falsity expectation (expect(false).toBeFalsy())" },
+    { pattern: /\bassert\.(?:isTrue|isOk)\s*\(\s*true\s*(?:,[^)]*)?\)/i, desc: "Vacuous truth assertion (assert.isTrue(true))" },
+    { pattern: /\bassert\.(?:isFalse|isNotOk)\s*\(\s*false\s*(?:,[^)]*)?\)/i, desc: "Vacuous falsity assertion (assert.isFalse(false))" },
+  ];
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if ((line.startsWith("+++ ") || line.startsWith("+++ b/") || line.startsWith("+++ /dev/null")) && !line.startsWith("++++")) {
@@ -898,6 +928,18 @@ export function checkTestTampering(diffOrText = "", options = {}) {
             line: currentLineNo,
             type: "TEST_SKIP_INJECTION",
             reason: `Test Tamper Guard: ${skipRule.desc} found in ${currentFile}${currentLineNo ? `:${currentLineNo}` : ""}`,
+          });
+        }
+      }
+
+      // Check vacuous assertions
+      for (const vacuousRule of VACUOUS_ASSERTIONS) {
+        if (vacuousRule.pattern.test(addedText)) {
+          violations.push({
+            file: currentFile,
+            line: currentLineNo,
+            type: "VACUOUS_ASSERTION",
+            reason: `Test Tamper Guard: ${vacuousRule.desc} detected in ${currentFile}${currentLineNo ? `:${currentLineNo}` : ""}`,
           });
         }
       }

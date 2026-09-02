@@ -120,6 +120,7 @@ Standardized across all automation entry points (`agentctl`, `jules-dispatch`, `
 | `6` | Secret leak prevented — high-confidence key; the finding names file and line. | Scrub the credential from source **and revoke the leaked key immediately**. |
 | `7` | Quota exhausted — `dailyTasks` cap (default 300) reached. | Wait for the rolling 24h budget window to open, or raise `dailyTasks` in `.agent/config.yml`. |
 | `8` | Flaky quarantine — oscillation >= 0.40 (Wilson CI interior). | Fix the non-deterministic test; OODA repair is suppressed by design, not broken. |
+| `188` | Offline network violation — unmocked outbound egress blocked in sandbox. | Run `npm install` locally and mock network calls in tests; do not treat as a test regression. |
 
 ---
 

@@ -11,13 +11,20 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.3 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.52.4 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.3)
+## ✅ Shipped Milestones (v0.20.0 – v0.52.4)
+
+### v0.52.4: Arena Adversarial Audit Remediation & Integrity Hardening
+- [x] **Base64 Line-Wrapped Secret Smuggling (`src/security.mjs`)** — Collapses whitespace and newlines between adjacent base64 characters (RFC 4648 PEM keys, template literals, and quoted chunks) before base64 candidate decoding.
+- [x] **Vacuous Assertion Tamper Guard (`src/security.mjs`)** — Adds `VACUOUS_ASSERTIONS` detection in `checkTestTampering` to reject assertion weakening (`assert.ok(true)`, `expect(true).toBe(true)`, `assert.equal(1, 1)`).
+- [x] **Offline Network Guard Exit Code 188 Classification (`src/engine.mjs`, `bin/agentctl.mjs`, `AGENTS.md`)** — Differentiates sandbox network kills (Exit 188) from test regressions, bypasses OODA loop, and guides local dependency installation.
+- [x] **Git `--base HEAD` Local Reference Resolution (`src/git.mjs`)** — Prevents prepending `origin/` to `HEAD` and relative commit pointers.
+- [x] **Config Limits Shadow-Blocking & `jules.yml` v2 Preservation (`src/wizard-init.mjs`)** — Omits redundant `limits:` blocks in `.agent/config.yml` and preserves `forbidden_paths` in `.agent/jules.yml` v2.
 
 ### v0.52.3: Jules Session Patch Ingestion, Edge Webhooks & Subprocess Hardening
 - [x] **Jules API Activity Patch Ingestion (`src/session-ops.mjs`, `src/provider.mjs`)** — Fixes `listActivities` sessionId TypeError and adds support for Jules API `changeSet.gitPatch.unidiffPatch` artifacts in `extractSessionPatch`.

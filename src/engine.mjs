@@ -433,6 +433,14 @@ export async function gate(opts = {}) {
   // the one gate failure the operator is expected to fix themselves was the
   // only one that told them nothing about how. Both streams are already
   // redacted at the point they were captured.
+  const isNetViolation = failingCmd?.status === 188;
+  const netViolationDiagnostics = isNetViolation
+    ? [
+        "Offline Network Guard: Outbound network request was blocked (Exit 188).",
+        "Ensure dependencies are installed locally (run npm install) and tests do not perform unmocked network access.",
+      ]
+    : [];
+
   const verifyFailure = failingCmd
     ? {
         stageId: failingCmd.stageId || failingCmd.phase || "verify",
@@ -440,7 +448,7 @@ export async function gate(opts = {}) {
         exitCode: failingCmd.status ?? null,
         stdout: failingCmd.stdout || "",
         stderr: failingCmd.stderr || "",
-        diagnostics: failingCmd.diagnostics || [],
+        diagnostics: [...netViolationDiagnostics, ...(failingCmd.diagnostics || [])],
       }
     : testTampered
       ? {
@@ -510,6 +518,10 @@ export async function gate(opts = {}) {
   }
 
   if (!verifyOk && opts.fix && failingCmd) {
+    if (isNetViolation) {
+      appendTelemetry(root, "gate_finished", { ok: false, code: 188, networkViolation: true });
+      return { ok: false, code: 188, phases, evidence: evidenceManifest };
+    }
     const repairs = await repair(failingCmd, { config, root, signal: opts.signal, progressBus, progressToken });
     const finalOk = repairs.ok;
     const finalCode = repairs.ok ? 0 : 4;
@@ -520,7 +532,7 @@ export async function gate(opts = {}) {
     return { ok: false, code: 4, phases, repairs, evidence: evidenceManifest };
   }
 
-  const code = verifyOk ? 0 : testTampered ? 3 : 4;
+  const code = verifyOk ? 0 : isNetViolation ? 188 : testTampered ? 3 : 4;
   appendTelemetry(root, "gate_finished", { ok: verifyOk, code });
   return { ok: verifyOk, code, phases, evidence: evidenceManifest };
 }

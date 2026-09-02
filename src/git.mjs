@@ -306,7 +306,10 @@ export function ensureBaseFetched(root = process.cwd(), baseRef = "main") {
 }
 
 export function resolveBase(root = process.cwd(), baseRef = "main") {
-  const candidates = [`origin/${baseRef}`, `refs/remotes/origin/${baseRef}`, baseRef];
+  const isHeadRef = baseRef === "HEAD" || baseRef.startsWith("HEAD~") || baseRef.startsWith("HEAD^") || baseRef.startsWith("HEAD@");
+  const candidates = isHeadRef
+    ? [baseRef]
+    : [`origin/${baseRef}`, `refs/remotes/origin/${baseRef}`, baseRef];
   for (const ref of candidates) {
     try {
       const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
@@ -321,20 +324,22 @@ export function resolveBase(root = process.cwd(), baseRef = "main") {
     } catch (_) {}
   }
 
-  ensureBaseFetched(root, baseRef);
+  if (!isHeadRef) {
+    ensureBaseFetched(root, baseRef);
 
-  for (const ref of candidates) {
-    try {
-      const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
-        cwd: root,
-        encoding: "utf-8",
-        shell: false,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      if (res && res.trim()) {
-        return res.trim();
-      }
-    } catch (_) {}
+    for (const ref of candidates) {
+      try {
+        const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+          cwd: root,
+          encoding: "utf-8",
+          shell: false,
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+        if (res && res.trim()) {
+          return res.trim();
+        }
+      } catch (_) {}
+    }
   }
 
   throw new GateError(

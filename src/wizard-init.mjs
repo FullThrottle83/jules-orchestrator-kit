@@ -123,7 +123,7 @@ export function planInit(root = process.cwd(), options = {}) {
   const tierName = options.tier || FALLBACK_TIER;
   // An unrecognised name resolves the same way loadConfig() resolves it, so the
   // scaffolded limits always match what the runtime will later enforce.
-  const limits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
+  const tierPresetLimits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
 
   // Preserve existing config if present
   let existingConfig = {};
@@ -134,6 +134,21 @@ export function planInit(root = process.cwd(), options = {}) {
     } catch (_) {}
   }
 
+  // Preserve existing jules.yml if present
+  let existingJules = {};
+  const existingJulesPath = join(root, ".agent", "jules.yml");
+  if (existsSync(existingJulesPath)) {
+    try {
+      existingJules = parseYaml(readFileSync(existingJulesPath, "utf-8")) || {};
+    } catch (_) {}
+  }
+
+  const customLimits = options.limits || existingConfig.limits;
+  const isCustomLimits = customLimits && Object.entries(customLimits).some(
+    ([k, v]) => v !== undefined && tierPresetLimits[k] !== undefined && Number(v) !== Number(tierPresetLimits[k])
+  );
+  const limits = isCustomLimits ? { ...tierPresetLimits, ...customLimits } : tierPresetLimits;
+
   const verify = {
     test: options.testCmd || existingConfig.verify?.test || oracle.candidates.testCmd || "",
     build: options.buildCmd || existingConfig.verify?.build || oracle.candidates.buildCmd || "",
@@ -143,19 +158,17 @@ export function planInit(root = process.cwd(), options = {}) {
 
   const selectedPresets = options.presets || existingConfig.presets || ["nightly-security-audit", "flaky-test-quarantine"];
 
+  const limitsBlock = isCustomLimits
+    ? `\nlimits:\n  concurrency: ${limits.concurrency}\n  daily_tasks: ${limits.daily_tasks}\n  stagger_ms: ${limits.stagger_ms}\n  diff_kb: ${limits.diff_kb}\n`
+    : "";
+
   const configYaml = `# Google Jules Orchestrator Kit Config (v${KIT_VERSION})
 version: 1
 provider: ${existingConfig.provider || "jules"}
 tier: ${tierName}
 base_branch: ${options.baseBranch || existingConfig.base_branch || "main"}
 branch_prefix: ${existingConfig.branch_prefix || "agent/"}
-
-limits:
-  concurrency: ${limits.concurrency}
-  daily_tasks: ${limits.daily_tasks}
-  stagger_ms: ${limits.stagger_ms}
-  diff_kb: ${limits.diff_kb}
-
+${limitsBlock}
 verify:
   test: "${verify.test}"
   build: "${verify.build}"
@@ -166,10 +179,23 @@ presets:
 ${selectedPresets.map((p) => `  - ${p}`).join("\n")}
 `;
 
-  const julesYaml = `# Google Jules Agent Compatibility Manifest
-version: 1
+  const forbiddenPaths = options.forbiddenPaths || existingJules.forbidden_paths || [
+    ".github/**",
+    "**/secrets/**",
+    "**/*.pem",
+    "**/lock-manager/**",
+    "scripts/jules-self-audit.mjs",
+    ".agent/jules.yml",
+  ];
+  const allowPaths = options.allowPaths || existingJules.allow_paths || [];
+
+  const julesYaml = `# Google Jules Repository Configuration (Version 2)
+version: 2
 test_cmd: "${verify.test}"
 build_cmd: "${verify.build}"
+forbidden_paths:
+${forbiddenPaths.map((p) => `  - "${p}"`).join("\n")}
+allow_paths: ${allowPaths.length > 0 ? "\n" + allowPaths.map((p) => `  - "${p}"`).join("\n") : "[]"}
 `;
 
   return {

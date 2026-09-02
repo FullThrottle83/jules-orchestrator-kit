@@ -427,7 +427,10 @@ async function main() {
           } else if (res.flakyVerdict?.verdict === "QUARANTINED") {
             console.log(`💡 Remediation Hint (Exit 8 Flaky Test Quarantined):`);
             console.log(`   • This command has alternated between pass and fail across recent runs.`);
-            console.log(`   • Fix the test's non-determinism — re-running will not clear the verdict.\n`);
+          } else if (res.code === 188) {
+            console.log(`💡 Remediation Hint (Exit 188 Offline Network Violation / Infrastructure):`);
+            console.log(`   • An unmocked network request was blocked by the preload network guard during verification.`);
+            console.log(`   • Ensure dependencies are installed locally (run: npm install) and all network calls in tests are mocked.\n`);
           } else if (failedPhase === "verify" || failedPhase === "evidence") {
             console.log(`💡 Remediation Hint (Exit ${res.code} Verification Failed):`);
             console.log(`   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.`);

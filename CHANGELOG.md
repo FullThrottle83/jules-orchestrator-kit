@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.4] - 2026-09-02
+### Arena Adversarial Audit Remediation & Integrity Hardening
+
+*Remediates 5 security vulnerabilities and design constraints surfaced during the multi-agent Arena adversarial audit.*
+
+#### Fixed
+- **Base64 Line-Wrapped Secret Smuggling (`src/security.mjs`, `test/arena-audit-remediation.test.mjs`)**:
+  - In `secretScanVariants`, `hasEncodedSecret`, and `classifyAddedLines`, collapsed whitespace and newlines between adjacent base64 characters (RFC 4648 line-wrapped PEM certificates/keys, template literals, and quoted chunks) before base64 decoding.
+- **Assertion Weakening & Vacuous Test Tampering (`src/security.mjs`, `test/arena-audit-remediation.test.mjs`)**:
+  - Added `VACUOUS_ASSERTIONS` detection to `checkTestTampering` to identify vacuous truth and identity assertions (`assert.ok(true)`, `expect(true).toBe(true)`, `assert.equal(1, 1)`, etc.) as critical test tampering violations (`TEST_TAMPERING_DETECTED`).
+- **Offline Network Guard Exit Code 188 Classification (`src/engine.mjs`, `bin/agentctl.mjs`, `AGENTS.md`)**:
+  - Differentiated preload network guard egress kills (Exit 188) from ordinary test regressions (Exit 4); suppressed OODA repair loop on Exit 188 and provided remediation hints advising `npm install` and network mocking. Added code 188 to the `AGENTS.md` Exit Code Registry.
+- **Git `--base HEAD` Local Reference Resolution (`src/git.mjs`, `test/arena-audit-remediation.test.mjs`)**:
+  - Excluded `HEAD` and relative commit references (`HEAD~*`, `HEAD^*`, `HEAD@*`) from `origin/` remote candidate prefixing in `resolveBase()`, ensuring local commit pointers are accurately resolved without being overridden by `origin/main`.
+- **Config Limits Shadow-Blocking & `jules.yml` v2 Preservation (`src/wizard-init.mjs`, `test/arena-audit-remediation.test.mjs`)**:
+  - Omitted redundant `limits:` blocks from `.agent/config.yml` when identical to tier defaults, allowing `JULES_TIER` environment variable overrides to take effect at runtime.
+  - Preserved `.agent/jules.yml` v2 format with `forbidden_paths` and `allow_paths`.
+
 ## [0.52.3] - 2026-09-02
 ### Jules Session Patch Ingestion, Edge Webhooks & Subprocess Hardening
 
