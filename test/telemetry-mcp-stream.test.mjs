@@ -29,14 +29,36 @@ test("O(1) Telemetry Spine & MCP Event/Progress Streaming (v0.25.1)", async (t) 
   });
 
   await t.test("1000 sequential appendTelemetry calls execute with O(1) steady-state and maintain SHA-256 hash integrity", async () => {
-    const startTime = Date.now();
-    for (let i = 0; i < 1000; i++) {
-      appendTelemetry(tmpRoot, "benchmark_event", { seq: i, payload: `data_${i}` });
-    }
-    const elapsedMs = Date.now() - startTime;
+    // The claim in this test's name is O(1) *steady state* — that appending to a
+    // ledger of 900 entries costs what appending to one of 100 costs, because
+    // the previous hash comes from the .head cache rather than a rescan.
+    //
+    // A wall-clock ceiling cannot test that. It tests how fast the machine is,
+    // which on a two-core CI runner sharing itself with the rest of the matrix
+    // meant this failed for reasons that had nothing to do with the code. The
+    // comparison below is immune to that: both batches endure the same
+    // contention, so only a per-append cost that grows with ledger size can
+    // separate them.
+    const timeBatch = (from, to) => {
+      const start = process.hrtime.bigint();
+      for (let i = from; i < to; i++) {
+        appendTelemetry(tmpRoot, "benchmark_event", { seq: i, payload: `data_${i}` });
+      }
+      return Number(process.hrtime.bigint() - start) / 1e6;
+    };
 
-    // Verify 1000 calls completed quickly (steady-state O(1) per call)
-    assert.ok(elapsedMs < 6000, `1000 appends took ${elapsedMs}ms, expected < 6000ms`);
+    const firstBatchMs = timeBatch(0, 100);
+    timeBatch(100, 900);
+    const lastBatchMs = timeBatch(900, 1000);
+
+    // A linear rescan would make the last hundred appends roughly nine times
+    // the cost of the first. Eight is far below that and far above the noise a
+    // loaded runner introduces.
+    const ratio = lastBatchMs / Math.max(firstBatchMs, 0.1);
+    assert.ok(
+      ratio < 8,
+      `steady-state cost grew ${ratio.toFixed(1)}x from the first 100 appends (${firstBatchMs.toFixed(1)}ms) to the last 100 (${lastBatchMs.toFixed(1)}ms) — the .head cache is not being used`
+    );
 
     // Verify cryptographic integrity
     const integrity = verifyTelemetryIntegrity(tmpRoot);
