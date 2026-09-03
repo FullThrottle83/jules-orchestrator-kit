@@ -2,6 +2,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { cpus } from "node:os";
 
 const root = process.cwd();
 const testDir = join(root, "test");
@@ -24,7 +25,25 @@ const [major, minor] = process.versions.node.split(".").map(Number);
 const supportsTestTimeout = major > 20 || (major === 20 && minor >= 6);
 const timeoutArgs = supportsTestTimeout ? [`--test-timeout=${timeoutMs}`] : [];
 
-const res = spawnSync(process.execPath, ["--test", ...timeoutArgs, ...testFiles], {
+// Node runs one test file per core by default. Several suites here spawn a
+// verification command of their own — `npm test`, and in the monorepo fixtures
+// an `npm test --workspaces` that fans out to one node per package — so the
+// real peak is a multiple of the file count, not the file count. On a
+// twelve-core laptop that saturates every core for the length of the run,
+// which cooks the machine and makes the throughput assertions (1000 telemetry
+// appends under 6s) fail for reasons that have nothing to do with the code.
+//
+// Half the cores keeps the suite comfortably parallel while leaving room for
+// the children it spawns. JULES_TEST_CONCURRENCY overrides it — CI runners
+// with two cores are already below this and are unaffected.
+const cpuCount = Math.max(1, cpus().length);
+const envConcurrency = Number(process.env.JULES_TEST_CONCURRENCY);
+const concurrency = Number.isFinite(envConcurrency) && envConcurrency > 0
+  ? Math.floor(envConcurrency)
+  : Math.max(2, Math.floor(cpuCount / 2));
+const concurrencyArgs = supportsTestTimeout ? [`--test-concurrency=${concurrency}`] : [];
+
+const res = spawnSync(process.execPath, ["--test", ...timeoutArgs, ...concurrencyArgs, ...testFiles], {
   cwd: root,
   stdio: "inherit",
   env: process.env,

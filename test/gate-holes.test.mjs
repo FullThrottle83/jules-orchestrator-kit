@@ -331,3 +331,103 @@ describe("evidence attests to what it claims to attest to", () => {
     }
   });
 });
+
+describe("features that were advertised and never called", () => {
+  it("locks a file against every other task, not just the same one", async () => {
+    const { acquireLock, releaseLock } = await import("../src/state.mjs");
+    const dir = mkdtempSync(join(tmpdir(), "jok-lock-"));
+    try {
+      assert.equal(acquireLock("agent-1", "task-1", ["src/math.js"], dir).ok, true);
+
+      // The lock file is named after the task, so this used to succeed: the
+      // `files` argument — the entire point of the call — was recorded as
+      // metadata and compared against nothing.
+      const conflict = acquireLock("agent-2", "task-2", ["src/math.js"], dir);
+      assert.equal(conflict.ok, false, "two agents cannot both hold the same file");
+      assert.equal(conflict.holder, "agent-1");
+      assert.deepEqual(conflict.conflictingFiles, ["src/math.js"]);
+
+      // A disjoint file set is not a conflict.
+      assert.equal(acquireLock("agent-3", "task-3", ["src/other.js"], dir).ok, true);
+
+      // Releasing frees the path again.
+      releaseLock("task-1", dir);
+      assert.equal(acquireLock("agent-4", "task-4", ["src/math.js"], dir).ok, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("normalises separators before comparing held paths", async () => {
+    const { acquireLock } = await import("../src/state.mjs");
+    const dir = mkdtempSync(join(tmpdir(), "jok-lockwin-"));
+    try {
+      assert.equal(acquireLock("a", "t1", ["src\\deep\\mod.js"], dir).ok, true);
+      assert.equal(
+        acquireLock("b", "t2", ["src/deep/mod.js"], dir).ok,
+        false,
+        "a backslash spelling is the same file"
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("takes a checkpoint before a dispatch can touch the tree", async () => {
+    const dir = repoWithSuite();
+    try {
+      const { dispatch } = await import("../src/engine.mjs");
+      const { listCheckpoints } = await import("../src/ops/checkpoint.mjs");
+      assert.equal(listCheckpoints(dir).length, 0);
+
+      // A stub provider stands in for the agent: what matters is that the
+      // snapshot exists by the time anything could have run.
+      await dispatch(
+        { id: "TASK-CKPT", title: "t", prompt: "do a thing" },
+        { root: dir, config: loadConfig(dir), provider: { dispatch: async () => ({ id: "s1", status: "active" }) } }
+      );
+
+      const checkpoints = listCheckpoints(dir);
+      assert.equal(checkpoints.length, 1, "`agentctl rollback` had nothing to restore because nothing ever created one");
+      assert.match(String(checkpoints[0].id ?? checkpoints[0]), /TASK-CKPT/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not snapshot a rehearsal", async () => {
+    const dir = repoWithSuite();
+    try {
+      const { dispatch } = await import("../src/engine.mjs");
+      const { listCheckpoints } = await import("../src/ops/checkpoint.mjs");
+      await dispatch(
+        { id: "TASK-DRY", title: "t", prompt: "do a thing" },
+        { root: dir, config: loadConfig(dir), dryRun: true, provider: { dispatch: async () => ({ id: "s", status: "active" }) } }
+      );
+      assert.equal(listCheckpoints(dir).length, 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("an authenticated GET does not need a session id", () => {
+  it("allows a custom url through the session guard", async () => {
+    const { createProvider } = await import("../src/provider.mjs");
+    const provider = createProvider("jules", {});
+
+    // `listSources()` reuses getSession purely as an authenticated GET. The id
+    // guard fired before the url was consulted, so listing a repository's
+    // connected sources threw a TypeError against the live API every time —
+    // a failure neither a dry run nor a unit test could reach, because both
+    // stop before the request is built.
+    await assert.rejects(
+      () => provider.getSession("", {}),
+      /requires a valid sessionId/,
+      "a plain call with no id is still a programming error"
+    );
+
+    const res = await provider.getSession("", { customUrl: "https://example.invalid/sources", dryRun: true });
+    assert.ok(res, "a customUrl call is a legitimate shape and must not throw");
+  });
+});

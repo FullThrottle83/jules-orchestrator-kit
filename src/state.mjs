@@ -560,6 +560,40 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
     }
   }
 
+  // The lock file is named after the task, so `existsSync(lockFile)` above only
+  // ever asked "is this same task already running?". The `files` argument — the
+  // whole point of the call — was stored as metadata and never compared against
+  // anything, so two agents could hold locks on the same file at the same time
+  // and each be told it had exclusive access. Check the paths, not just the id.
+  const requested = new Set(
+    (Array.isArray(files) ? files : [])
+      .filter((f) => typeof f === "string" && f)
+      .map((f) => normalizePath(f))
+  );
+  if (requested.size > 0) {
+    for (const held of lockStatus(root)) {
+      if (!held || held.taskId === taskId) continue;
+      const recordedStart = held.processStartTime ?? held.starttime ?? null;
+      const stillHeld =
+        isPidAlive(held.pid, recordedStart) &&
+        !(held.acquiredAt && Date.now() - new Date(held.acquiredAt).getTime() > 7200000);
+      if (!stillHeld) continue;
+
+      const overlap = (Array.isArray(held.files) ? held.files : [])
+        .map((f) => normalizePath(f))
+        .filter((f) => requested.has(f));
+      if (overlap.length > 0) {
+        return {
+          ok: false,
+          holder: held.agent,
+          taskId: held.taskId,
+          pid: held.pid,
+          conflictingFiles: overlap,
+        };
+      }
+    }
+  }
+
   const startTime = getProcessStartTime(process.pid);
   const concurrencyGroup = String(opts?.concurrencyGroup || opts?.concurrency_group || "").trim();
   const payload = {
