@@ -1101,6 +1101,675 @@ function locateFindingLine(lines, type, file = null) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Statement-level expectation-rewrite detection (multi-line aware)
+// ---------------------------------------------------------------------------
+//
+// The original pairing ran on physical lines. That caught
+// `assert.equal(add(1, 2), 3);` becoming `assert.equal(add(1, 2), -1);`, but
+// the same edit walked straight through the moment it was wrapped across
+// lines — which every formatter does the day a line runs long, and which an
+// agent doing an ordinary reformat does on its own:
+//
+//   -assert.equal(
+//   -  add(1, 2),
+//   -  3
+//   -);
+//   +assert.equal(
+//   +  add(1, 2),
+//   +  -1
+//   +);
+//
+// The value lives on a line that carries no assertion keyword, so neither
+// side ever paired, and the suite went from checking that addition works to
+// certifying that it is broken. The statement, not the line, is the unit an
+// agent rewrites, so the pairing now runs on reassembled statements: a run
+// of physical lines joined while its delimiters are unbalanced, one of its
+// strings or comments is still open, a Python line-continuation is pending,
+// or the next line cannot start a statement of its own. The hunk's context
+// lines belong to both images and are what make the reassembly possible;
+// when they are absent (a zero-context diff) the only pair that can survive
+// is the one where each image is a single fragment, and that pair is taken
+// too, requiring a literal placeholder so a code change cannot masquerade as
+// a value change.
+//
+// The pairing rule is unchanged in spirit: the two sides must be the *same*
+// assertion — identical once every literal is blanked out — with different
+// values. That does not distinguish an attack from a deliberate change of
+// spec; nothing can, from a diff alone. This reports rather than decides,
+// and `--allow-test-modifications` is the answer when the new expectation is
+// the correct one.
+
+// An assertion that states a *specific* expected value. Counting assertions
+// alone let a test be gutted while looking untouched: swapping
+// `assert.strictEqual(add(2,3), 5)` for `assert.ok(add(2,3) !== undefined)`
+// removes one and adds one, so `removed > added` stayed false and the guard
+// said nothing — while the suite stopped checking the answer.
+//
+// The `expect` argument span is a bounded lazy match rather than `[^)]*` so
+// that a call split across lines with a nested call in its arguments
+// (`expect(\n  formatInvoice(bill)\n).toBe(…`) still recognises the chain.
+// The bound is a guess: an argument list longer than 240 characters is
+// rarer than a missed chain.
+const SPECIFIC_ASSERTION = new RegExp(
+  [
+    "\\bassert(?:\\.strict)?\\.?(?:strictEqual|deepStrictEqual|deepEqual|notStrictEqual|notDeepStrictEqual|equal|notEqual|match|doesNotMatch|throws|rejects|doesNotThrow)\\s*\\(",
+    "\\bexpect\\s*\\([\\s\\S]{0,240}?\\)\\s*\\.(?:toBe|toEqual|toStrictEqual|toMatch|toMatchObject|toContain|toHaveBeenCalledWith|toThrow|toHaveLength|toBeCloseTo)\\s*\\(",
+    "\\bassert\\.(?:equals|deepEquals|include|lengthOf)\\s*\\(",
+    "assert_eq!|assert_ne!",
+    "\\bt\\.(?:Errorf|Fatalf)\\s*\\(",
+    "\\brequire\\.(?:Equal|NotEqual|Len|Contains|Error|NoError)\\s*\\(",
+  ].join("|"),
+  "i"
+);
+const isSpecificAssertion = (str) => SPECIFIC_ASSERTION.test(str);
+
+/**
+ * An assertion with every literal value replaced by a placeholder.
+ *
+ * Two lines that normalize to the same string are the same assertion about
+ * the same expression; whatever differs between them is a value.
+ *
+ * The number form covers hex, octal, binary, underscores and exponents: the
+ * original decimal-only regex never blanked `0xFF`, so an expectation
+ * rewritten from `0xFF` to `0xFE` normalized to two *different* shapes and
+ * the pair was never formed.
+ */
+const blankLiterals = (str) =>
+  str
+    .replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, "\u0000S")
+    // The sign belongs to the literal: without it `3` and `-1` normalized to
+    // different shapes and the rewritten expectation was never paired.
+    .replace(
+      /(?<![\w$])(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|-?\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?)/g,
+      "\u0000N"
+    )
+    .replace(/\b(?:true|false|null|undefined|None|True|False|nil)\b/g, "\u0000B")
+    // Whitespace is dropped, not collapsed: the shape is compared for
+    // equality only, and a reformatted statement must normalize to the same
+    // shape as the original — ` <N> );` and ` <N>);` are the same assertion.
+    .replace(/\s+/g, "");
+
+// The test languages the gate runs over. The scanner below is written for
+// these four and nothing else; an unrecognised extension falls back to `js`,
+// which is the strictest of the four for line joining.
+const TEST_LANG_BY_EXT = new Map([
+  [".js", "js"], [".mjs", "js"], [".cjs", "js"], [".jsx", "js"],
+  [".ts", "js"], [".mts", "js"], [".cts", "js"], [".tsx", "js"],
+  [".py", "python"], [".pyi", "python"],
+  [".go", "go"],
+  [".rs", "rust"],
+]);
+
+function langForTestFile(file) {
+  const n = String(file || "").toLowerCase();
+  const dot = n.lastIndexOf(".");
+  if (dot === -1) return "js";
+  return TEST_LANG_BY_EXT.get(n.slice(dot)) || "js";
+}
+
+function freshScanState() {
+  // str: the open string, or null.
+  //   q         the quote character
+  //   tri       Python triple-quoted
+  //   raw       raw string, no escapes (Go backtick)
+  //   rawHashes Rust raw string r#"…"#: terminator is " plus that many #
+  // block: depth of an open /* … */ (nested only in Rust)
+  // accDelta: counted delimiters still open in the current statement
+  // specialStack: counted depth recorded at each non-joining call (see below)
+  return { str: null, block: 0, accDelta: 0, specialStack: [] };
+}
+
+// A call whose opening paren must not join lines: the test name is not the
+// expectation. Without this, `it("old name", () => { expect(f()).toBe(3); })`
+// would pair against its renamed copy, because a name is a string and so
+// blanks to the same placeholder as any value change would. The closer of a
+// non-joining paren is recognised by the depth it was opened at, so the
+// running balance stays exact.
+const NON_JOINING_CALL = /\b(?:it|test|describe|context)\s*\($|\bt\.Run\s*\($/;
+
+/**
+ * Scan one physical line of source.
+ *
+ * Returns { delta, trailingBackslash }. `delta` is the net number of
+ * still-open ( [ { delimiters outside strings and comments; a statement
+ * continues to the next physical line while it is positive, while a string
+ * or block comment is open (tracked on `state`), or on a Python line
+ * continuation.
+ *
+ * This is not a parser, and the approximations are deliberate: JS regex
+ * literals are detected with a one-token look-behind (a `/` that cannot
+ * follow an identifier, number, `)` or `]` starts one), template
+ * interpolation is treated as opaque string content, and Rust lifetimes are
+ * told apart from char literals by shape alone. `stripComments` below
+ * walks the same constructs, so the two must stay in lock-step.
+ */
+function scanSourceLine(text, lang, state) {
+  let delta = 0;
+  let lastSig = "\n";
+  const n = text.length;
+  let i = 0;
+
+  while (i < n) {
+    const c = text[i];
+    const c2 = i + 1 < n ? text[i + 1] : "";
+
+    if (state.str) {
+      const s = state.str;
+      let closed = false;
+      if (s.rawHashes !== undefined) {
+        if (c === '"') {
+          let j = i + 1;
+          let h = 0;
+          while (j < n && text[j] === "#") { h++; j++; }
+          if (h >= s.rawHashes) { i = j; closed = true; }
+        }
+      } else if (s.raw) {
+        closed = c === s.q;
+      } else if (c === "\\") {
+        i += s.tri ? 1 : 2;
+        continue;
+      } else if (c === s.q) {
+        if (s.tri) {
+          if (text[i + 1] === s.q && text[i + 2] === s.q) { i += 3; closed = true; }
+          else { i += 1; }
+        } else {
+          i += 1;
+          closed = true;
+        }
+      }
+      if (closed) { state.str = null; lastSig = s.q; continue; }
+      i += 1;
+      continue;
+    }
+
+    if (state.block > 0) {
+      if (c === "/" && c2 === "*") {
+        if (lang === "rust") state.block += 1;
+        i += 2;
+        continue;
+      }
+      if (c === "*" && c2 === "/") {
+        state.block -= 1;
+        i += 2;
+        lastSig = "/";
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+
+    // A line comment ends the line.
+    if (c === "/" && c2 === "/") break;
+    if (lang === "python" && c === "#") break;
+
+    if (c === "/" && c2 === "*") {
+      state.block = 1;
+      i += 2;
+      continue;
+    }
+
+    // JS regex literal, best effort. Delimiters inside are not counted.
+    if ((lang === "js" || lang === "ts") && c === "/" && !/[\w$)\]}]/.test(lastSig)) {
+      i += 1;
+      let inClass = false;
+      while (i < n) {
+        const rc = text[i];
+        if (rc === "\\") { i += 2; continue; }
+        if (rc === "[") inClass = true;
+        else if (rc === "]") inClass = false;
+        else if (rc === "/" && !inClass) { i += 1; break; }
+        i += 1;
+      }
+      while (i < n && /[a-z]/i.test(text[i])) i += 1; // flags
+      lastSig = "/";
+      continue;
+    }
+
+    if (c === '"' || c === "'" || (lang === "go" && c === "`")) {
+      if (lang === "python" && c2 === c && text[i + 2] === c) {
+        state.str = { q: c, tri: true };
+        i += 3;
+      } else if (lang === "rust" && c === '"') {
+        if (i > 0 && text[i - 1] === "r") {
+          let j = i - 1;
+          let h = 0;
+          while (j >= 1 && text[j - 1] === "#") { h++; j--; }
+          state.str = { q: '"', rawHashes: h };
+          i += 1;
+        } else {
+          state.str = { q: c };
+          i += 1;
+        }
+      } else if (lang === "rust" && c === "'") {
+        // A char literal is 'X' or '\X' within four characters; anything
+        // else starting with a quote is a lifetime and only the quote is
+        // skipped, or the next line would see a string that never closed.
+        if (c2 === "\\") {
+          const end = text.indexOf("'", i + 2);
+          if (end !== -1 && end - i <= 4) { i = end + 1; lastSig = "'"; continue; }
+        } else if (text[i + 2] === "'" && c2 !== "'") {
+          i += 3;
+          lastSig = "'";
+          continue;
+        }
+        i += 1;
+        continue;
+      } else {
+        state.str = { q: c };
+        i += 1;
+      }
+      lastSig = c;
+      continue;
+    }
+
+    // A backslash on the very last character is a Python line continuation.
+    if (c === "\\" && i + 1 === n) {
+      return { delta, trailingBackslash: true };
+    }
+
+    if (c === "(") {
+      // `before` ends with the paren itself; NON_JOINING_CALL matches on it.
+      const before = text.slice(0, i + 1).replace(/\s+$/, "");
+      if (NON_JOINING_CALL.test(before)) state.specialStack.push(state.accDelta);
+      else { delta += 1; state.accDelta += 1; }
+      lastSig = c;
+      i += 1;
+      continue;
+    }
+    if (c === "[") { delta += 1; state.accDelta += 1; lastSig = c; i += 1; continue; }
+    if (c === "{") {
+      // Go joins braces: the `if got != want { t.Errorf(…) }` block is the
+      // idiomatic Go assertion, and the value lives on its first line. The
+      // other three languages get no brace joining, so a rename of a test
+      // inside a block cannot pair as a value change on its own.
+      if (lang === "go") { delta += 1; state.accDelta += 1; }
+      lastSig = c;
+      i += 1;
+      continue;
+    }
+    if (c === ")") {
+      const top = state.specialStack[state.specialStack.length - 1];
+      if (top === state.accDelta) state.specialStack.pop();
+      else { delta -= 1; state.accDelta -= 1; }
+      lastSig = c;
+      i += 1;
+      continue;
+    }
+    if (c === "]") { delta -= 1; state.accDelta -= 1; lastSig = c; i += 1; continue; }
+    if (c === "}") {
+      if (lang === "go") { delta -= 1; state.accDelta -= 1; }
+      lastSig = c;
+      i += 1;
+      continue;
+    }
+
+    if (!/\s/.test(c)) lastSig = c;
+    i += 1;
+  }
+
+  return { delta, trailingBackslash: false };
+}
+
+/**
+ * The same source with every comment blanked out, strings and line
+ * structure untouched. Shapes and keywords are computed on this text so a
+ * commented-out `expect(…)` cannot make a block an assertion, and a number
+ * changed inside a comment cannot pair as a value change.
+ */
+function stripComments(text, lang) {
+  const state = freshScanState();
+  return text.split("\n").map((line) => {
+    let out = "";
+    let pending = 0;
+    const copyCode = (to) => {
+      out += line.slice(pending, to);
+      pending = to;
+    };
+    let i = 0;
+    const n = line.length;
+
+    while (i < n) {
+      const c = line[i];
+      const c2 = i + 1 < n ? line[i + 1] : "";
+
+      if (state.block > 0) {
+        if (c === "/" && c2 === "*") {
+          if (lang === "rust") state.block += 1;
+          i += 2;
+          continue;
+        }
+        if (c === "*" && c2 === "/") {
+          state.block -= 1;
+          i += 2;
+          if (state.block === 0) pending = i;
+          continue;
+        }
+        i += 1;
+        continue;
+      }
+
+      if (state.str) {
+        const s = state.str;
+        let closed = false;
+        if (s.rawHashes !== undefined) {
+          if (c === '"') {
+            let j = i + 1;
+            let h = 0;
+            while (j < n && line[j] === "#") { h++; j++; }
+            if (h >= s.rawHashes) { i = j; closed = true; }
+          }
+        } else if (s.raw) {
+          closed = c === s.q;
+        } else if (c === "\\") {
+          i += s.tri ? 1 : 2;
+          continue;
+        } else if (c === s.q) {
+          if (s.tri) {
+            if (line[i + 1] === s.q && line[i + 2] === s.q) { i += 3; closed = true; }
+            else { i += 1; }
+          } else {
+            i += 1;
+            closed = true;
+          }
+        }
+        if (closed) {
+          state.str = null;
+          copyCode(i);
+          continue;
+        }
+        i += 1;
+        continue;
+      }
+
+      if (c === "/" && c2 === "/") { copyCode(i); break; }
+      if (lang === "python" && c === "#") { copyCode(i); break; }
+      if (c === "/" && c2 === "*") {
+        copyCode(i);
+        state.block = 1;
+        i += 2;
+        continue;
+      }
+      if (c === '"' || c === "'" || (lang === "go" && c === "`")) {
+        copyCode(i);
+        if (lang === "python" && c2 === c && line[i + 2] === c) {
+          state.str = { q: c, tri: true };
+          i += 3;
+        } else if (lang === "rust" && c === '"') {
+          if (i > 0 && line[i - 1] === "r") {
+            let j = i - 1;
+            let h = 0;
+            while (j >= 1 && line[j - 1] === "#") { h++; j--; }
+            state.str = { q: '"', rawHashes: h };
+            i += 1;
+          } else {
+            state.str = { q: c };
+            i += 1;
+          }
+        } else if (lang === "rust" && c === "'") {
+          if (c2 === "\\") {
+            const end = line.indexOf("'", i + 2);
+            if (end !== -1 && end - i <= 4) { i = end + 1; copyCode(i); continue; }
+          } else if (line[i + 2] === "'" && c2 !== "'") {
+            i += 3;
+            copyCode(i);
+            continue;
+          }
+          i += 1;
+          copyCode(i);
+          continue;
+        } else {
+          state.str = { q: c };
+          i += 1;
+        }
+        continue;
+      }
+      i += 1;
+    }
+    copyCode(n);
+    return out;
+  }).join("\n");
+}
+
+// A line that cannot start a statement of its own continues the previous
+// statement: a closing delimiter, a member-access, or an operator.
+const CONTINUATION_START = /^[)\],.]/;
+const CONTINUATION_OP_START = /^[+\-*/%<>=&|^:]/;
+
+// A scanner miscount (an unbalanced delimiter inside a regex literal is the
+// usual cause) must not be able to merge a whole file into one statement,
+// which would pair *any* literal change anywhere in the file.
+const MAX_STATEMENT_LINES = 100;
+const MAX_STATEMENT_CHARS = 12000;
+
+/**
+ * Reassemble physical lines into statements.
+ *
+ * `sliceLines` is one image of a hunk in file order: context lines plus the
+ * removed (or added) lines. Context lines are ordinary file text; a
+ * statement spans them freely, which is exactly what makes a value edit
+ * inside a formatter-wrapped assertion visible to the pairing.
+ *
+ * @param {Array<{ kind: string, text: string, oldNo: number|null, newNo: number|null }>} sliceLines
+ * @param {string} lang
+ * @returns {Array<{ text: string, firstOld: number|null, lastOld: number|null, firstNew: number|null, lastNew: number|null, removedLines: Array, addedLines: Array }>}
+ */
+function assembleStatements(sliceLines, lang) {
+  const stmts = [];
+  let cur = null;
+
+  const flush = () => {
+    if (!cur) return;
+    stmts.push({
+      text: cur.lines.join("\n"),
+      firstOld: cur.firstOld,
+      lastOld: cur.lastOld,
+      firstNew: cur.firstNew,
+      lastNew: cur.lastNew,
+      removedLines: cur.removedLines,
+      addedLines: cur.addedLines,
+    });
+    cur = null;
+  };
+
+  for (const L of sliceLines) {
+    const trimmed = L.text.replace(/^\s+/, "");
+    const joins =
+      cur !== null &&
+      (cur.delta > 0 ||
+        cur.state.str !== null ||
+        cur.state.block > 0 ||
+        cur.trailingBackslash ||
+        CONTINUATION_START.test(trimmed) ||
+        CONTINUATION_OP_START.test(trimmed));
+
+    if (
+      joins &&
+      cur.lines.length < MAX_STATEMENT_LINES &&
+      cur.chars + L.text.length + 1 <= MAX_STATEMENT_CHARS
+    ) {
+      cur.lines.push(L.text);
+      cur.chars += L.text.length + 1;
+      const sc = scanSourceLine(L.text, lang, cur.state);
+      cur.delta += sc.delta;
+      cur.trailingBackslash = sc.trailingBackslash;
+      cur.lastOld = L.oldNo;
+      cur.lastNew = L.newNo;
+      if (L.kind === "-") cur.removedLines.push(L);
+      else if (L.kind === "+") cur.addedLines.push(L);
+    } else {
+      flush();
+      const st = freshScanState();
+      const sc = scanSourceLine(L.text, lang, st);
+      cur = {
+        lines: [L.text],
+        chars: L.text.length,
+        firstOld: L.oldNo,
+        lastOld: L.oldNo,
+        firstNew: L.newNo,
+        lastNew: L.newNo,
+        delta: sc.delta,
+        state: st,
+        trailingBackslash: sc.trailingBackslash,
+        removedLines: L.kind === "-" ? [L] : [],
+        addedLines: L.kind === "+" ? [L] : [],
+      };
+    }
+  }
+  flush();
+  return stmts;
+}
+
+const hasLiteralPlaceholder = (shape) =>
+  shape.includes("\u0000S") || shape.includes("\u0000N") || shape.includes("\u0000B");
+
+const collapseWhitespace = (s) => s.replace(/\s+/g, " ").trim();
+const shorten = (s) => (s.length > 160 ? `${s.slice(0, 157)}…` : s);
+
+/**
+ * Pair rewritten expectations across the removed and added images of every
+ * hunk of one file, and report each pair.
+ *
+ * A statement is only a candidate when it actually contains a removed
+ * (resp. added) line: a context-only statement is unchanged text on both
+ * sides, and letting it pair would flag a genuinely new assertion that
+ * merely has the same shape as one that stayed put.
+ *
+ * @param {string} file
+ * @param {Array<{ lines: Array }>} hunks
+ * @param {object} stats - per-file stats; the paired physical lines are
+ *   spliced out of the count pools so the count-based checks below do not
+ *   report the same edit a second time.
+ * @param {Array} violations
+ * @returns {Array<{ r: object, a: object }>} the pairs, for the caller
+ */
+function detectExpectationRewrites(file, hunks, stats, violations) {
+  const lang = langForTestFile(file);
+  const allPairs = [];
+
+  for (const hunk of hunks) {
+    const oldSlice = [];
+    const newSlice = [];
+    for (const L of hunk.lines) {
+      if (L.kind !== "+") oldSlice.push(L);
+      if (L.kind !== "-") newSlice.push(L);
+    }
+    const oldStmts = assembleStatements(oldSlice, lang);
+    const newStmts = assembleStatements(newSlice, lang);
+
+    // Candidate statements in file order, per image.
+    const oldCands = [];
+    for (const s of oldStmts) {
+      if (s.removedLines.length === 0) continue;
+      const clean = stripComments(s.text, lang);
+      if (!isSpecificAssertion(clean)) continue;
+      oldCands.push({ s, shape: blankLiterals(clean), canon: clean.replace(/\s+/g, "") });
+    }
+    const newCands = [];
+    for (const s of newStmts) {
+      if (s.addedLines.length === 0) continue;
+      const clean = stripComments(s.text, lang);
+      if (!isSpecificAssertion(clean)) continue;
+      newCands.push({ s, shape: blankLiterals(clean), canon: clean.replace(/\s+/g, "") });
+    }
+
+    // The t-th removed candidate of a shape pairs with the t-th added
+    // candidate of the same shape. Position alignment is what keeps a
+    // formatter run over a block of same-shape assertions silent: a greedy
+    // "first different text" pairing would match a re-indented
+    // `assert.equal(f(0), 0)` against its neighbour's value and report a
+    // rewrite that did not happen. It also keeps the pairing linear in the
+    // number of statements, which a 4000-line same-shape table would not
+    // survive as a square of comparisons.
+    const oldByShape = new Map();
+    const newByShape = new Map();
+    for (const c of oldCands) {
+      let arr = oldByShape.get(c.shape);
+      if (!arr) arr = oldByShape.set(c.shape, []).get(c.shape);
+      arr.push(c);
+    }
+    for (const c of newCands) {
+      let arr = newByShape.get(c.shape);
+      if (!arr) arr = newByShape.set(c.shape, []).get(c.shape);
+      arr.push(c);
+    }
+
+    const pairs = [];
+    for (const [shape, olds] of oldByShape) {
+      const news = newByShape.get(shape) || [];
+      const k = Math.min(olds.length, news.length);
+      for (let t = 0; t < k; t++) {
+        if (olds[t].canon !== news[t].canon) {
+          pairs.push({ r: olds[t].s, a: news[t].s });
+        }
+      }
+    }
+
+    // Zero-context hunk: each image is a single fragment and the assertion
+    // keyword may sit outside the hunk entirely. The fragment pair is taken
+    // only when both sides normalize to the same shape *and* that shape
+    // holds a literal — a code change cannot fake it.
+    if (pairs.length === 0 && oldStmts.length === 1 && newStmts.length === 1) {
+      const r = oldStmts[0];
+      const a = newStmts[0];
+      if (r.removedLines.length > 0 && a.addedLines.length > 0) {
+        const sr = blankLiterals(stripComments(r.text, lang));
+        const sa = blankLiterals(stripComments(a.text, lang));
+        if (sr === sa && hasLiteralPlaceholder(sr)) {
+          const cr = stripComments(r.text, lang).replace(/\s+/g, "");
+          const ca = stripComments(a.text, lang).replace(/\s+/g, "");
+          if (cr !== ca) pairs.push({ r, a });
+        }
+      }
+    }
+
+    for (const p of pairs) {
+      allPairs.push(p);
+      const addedNo = p.a.addedLines.length > 0 ? p.a.addedLines[0].newNo : (p.r.removedLines[0] ? p.r.removedLines[0].oldNo : null);
+      violations.push({
+        file,
+        line: addedNo,
+        type: "ASSERTION_EXPECTATION_CHANGED",
+        reason:
+          `Test Tamper Guard: Expected value rewritten in ${file}${addedNo ? `:${addedNo}` : ""} — ` +
+          `"${shorten(collapseWhitespace(p.r.text))}" became "${shorten(collapseWhitespace(p.a.text))}". ` +
+          `A deliberately changed spec looks identical to a test bent to match broken ` +
+          `output, and a diff alone cannot tell the two apart, so this is flagged for ` +
+          `review rather than assumed. If the new expectation is correct, re-run with ` +
+          `--allow-test-modifications (which also silences the skip, vacuous, removal ` +
+          `and weakening checks for this diff).`,
+      });
+
+      // Both sides are accounted for here, so they must not also feed the
+      // count-based checks below — the same line reported twice under two
+      // names tells the operator nothing extra. Consumption is symmetric so
+      // a statement that absorbed two old assertion lines but only one new
+      // one still leaves the surplus to the removal check.
+      const removedMatches = p.r.removedLines.filter(
+        (L) => stats.removed.some((e) => e.line === L.oldNo && e.text === L.text)
+      );
+      const addedMatches = p.a.addedLines.filter(
+        (L) => stats.addedTexts.some((e) => e.line === L.newNo && e.text === L.text)
+      );
+      const take = Math.min(removedMatches.length, addedMatches.length);
+      for (let k = 0; k < take; k++) {
+        const L = removedMatches[k];
+        const idx = stats.removed.findIndex((e) => e.line === L.oldNo && e.text === L.text);
+        if (idx === -1) continue;
+        const entry = stats.removed.splice(idx, 1)[0];
+        const rsIdx = stats.removedSpecific.indexOf(entry);
+        if (rsIdx !== -1) {
+          stats.removedSpecific.splice(rsIdx, 1);
+          stats.addedSpecific--;
+        }
+        stats.added--;
+      }
+    }
+  }
+
+  return allPairs;
+}
+
 /**
  * Detects test file assertion tampering, weakening, or test skips.
  *
@@ -1159,41 +1828,8 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   const ASSERTION_PATTERN = /(?:\b(?:assert(?:\.[a-zA-Z0-9_$]+)?|expect|t\.(?:assert|expect|is|equal|true|false|Errorf|Fatalf)|require\.[a-zA-Z0-9_$]+)\b|assert!|assert_eq!|assert_ne!)/i;
   const isCommentLine = (str) => /^\s*(?:\/\/|\/\*|\*|#|--|;)/.test(str);
 
-  // An assertion that states a *specific* expected value. Counting assertions
-  // alone let a test be gutted while looking untouched: swapping
-  // `assert.strictEqual(add(2,3), 5)` for `assert.ok(add(2,3) !== undefined)`
-  // removes one and adds one, so `removed > added` stayed false and the guard
-  // said nothing — while the suite stopped checking the answer.
-  const SPECIFIC_ASSERTION = new RegExp(
-    [
-      "\\bassert(?:\\.strict)?\\.?(?:strictEqual|deepStrictEqual|deepEqual|notStrictEqual|notDeepStrictEqual|equal|notEqual|match|doesNotMatch|throws|rejects|doesNotThrow)\\s*\\(",
-      "\\bexpect\\s*\\([^)]*\\)\\s*\\.(?:toBe|toEqual|toStrictEqual|toMatch|toMatchObject|toContain|toHaveBeenCalledWith|toThrow|toHaveLength|toBeCloseTo)\\s*\\(",
-      "\\bassert\\.(?:equals|deepEquals|include|lengthOf)\\s*\\(",
-      "assert_eq!|assert_ne!",
-      "\\bt\\.(?:Errorf|Fatalf)\\s*\\(",
-      "\\brequire\\.(?:Equal|NotEqual|Len|Contains|Error|NoError)\\s*\\(",
-    ].join("|"),
-    "i"
-  );
-  const isSpecificAssertion = (str) => SPECIFIC_ASSERTION.test(str);
-
-  /**
-   * An assertion with every literal value replaced by a placeholder.
-   *
-   * Two lines that normalize to the same string are the same assertion about
-   * the same expression; whatever differs between them is a value.
-   */
-  const blankLiterals = (str) =>
-    str
-      .replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, "\u0000S")
-      // The sign belongs to the literal: without it `3` and `-1` normalized to
-      // different shapes and the rewritten expectation was never paired.
-      .replace(/(?<![\w$])-?\d+(?:\.\d+)?\b/g, "\u0000N")
-      .replace(/\b(?:true|false|null|undefined|None|True|False|nil)\b/g, "\u0000B")
-      .replace(/\s+/g, " ")
-      .trim();
-
   const fileAssertions = new Map();
+  let pendingHunk = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -1209,6 +1845,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       currentFile = target && target !== "/dev/null" ? target : lastOldFile;
       currentOldLineNo = null;
       currentNewLineNo = null;
+      pendingHunk = false;
       continue;
     }
 
@@ -1216,20 +1853,28 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     if (hunkMatch) {
       currentOldLineNo = Number(hunkMatch[1]);
       currentNewLineNo = Number(hunkMatch[2]);
+      pendingHunk = true;
       continue;
     }
 
     if (!currentFile || !isTestFile(currentFile)) {
+      pendingHunk = false;
       continue;
     }
 
     if (!fileAssertions.has(currentFile)) {
-      fileAssertions.set(currentFile, { removed: [], added: 0, addedTexts: [], removedSpecific: [], addedSpecific: 0 });
+      fileAssertions.set(currentFile, { removed: [], added: 0, addedTexts: [], removedSpecific: [], addedSpecific: 0, hunks: [] });
     }
     const fileStats = fileAssertions.get(currentFile);
+    if (pendingHunk) {
+      fileStats.hunks.push({ lines: [] });
+      pendingHunk = false;
+    }
+    const hunk = fileStats.hunks.length > 0 ? fileStats.hunks[fileStats.hunks.length - 1] : null;
 
     if (line.startsWith("-") && !line.startsWith("---")) {
       const deletedText = line.slice(1);
+      if (hunk) hunk.lines.push({ kind: "-", text: deletedText, oldNo: currentOldLineNo, newNo: null });
       if (!isCommentLine(deletedText) && ASSERTION_PATTERN.test(deletedText)) {
         fileStats.removed.push({ line: currentOldLineNo, text: deletedText });
         if (isSpecificAssertion(deletedText)) {
@@ -1239,6 +1884,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       if (currentOldLineNo !== null) currentOldLineNo++;
     } else if (line.startsWith("+") && !line.startsWith("+++")) {
       const addedText = line.slice(1);
+      if (hunk) hunk.lines.push({ kind: "+", text: addedText, oldNo: null, newNo: currentNewLineNo });
       let isVacuous = false;
 
       // Check skip injections
@@ -1287,6 +1933,13 @@ export function checkTestTampering(diffOrText = "", options = {}) {
 
       if (currentNewLineNo !== null) currentNewLineNo++;
     } else if (!line.startsWith("\\")) {
+      // Context line. It is file text in both images, so the statement
+      // assembler needs it to reassemble assertions that span a changed
+      // line; `diff --git`/`index` lines that sneak in here are not
+      // diff body and are not collected.
+      if (hunk && (line.startsWith(" ") || line === "")) {
+        hunk.lines.push({ kind: " ", text: line.slice(1), oldNo: currentOldLineNo, newNo: currentNewLineNo });
+      }
       if (currentOldLineNo !== null) currentOldLineNo++;
       if (currentNewLineNo !== null) currentNewLineNo++;
     }
@@ -1297,53 +1950,14 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     //
     // Counting assertions cannot see this one: `assert.equal(add(1,2), 3)`
     // becoming `assert.equal(add(1,2), -1)` takes one specific assertion out
-    // and puts one specific assertion back, so every total stayed level and the
-    // guard said nothing — while the suite went from checking that addition
-    // works to certifying that it is broken. It is the single cheapest way to
-    // make a red suite green, and the one this tool exists to refuse.
-    //
-    // The signal is that the two lines are the *same assertion* with different
-    // values in it: identical once every literal is blanked out, different
-    // before. That does not distinguish an attack from a deliberate change of
-    // spec — nothing can, from the diff alone — so this reports rather than
-    // decides, and `--allow-test-modifications` is the answer when the new
-    // expectation is the correct one.
-    // Shapes are computed once per added line, not once per (removed, added)
-    // pair: a large test refactor is O(n²) comparisons and the normalisation is
-    // the expensive half of each one.
-    const unpairedAdded = stats.addedTexts
-      .filter((a) => isSpecificAssertion(a.text))
-      .map((a) => ({ ...a, shape: blankLiterals(a.text) }));
-    for (const removedItem of stats.removed.slice()) {
-      if (!isSpecificAssertion(removedItem.text)) continue;
-      const shape = blankLiterals(removedItem.text);
-      const idx = unpairedAdded.findIndex(
-        (a) => a.shape === shape && a.text.trim() !== removedItem.text.trim()
-      );
-      if (idx === -1) continue;
-      const addedItem = unpairedAdded.splice(idx, 1)[0];
-
-      violations.push({
-        file,
-        line: addedItem.line ?? removedItem.line,
-        type: "ASSERTION_EXPECTATION_CHANGED",
-        reason:
-          `Test Tamper Guard: Expected value rewritten in ${file}${addedItem.line ? `:${addedItem.line}` : ""} — ` +
-          `"${removedItem.text.trim()}" became "${addedItem.text.trim()}". ` +
-          `If the new value is the correct one, re-run with --allow-test-modifications.`,
-      });
-
-      // Both sides are accounted for here, so they must not also feed the
-      // count-based checks below — the same line reported twice under two
-      // names tells the operator nothing extra.
-      stats.removed.splice(stats.removed.indexOf(removedItem), 1);
-      const rsIdx = stats.removedSpecific.indexOf(removedItem);
-      if (rsIdx !== -1) {
-        stats.removedSpecific.splice(rsIdx, 1);
-        stats.addedSpecific--;
-      }
-      stats.added--;
-    }
+    // and puts one specific assertion back, so every total stayed level and
+    // the guard said nothing — while the suite went from checking that
+    // addition works to certifying that it is broken. It is the single
+    // cheapest way to make a red suite green, and the one this tool exists
+    // to refuse. The line-based version of this pairing could only see the
+    // single-line spelling of the edit; the reassembled-statement version
+    // above sees every spelling, and explains why on the way.
+    detectExpectationRewrites(file, stats.hunks, stats, violations);
 
     if (stats.removed.length > stats.added) {
       const unreplaced = stats.removed.slice(stats.added);
