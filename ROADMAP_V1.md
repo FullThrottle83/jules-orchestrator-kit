@@ -24,6 +24,7 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 - [x] **File-Aware Locking (`src/state.mjs`)** — `acquireLock()` compares the requested paths against every live lock instead of only the task id.
 - [x] **Checkpoints That Exist (`src/engine.mjs`, `src/session-ops.mjs`)** — Taken before a dispatch and before `patch --apply`, so `agentctl rollback` finally has something to restore.
 - [x] **Reachable Monorepo Scoping (`verify.scope: affected`)** — The boundary resolver is called by the gate, opt-in, defaulted on for repositories detected as monorepos and widening again when a shared file changes.
+- [x] **Process-Group Reaping For The Test Runner (`scripts/run-tests.mjs`)** — An interrupted run takes its whole tree with it instead of orphaning every process below the first level. A first instance of the v0.60.0 guillotine, applied where the leak was actually observed.
 - [x] **Live-Path Corrections (`src/provider.mjs`, `src/engine.mjs`)** — `listSources()` works against the real API, and Node's test-runner context no longer masks a failing verification command.
 
 

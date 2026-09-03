@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cpus } from "node:os";
 
 const root = process.cwd();
@@ -43,10 +43,66 @@ const concurrency = Number.isFinite(envConcurrency) && envConcurrency > 0
   : Math.max(2, Math.floor(cpuCount / 2));
 const concurrencyArgs = supportsTestTimeout ? [`--test-concurrency=${concurrency}`] : [];
 
-const res = spawnSync(process.execPath, ["--test", ...timeoutArgs, ...concurrencyArgs, ...testFiles], {
+// The runner leads its own process group, and nothing outlives it.
+//
+// `spawnSync` kills only the direct child when a run is interrupted, and this
+// suite's children spawn children of their own — a verification command, an
+// `npm` that fans out to a node per workspace, a git subprocess per fixture.
+// Interrupting a run therefore orphaned everything below the first level, and
+// those orphans kept running and kept spawning: a laptop accumulated enough of
+// them across several interrupted runs to exhaust 32 GB of RAM and 24 GB of
+// swap, and two CI runners logged pages of "Terminate orphan process" at the
+// end of a job that had already failed.
+//
+// Detaching makes the child a process-group leader, so one signal to the
+// negated pid reaches the whole tree.
+const child = spawn(process.execPath, ["--test", ...timeoutArgs, ...concurrencyArgs, ...testFiles], {
   cwd: root,
   stdio: "inherit",
   env: process.env,
+  detached: process.platform !== "win32",
 });
 
-process.exit(res.status ?? 1);
+/**
+ * Kill the runner and everything it spawned.
+ *
+ * POSIX takes a signal to `-pid`, which addresses the whole process group.
+ * Windows has no such concept, so `taskkill /T` walks the tree instead.
+ */
+function reap(signal = "SIGKILL") {
+  if (!child.pid) return;
+  try {
+    if (process.platform === "win32") {
+      spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore" });
+    } else {
+      process.kill(-child.pid, signal);
+    }
+  } catch (_) {
+    // Already gone, or never had a group. Nothing left to reap either way.
+  }
+}
+
+// Ctrl-C, a CI cancellation and a harness teardown all arrive as signals; each
+// must take the tree with it rather than detaching it from its parent.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => {
+    reap("SIGTERM");
+    // Give the group a moment to unwind, then make sure.
+    setTimeout(() => {
+      reap("SIGKILL");
+      process.exit(130);
+    }, 2000).unref();
+  });
+}
+
+child.on("exit", (code, signal) => {
+  // Stragglers outlive a clean exit too: a test that spawned a server and
+  // failed before its teardown leaves it running.
+  reap("SIGKILL");
+  process.exit(signal ? 1 : code ?? 1);
+});
+
+child.on("error", (err) => {
+  console.error(`Test runner failed to start: ${err.message}`);
+  process.exit(1);
+});

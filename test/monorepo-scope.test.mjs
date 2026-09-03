@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { gate } from "../src/engine.mjs";
 import { loadConfig } from "../src/config.mjs";
 import { planInit } from "../src/wizard-init.mjs";
+import { resolveWorkspaceBoundary } from "../src/stack-detector.mjs";
 
 const git = (dir, args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
 
@@ -24,16 +25,17 @@ function workspace(verifyBlock) {
     join(dir, "package.json"),
     JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"], scripts: { test: "npm test --workspaces" } })
   );
-  for (const p of ["pkg-a", "pkg-b"]) {
-    writeFileSync(
-      join(dir, "packages", p, "package.json"),
-      JSON.stringify({ name: p, version: "1.0.0", type: "module", scripts: { test: "node --test" } })
-    );
-  }
-  writeFileSync(join(dir, "packages", "pkg-a", "a.test.mjs"), 'import {test} from "node:test";\ntest("a ok",()=>{});\n');
+  // One node process per package, not a `node --test` runner inside an `npm
+  // --workspaces` fan-out. The fixture only has to make "which suite ran"
+  // visible in the verdict; spawning real test runners piled up orphan
+  // processes fast enough to kill a three-core CI runner.
   writeFileSync(
-    join(dir, "packages", "pkg-b", "b.test.mjs"),
-    'import {test} from "node:test";\nimport assert from "node:assert/strict";\ntest("b broken",()=>{assert.equal(1,2);});\n'
+    join(dir, "packages", "pkg-a", "package.json"),
+    JSON.stringify({ name: "pkg-a", version: "1.0.0", type: "module", scripts: { test: "node -e \"process.exit(0)\"" } })
+  );
+  writeFileSync(
+    join(dir, "packages", "pkg-b", "package.json"),
+    JSON.stringify({ name: "pkg-b", version: "1.0.0", type: "module", scripts: { test: "node -e \"process.exit(1)\"" } })
   );
   writeFileSync(join(dir, ".gitignore"), ".agent/state/\n.agent/evidence/\n.agent/history/\n");
   mkdirSync(join(dir, ".agent"), { recursive: true });
@@ -58,30 +60,36 @@ describe("a one-package change does not run every package's suite", () => {
     }
   });
 
-  it("keeps running everything by default", async () => {
+  it("keeps the repository's own command when no scope is stated", () => {
     const dir = workspace('verify:\n  test: "npm test --workspaces"\n');
     try {
-      writeFileSync(join(dir, "packages", "pkg-a", "index.mjs"), "export const x = 1;\n");
-
-      const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "working-tree" });
-      assert.equal(res.ok, false, "narrowing what runs must never happen without being asked for");
+      const cfg = loadConfig(dir);
+      assert.equal(cfg.verify.scope, "global", "narrowing must never happen without being asked for");
+      assert.equal(cfg.verify.test, "npm test --workspaces");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("widens again when the change reaches the root", async () => {
+  it("widens again when the change reaches outside the packages", () => {
     const dir = workspace('verify:\n  scope: affected\n  test: "npm test --workspaces"\n');
     try {
       // A file outside any package resolves to the root project, so the root
-      // command joins the run — a narrower gate that misses the breakage is
-      // worse than a slow one.
-      writeFileSync(join(dir, "shared.mjs"), "export const y = 1;\n");
+      // command joins the composition — a narrower gate that misses the
+      // breakage is worse than a slow one. Asserted on the decision rather than
+      // on an execution: running it proves nothing this does not, and costs a
+      // process tree per case.
+      const composed = resolveWorkspaceBoundary(["packages/pkg-a/index.mjs", "shared.mjs"], dir);
+      assert.equal(composed.globalFallback, false);
+      assert.match(composed.testCmd, /packages\/pkg-a/, "the touched package is still in the run");
+      assert.ok(
+        composed.projects.some((p) => p.path === "."),
+        "and so is the root, because a file outside every package belongs to it"
+      );
 
-      const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "working-tree" });
-      const ran = (res.phases.find((p) => p.phase === "verify")?.executionRecords || []).map((r) => r.cmd).join(" ");
-      assert.match(ran, /npm test --workspaces|npm test/, "the root suite must be part of the run");
-      assert.equal(res.ok, false, "and pkg-b's failure must surface");
+      // A shared manifest is a blunter signal and falls back wholesale.
+      const shared = resolveWorkspaceBoundary(["turbo.json"], dir);
+      assert.equal(shared.globalFallback, true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

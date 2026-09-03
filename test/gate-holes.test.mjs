@@ -49,7 +49,15 @@ function repoWithSuite(extraConfig = "") {
   );
   writeFileSync(join(dir, "x.test.mjs"), 'import {test} from "node:test";\ntest("ok",()=>{});\n');
   mkdirSync(join(dir, ".agent"), { recursive: true });
-  writeFileSync(join(dir, ".agent", "config.yml"), `version: 1\nbase_branch: main\nverify:\n  test: "npm test"\n${extraConfig}`);
+  // `node -e` rather than `npm test`: nine tests share this fixture, and npm
+  // spawning a `node --test` runner underneath meant eighteen processes where
+  // one per test does the job. None of these cases care what the command is,
+  // only that a real one ran and passed — the process pile-up killed two CI
+  // runners before it was noticed.
+  writeFileSync(
+    join(dir, ".agent", "config.yml"),
+    `version: 1\nbase_branch: main\nverify:\n  test: "node -e \\"process.exit(0)\\""\n${extraConfig}`
+  );
   commit(dir, "init");
   return dir;
 }
