@@ -20,6 +20,7 @@ import { resolveRolePrompt } from "./role-resolver.mjs";
 
 import { runAssertion } from "./assertions.mjs";
 import { buildDefaultStages } from "./profiles.mjs";
+import { resolveWorkspaceBoundary } from "./stack-detector.mjs";
 import {
   computeDirectoryHash,
   generateEvidenceManifest,
@@ -201,6 +202,7 @@ export async function gate(opts = {}) {
           // Read from the base commit like every other trusted field: an
           // uncommitted `required: false` must not be able to switch the gate off.
           required: parsed.verify?.required !== undefined ? parsed.verify.required !== false : config.verify.required !== false,
+          scope: parsed.verify?.scope || config.verify.scope || "global",
           timeoutMs: parsed.verify?.timeoutMs || parsed.verify?.timeout_ms || config.verify.timeoutMs,
         };
       }
@@ -319,8 +321,51 @@ export async function gate(opts = {}) {
     NODE_OPTIONS: guardNodeOptions,
   };
 
+  // Node's test runner talks to its children through NODE_TEST_CONTEXT and
+  // NODE_CHANNEL_FD. Inherited by a verification command that is itself a
+  // `node --test` run, the child switches into child-reporter mode and its
+  // failures stop reaching the exit code — the gate then sees exit 0 and
+  // approves a change whose tests failed. src/perf.mjs already strips these for
+  // the same reason; the gate, which is the one that decides, did not.
+  for (const key of Object.keys(testEnv)) {
+    if (key.startsWith("NODE_TEST_") || key.startsWith("NODE_CHANNEL_")) delete testEnv[key];
+  }
+
   let flakyVerdictResult = null;
   const verifyTimeout = trustedVerify.timeoutMs || 60000;
+
+  // Monorepo scoping: run the suites the change can actually break.
+  //
+  // `resolveWorkspaceBoundary()` shipped, was drawn in the architecture
+  // diagrams and documented as a headline feature — and was called by nothing.
+  // Every change in a monorepo ran the root suite, so a one-package edit was
+  // gated on every other package's tests. It resolves the changed files to
+  // their sub-projects and composes the per-project commands.
+  //
+  // It stays opt-in (`verify.scope: affected`) because narrowing what runs is
+  // only safe when someone asked for it, and it yields to the global command
+  // whenever a shared file is touched or no sub-project command is found — a
+  // narrower run that misses the breakage is worse than a slow one.
+  let boundary = null;
+  if (trustedVerify.scope === "affected" && !(Array.isArray(trustedVerify.stages) && trustedVerify.stages.length > 0)) {
+    try {
+      boundary = resolveWorkspaceBoundary(files, root);
+    } catch (_) {
+      boundary = null;
+    }
+    if (boundary && boundary.isMonorepo && !boundary.globalFallback && boundary.testCmd) {
+      trustedVerify = {
+        ...trustedVerify,
+        test: boundary.testCmd,
+        unit: boundary.testCmd,
+        build: boundary.buildCmd || trustedVerify.build,
+      };
+      appendTelemetry(root, "verify_scope_narrowed", {
+        projects: boundary.projects.map((p) => p.path),
+        testCmd: boundary.testCmd,
+      });
+    }
+  }
 
   // Build sequential execution pipeline (Setup -> Lint -> Test/Unit -> Fuzz -> Invariant -> E2E -> Build -> Server -> Teardown)
   const stagesToRun = [];
@@ -993,6 +1038,33 @@ export async function dispatch(task = {}, opts = {}) {
   const envelopedPrompt = buildAgentEnvelope(systemPolicy, taskInstructions, untrustedData, { learnedRemediations });
 
   const cleanTask = { ...task, prompt: envelopedPrompt };
+
+  // Snapshot the tree before anything can change it.
+  //
+  // `agentctl rollback` shipped, was documented, and could never work:
+  // createCheckpoint() was defined and called from nowhere, so the checkpoint
+  // directory was always empty and the command answered "No checkpoints found"
+  // to everyone who reached for it — at exactly the moment they needed it. An
+  // exec provider edits this working tree directly, and `patch --apply` writes
+  // into it later, so this is the last moment the pre-agent state exists.
+  //
+  // Never fatal: a repository that cannot be snapshotted (no git, no disk) must
+  // still be able to dispatch. A missing checkpoint costs a rollback; a throw
+  // here costs the task.
+  if (!opts.dryRun && opts.checkpoint !== false) {
+    try {
+      const { createCheckpoint } = await import("./ops/checkpoint.mjs");
+      const checkpointId = String(task.id || task.taskId || `dispatch-${Date.now()}`).replace(/[^A-Za-z0-9_.-]/g, "-");
+      const snapshot = createCheckpoint(checkpointId, { root });
+      appendTelemetry(root, "checkpoint_created", {
+        id: snapshot.id,
+        headSha: snapshot.headSha,
+        uncommittedFiles: snapshot.uncommittedFiles?.length || 0,
+      });
+    } catch (err) {
+      console.warn(`⚠️  Could not create a pre-flight checkpoint (${err.message}). \`agentctl rollback\` will not be able to restore this dispatch.`);
+    }
+  }
 
   const runDispatch = () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun });
 

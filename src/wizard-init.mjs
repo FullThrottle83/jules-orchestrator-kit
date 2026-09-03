@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parseYaml, TIER_PRESETS, VENDOR_TIERS, FALLBACK_TIER } from "./config.mjs";
 import { suggestProvider, detectAvailableProviders } from "./provider-readiness.mjs";
 import { detectDefaultBranch } from "./git.mjs";
+import { resolveWorkspaceBoundary } from "./stack-detector.mjs";
 import { PROFILE_NAMES, PROFILE_DESCRIPTIONS } from "./profiles.mjs";
 import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
@@ -180,6 +181,21 @@ export function planInit(root = process.cwd(), options = {}) {
   // whose git chose `master`, or whose team standardised on `develop`.
   const baseBranch = options.baseBranch || existingConfig.base_branch || detectDefaultBranch(root);
 
+  // A monorepo that runs every package's suite for a one-package change is the
+  // complaint the boundary resolver was written to answer, so a repository
+  // detected as one starts with it on. Existing repositories keep whatever they
+  // already stated; nobody's gate changes meaning because they upgraded.
+  const detectedMonorepo = (() => {
+    if (options.verifyScope) return options.verifyScope === "affected";
+    if (existingConfig.verify?.scope) return existingConfig.verify.scope === "affected";
+    try {
+      return Boolean(resolveWorkspaceBoundary([], root).isMonorepo);
+    } catch (_) {
+      return false;
+    }
+  })();
+  const verifyScope = detectedMonorepo ? "affected" : "global";
+
   const limitsBlock = isCustomLimits
     ? `\nlimits:\n  concurrency: ${limits.concurrency}\n  daily_tasks: ${limits.daily_tasks}\n  stagger_ms: ${limits.stagger_ms}\n  diff_kb: ${limits.diff_kb}\n`
     : "";
@@ -195,6 +211,9 @@ ${limitsBlock}
 verify:
   # minimal | standard | max  — see: agentctl profile --list
   profile: ${profile}
+  # global runs the repository's own commands; affected resolves changed files
+  # to their sub-projects and runs only those suites (monorepos)
+  scope: ${verifyScope}
   test: "${verify.test}"
   build: "${verify.build}"
   lint: "${verify.lint}"
@@ -236,6 +255,7 @@ allow_paths: ${allowPaths.length > 0 ? "\n" + allowPaths.map((p) => `  - "${p}"`
     provider,
     profile,
     baseBranch,
+    verifyScope,
     verify,
     limits,
     presets: selectedPresets,

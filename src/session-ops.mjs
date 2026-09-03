@@ -160,6 +160,18 @@ export async function applySessionPatch(sessionId, opts = {}) {
 
   // 2. If apply requested, execute git apply
   if (opts.apply) {
+    // Writing an agent's patch into the working tree is the other moment a
+    // rollback target has to exist. The hosted provider works server-side, so
+    // dispatch never touched this tree — this is the first time it changes.
+    if (opts.checkpoint !== false) {
+      try {
+        const { createCheckpoint } = await import("./ops/checkpoint.mjs");
+        createCheckpoint(`patch-${String(sessionId).replace(/[^A-Za-z0-9_.-]/g, "-")}`, { root });
+      } catch (err) {
+        console.warn(`⚠️  Could not snapshot before applying the patch (${err.message}); \`agentctl rollback\` will not cover it.`);
+      }
+    }
+
     const applyRes = spawnSync("git", ["apply", "-"], {
       cwd: root,
       input: res.patch,

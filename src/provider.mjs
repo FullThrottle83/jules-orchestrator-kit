@@ -673,10 +673,17 @@ export function createProvider(spec = "jules", config = {}) {
     },
 
     async getSession(sessionId, ctx = {}) {
-      if (!sessionId || typeof sessionId !== "string") {
+      if (!ctx || typeof ctx !== "object") ctx = {};
+      // `listSources()` reuses this method purely as an authenticated GET, and
+      // passes `customUrl` with no session to fetch. The guard rejected the
+      // empty id before the url was even looked at, so listing a repository's
+      // connected sources threw a TypeError against the live API every time —
+      // a failure no dry-run or unit test could reach, because both stop
+      // before the request. A session id is required only when the url is
+      // going to be built out of one.
+      if (!ctx.customUrl && (!sessionId || typeof sessionId !== "string")) {
         throw new TypeError("getSession() requires a valid sessionId string");
       }
-      if (!ctx || typeof ctx !== "object") ctx = {};
 
       const pool = ctx.tokenPool || config.tokenPool || TokenPool.fromEnv(config);
       const rawToken = pool.getNextToken() || process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";

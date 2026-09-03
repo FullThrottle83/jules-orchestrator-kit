@@ -110,6 +110,7 @@ repository rather than from a template.
 
 | What differs | How it is resolved | Inspect / override |
 | :--- | :--- | :--- |
+| **Which suites to run** | A monorepo change resolves to the sub-projects it touches (`verify.scope: affected`), widening back to the root command as soon as it reaches a shared file. Off by default, on for repositories `init` detects as monorepos. | `agentctl check --json` · `verify.scope` in `.agent/config.yml` |
 | **The stack** | `detectStack()` recognises 24+ ecosystems (Cargo, Go, Python/Django, Maven/Gradle, .NET, PHP/Laravel, Ruby, Elixir, Swift, Flutter/Dart, CMake, Bun, Deno, Node + Turbo/pnpm/Nx workspaces) and derives the setup, lint, test and build commands from the manifest it finds. | `agentctl doctor` · `verify:` in `.agent/config.yml` |
 | **The agent** | `provider:` selects Google Jules (hosted REST), the Claude Code CLI, the Codex CLI or the Gemini CLI. Readiness means a credential for the hosted one and a binary on `PATH` for the local ones — never both. | `agentctl providers` · `agentctl init --provider <name>` |
 | **How hard to verify** | `verify.profile` expands at load time into a stage pipeline that skips gates the runtime cannot support, and says which and why. | `agentctl profile` · `agentctl profile --set max` |
@@ -203,7 +204,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **842 unit tests across 112 suites passing in < 14.0s**.
+* **Verified Test Suite:** Tested with **851 unit tests across 115 suites passing in < 14.0s**.
 
 <br/>
 

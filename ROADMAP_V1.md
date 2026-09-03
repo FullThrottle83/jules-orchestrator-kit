@@ -11,13 +11,20 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.55.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Verification Integrity)    (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.56.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Wired, Not Just Shipped)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.55.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.56.0)
+
+
+### v0.56.0: Wired, Not Just Shipped
+- [x] **File-Aware Locking (`src/state.mjs`)** — `acquireLock()` compares the requested paths against every live lock instead of only the task id.
+- [x] **Checkpoints That Exist (`src/engine.mjs`, `src/session-ops.mjs`)** — Taken before a dispatch and before `patch --apply`, so `agentctl rollback` finally has something to restore.
+- [x] **Reachable Monorepo Scoping (`verify.scope: affected`)** — The boundary resolver is called by the gate, opt-in, defaulted on for repositories detected as monorepos and widening again when a shared file changes.
+- [x] **Live-Path Corrections (`src/provider.mjs`, `src/engine.mjs`)** — `listSources()` works against the real API, and Node's test-runner context no longer masks a failing verification command.
 
 
 ### v0.55.0: Verification Integrity

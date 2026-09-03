@@ -522,6 +522,13 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     teardown: rawTeardown ?? autoVerify.teardown ?? "",
     build: rawBuild ?? autoVerify.build,
     policy: parsed.verify?.policy ?? autoVerify.policy,
+    // "global" runs the repository's own verify commands; "affected" resolves
+    // the changed files to their sub-projects and runs only those suites. Opt-in
+    // on purpose: silently narrowing which tests run is the same class of defect
+    // as approving a change that ran none, and an existing repository's gate
+    // must not change meaning on an upgrade. `agentctl init` writes "affected"
+    // for a repository it detects as a monorepo.
+    scope: parsed.verify?.scope === "affected" ? "affected" : "global",
     // Whether the gate may approve a change that ran no verification at all.
     // True by default: "nothing to run" is not a pass, and a security tool that
     // says APPROVED after checking nothing is worse than no tool. A repository

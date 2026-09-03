@@ -1,7 +1,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { fingerprintFailureState, repair, OODACircuitBreaker } from "../src/engine.mjs";
 
 describe("OODA State Fingerprinting & Thrash Detection", () => {
@@ -90,7 +91,11 @@ describe("OODA State Fingerprinting & Thrash Detection", () => {
   });
 
   test("aborts repair loop early on deterministic regression (identical state fingerprint)", async () => {
-    const tmpDir = join(process.cwd(), ".agent/test-ooda-" + Date.now());
+    // Under the OS temp directory, not inside the repository. Writing fixtures
+    // into `.agent/` of the checkout under test leaves debris behind whenever a
+    // run is interrupted — and the suite is meant to be runnable inside a
+    // consumer's repository, where that debris is theirs to clean up.
+    const tmpDir = mkdtempSync(join(tmpdir(), "jok-ooda-"));
     mkdirSync(join(tmpDir, ".agent"), { recursive: true });
     writeFileSync(join(tmpDir, ".agent/jules.yml"), "test_cmd: node -e 'process.exit(1)'\nbuild_cmd: ''\n");
 
