@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.60.0] - 2026-09-03
+*Making the expectation guard worth reading a month from now.*
+
+### Fixed
+- **One Override For Six Checks (`src/security.mjs`, `bin/agentctl.mjs`)**: `--allow-test-modifications` returned early from `checkTestTampering`, so the only way to accept a legitimately changed expectation was to also switch off injected `.skip()`, `expect(true).toBe(true)`, commented-out assertions, outright deletions and weakened assertions — none of which the operator had looked at. That makes the check with the highest firing rate the ceiling for every other check in the bundle: the more useful the expectation check became, the more often it would be used to turn the others off. `--allow-test-change <kind>` now accepts exactly one (`expectation`, `removal`, `weakening`, `skip`, `vacuous`, `commented`, or `all`), takes a list, rejects a name it does not recognise rather than guessing, and the violation message names the narrow flag instead of the blunt one. `--allow-test-modifications` still means all six.
+- **Reordering Two Assertions Reported Two Rewrites (`src/security.mjs`)**: swapping two assertions removes both and adds both back unchanged, but positional alignment matched the first removed against the first added — a *different* assertion of the same shape — and reported a rewritten expectation for each. Same for an assertion that merely moved within its block. Candidates that are byte-identical on both sides now cancel before anything is aligned; only the residue can have been rewritten. An edit that both reorders and rewrites still reports the rewrite.
+- **Rewording A Failure Message Reported A Rewritten Expectation (`src/security.mjs`)**: a message is a string literal, so blanking literals made `assert.equal(f(1), 1, "should be one")` and `assert.equal(f(1), 1, "must be one")` the same shape, and improving the wording of a failure fired a CRITICAL finding. Assertion arguments are now compared position by position, and a difference confined to a message position is not an expectation change — trailing for `assert.equal(got, want, "…")` and `assert_eq!(a, b, "…")`, leading for Go's `t.Errorf("got %d want %d", …)`. Two arguments stays the classic `(actual, expected)` shape, so `assert.equal(name(), "Alice")` → `"Bob"` still fires, as does a Go table's `want` value when only the format string was left alone.
+
 ## [0.59.0] - 2026-09-03
 *The bypass I found in my own new check, closed by someone else — and the larger hole they noticed while closing it.*
 

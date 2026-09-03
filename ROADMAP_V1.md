@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.59.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (One Answer Per Question)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.60.0 (Current Stable) ──► v0.61.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (A Guard Worth Reading)     (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.59.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.60.0)
+
+
+### v0.60.0: A Guard Worth Reading
+- [x] **Per-Check Overrides (`--allow-test-change <kind>`)** — Answering one tamper finding no longer silences the five other checks in the bundle. `--allow-test-modifications` remains as the blunt form.
+- [x] **Unchanged Assertions Cancel Before Pairing (`src/security.mjs`)** — Reordering or moving an assertion is no longer reported as two rewritten expectations.
+- [x] **A Reworded Message Is Not A Rewritten Expectation (`src/security.mjs`)** — Message-position string arguments are compared apart from value positions, so improving the wording of a failure is silent while `assert.equal(name(), "Alice")` → `"Bob"` still fires.
 
 
 ### v0.59.0: One Answer Per Question

@@ -275,7 +275,11 @@ export async function gate(opts = {}) {
   }
 
   // Phase 3: Diff Secret Scanner & Security Checks
-  const secretResult = scanDiff(diffStr, { root, allowTestModifications: opts.allowTestModifications === true });
+  const secretResult = scanDiff(diffStr, {
+    root,
+    allowTestModifications: opts.allowTestModifications === true,
+    allowTestChanges: opts.allowTestChanges,
+  });
   // A binary file reaches the scanner as one summary line, so its contents were
   // never looked at — a NUL byte in front of a token was enough to hide it.
   // Inspect those files directly and fold the verdict in.
