@@ -41,9 +41,20 @@ export function styleText(text, style) {
   return `${style}${text}${ANSI.reset}`;
 }
 
-import { WizardCancelledError } from "./ux/terminal-session.mjs";
-import { createKeyDecoder } from "./ux/key-decoder.mjs";
-export { WizardCancelledError };
+import { createKeyDecoder } from "./key-decoder.mjs";
+
+export class WizardCancelledError extends Error {
+  /**
+   * @param {string} [message]
+   * @param {"escape" | "ctrl-c" | "quit" | "stream-closed"} [reason="ctrl-c"]
+   */
+  constructor(message = "Wizard operation cancelled by user", reason = "ctrl-c") {
+    super(message);
+    this.name = "WizardCancelledError";
+    this.code = 130;
+    this.reason = reason;
+  }
+}
 
 /**
  * Read keypress in raw mode from TTY input stream without destroying stream on early return.

@@ -35,7 +35,7 @@ export function formatBudgetLine(b) {
 
 export function printHelp() {
   console.log(`
-🚀 agentctl v${VERSION} — Universal Agent Orchestrator & Safety Gatekeeper
+agentctl v${VERSION} — Universal Agent Orchestrator & Safety Gatekeeper
 
 Usage: agentctl <command> [options]
 

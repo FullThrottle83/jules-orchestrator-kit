@@ -57,8 +57,8 @@ npx jules-orchestrator-kit init
 ```
 
 ```bash
-# 2. Commit what init wrote — .agent/config.yml is on the gate's deny list by
-#    design, so leaving it uncommitted makes the first gate reject your tree
+# 2. Commit what init wrote — .agent/config.yml is protected by BUILTIN_PROTECT,
+#    so leaving it uncommitted makes the first gate reject your tree
 git add .agent AGENTS.md SPEC.md CONSTRAINTS.md .gitignore && git commit -m "chore: add agent config"
 ```
 
@@ -143,7 +143,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **828 unit tests across 91 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **759 unit tests across 91 suites passing in < 10.0s**.
 
 <br/>
 
@@ -222,7 +222,6 @@ verify:
 scope:
   deny:
     - ".github/**"
-    - ".agent/config.yml"
     - "keys/**"
 
 # Plan tier. Defaults to `free` when unset — the kit will not assume you are
@@ -391,7 +390,7 @@ const result = await fast.dispatch({ prompt: "Fix a typo." }, { root: process.cw
 | **Warm Session Resumption & PR Bundler** | `src/provider.mjs`, `src/engine.mjs` | Multi-turn warm session context streaming via `POST /v1alpha/sessions/{id}:sendMessage` & evidence PR descriptions. | **v0.31.0** *(Shipped)* |
 | **TDD Harness & Prompt Falsifiability Linter** | `agentctl test-gen`, `agentctl task optimize` | Automated RED-state test generator, `scope.deny` test locking, and prompt testability linter with fuzzy path resolution. | **v0.31.0** *(Shipped)* |
 | **Atomic Git Checkpoint & Rollback** | `agentctl rollback` (`src/ops/checkpoint.mjs`) | Pre-flight git HEAD/stash snapshotting, atomic rollback restoration, and 10-session pruning rotation. | **v0.31.0** *(Shipped)* |
-| **Interactive UX Engine & TUI Engine** | `src/ux/` (`capabilities`, `key-decoder`, `renderer`, `layout`, `widgets`) | Zero-dependency terminal capabilities detector, sequence key decoder, virtual frame renderer, and widgets. | **v0.30.0** *(Shipped)* |
+| **Terminal UI Engine** | `src/tui.mjs`, `src/key-decoder.mjs` | Zero-dependency terminal capabilities detector, sequence key decoder, and interactive prompt widgets. | **v0.30.0** *(Shipped)* |
 | **PR Review Auto-Remediation Loop** | `agentctl review-repair` (`src/review-repair.mjs`) | Ingests GitHub PR review comments (`CHANGES_REQUESTED`), extracts line/file context, and dispatches automated repair turns. | **v0.27.0** *(Shipped)* |
 
 </details>

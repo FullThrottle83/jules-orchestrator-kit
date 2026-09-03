@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { recordLearning, hydratePrompt, harvestFailure, loadLearnings } from "../src/memory.mjs";
 
-describe("SPORE Memory Engine", () => {
+describe("Agent Memory Engine", () => {
   let tmpDir;
 
   beforeEach(() => {

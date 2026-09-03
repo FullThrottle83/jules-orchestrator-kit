@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isTTY, styleText, select, multiSelect, input, confirm, secretInput, spinner, ANSI, WizardCancelledError } from "../src/tui.mjs";
+import { createKeyDecoder } from "../src/key-decoder.mjs";
 import { PassThrough } from "node:stream";
 
 test("Native Terminal UI (TUI) Engine", async (t) => {
@@ -225,5 +226,30 @@ test("Native Terminal UI (TUI) Engine", async (t) => {
     setTimeout(() => mockStdin.write("\u001bOB\r"), 10);
     const chosen = await selectPromise;
     assert.equal(chosen, "opt2");
+  });
+
+  await t.test("createKeyDecoder decodes standard escape sequences and raw characters", () => {
+    const decoder = createKeyDecoder();
+    const upEvents = decoder.push("\u001b[A");
+    assert.equal(upEvents.length, 1);
+    assert.equal(upEvents[0].name, "up");
+
+    const downEvents = decoder.push("\u001bOB");
+    assert.equal(downEvents.length, 1);
+    assert.equal(downEvents[0].name, "down");
+
+    const charEvents = decoder.push("x");
+    assert.equal(charEvents.length, 1);
+    assert.equal(charEvents[0].name, "character");
+    assert.equal(charEvents[0].text, "x");
+  });
+
+  await t.test("createKeyDecoder handles chunked multi-byte UTF-8 sequences", () => {
+    const decoder = createKeyDecoder();
+    const emoji = Buffer.from("😀");
+    assert.deepEqual(decoder.push(emoji.subarray(0, 1)), []);
+    const completed = decoder.push(emoji.subarray(1));
+    assert.equal(completed.length, 1);
+    assert.equal(completed[0].text, "😀");
   });
 });

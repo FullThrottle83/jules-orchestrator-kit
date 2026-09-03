@@ -8,7 +8,7 @@ const baseBranch = process.env.BASE_BRANCH || "main";
 
 try {
   const resolvedBase = resolveBase(root, baseBranch);
-  const behindStr = git(["rev-list", "--count", `${resolvedBase}..HEAD`], { cwd: root, ignoreError: true });
+  const behindStr = git(["rev-list", "--count", `HEAD..${resolvedBase}`], { cwd: root, ignoreError: true });
   const behindCount = parseInt(behindStr || "0", 10);
 
   console.log(`[stale-base-check] Branch HEAD is ${behindCount} commits behind ${resolvedBase} (max allowed: ${maxBehind}).`);

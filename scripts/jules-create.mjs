@@ -4,25 +4,14 @@
  * Quick task file creator for .agent/jules-queue/.
  */
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { getQueueDir } from "../src/state.mjs";
+import { runTaskCreateWizard } from "../src/wizard-task.mjs";
 
-const taskTitle = process.argv[2] || "New Task";
-const queueDir = getQueueDir();
-const safeTitle = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-const filepath = join(queueDir, `TASK-${Date.now()}-${safeTitle}.md`);
-
-const boilerplate = `# ${taskTitle}
-
-## Objective
-[Describe task goal]
-`;
+const prompt = process.argv.slice(2).join(" ").trim();
 
 try {
-  writeFileSync(filepath, boilerplate, "utf-8");
-  console.log(`[Shim] Scaffolded new task: ${filepath}`);
+  const result = await runTaskCreateWizard(process.cwd(), prompt ? { prompt } : {});
+  console.log(`✅ Scaffolded task envelope: ${result.taskFile}`);
 } catch (err) {
-  console.error(`[Shim] Failed to create task: ${err.message}`);
+  console.error(`❌ Failed to create task: ${err.message}`);
   process.exit(1);
 }
