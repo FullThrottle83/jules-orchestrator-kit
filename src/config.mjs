@@ -522,6 +522,11 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     teardown: rawTeardown ?? autoVerify.teardown ?? "",
     build: rawBuild ?? autoVerify.build,
     policy: parsed.verify?.policy ?? autoVerify.policy,
+    // Whether the gate may approve a change that ran no verification at all.
+    // True by default: "nothing to run" is not a pass, and a security tool that
+    // says APPROVED after checking nothing is worse than no tool. A repository
+    // that deliberately uses only the scope and secret phases sets this false.
+    required: parsed.verify?.required !== false,
   };
 
   // A hand-written `verify.stages:` is the operator being explicit and always

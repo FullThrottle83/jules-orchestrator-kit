@@ -1,4 +1,4 @@
-import { openSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, existsSync, lstatSync, unlinkSync } from "node:fs";
+import { openSync, readFileSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, existsSync, lstatSync, unlinkSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import { canonicalizePath, isWindowsAbsolutePath } from "./config.mjs";
@@ -909,6 +909,102 @@ export function hasHighEntropyToken(text = "", file = null) {
     }
   }
   return false;
+}
+
+/** Bytes of any one binary file the scanner will read. */
+const BINARY_SCAN_CAP_BYTES = 8 * 1024 * 1024;
+
+/** Runs of printable ASCII at least this long are worth classifying. */
+const BINARY_STRING_MIN_RUN = 8;
+
+/**
+ * Scan the contents of files git summarised as "Binary files ... differ".
+ *
+ * Everything else in this module reads the diff *text*, and git renders a
+ * binary file as one 43-byte summary line — so a credential became invisible to
+ * the entire scanner by prefixing the file with a single NUL byte. That is not
+ * a theoretical bypass: `printf '\0ghp_...' > secret.dat` walked a live GitHub
+ * token straight through a green gate.
+ *
+ * Only the *structured* high-confidence patterns are applied here, never
+ * entropy. A real PNG is full of high-entropy bytes and would fail every gate
+ * it touched; a string matching `ghp_[A-Za-z0-9]{36}` inside a file claiming to
+ * be an image is not a coincidence.
+ *
+ * @param {Array<{ file: string, bytes: number }>} entries
+ * @param {string} root
+ * @param {object} [opts]
+ * @param {number} [opts.capBytes] - per-file read ceiling
+ * @returns {Array<{ severity: string, type: string, file: string, line: null, description: string }>}
+ */
+export function scanBinaryPayloads(entries = [], root = process.cwd(), opts = {}) {
+  const cap = Number.isFinite(opts.capBytes) ? opts.capBytes : BINARY_SCAN_CAP_BYTES;
+  const findings = [];
+  // `entries` comes from a git call that returns null on failure, and the
+  // default parameter only covers `undefined`.
+  const list = Array.isArray(entries) ? entries : [];
+
+  for (const entry of list) {
+    if (!entry || !entry.file) continue;
+    // A file too large to read is reported rather than skipped: silence here is
+    // exactly the hole being closed.
+    if (entry.bytes > cap) {
+      findings.push({
+        severity: "HIGH",
+        type: "BINARY_PAYLOAD_UNSCANNED",
+        file: entry.file,
+        line: null,
+        description: `Binary file ${entry.file} is ${Math.round(entry.bytes / 1024)} KB, above the ${Math.round(cap / 1024)} KB scan ceiling, and was not inspected for credentials`,
+      });
+      continue;
+    }
+
+    let buf;
+    try {
+      buf = readFileSync(join(root, entry.file));
+    } catch (_) {
+      continue;
+    }
+
+    // Extract printable runs the way `strings(1)` does: a credential inside a
+    // binary is still ASCII, and decoding the whole buffer as UTF-8 would let
+    // replacement characters split the token apart.
+    const runs = [];
+    let current = "";
+    for (const byte of buf) {
+      if (byte >= 0x20 && byte <= 0x7e) {
+        current += String.fromCharCode(byte);
+      } else {
+        if (current.length >= BINARY_STRING_MIN_RUN) runs.push(current);
+        current = "";
+      }
+    }
+    if (current.length >= BINARY_STRING_MIN_RUN) runs.push(current);
+    if (runs.length === 0) continue;
+
+    const text = runs.join("\n");
+    if (hasHighConfidenceSecret(text)) {
+      findings.push({
+        severity: "CRITICAL",
+        type: "HIGH_CONFIDENCE_SECRET",
+        file: entry.file,
+        line: null,
+        description: `High-confidence secret pattern found inside binary file ${entry.file}, which the diff renders only as "Binary files ... differ"`,
+      });
+      continue;
+    }
+    if (hasEncodedSecret(text)) {
+      findings.push({
+        severity: "CRITICAL",
+        type: "HIGH_CONFIDENCE_SECRET",
+        file: entry.file,
+        line: null,
+        description: `Base64-encoded secret found inside binary file ${entry.file}`,
+      });
+    }
+  }
+
+  return findings;
 }
 
 /**

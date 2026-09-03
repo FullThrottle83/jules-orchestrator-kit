@@ -11,13 +11,18 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.54.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Portability & First Run)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.54.1 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Gate Fail-Closed)          (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.54.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.54.1)
+
+
+### v0.54.1: The Gate Fails Closed
+- [x] **No Oracle, No Approval (`src/engine.mjs`)** — A change that ran zero verification commands is rejected rather than approved; `verify.required: false` is the deliberate opt-out, read from the base commit.
+- [x] **Binary Payload Inspection (`src/security.mjs`, `src/git.mjs`)** — Files git renders as "Binary files ... differ" are read directly for structured credentials, closing the NUL-byte bypass, and their real size is charged against the payload ceiling.
 
 
 ### v0.54.0: First-Run Friction — Honest Errors, Detected Defaults

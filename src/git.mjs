@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { normalizePath } from "./config.mjs";
 
@@ -394,9 +394,104 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
   return git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
 }
 
+/**
+ * Paths git summarised as binary in this diff, with the size of what changed.
+ *
+ * `git diff` prints one 43-byte line for a binary file — "Binary files a/x and
+ * b/x differ" — regardless of whether x grew by a byte or by half a megabyte.
+ * Everything downstream reads the diff *text*, so a binary file is invisible to
+ * both the payload governor and the secret scanner: a 500 KB blob measured 250
+ * bytes, and a credential with a leading NUL byte was never looked at.
+ *
+ * Sizes come from the object git actually recorded where there is one, and from
+ * the working file otherwise, so both `committed` and `working-tree` modes get a
+ * real number.
+ *
+ * @param {string} root
+ * @param {string} base
+ * @param {string} mode
+ * @returns {Array<{ file: string, bytes: number }>}
+ */
+export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "committed") {
+  const resolvedRef = resolveBase(root, base);
+  const ranges =
+    mode === "working-tree" || mode === "working"
+      ? [[`${resolvedRef}...HEAD`], ["HEAD"]]
+      : [[`${resolvedRef}...HEAD`]];
+
+  const entries = new Map();
+  for (const range of ranges) {
+    let raw = "";
+    try {
+      raw = git(["diff", "--raw", "--no-renames", "-z", ...range], { cwd: root, raw: true, ignoreError: true }) || "";
+    } catch (_) {
+      continue;
+    }
+    // `--raw -z` emits ":<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>\0".
+    const fields = raw.split("\0").filter(Boolean);
+    for (let i = 0; i < fields.length; i++) {
+      const meta = fields[i];
+      if (!meta.startsWith(":")) continue;
+      const parts = meta.slice(1).split(/\s+/);
+      const dstSha = parts[3];
+      const status = (parts[4] || "").charAt(0);
+      const file = fields[i + 1];
+      i += 1;
+      if (!file || status === "D") continue;
+
+      let bytes = 0;
+      if (dstSha && !/^0+$/.test(dstSha)) {
+        const size = git(["cat-file", "-s", dstSha], { cwd: root, ignoreError: true });
+        bytes = Number(size) || 0;
+      }
+      // An unstaged change has an all-zero destination sha; the working file is
+      // the only place its size exists.
+      if (!bytes) {
+        try {
+          bytes = statSync(join(root, file)).size;
+        } catch (_) {
+          bytes = 0;
+        }
+      }
+      // Keep the largest observation: the same path can appear in both ranges.
+      entries.set(file, Math.max(entries.get(file) || 0, bytes));
+    }
+  }
+
+  // Only the paths git itself refused to render as text are relevant; a file
+  // that diffed normally is already counted in the diff text.
+  const binaryPaths = new Set();
+  const text = diffText(root, base, mode);
+  for (const line of text.split("\n")) {
+    const m = line.match(/^Binary files (?:a\/(.+) and )?(?:b\/(.+)|\/dev\/null) differ$/);
+    if (m) binaryPaths.add(normalizePath(m[2] || m[1] || ""));
+    const m2 = line.match(/^Binary files \/dev\/null and b\/(.+) differ$/);
+    if (m2) binaryPaths.add(normalizePath(m2[1]));
+  }
+
+  return [...entries.entries()]
+    .filter(([file]) => binaryPaths.has(normalizePath(file)))
+    .map(([file, bytes]) => ({ file, bytes }));
+}
+
+/**
+ * Total bytes this change actually carries.
+ *
+ * The diff text plus the real size of every binary blob it only summarised.
+ * Without the second term the payload governor could be walked straight past
+ * with a committed binary of any size.
+ */
 export function diffBytes(root = process.cwd(), base = "main", mode = "committed") {
   const text = diffText(root, base, mode);
-  return Buffer.byteLength(text, "utf-8");
+  let bytes = Buffer.byteLength(text, "utf-8");
+  try {
+    for (const entry of binaryDiffEntries(root, base, mode)) bytes += entry.bytes;
+  } catch (_) {
+    // A payload figure that is too low is the dangerous direction, but throwing
+    // here would break every gate on a repo git cannot describe. The text-only
+    // number is still returned.
+  }
+  return bytes;
 }
 
 export function showFromOrigin(root = process.cwd(), base = "main", filePath = "") {

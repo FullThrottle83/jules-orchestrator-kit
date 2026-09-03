@@ -484,6 +484,15 @@ async function main() {
             console.log(`💡 Remediation Hint (Exit 188 Offline Network Violation / Infrastructure):`);
             console.log(`   • An unmocked network request was blocked by the preload network guard during verification.`);
             console.log(`   • Ensure dependencies are installed locally (run: npm install) and all network calls in tests are mocked.\n`);
+          } else if (res.phases.find((p) => p.phase === "verify" && !p.ok)?.failure?.stageId === "oracle") {
+            // Nothing exited non-zero here and --fix cannot help: there was no
+            // command to run. Offering the repair loop would send an agent to
+            // fix a failure that does not exist.
+            console.log(`💡 Remediation Hint (Exit ${res.code} No Verification Oracle):`);
+            console.log(`   • Nothing was executed against this change, so the gate cannot approve it.`);
+            console.log(`   • Give it a command:   agentctl bootstrap        (generates one for this stack)`);
+            console.log(`   • Or set it by hand:   verify.test in ${config._file || ".agent/config.yml"}`);
+            console.log(`   • Scope- and secret-scanning only, on purpose? Set verify.required: false there.\n`);
           } else if (failedPhase === "verify" || failedPhase === "evidence") {
             console.log(`💡 Remediation Hint (Exit ${res.code} Verification Failed):`);
             console.log(`   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.`);
