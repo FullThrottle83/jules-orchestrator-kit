@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { spawnSync } from "node:child_process";
+import { resolveWindowsSpawn } from "./git.mjs";
 
 /**
  * What each provider actually needs before a dispatch can succeed.
@@ -218,11 +219,24 @@ export function probeProviderLiveness(name, opts = {}) {
   }
 
   try {
-    const res = spawnSync(base.binPath, ["--version"], {
-      encoding: "utf-8",
-      timeout: Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 8000,
-      env,
-    });
+    // A global npm install puts a `.cmd` shim on PATH, and since the fix for
+    // CVE-2024-27980 Node refuses to spawn one directly — it comes back EINVAL,
+    // which would report every Windows CLI as broken. `resolveWindowsSpawn` is
+    // the same routing `runCmd` already uses: native .exe direct, everything
+    // else through cmd.exe with the argv quoted the way cmd.exe parses it back.
+    const win = resolveWindowsSpawn(base.binPath, ["--version"], env);
+    const res = win
+      ? spawnSync(win.file, win.args, {
+          encoding: "utf-8",
+          timeout: Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 8000,
+          env,
+          windowsVerbatimArguments: win.verbatim,
+        })
+      : spawnSync(base.binPath, ["--version"], {
+          encoding: "utf-8",
+          timeout: Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 8000,
+          env,
+        });
     if (res.error) {
       return { name: base.name, attempted: true, ok: false, detail: `\`${base.bin || base.name} --version\` could not run: ${res.error.message}` };
     }

@@ -355,7 +355,14 @@ describe("provider readiness says what it actually checked", () => {
       const bin = join(dir, isWin ? "claude.CMD" : "claude");
       writeFileSync(bin, isWin ? "@echo off\r\nexit /b 7\r\n" : "#!/bin/sh\necho 'not logged in' >&2\nexit 7\n", { mode: 0o755 });
 
-      const res = probeProviderLiveness("claude-code", { env: { PATH: dir, PATHEXT: ".COM;.EXE;.BAT;.CMD" } });
+      // The real environment with PATH redirected at the fake binary. A bare
+      // `{ PATH: dir }` would be unrealistic on Windows: routing a `.cmd` shim
+      // needs cmd.exe itself to be findable, and a user's shell always has it.
+      const env = { ...process.env };
+      for (const k of Object.keys(env)) if (k.toLowerCase() === "path") delete env[k];
+      env.PATH = dir;
+
+      const res = probeProviderLiveness("claude-code", { env });
       assert.equal(res.attempted, true);
       assert.equal(res.ok, false, "an installed CLI that exits non-zero is not ready");
       assert.match(res.detail, /exited 7/);
