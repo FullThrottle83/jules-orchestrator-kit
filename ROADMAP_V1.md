@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.58.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Locks That Lock)           (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.59.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (One Answer Per Question)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.58.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.59.0)
+
+
+### v0.59.0: One Answer Per Question
+- [x] **One Test-Path Classifier (`src/test-paths.mjs`)** — Five modules had five definitions of "is this a test file?"; the tamper guard's could not see `tests/test_calc.py`, so every check in it was off for the standard pytest, Rust and RSpec layouts. All five now share `isTestPath`.
+- [x] **Statement-Level Expectation Pairing (`src/security.mjs`)** — Assertions are reassembled from the diff's two images before pairing, so wrapping one across lines no longer walks through the guard. Contributed as PR #14 by an external agent; verified and merged.
+- [x] **Numeric Literals Beyond Decimal (`src/security.mjs`)** — Hex, binary, octal, exponent and underscored literals normalise, so `0xFF` → `0xFE` is a rewritten expectation like any other.
 
 
 ### v0.58.0: Locks That Lock

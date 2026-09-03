@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { isTestPath } from "./test-paths.mjs";
 import { resolve, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 import { diffText, runCmd } from "./git.mjs";
@@ -195,14 +196,7 @@ export function isExcludedFromMutation(filePath = "") {
   const normalized = filePath.replace(/\\/g, "/").toLowerCase();
 
   // Exclude test files
-  if (
-    normalized.includes(".test.") ||
-    normalized.includes(".spec.") ||
-    normalized.includes("_test.") ||
-    normalized.includes("/test/") ||
-    normalized.includes("/tests/") ||
-    normalized.includes("/__tests__/")
-  ) {
+  if (isTestPath(normalized)) {
     return true;
   }
 

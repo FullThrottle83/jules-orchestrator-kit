@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync, mkdtempSync, rmSync, existsSync, realpathSync } from "node:fs";
+import { isTestPath } from "./test-paths.mjs";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -18,12 +19,7 @@ export function isExcludedFromCoverage(filePath = "") {
     norm.startsWith(".agent/") ||
     norm.startsWith(".github/") ||
     norm.startsWith(".git/") ||
-    norm.startsWith("test/") ||
-    norm.startsWith("tests/") ||
-    norm.includes("/__tests__/") ||
-    norm.includes(".test.") ||
-    norm.includes(".spec.") ||
-    norm.includes("_test.") ||
+    isTestPath(norm) ||
     norm.endsWith(".md") ||
     norm.endsWith(".json") ||
     norm.endsWith(".yml") ||
