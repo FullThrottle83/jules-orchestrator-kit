@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { loadConfig } from "../config.mjs";
+import { probeProvider, detectAvailableProviders } from "../provider-readiness.mjs";
 import { resolveConcurrency } from "../budget.mjs";
 
 /**
@@ -429,40 +430,60 @@ export async function runDoctorChecks(options = {}) {
     });
   }
 
-  // 7. Jules Provider Key Check
-  const keyVar = process.env.JULES_API_KEY ? "JULES_API_KEY" : process.env.GEMINI_API_KEY ? "GEMINI_API_KEY" : "";
-  if (keyVar) {
+  // 7. Provider readiness — for the provider this repository actually selected.
+  //
+  // This used to ask one question ("is JULES_API_KEY set?") and report it as a
+  // high-severity warning regardless of the configured provider, so a
+  // repository driving the Claude Code or Codex CLI was permanently told it was
+  // misconfigured over a key it neither needs nor should have.
+  let configuredProvider = "jules";
+  try {
+    configuredProvider = loadConfig(root).provider || "jules";
+  } catch (_) {
+    // Fall back to the default; config.present already reports a broken config.
+  }
+  const providerProbe = probeProvider(configuredProvider);
+  addResult({
+    id: "provider.key",
+    category: "Provider",
+    title: `Provider Readiness (${providerProbe.name})`,
+    status: providerProbe.ready ? "pass" : "warn",
+    severity: providerProbe.ready ? "info" : "high",
+    // Naming the variable, not the value: an operator who wonders which key a
+    // dispatch will use should not have to echo a secret to find out.
+    summary: `${providerProbe.label} — ${providerProbe.reason}`,
+    remediation: providerProbe.ready
+      ? []
+      : [
+          {
+            summary: providerProbe.remedy,
+            risk: "low",
+            automatic: false,
+            requiresProbe: false,
+          },
+        ],
+    evidence: [
+      { label: "provider", value: providerProbe.name, sensitive: false },
+      { label: "providerKind", value: providerProbe.kind, sensitive: false },
+      { label: "ready", value: providerProbe.ready, sensitive: false },
+      { label: "keySource", value: providerProbe.keySource || "", sensitive: false },
+      { label: "binaryFound", value: Boolean(providerProbe.binPath), sensitive: false },
+    ],
+  });
+
+  // 7a. What else this machine could dispatch to. Purely informational: an
+  // operator blocked on one provider should not have to discover by reading
+  // source that three others are installed and ready.
+  const alternatives = detectAvailableProviders().filter((p) => p.ready && p.name !== providerProbe.name);
+  if (alternatives.length > 0) {
     addResult({
-      id: "provider.key",
-      category: "Jules",
-      title: "Jules Provider API Key",
+      id: "provider.alternatives",
+      category: "Provider",
+      title: "Other Providers Available",
       status: "pass",
       severity: "info",
-      // Naming the variable, not the value: an operator who wonders which key a
-      // dispatch will use should not have to echo a secret to find out.
-      summary: `API key supplied via ${keyVar} (environment only — never written to config or sent anywhere but the provider)`,
-      evidence: [
-        { label: "keyConfigured", value: true, sensitive: false },
-        { label: "keySource", value: keyVar, sensitive: false },
-      ],
-    });
-  } else {
-    addResult({
-      id: "provider.key",
-      category: "Jules",
-      title: "Jules Provider API Key",
-      status: "warn",
-      severity: "high",
-      summary: "Neither JULES_API_KEY nor GEMINI_API_KEY environment variable is set",
-      remediation: [
-        {
-          summary: "Export JULES_API_KEY in your shell profile, or place it in a git-ignored .env",
-          risk: "low",
-          automatic: false,
-          requiresProbe: false,
-        },
-      ],
-      evidence: [{ label: "keyConfigured", value: false, sensitive: false }],
+      summary: `Also ready on this machine: ${alternatives.map((p) => p.name).join(", ")} — switch with provider: in .agent/config.yml`,
+      evidence: alternatives.map((p) => ({ label: p.name, value: p.reason, sensitive: false })),
     });
   }
 
@@ -477,7 +498,7 @@ export async function runDoctorChecks(options = {}) {
 
     addResult({
       id: "provider.key.dotenv",
-      category: "Jules",
+      category: "Provider",
       title: "Local .env secrecy",
       status: tracked ? "fail" : "pass",
       severity: tracked ? "critical" : "info",

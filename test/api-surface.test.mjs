@@ -201,6 +201,22 @@ const FROZEN_SDK_EXPORTS = [
   "resolveRolePrompt",
   "resolveRoot",
   "resolveRoutedProvider",
+  // v0.53.0 — provider-agnostic readiness, vendor-neutral env spellings,
+  // and one-word verification profiles. See src/provider-readiness.mjs,
+  // src/env-aliases.mjs and src/profiles.mjs.
+  "PROVIDER_DESCRIPTORS",
+  "PROVIDER_PREFERENCE",
+  "whichBinary",
+  "probeProvider",
+  "detectAvailableProviders",
+  "suggestProvider",
+  "ENV_ALIASES",
+  "applyEnvAliases",
+  "describeEnvVar",
+  "PROFILE_NAMES",
+  "PROFILE_DESCRIPTIONS",
+  "buildProfileStages",
+  "describeProfilePlan",
   "resolveVerify",
   "resolveWorkspaceBoundary",
   "resolveWorkspaceExecutionBoundary",
@@ -284,7 +300,7 @@ describe("SDK API Surface & Exit Code Stability Lock", () => {
       `Unapproved new SDK exports detected:\n${addedExports.join("\n")}\nIf intentional, review and update FROZEN_SDK_EXPORTS snapshot.`
     );
 
-    assert.equal(actualExports.length, 237, "Total exported SDK symbols count must remain locked at 237");
+    assert.equal(actualExports.length, 250, "Total exported SDK symbols count must remain locked at 250");
   });
 
   it("ensures every exported symbol is defined and non-null", () => {

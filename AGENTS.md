@@ -43,13 +43,15 @@ Jules automatically infers test and build verification commands via `scripts/com
 
 ### Canonical Operator Commands (authoritative)
 
-Operations run **only** via `agentctl`. Standalone `scripts/*.mjs` shims were removed; if one is not in `package.json`, it is stale.
+Operations run **only** via `agentctl`; a `scripts/*.mjs` not in `package.json` is stale.
 
 - Locks: `agentctl lock acquire <agent> <task_id> <file_path...>` (conflict exits `1` naming the holder) · `lock status` · `lock release <task_id>`.
 - Verification Gates: `agentctl mutate` · `agentctl coverage` · `agentctl probe` · `agentctl perf` · `npm test 2>&1 | agentctl fix`.
 - Learnings: `agentctl learning add "<trigger>" "<solution>"` — both args required; regenerates `.agent/SYSTEM_LEARNINGS.md`, never hand-edit it.
 - Flaky tests: `agentctl flaky status|heal|reset` · Escalations: `agentctl escalate <session_id>|--status|--flush`.
 - Prompt hydration: `agentctl hydrate [prompt]` · Self-audit: `npm run jules:audit` · Doc drift: `npm run jules:doc-sync`.
+- Portability: `agentctl providers` · `agentctl profile [--set minimal|standard|max]` · `agentctl ci init`.
+- Env vars take `AGENT_*` or `JULES_*`; the `JULES_*` spelling wins where both are set.
 - Use `JULES_DRY_RUN=1` when exercising dispatch paths so no session is spent.
 
 ---

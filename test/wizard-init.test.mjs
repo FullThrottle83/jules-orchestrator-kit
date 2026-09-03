@@ -50,6 +50,9 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
         interactive: false,
         tier: "pro",
         testCmd: "npm test",
+        // An empty PATH makes provider detection deterministic: no agent CLI is
+        // reachable, so the scaffolded provider must be the hosted default.
+        env: { PATH: "" },
         stdin: mockStdin,
         stdout: mockStdout,
       });
@@ -61,6 +64,7 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
       const configContent = readFileSync(join(tmpDir, ".agent", "config.yml"), "utf-8");
       assert.ok(configContent.includes("provider: jules"));
       assert.ok(configContent.includes("tier: pro"));
+      assert.ok(configContent.includes("profile: standard"), "a fresh repo gets the everyday gate, not just tests");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

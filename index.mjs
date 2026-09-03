@@ -37,6 +37,16 @@ export {
 } from "./src/provider.mjs";
 export { resolveRoutedProvider } from "./src/router.mjs";
 export {
+  PROVIDER_DESCRIPTORS,
+  PROVIDER_PREFERENCE,
+  whichBinary,
+  probeProvider,
+  detectAvailableProviders,
+  suggestProvider,
+} from "./src/provider-readiness.mjs";
+export { ENV_ALIASES, applyEnvAliases, describeEnvVar } from "./src/env-aliases.mjs";
+export { PROFILE_NAMES, PROFILE_DESCRIPTIONS, buildProfileStages, describeProfilePlan } from "./src/profiles.mjs";
+export {
   detectPolyglotStack,
   resolveWorkspaceBoundary,
   bootstrapZeroTestRepo,

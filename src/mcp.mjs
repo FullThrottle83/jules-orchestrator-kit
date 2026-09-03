@@ -143,7 +143,7 @@ export const MCP_TOOLS = [
   },
   {
     name: "get_jules_status",
-    description: "Retrieve orchestrator status including daily task budget, active locks, and stack diagnostics.",
+    description: "Retrieve orchestrator status: daily task budget, active locks, stack diagnostics, the configured provider and whether it is reachable, and the verification stages the gate will run.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -439,6 +439,10 @@ export async function handleMcpRequest(request, opts = {}) {
         const stackInfo = detectStack(root);
         const budget = budgetStatus(config, root);
         const locks = lockStatus(root);
+        const { probeProvider } = await import("./provider-readiness.mjs");
+        const { buildDefaultStages } = await import("./profiles.mjs");
+        const providerProbe = probeProvider(config.provider || "jules");
+        const profileStages = config.verify.stages || buildDefaultStages(config.verify);
         const status = {
           version: MCP_SERVER_INFO.version,
           root,
@@ -455,6 +459,20 @@ export async function handleMcpRequest(request, opts = {}) {
           },
           activeLocksCount: locks.length,
           locks,
+          // An IDE agent orienting itself needs to know which agent this repo
+          // dispatches to and how hard its work will be verified before it
+          // starts, not after the gate rejects it.
+          provider: {
+            name: providerProbe.name,
+            kind: providerProbe.kind,
+            ready: providerProbe.ready,
+            reason: providerProbe.reason,
+          },
+          verification: {
+            profile: config.verify.profile,
+            stages: profileStages.map((st) => st.id),
+            skipped: (config.verify.profileSkipped || []).map((sk) => sk.id),
+          },
         };
         return {
           jsonrpc: "2.0",
