@@ -570,8 +570,16 @@ async function main() {
       if (values.committed) selectedMode = "committed";
       if (values["working-tree"]) selectedMode = "working-tree";
 
-      const minScore = Number(values["min-score"]) || 80;
-      const maxMutants = Number(values["max-mutants"]) || 20;
+      // `Number(x) || default` swallows a legitimate zero: `--min-score 0`,
+      // the way to run the harness for its report without a threshold, silently
+      // enforced 80. Both flags already carry a parseArgs default, so the only
+      // thing left to guard against is a value that is not a number at all.
+      const parseNumericFlag = (raw, fallback) => {
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : fallback;
+      };
+      const minScore = parseNumericFlag(values["min-score"], 80);
+      const maxMutants = parseNumericFlag(values["max-mutants"], 20);
       const testCmd = values.cmd || config.verify?.test || "npm test";
 
       if (!values.json) {
@@ -597,7 +605,11 @@ async function main() {
         console.log(`  • Mutants Killed (Fail)   : ${report.killedMutants} ✅`);
         console.log(`  • Mutants Survived (Pass) : ${report.survivedMutants} ${report.survivedMutants > 0 ? "⚠️" : ""}`);
         console.log(`  • Errors / Timeouts       : ${report.errorMutants}`);
-        console.log(`  • Mutation Score          : ${report.mutationScore}% (Required: ${report.minScore}%)`);
+        console.log(
+          report.scored === false
+            ? `  • Mutation Score          : n/a — ${report.reason}`
+            : `  • Mutation Score          : ${report.mutationScore}% (Required: ${report.minScore}%)`
+        );
         console.log(`  • Duration                : ${report.durationMs}ms\n`);
 
         if (report.survivors.length > 0) {
@@ -1069,7 +1081,29 @@ async function main() {
       });
 
       const queueDir = getQueueDir(root);
-      const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
+      // The DAG runner accepts `.json` and `.task` envelopes as well as
+      // Markdown, and does its own discovery — but this count gated whether it
+      // was ever called, using the Markdown-only filter. A queue holding only
+      // JSON envelopes reported "0 queued task(s)" and did nothing, with no
+      // indication that the files were there and understood.
+      const queueEntries = readdirSync(queueDir);
+      let files;
+      if (values.dag) {
+        const { isDagTaskFile } = await import("../src/dag-engine.mjs");
+        files = queueEntries.filter((f) => {
+          if (f === "completed" || f.startsWith(".")) return false;
+          if (!/\.(md|json|task)$/.test(f)) return false;
+          let content = "";
+          try {
+            content = readFileSync(join(queueDir, f), "utf-8");
+          } catch (_) {
+            return false;
+          }
+          return isDagTaskFile(f, content, isTaskFile);
+        });
+      } else {
+        files = queueEntries.filter((f) => isTaskFile(f, queueDir));
+      }
       console.log(`Found ${files.length} queued task(s) in .agent/jules-queue/`);
       if (files.length > 0) {
         const concurrency = values.concurrency ? Number(values.concurrency) : undefined;
@@ -1092,11 +1126,30 @@ async function main() {
     }
 
     case "swarm": {
-      console.log("🚀 Running Swarm Orchestrator...");
+      // This case had no parseArgs at all: `--json` and `--dry-run` were
+      // accepted by the shell, documented in the registry, and silently
+      // discarded — so a rehearsal dispatched for real and a script asking for
+      // JSON got decorated prose.
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          concurrency: { type: "string", short: "c" },
+          "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+        strict: false,
+      });
+
       const queueDir = getQueueDir(root);
       const files = readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir));
+      if (!values.json) console.log("🚀 Running Swarm Orchestrator...");
       if (files.length === 0) {
-        console.log("No pending tasks found for swarm.");
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, processed: 0, results: [], dryRun: Boolean(values["dry-run"]) }, null, 2));
+        } else {
+          console.log("No pending tasks found for swarm.");
+        }
         process.exit(0);
       }
       const tasks = files.map((f) => ({
@@ -1104,7 +1157,16 @@ async function main() {
         title: f.replace(/\.md$/, ""),
         prompt: readFileSync(join(queueDir, f), "utf-8"),
       }));
-      const results = await run(tasks, { root, config, concurrency: config.limits.concurrency || 3 });
+      const results = await run(tasks, {
+        root,
+        config,
+        concurrency: values.concurrency ? Number(values.concurrency) : config.limits.concurrency || 3,
+        dryRun: values["dry-run"],
+      });
+      if (values.json) {
+        console.log(JSON.stringify({ ok: true, dryRun: Boolean(values["dry-run"]), ...results }, null, 2));
+        process.exit((results.results || []).some((r) => r && r.ok === false) ? 1 : 0);
+      }
       process.exit(reportRunOutcome(results));
       break;
     }

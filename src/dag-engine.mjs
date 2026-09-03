@@ -431,7 +431,7 @@ export function resolveAffectedTests(modifiedFiles = [], options = {}) {
  * @param {Function} isTaskFile - `isTaskFile` from engine.mjs, passed in to avoid a circular import.
  * @returns {boolean}
  */
-function isDagTaskFile(fileName, content, isTaskFile) {
+export function isDagTaskFile(fileName, content, isTaskFile) {
   if (fileName.endsWith(".task")) return true;
   if (fileName.endsWith(".md")) return isTaskFile(fileName, content);
   if (fileName.endsWith(".json")) {

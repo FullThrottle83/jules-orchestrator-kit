@@ -222,8 +222,15 @@ diff --git a/src/math.js b/src/math.js
 
       assert.equal(res.status, 0);
       const parsed = JSON.parse(res.stdout);
+      // `totalMutants > 0` is the part that matters. This assertion used to be
+      // satisfied by the vacuous 100 the harness returned for an empty mutant
+      // population — and the population was empty because the synthetic diff
+      // for an untracked file carried no `@@` header, so the mutation engine
+      // could not place a single added line. The test passed on the defect it
+      // should have caught.
+      assert.ok(parsed.totalMutants > 0, "a new file with `n > 0` in it must yield at least one mutant");
+      assert.equal(parsed.scored, undefined, "a real run reports a measured score, not the unscored shape");
       assert.equal(typeof parsed.mutationScore, "number");
-      assert.equal(typeof parsed.totalMutants, "number");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

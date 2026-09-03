@@ -384,8 +384,17 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
         const fullPath = join(root, file);
         if (existsSync(fullPath)) {
           const content = readFileSync(fullPath, "utf-8");
+          const addedLines = content.split(/\r?\n/);
+          // The `@@` header is not decoration. Every consumer that needs to know
+          // *which* line an addition is on parses it — the mutation harness and
+          // the V8 diff-coverage mapper both walk hunks — so a synthetic diff
+          // without one made untracked files invisible to them. Both silently
+          // reported nothing to do for a brand-new file, which is precisely
+          // where untested code arrives. The secret scanner never noticed
+          // because it only reads `+` lines.
           untrackedDiff += `\ndiff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n`;
-          untrackedDiff += content.split(/\r?\n/).map((line) => `+${line}`).join("\n") + "\n";
+          untrackedDiff += `@@ -0,0 +1,${addedLines.length} @@\n`;
+          untrackedDiff += addedLines.map((line) => `+${line}`).join("\n") + "\n";
         }
       } catch (_) {}
     }

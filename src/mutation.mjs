@@ -676,13 +676,23 @@ export function runMutationTest(options = {}) {
   const selectedMutants = candidates.slice(0, maxMutants);
 
   if (selectedMutants.length === 0) {
+    // A diff with no mutable operators yields no mutants, and reporting that as
+    // "100%" told operators their untested code had a perfect score — the exact
+    // false confidence the harness exists to remove. There is no score to
+    // report, so there is none: `mutationScore` is null and `reason` says why.
+    //
+    // `ok` stays true. Nothing was falsifiable, so nothing failed to be
+    // falsified; failing here would block every diff that only adds imports,
+    // constants or markdown, and a gate that cries wolf gets switched off.
     return {
       ok: true,
       totalMutants: 0,
       killedMutants: 0,
       survivedMutants: 0,
       errorMutants: 0,
-      mutationScore: 100,
+      mutationScore: null,
+      scored: false,
+      reason: "No mutable operators in the added lines — nothing to falsify, so no score was computed.",
       minScore,
       results: [],
       survivors: [],

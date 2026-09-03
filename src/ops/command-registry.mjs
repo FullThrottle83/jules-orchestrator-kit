@@ -115,23 +115,27 @@ export const COMMAND_REGISTRY = [
   },
   {
     id: "swarm",
+    // Described as an inspector — `mutates: false`, `risk: low` — while the
+    // handler dispatches every queued task in parallel and spends budget.
+    // `--interactive` was advertised and implemented nowhere.
     path: ["swarm"],
     title: "swarm",
-    description: "Inspect active worker slots and concurrency scheduler",
+    description: "Dispatch every queued task in parallel across worker slots",
     category: "Operate",
-    mutates: false,
-    risk: "low",
-    interactive: "optional",
+    mutates: true,
+    risk: "moderate",
+    interactive: "never",
     requiresRepository: true,
     shortcuts: ["s"],
     examples: [
+      "agentctl swarm --dry-run",
       "agentctl swarm",
-      "agentctl swarm --interactive",
-      "agentctl swarm --json",
+      "agentctl swarm --concurrency 3 --json",
     ],
     flags: [
-      { name: "interactive", type: "boolean", description: "Open full-screen swarm dashboard" },
-      { name: "json", type: "boolean", description: "Output structured JSON swarm snapshot" },
+      { name: "concurrency", type: "string", description: "Parallel worker slots (defaults to limits.concurrency)" },
+      { name: "dry-run", type: "boolean", description: "Report what would run without dispatching" },
+      { name: "json", type: "boolean", description: "Output structured JSON swarm result" },
     ],
   },
   {

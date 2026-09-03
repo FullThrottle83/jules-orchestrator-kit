@@ -513,6 +513,11 @@ export function assertMutation(config = {}, root = process.cwd()) {
   });
 
   const diagnostics = [];
+  if (report.scored === false) {
+    // Not a failure, but not a pass worth trusting either: say so, so a green
+    // stage cannot be read as "the diff survived mutation testing".
+    diagnostics.push(report.reason || "No mutants could be generated from the added lines.");
+  }
   if (!report.ok) {
     diagnostics.push(
       `Mutation score ${report.mutationScore}% below required threshold of ${minScore}% (${report.killedMutants}/${report.totalMutants} killed, ${report.survivedMutants} survived).`

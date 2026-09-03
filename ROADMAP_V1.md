@@ -11,13 +11,21 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.56.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Wired, Not Just Shipped)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.57.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Honest Reporting)          (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.56.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.57.0)
+
+
+### v0.57.0: Honest Reporting
+- [x] **Stack-Native TDD Oracles (`src/ops/tdd-generator.mjs`)** — Generated in the runner's own language, with a RED check that requires the assertion to have actually run rather than accepting any non-zero exit.
+- [x] **JSON Envelopes Reach The DAG Runner (`src/dag-engine.mjs`)** — `isDagTaskFile` is exported and used for the CLI's count, so a queue of `.json` envelopes is no longer reported as empty.
+- [x] **`swarm` Honours Its Flags (`bin/agentctl.mjs`)** — `--json`, `--dry-run` and `--concurrency` are parsed, and the registry describes a dispatcher rather than an inspector.
+- [x] **No Score Where Nothing Was Measured (`src/mutation.mjs`)** — An empty mutant population reports `null` and a reason instead of a vacuous 100%.
+- [x] **New Files Are Visible To Every Gate (`src/git.mjs`)** — The synthetic diff for an untracked file carries a `@@` header, so mutation and diff coverage can place its lines at all.
 
 
 ### v0.56.0: Wired, Not Just Shipped

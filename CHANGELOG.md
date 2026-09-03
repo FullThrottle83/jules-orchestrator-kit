@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.0] - 2026-09-03
+*The last four review findings — and two more that only surfaced once the fourth stopped lying.*
+
+### Fixed
+- **Generated TDD Oracles Were Always JavaScript (`src/ops/tdd-generator.mjs`)**: `test-gen` emitted a `node:test` file for every stack and then, in a Python project, ran `pytest generated-x.test.mjs`. pytest exits 4 on a file it cannot collect, and the cycle read any non-zero exit as RED — so it reported a verified failing oracle, and locked an uncollectable file into `scope.deny`, having proven nothing. Oracles are now written in the runner's language (pytest for Python/Django, a `tests/*.rs` integration test for Cargo, `*_test.go` for Go, `node:test` otherwise), and the RED check requires the generated assertion's marker in the output — a runner that never collected the file cannot pass as a falsifiable failure.
+- **`queue --dag` Could Not See JSON Envelopes (`src/dag-engine.mjs`, `bin/agentctl.mjs`)**: the DAG runner accepts `.json` and `.task` envelopes as well as Markdown and does its own discovery, but the CLI gated whether it ran at all on the Markdown-only filter. A queue holding only JSON envelopes reported "0 queued task(s)" and did nothing. `isDagTaskFile` is now exported and used for the count when `--dag` is passed.
+- **`swarm` Accepted No Flags (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: the case had no `parseArgs` at all, so `--json` and `--dry-run` were documented, accepted by the shell and silently discarded — a rehearsal dispatched for real. The registry also described it as an inspector (`mutates: false`, `risk: low`) and advertised an `--interactive` dashboard that does not exist, while the handler dispatches every queued task in parallel and spends budget.
+- **"100% Of Nothing" Was Reported As A Perfect Score (`src/mutation.mjs`, `src/assertions.mjs`, `bin/agentctl.mjs`)**: a diff with no mutable operators produced zero mutants and a hardcoded `mutationScore: 100`, telling operators their untested code had scored perfectly — the exact false confidence the harness exists to remove. There is no score to report, so there is none: `mutationScore` is `null`, `scored` is `false`, and `reason` says why. `ok` stays true, because nothing failed to be falsified and a gate that blocks every import-only diff gets switched off.
+
+### Fixed — found because the above stopped lying
+- **Untracked Files Were Invisible To Mutation And Coverage (`src/git.mjs`)**: `diffText` synthesises a diff for untracked files, and it emitted no `@@` hunk header. Both the mutation harness and the V8 diff-coverage mapper walk hunks to place an added line, so both silently reported nothing to do for a brand-new file — precisely where untested code arrives. The secret scanner never noticed, because it only reads `+` lines. A valid header is now emitted. This was hidden behind the vacuous 100 above: `test/mutation.test.mjs` asserted `typeof mutationScore === "number"` and passed on the defect it should have caught.
+- **`--min-score 0` Enforced 80 (`bin/agentctl.mjs`)**: `Number(x) || 80` swallows a legitimate zero, so the documented way to run the harness for its report without a threshold quietly applied the default instead.
+
 ## [0.56.0] - 2026-09-03
 *Three advertised features that were never wired into the execution path, plus two bugs only a live provider call could surface.*
 
