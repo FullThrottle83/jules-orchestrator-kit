@@ -199,3 +199,120 @@ describe("a binary file is not a blind spot", () => {
     }
   });
 });
+
+describe("weakening a test is not the same as keeping it", () => {
+  const diffOf = (removed, added) =>
+    [
+      "diff --git a/test/math.test.mjs b/test/math.test.mjs",
+      "--- a/test/math.test.mjs",
+      "+++ b/test/math.test.mjs",
+      "@@ -1,3 +1,3 @@",
+      ...removed.map((l) => `-  ${l}`),
+      ...added.map((l) => `+  ${l}`),
+    ].join("\n");
+
+  it("catches a value check swapped for a truthiness check", async () => {
+    const { checkTestTampering } = await import("../src/security.mjs");
+    const res = checkTestTampering(
+      diffOf(["assert.strictEqual(add(2, 3), 5);"], ["assert.ok(add(2, 3) !== undefined);"])
+    );
+    assert.equal(res.ok, false, "one out, one in kept the count level while the suite stopped checking");
+    assert.ok(res.violations.some((v) => v.type === "ASSERTION_WEAKENED"));
+  });
+
+  it("catches it across assertion dialects", async () => {
+    const { checkTestTampering } = await import("../src/security.mjs");
+    for (const [removed, added] of [
+      ["expect(sum).toBe(5);", "expect(sum).toBeDefined();"],
+      ["assert_eq!(add(2, 3), 5);", "assert!(add(2, 3) != 0);"],
+    ]) {
+      const res = checkTestTampering(diffOf([removed], [added]));
+      assert.equal(res.ok, false, `${removed} → ${added} is a weakening`);
+    }
+  });
+
+  it("leaves ordinary maintenance alone", async () => {
+    const { checkTestTampering } = await import("../src/security.mjs");
+    // Strengthening, renaming and adding all keep the number of assertions
+    // that name an expected value from falling.
+    assert.equal(checkTestTampering(diffOf(["assert.equal(a, b);"], ["assert.strictEqual(a, b);"])).ok, true);
+    assert.equal(checkTestTampering(diffOf(["assert.strictEqual(x, 1);"], ["assert.strictEqual(y, 1);"])).ok, true);
+    assert.equal(checkTestTampering(diffOf([], ["assert.ok(thing);"])).ok, true);
+  });
+});
+
+describe("a symlink is judged by where it points", () => {
+  it("rejects a link that reaches a protected path", async () => {
+    const dir = repoWithSuite();
+    try {
+      git(dir, ["checkout", "-q", "-b", "agent/link"]);
+      execFileSync("ln", ["-s", ".agent/config.yml", "notes.md"], { cwd: dir });
+      commit(dir, "link");
+
+      const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "committed" });
+      assert.equal(res.ok, false);
+      assert.equal(res.code, 3);
+      const scope = res.phases.find((p) => p.phase === "scope");
+      const violation = scope.violations.find((v) => v.symlink === "notes.md");
+      assert.ok(violation, "the violation must be reported against the link the diff actually adds");
+      assert.match(violation.reason, /reached through symlink/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves an ordinary symlink alone", async () => {
+    const dir = repoWithSuite();
+    try {
+      git(dir, ["checkout", "-q", "-b", "agent/oklink"]);
+      mkdirSync(join(dir, "docs"), { recursive: true });
+      writeFileSync(join(dir, "docs", "real.md"), "hi\n");
+      execFileSync("ln", ["-s", "docs/real.md", "shortcut.md"], { cwd: dir });
+      commit(dir, "oklink");
+
+      const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "committed" });
+      assert.equal(res.phases.find((p) => p.phase === "scope").ok, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("evidence attests to what it claims to attest to", () => {
+  it("fails once the source it covered has been rewritten", async () => {
+    const dir = repoWithSuite();
+    try {
+      mkdirSync(join(dir, "src"), { recursive: true });
+      writeFileSync(join(dir, "src", "math.mjs"), "export const add = (a, b) => a + b;\n");
+      commit(dir, "src");
+
+      const { generateEvidenceManifest, verifyEvidenceManifest } = await import("../src/evidence.mjs");
+      const manifest = generateEvidenceManifest(dir, { executionRecords: [] });
+      assert.equal(verifyEvidenceManifest(dir, manifest).ok, true, "untouched, it verifies");
+
+      writeFileSync(join(dir, "src", "math.mjs"), "BROKEN MALICIOUS CODE\n");
+      const after = verifyEvidenceManifest(dir, manifest);
+      assert.equal(after.ok, false, "evidence must not survive the code it attests to being replaced");
+      assert.match(after.reason, /Source tree has changed/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sees a test file that lives at the repository root", async () => {
+    const dir = repoWithSuite();
+    try {
+      const { computeDirectoryHash } = await import("../src/evidence.mjs");
+      const before = computeDirectoryHash(dir, { testOnly: true });
+      assert.ok(
+        Object.keys(before.fileHashes).some((f) => f === "x.test.mjs"),
+        "a suite beside package.json was invisible to every hash the manifest recorded"
+      );
+
+      writeFileSync(join(dir, "x.test.mjs"), "GARBAGE\n");
+      assert.notEqual(computeDirectoryHash(dir, { testOnly: true }).treeHash, before.treeHash);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

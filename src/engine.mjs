@@ -1,6 +1,6 @@
 import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, binaryDiffEntries, showFromOrigin, runCmd } from "./git.mjs";
+import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
@@ -213,9 +213,37 @@ export async function gate(opts = {}) {
     }
   }
 
-  const scopeResult = checkScope(files, trustedScope, {
+  // A symlink is judged by its own name, so `notes.md -> .agent/config.yml`
+  // walked straight past a deny list that names the target. Judge both: the
+  // link because it is what the diff adds, and the path it resolves to because
+  // that is what it grants reach to.
+  let symlinks = [];
+  try {
+    symlinks = symlinkChanges(root, base, mode);
+  } catch (_) {
+    // Scope must still be enforced on the ordinary file list if git cannot
+    // describe the links.
+  }
+  const scopeCandidates = [...files];
+  const symlinkTargetOf = new Map();
+  for (const { link, target } of symlinks) {
+    if (!target || scopeCandidates.includes(target)) continue;
+    scopeCandidates.push(target);
+    symlinkTargetOf.set(target, link);
+  }
+
+  const scopeResult = checkScope(scopeCandidates, trustedScope, {
     allowProtected: opts.allowProtected || process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true",
   });
+  // Report the violation against the link the change actually introduced, not
+  // against a path the diff never names — the operator has to be able to find it.
+  for (const violation of scopeResult.violations || []) {
+    const link = symlinkTargetOf.get(violation.file);
+    if (!link) continue;
+    violation.reason = `${violation.reason} (reached through symlink ${link})`;
+    violation.symlink = link;
+    violation.file = link;
+  }
 
   phases.push({ phase: "scope", ok: scopeResult.ok, violations: scopeResult.violations });
   appendTelemetry(root, "gate_phase", { phase: "scope", ok: scopeResult.ok });

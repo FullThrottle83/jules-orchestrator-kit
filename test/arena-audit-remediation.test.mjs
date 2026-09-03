@@ -105,10 +105,10 @@ test("Arena Audit Remediation Suite", async (t) => {
       );
     }
 
-    // Legitimate assertions must still pass
+    // Replacing a specific assertion with another specific assertion is
+    // ordinary maintenance and must still pass.
     const legitimateCases = [
       "assert.equal(result.status, 200);",
-      "assert.ok(isValidUser(user));",
       "expect(response.body).toEqual({ id: 1 });",
     ];
 
@@ -117,6 +117,30 @@ test("Arena Audit Remediation Suite", async (t) => {
       const tamperRes = checkTestTampering(diff);
       assert.equal(tamperRes.ok, true, `Legitimate assertion should pass: ${legCase}`);
     }
+
+    // `assert.ok(...)` used to be on the list above, and that was the hole.
+    // This fixture removes `assert.equal(token.isValid(), true)` and adds a
+    // truthiness check — one out, one in, so the count-based rule stayed quiet
+    // while the suite stopped checking the answer. It is the same shape as the
+    // reported bypass (`assert.strictEqual(add(2,3), 5)` becoming
+    // `assert.ok(add(2,3) !== undefined)`), so it is now a violation.
+    const weakened = checkTestTampering(makeDiff("assert.ok(isValidUser(user));"));
+    assert.equal(weakened.ok, false, "swapping a value check for a truthiness check is a weakening");
+    assert.ok(
+      weakened.violations.some((v) => v.type === "ASSERTION_WEAKENED"),
+      "and must be reported as a weakening rather than a removal"
+    );
+
+    // Adding a truthiness check alongside existing ones removes nothing and
+    // must stay clean — the rule is about specificity lost, not about `ok`.
+    const addedOnly = [
+      "diff --git a/test/auth.test.mjs b/test/auth.test.mjs",
+      "--- a/test/auth.test.mjs",
+      "+++ b/test/auth.test.mjs",
+      "@@ -10,3 +10,4 @@",
+      "+    assert.ok(isValidUser(user));",
+    ].join("\n");
+    assert.equal(checkTestTampering(addedOnly).ok, true, "a new truthiness assertion is not a weakening");
   });
 
   // 3. Exit 188 classification: offline network guard vs test regression

@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.54.1 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Gate Fail-Closed)          (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.55.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Verification Integrity)    (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.54.1)
+## ✅ Shipped Milestones (v0.20.0 – v0.55.0)
+
+
+### v0.55.0: Verification Integrity
+- [x] **Assertion Weakening Detection (`src/security.mjs`)** — A specific expectation swapped for a vague one is reported as `ASSERTION_WEAKENED`, closing the one-out-one-in bypass that counting assertions could never see.
+- [x] **Symlink-Aware Scope (`src/git.mjs`, `src/engine.mjs`)** — Added links are judged by the path they resolve to as well as their own name, without following anything on disk.
+- [x] **Source-Bound Evidence (`src/evidence.mjs`)** — Manifests attest to the source tree, not only the tests, and the integrity hash finally sees test files that live at the repository root.
 
 
 ### v0.54.1: The Gate Fails Closed

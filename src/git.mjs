@@ -1,7 +1,7 @@
 import { execFileSync, execSync } from "node:child_process";
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync, statSync, readlinkSync } from "node:fs";
 import { join, delimiter } from "node:path";
-import { normalizePath } from "./config.mjs";
+import { normalizePath, canonicalizePath } from "./config.mjs";
 
 
 export const NET_GUARD_PRELOAD_URL = new URL("./preload-net-guard.mjs", import.meta.url).href;
@@ -412,14 +412,14 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
  * @param {string} mode
  * @returns {Array<{ file: string, bytes: number }>}
  */
-export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "committed") {
+export function parseRawDiff(root = process.cwd(), base = "main", mode = "committed") {
   const resolvedRef = resolveBase(root, base);
   const ranges =
     mode === "working-tree" || mode === "working"
       ? [[`${resolvedRef}...HEAD`], ["HEAD"]]
       : [[`${resolvedRef}...HEAD`]];
 
-  const entries = new Map();
+  const out = [];
   for (const range of ranges) {
     let raw = "";
     try {
@@ -433,29 +433,99 @@ export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "c
       const meta = fields[i];
       if (!meta.startsWith(":")) continue;
       const parts = meta.slice(1).split(/\s+/);
-      const dstSha = parts[3];
-      const status = (parts[4] || "").charAt(0);
       const file = fields[i + 1];
       i += 1;
-      if (!file || status === "D") continue;
-
-      let bytes = 0;
-      if (dstSha && !/^0+$/.test(dstSha)) {
-        const size = git(["cat-file", "-s", dstSha], { cwd: root, ignoreError: true });
-        bytes = Number(size) || 0;
-      }
-      // An unstaged change has an all-zero destination sha; the working file is
-      // the only place its size exists.
-      if (!bytes) {
-        try {
-          bytes = statSync(join(root, file)).size;
-        } catch (_) {
-          bytes = 0;
-        }
-      }
-      // Keep the largest observation: the same path can appear in both ranges.
-      entries.set(file, Math.max(entries.get(file) || 0, bytes));
+      if (!file) continue;
+      out.push({
+        file,
+        srcMode: parts[0] || "",
+        dstMode: parts[1] || "",
+        srcSha: parts[2] || "",
+        dstSha: parts[3] || "",
+        status: (parts[4] || "").charAt(0),
+      });
     }
+  }
+  return out;
+}
+
+/**
+ * Symlinks this change introduces, with the path each one points at.
+ *
+ * `checkScope` is purely lexical, by design — the paths it judges can come from
+ * a diff and need not exist on disk. But that made a symlink a hole straight
+ * through it: a link named `notes.md` pointing at `.agent/config.yml` is judged
+ * as `notes.md`, and the protected path it resolves to is never considered.
+ * Resolving here, rather than inside `checkScope`, keeps that function lexical
+ * and testable while letting the gate judge both names.
+ *
+ * The target is resolved lexically against the link's own directory: it may
+ * point outside the repository, and following it on disk would be the wrong
+ * thing to do with an untrusted path.
+ *
+ * @param {string} root
+ * @param {string} base
+ * @param {string} mode
+ * @returns {Array<{ link: string, target: string }>}
+ */
+export function symlinkChanges(root = process.cwd(), base = "main", mode = "committed") {
+  const SYMLINK_MODE = "120000";
+  const results = [];
+  const seen = new Set();
+
+  for (const entry of parseRawDiff(root, base, mode)) {
+    if (entry.status === "D") continue;
+    if (entry.dstMode !== SYMLINK_MODE) continue;
+    if (seen.has(entry.file)) continue;
+    seen.add(entry.file);
+
+    // A symlink's blob content is its target path.
+    let target = "";
+    if (entry.dstSha && !/^0+$/.test(entry.dstSha)) {
+      target = (git(["cat-file", "blob", entry.dstSha], { cwd: root, ignoreError: true }) || "").trim();
+    }
+    if (!target) {
+      try {
+        target = readlinkSync(join(root, entry.file));
+      } catch (_) {
+        continue;
+      }
+    }
+    if (!target) continue;
+
+    const linkDir = normalizePath(entry.file).split("/").slice(0, -1).join("/");
+    const resolved = normalizePath(target).startsWith("/")
+      ? normalizePath(target)
+      : canonicalizePath(linkDir ? `${linkDir}/${target}` : target);
+
+    results.push({ link: entry.file, target: resolved });
+  }
+
+  return results;
+}
+
+export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "committed") {
+  const entries = new Map();
+  for (const entry of parseRawDiff(root, base, mode)) {
+    if (entry.status === "D") continue;
+    const { file, dstSha } = entry;
+
+    let bytes = 0;
+    if (dstSha && !/^0+$/.test(dstSha)) {
+      const size = git(["cat-file", "-s", dstSha], { cwd: root, ignoreError: true });
+      bytes = Number(size) || 0;
+    }
+    // An unstaged change has an all-zero destination sha; the working file is
+    // the only place its size exists.
+    if (!bytes) {
+      try {
+        bytes = statSync(join(root, file)).size;
+      } catch (_) {
+        bytes = 0;
+      }
+    }
+    // Keep the largest observation: the same path can appear in both ranges.
+    entries.set(file, Math.max(entries.get(file) || 0, bytes));
   }
 
   // Only the paths git itself refused to render as text are relevant; a file
