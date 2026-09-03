@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.59.0] - 2026-09-03
+*The bypass I found in my own new check, closed by someone else — and the larger hole they noticed while closing it.*
+
+### Fixed
+- **Five Modules Disagreed On What A Test File Is (`src/test-paths.mjs`, and five callers)**: `security.mjs` matched the substring `/test/`, which has no match in `tests/test_calc.py` — so the standard pytest layout, the standard Rust integration layout (`tests/*.rs`) and every RSpec suite (`spec/`) were not test files, and *the entire tamper guard was switched off for them*: skip injection, vacuous assertions, commented-out assertions, removal, weakening, expectation rewrites, all silent. `mutation.mjs` had the same substring bug pointed the other way and mutated operators inside those tests, scoring the result. `engine.mjs` never looked for `_test.`, so `strictTestLock` did not consider a Go test file to be a test file. `coverage.mjs` and `evidence.mjs` each had a fourth and fifth spelling. A predicate carrying this much weight cannot have five definitions; `isTestPath` is now the only one, matching whole path segments rather than substrings (so `latest/` is not `test/`) and covering pytest's `test_*.py`, Go's `_test.go`, RSpec's `_spec.rb` and Foundry's `.t.sol`.
+- **An Assertion Wrapped Across Lines Escaped The Expectation Guard (`src/security.mjs`)**: the pairing added in v0.58.0 ran on physical lines, so the value moving to a line of its own — which is what every formatter does the day a line runs long — meant neither side carried the assertion keyword and no pair was ever formed. Pairing now runs on statements reassembled from the diff's two images, using a per-language scanner that tracks string, comment and delimiter state across lines (Python triple-quotes, Go and Rust raw strings, JS template literals and regex literals, Rust's nested block comments). Verified closed for JavaScript, Python, Go and Rust; a realistic diff that only re-indents, reorders or reformats still passes silently.
+- **Hex, Octal, Binary And Exponent Literals Were Invisible (`src/security.mjs`)**: literal normalisation required a decimal digit run, so `0xFF` never became a placeholder, the two shapes never matched, and `assert.equal(flags, 0xFF)` → `0xFE` was not a rewritten expectation. In a file full of bit flags that was every value change.
+
+### Credit
+The statement-level pairing, the per-language scanners and the numeric-literal fix arrived as [PR #14](https://github.com/FullThrottle83/jules-orchestrator-kit/pull/14) from an external coding agent, in response to the multi-line bypass being published as an open problem. Verified independently — reproduced against the shipped CLI, re-run on this machine, probed for false positives on realistic diffs — before merging. The test-path classifier is the hole that PR noticed and deliberately left alone as out of scope; it turned out to be the larger of the two.
+
 ## [0.58.0] - 2026-09-03
 *A second cold review, from a reviewer who had never seen the project. Seven findings, all reproduced against the shipped CLI before anything was changed — and two more that only surfaced while fixing them.*
 

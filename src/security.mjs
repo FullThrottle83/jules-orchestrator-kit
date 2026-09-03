@@ -1,4 +1,5 @@
 import { openSync, readFileSync, writeSync, fsyncSync, closeSync, renameSync, realpathSync, existsSync, lstatSync, unlinkSync } from "node:fs";
+import { isTestPath } from "./test-paths.mjs";
 import { dirname, join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import { canonicalizePath, isWindowsAbsolutePath } from "./config.mjs";
@@ -1789,18 +1790,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   let currentOldLineNo = null;
   let currentNewLineNo = null;
 
-  const isTestFile = (f) => {
-    if (!f) return false;
-    const n = f.replace(/\\/g, "/").toLowerCase();
-    return (
-      n.includes(".test.") ||
-      n.includes(".spec.") ||
-      n.includes("_test.") ||
-      n.includes("/test/") ||
-      n.includes("/tests/") ||
-      n.includes("/__tests__/")
-    );
-  };
+  const isTestFile = isTestPath;
 
   const SKIP_INJECTIONS = [
     { pattern: /\b(?:it|test|describe|context)\.skip\s*\(/i, desc: "Injected test skip (.skip())" },

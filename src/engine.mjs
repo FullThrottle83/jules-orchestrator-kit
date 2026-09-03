@@ -1,4 +1,5 @@
 import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
+import { isTestPath } from "./test-paths.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
@@ -494,10 +495,7 @@ export async function gate(opts = {}) {
   const postTestHash = postTestHashResult.treeHash;
   let testTampered = false;
   if (config.evidence?.strictTestLock && !opts.allowTestModifications && preTestHashResult.fileCount > 0) {
-    const changedTestFile = files.find((f) => {
-      const lower = f.toLowerCase();
-      return lower.startsWith("test/") || lower.startsWith("tests/") || lower.includes(".test.") || lower.includes(".spec.");
-    });
+    const changedTestFile = files.find((f) => isTestPath(f));
     if (changedTestFile && preTestHash !== postTestHash) {
       testTampered = true;
     }

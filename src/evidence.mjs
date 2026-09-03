@@ -14,6 +14,7 @@ import {
 import { join, resolve, relative, isAbsolute, sep, extname } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
+import { isTestPath } from "./test-paths.mjs";
 
 /**
  * Normalizes file path to POSIX slashes.
@@ -164,20 +165,7 @@ export function computeDirectoryHash(root, options = {}) {
 
   // Filter test files if specifically looking for test suites
   if (options.testOnly) {
-    fileList = fileList.filter((f) => {
-      const lower = f.toLowerCase();
-      return (
-        lower.startsWith("test/") ||
-        lower.startsWith("tests/") ||
-        lower.startsWith("__tests__/") ||
-        lower.startsWith("spec/") ||
-        lower.includes(".test.") ||
-        lower.includes(".spec.") ||
-        lower.includes("_test.") ||
-        lower.endsWith("test.sol") ||
-        lower.endsWith(".t.sol")
-      );
-    });
+    fileList = fileList.filter((f) => isTestPath(f));
   }
 
   const fileHashes = {};
