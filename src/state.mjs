@@ -530,6 +530,54 @@ export function isPidAlive(pid, expectedStartTime = null) {
   return true;
 }
 
+export const LOCK_TTL_MS = 7200000;
+
+/**
+ * The epoch-ms instant a lock record stops holding.
+ *
+ * Records written before leases existed carry only `acquiredAt`, so they keep
+ * the two-hour window they were reaped on before.
+ */
+function lockExpiry(record) {
+  if (!record) return 0;
+  if (record.expiresAt) {
+    const t = new Date(record.expiresAt).getTime();
+    if (Number.isFinite(t)) return t;
+  }
+  if (record.acquiredAt) {
+    const t = new Date(record.acquiredAt).getTime();
+    if (Number.isFinite(t)) return t + LOCK_TTL_MS;
+  }
+  return Infinity;
+}
+
+/**
+ * Is this lock still held?
+ *
+ * There are two kinds of holder and only one of them has a process worth
+ * asking about.
+ *
+ * An in-process caller — the engine, the swarm — holds the lock for as long as
+ * it runs, so its pid is a real witness: if it died the lock is garbage, and
+ * reaping on a dead pid is what stops a crash from wedging the repo for the
+ * full TTL.
+ *
+ * `agentctl lock acquire` is the opposite. That process writes the file and
+ * exits *by design* — the agent it speaks for lives in some other process, on
+ * another machine, or has not started yet. Asking whether the CLI that wrote
+ * the record is alive therefore always answered "no", so the very next acquire
+ * reaped the lock and handed the same files to a second agent, telling both
+ * they had exclusive access. Two holders who each believe they are alone is
+ * worse than no lock at all. A record written that way marks itself `leased`,
+ * and then only its expiry decides.
+ */
+export function isLockLive(record) {
+  if (!record) return false;
+  if (Date.now() >= lockExpiry(record)) return false;
+  if (record.leased === true) return true;
+  return isPidAlive(record.pid, record.processStartTime ?? record.starttime ?? null);
+}
+
 function assertSafeTaskId(taskId) {
   if (typeof taskId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(taskId) || basename(taskId) !== taskId) {
     throw new Error("Invalid task id for lock path");
@@ -546,15 +594,16 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   if (existsSync(lockFile)) {
     try {
       const existing = JSON.parse(readFileSync(lockFile, "utf-8"));
-      const recordedStartTime = existing.processStartTime ?? existing.starttime ?? null;
-      const isAlive = isPidAlive(existing.pid, recordedStartTime);
-      const isExpired = existing.acquiredAt && Date.now() - new Date(existing.acquiredAt).getTime() > 7200000;
-
-      if (!isAlive || isExpired) {
-        try { unlinkSync(lockFile); } catch (_) {}
-      } else {
-        return { ok: false, holder: existing.agent, taskId, pid: existing.pid };
+      if (isLockLive(existing)) {
+        return {
+          ok: false,
+          holder: existing.agent,
+          taskId,
+          pid: existing.pid,
+          expiresAt: existing.expiresAt || null,
+        };
       }
+      try { unlinkSync(lockFile); } catch (_) {}
     } catch (_) {
       try { unlinkSync(lockFile); } catch (_) {}
     }
@@ -573,11 +622,7 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   if (requested.size > 0) {
     for (const held of lockStatus(root)) {
       if (!held || held.taskId === taskId) continue;
-      const recordedStart = held.processStartTime ?? held.starttime ?? null;
-      const stillHeld =
-        isPidAlive(held.pid, recordedStart) &&
-        !(held.acquiredAt && Date.now() - new Date(held.acquiredAt).getTime() > 7200000);
-      if (!stillHeld) continue;
+      if (!isLockLive(held)) continue;
 
       const overlap = (Array.isArray(held.files) ? held.files : [])
         .map((f) => normalizePath(f))
@@ -588,13 +633,22 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
           holder: held.agent,
           taskId: held.taskId,
           pid: held.pid,
+          expiresAt: held.expiresAt || null,
           conflictingFiles: overlap,
         };
       }
     }
   }
 
-  const startTime = getProcessStartTime(process.pid);
+  // `leased` says the holder is not this process. A caller that will stay
+  // alive for the duration (the engine, the swarm) leaves it off and gets pid
+  // liveness; a one-shot CLI sets it and gets a plain time-bounded lease. See
+  // isLockLive.
+  const leased = opts?.lease === true;
+  const ownerPid = Number.isInteger(opts?.ownerPid) && opts.ownerPid > 0 ? opts.ownerPid : process.pid;
+  const ttlMs = Number.isFinite(opts?.ttlMs) && opts.ttlMs > 0 ? opts.ttlMs : LOCK_TTL_MS;
+  const startTime = getProcessStartTime(ownerPid);
+  const acquiredAt = new Date();
   const concurrencyGroup = String(opts?.concurrencyGroup || opts?.concurrency_group || "").trim();
   const payload = {
     agent: agentName,
@@ -602,12 +656,14 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
     branch,
     files,
     concurrencyGroup,
-    pid: process.pid,
+    pid: ownerPid,
     processStartTime: startTime,
     starttime: startTime,
+    leased,
     nonce: randomUUID(),
     hostname: hostname(),
-    acquiredAt: new Date().toISOString(),
+    acquiredAt: acquiredAt.toISOString(),
+    expiresAt: new Date(acquiredAt.getTime() + ttlMs).toISOString(),
   };
 
   let fd;

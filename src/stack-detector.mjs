@@ -1,5 +1,42 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
+import { whichBinary } from "./provider-readiness.mjs";
+
+/**
+ * The Python interpreter to invoke, by whatever name this machine has it under.
+ *
+ * `python3` does not exist on a default Windows install (the launcher is `py`,
+ * the Store package is `python`), so a hardcoded `python3` made every Python
+ * command in the kit unrunnable there.
+ */
+function pythonBin(env = process.env) {
+  for (const name of ["python3", "python", "py"]) {
+    if (whichBinary(name, env)) return name;
+  }
+  return "python3";
+}
+
+/**
+ * The command that runs a pytest suite.
+ *
+ * Not `pytest`. Invoked as a bare console script, pytest does not put the
+ * working directory on `sys.path`; invoked as `-m`, Python does. So the most
+ * ordinary Python layout there is — a module at the root, its test under
+ * `tests/` importing it — collapsed at collection with `ModuleNotFoundError:
+ * No module named 'calc'`, and the gate reported exit 4 on a project whose
+ * suite passes perfectly when the developer types `python3 -m pytest`. A
+ * first-run rejection of correct code is the most expensive failure this tool
+ * can produce: it teaches the user the gate is wrong.
+ *
+ * Falls back to the bare console script only when no interpreter can be found
+ * to host the module.
+ */
+export function pytestCmd(env = process.env) {
+  for (const name of ["python3", "python", "py"]) {
+    if (whichBinary(name, env)) return `${name} -m pytest`;
+  }
+  return "pytest";
+}
 
 /**
  * Generate a zero-dependency smoke test file using node:test for untested JS/Generic repos.
@@ -186,7 +223,7 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
   }
   if (existsSync(join(projectRoot, "pyproject.toml")) || existsSync(join(projectRoot, "requirements.txt")) || existsSync(join(projectRoot, "setup.py"))) {
     const triggerFile = existsSync(join(projectRoot, "pyproject.toml")) ? "pyproject.toml" : existsSync(join(projectRoot, "requirements.txt")) ? "requirements.txt" : "setup.py";
-    return { ...container, stack: "python", testCmd: "pytest", buildCmd: "python3 -m compileall -q .", triggerFile };
+    return { ...container, stack: "python", testCmd: pytestCmd(), buildCmd: `${pythonBin()} -m compileall -q .`, triggerFile };
   }
   if (existsSync(join(projectRoot, "mix.exs"))) {
     return { ...container, stack: "mix", testCmd: "mix test", buildCmd: "mix compile", triggerFile: "mix.exs" };
@@ -270,7 +307,7 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
     }
     const pyFile = rootFiles.find((f) => f.endsWith(".py"));
     if (pyFile) {
-      return { ...container, stack: "python", testCmd: "pytest", buildCmd: "python3 -m compileall -q .", triggerFile: pyFile };
+      return { ...container, stack: "python", testCmd: pytestCmd(), buildCmd: `${pythonBin()} -m compileall -q .`, triggerFile: pyFile };
     }
   } catch (_) {}
 
@@ -699,7 +736,7 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
   if (detected.stack === "php" || detected.stack === "laravel" || detected.stack === "wordpress") {
     testCmd = 'php -l $(find . -name "*.php" -not -path "./vendor/*" -not -path "./node_modules/*")';
   } else if (detected.stack === "python") {
-    testCmd = "python3 -m compileall -q -x '^\\./(\\.\\venv|venv|node_modules|\\.git)/' .";
+    testCmd = `${pythonBin()} -m compileall -q -x '^\\./(\\.\\venv|venv|node_modules|\\.git)/' .`;
   } else if (detected.stack === "dotnet") {
     testCmd = "dotnet build --no-incremental --nologo";
   } else if (detected.stack === "cargo") {

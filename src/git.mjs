@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import { readFileSync, existsSync, statSync, readlinkSync } from "node:fs";
+import { readFileSync, existsSync, statSync, lstatSync, readlinkSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { normalizePath, canonicalizePath } from "./config.mjs";
 
@@ -382,6 +382,25 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
     for (const file of untrackedFiles) {
       try {
         const fullPath = join(root, file);
+
+        // A symlink is its target *path*, never its target's contents — that is
+        // how git stores one and how `git diff` renders one. Reading through
+        // the link instead pulled whatever it pointed at into the diff, so
+        // `ln -s /etc/passwd notes.md` shipped that file's contents to the
+        // provider as ordinary added lines under an innocent name. Emit the
+        // link the way a committed symlink is emitted, and let checkScope judge
+        // the target it resolves to.
+        let linkStat = null;
+        try {
+          linkStat = lstatSync(fullPath);
+        } catch (_) {}
+        if (linkStat && linkStat.isSymbolicLink()) {
+          const target = readlinkSync(fullPath);
+          untrackedDiff += `\ndiff --git a/${file} b/${file}\nnew file mode 120000\n--- /dev/null\n+++ b/${file}\n`;
+          untrackedDiff += `@@ -0,0 +1 @@\n+${target}\n\\ No newline at end of file\n`;
+          continue;
+        }
+
         if (existsSync(fullPath)) {
           const content = readFileSync(fullPath, "utf-8");
           const addedLines = content.split(/\r?\n/);
@@ -502,15 +521,46 @@ export function symlinkChanges(root = process.cwd(), base = "main", mode = "comm
     }
     if (!target) continue;
 
-    const linkDir = normalizePath(entry.file).split("/").slice(0, -1).join("/");
-    const resolved = normalizePath(target).startsWith("/")
-      ? normalizePath(target)
-      : canonicalizePath(linkDir ? `${linkDir}/${target}` : target);
+    results.push({ link: entry.file, target: resolveLinkTarget(entry.file, target) });
+  }
 
-    results.push({ link: entry.file, target: resolved });
+  // An untracked symlink appears in no `git diff --raw` at all, so in
+  // working-tree mode — the default for `agentctl check` — the loop above sees
+  // nothing. `ln -s /etc/os-release leak.txt` therefore reached checkScope as
+  // the plain name `leak.txt` and passed; committing the identical link to a
+  // branch and checking that was caught. The gate's answer must not depend on
+  // whether the attacker ran `git add`.
+  if (mode === "working-tree" || mode === "working") {
+    const untrackedRaw =
+      git(["-c", "core.quotePath=false", "ls-files", "-z", "--others", "--exclude-standard"], {
+        cwd: root,
+        raw: true,
+        ignoreError: true,
+      }) || "";
+    for (const rel of untrackedRaw.split("\0").map(normalizePath).filter(Boolean)) {
+      if (seen.has(rel)) continue;
+      let target = "";
+      try {
+        if (!lstatSync(join(root, rel)).isSymbolicLink()) continue;
+        target = readlinkSync(join(root, rel));
+      } catch (_) {
+        continue;
+      }
+      if (!target) continue;
+      seen.add(rel);
+      results.push({ link: rel, target: resolveLinkTarget(rel, target) });
+    }
   }
 
   return results;
+}
+
+/** Where a symlink at `link` pointing at `target` lands, as a repo-relative or absolute path. */
+function resolveLinkTarget(link, target) {
+  const linkDir = normalizePath(link).split("/").slice(0, -1).join("/");
+  return normalizePath(target).startsWith("/")
+    ? normalizePath(target)
+    : canonicalizePath(linkDir ? `${linkDir}/${target}` : target);
 }
 
 export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "committed") {
