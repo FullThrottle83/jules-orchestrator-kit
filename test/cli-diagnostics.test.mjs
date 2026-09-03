@@ -70,7 +70,10 @@ test("a failed verify phase says what broke", async (t) => {
     const dir = repoWithFailingTest(Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n"));
     try {
       const out = run(dir, ["gate"]).stdout;
-      assert.match(out, /last 20 of 200 lines/);
+      // 202, not 200: the runner's own two banner lines land on stdout, and
+      // both streams are now shown rather than stderr silently winning. They
+      // are prefixed to stderr's 200 so the surviving tail is still the failure.
+      assert.match(out, /last 20 of 202 lines/);
       assert.match(out, /line 199/, "the tail is what matters, so it must be the end that survives");
       assert.doesNotMatch(out, /line 100\b/);
     } finally {
@@ -82,8 +85,17 @@ test("a failed verify phase says what broke", async (t) => {
     const dir = repoWithFailingTest("still broken");
     try {
       const out = run(dir, ["gate", "--fix"]).stdout;
-      assert.match(out, /OODA Repair Exhausted/);
       assert.doesNotMatch(out, /pass: agentctl gate --fix/);
+      // Exit 4 has two distinct causes and they must not be told as one story:
+      // the agent ran and could not fix it, or the provider refused the
+      // dispatch and the agent never ran. Which applies here depends on whether
+      // this machine's provider is usable, so accept either — but require that
+      // whichever it is actually explains itself.
+      assert.match(out, /OODA Repair Exhausted|the repair agent never ran/);
+      if (/the repair agent never ran/.test(out)) {
+        assert.match(out, /Provider error: /, "a dispatch that never happened must say why");
+        assert.match(out, /agentctl providers/, "and point at the command that diagnoses it");
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

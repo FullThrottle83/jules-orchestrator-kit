@@ -128,24 +128,34 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
 
       const wizardPromise = runInitWizard(tmpDir, {
         interactive: true,
+        // No agent CLI reachable, so provider detection is deterministic: the
+        // menu opens on the hosted provider, which is the one that then asks
+        // the plan question.
+        env: { PATH: "" },
         stdin: mockStdin,
         stdout: mockStdout,
       });
 
-      // 1. Select tier (confirm with Enter)
+      // 1. Select provider (confirm with Enter)
       setTimeout(() => mockStdin.write("\r"), 400);
-      // 2. Verification test command (confirm with Enter)
-      setTimeout(() => mockStdin.write("\n"), 600);
-      // 3. Verification build command (confirm with Enter)
-      setTimeout(() => mockStdin.write("\n"), 800);
-      // 4. Presets multiSelect (confirm with Enter)
-      setTimeout(() => mockStdin.write("\r"), 1000);
-      // 5. Probe confirmation (confirm with Enter)
+      // 2. Select plan tier — only asked for the hosted provider
+      setTimeout(() => mockStdin.write("\r"), 600);
+      // 3. Select verification profile (confirm with Enter)
+      setTimeout(() => mockStdin.write("\r"), 800);
+      // 4. Verification test command (confirm with Enter)
+      setTimeout(() => mockStdin.write("\n"), 1000);
+      // 5. Verification build command (confirm with Enter)
       setTimeout(() => mockStdin.write("\n"), 1200);
+      // 6. Presets multiSelect (confirm with Enter)
+      setTimeout(() => mockStdin.write("\r"), 1400);
+      // 7. Probe confirmation (confirm with Enter)
+      setTimeout(() => mockStdin.write("\n"), 1600);
 
       const res = await wizardPromise;
       assert.equal(res.ok, true);
       assert.equal(res.plan.tier, "ultra");
+      assert.equal(res.plan.provider, "jules");
+      assert.equal(res.plan.profile, "standard");
       assert.equal(res.plan.verify.test, "echo ok");
       assert.equal(res.plan.verify.build, "echo build");
     } finally {

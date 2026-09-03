@@ -200,7 +200,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **797 unit tests across 98 suites passing in < 12.0s**.
+* **Verified Test Suite:** Tested with **827 unit tests across 107 suites passing in < 14.0s**.
 
 <br/>
 
@@ -226,10 +226,11 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | `retry` | `agentctl retry <sessionId> [--role <role>] [--with-failure] [--json]` | Fetches error traces and activity logs from a failed session and synthesizes a targeted OODA retry dispatch. | `0` (Dispatched), `1` (Error) |
 | `prune` | `agentctl prune [--age 7d] [--state <state>] [--delete] [--yes] [--json]` | Queries and batch-archives or deletes stale/completed sessions via Jules v1alpha API to keep workspaces clean. | `0` (Cleaned) |
 | `pr harvest` | `agentctl pr harvest [--tier r0,r1] [--limit <n>] [--auto] [--allow-no-checks] [--dry-run]` | Discovers open agent PRs, evaluates CI checks & risk tiers, and auto-squashes green low-risk changes autonomously. A PR reporting **no** CI checks is skipped unless `--allow-no-checks` is passed, and an unavailable changed-file list blocks rather than classifying as low risk. | `0` (Triaged/Merged), `1` (Error) |
-| `providers` | `agentctl providers [--json]` | Probes every built-in provider and reports which ones this machine can dispatch to, what each one is missing, and which is active. | `0` (Active provider ready), `1` (Not ready) |
+| `providers` | `agentctl providers [--json]` | Probes every built-in provider and reports which ones this machine can dispatch to, what each one is missing, and which is active. For a CLI provider, "ready" means the binary is on `PATH` — it does not prove the CLI is signed in. | `0` (Active provider ready), `1` (Not ready) |
+| `provider set` | `agentctl provider set <name>` | Switches the active provider in `.agent/config.yml` in place, preserving comments. | `0` (Set), `1` (No manifest), `2` (Name missing) |
 | `profile` | `agentctl profile [--list] [--set minimal\|standard\|max] [--json]` | Shows the verification stages the configured profile expands to on this stack, or writes a new profile into `.agent/config.yml` without disturbing comments. | `0` (Shown/Set), `2` (Unknown profile) |
 | `ci init` | `agentctl ci init [--target github\|gitlab] [--force] [--dry-run] [--json]` | Generates a stack-aware CI gate workflow (`.github/workflows/agent-gate.yml` or `.gitlab-ci.agent-gate.yml`) that runs `agentctl check --mode committed`. Refuses to overwrite without `--force`. | `0` (Written/Skipped), `1` (Write error), `2` (Unknown target) |
-| `doctor` | `agentctl doctor [--json]` | Diagnostic DAG check runner & automated transactional self-repair engine. | `0` (Healthy), `1` (Failures) |
+| `doctor` | `agentctl doctor [--probe] [--json]` | Diagnostic check runner. `--probe` additionally starts the configured provider's CLI to confirm it answers, rather than only finding it on `PATH`. | `0` (Healthy), `1` (Failures) |
 | `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. Non-task files (manifests, `README.md`) are skipped, and `--dry-run` previews without moving anything. | `0` (Complete) |
 | `swarm` | `agentctl swarm [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
 | `check` / `gate` / `audit`| `agentctl check [--mode working-tree] [--fix] [--json] [--json-report <path>]` | Runs security, secret scanning, rules budget audit, and tiered verification gates (with declarative assertion support) against working tree or branch. | `0` (Approved), `1` (Budget/Arg), `3` (Scope), `4` (Verify), `5` (Diff >75K), `6` (Secret), `8` (Flaky) |

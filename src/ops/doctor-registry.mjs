@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { loadConfig } from "../config.mjs";
-import { probeProvider, detectAvailableProviders } from "../provider-readiness.mjs";
+import { probeProvider, detectAvailableProviders, probeProviderLiveness } from "../provider-readiness.mjs";
 import { resolveConcurrency } from "../budget.mjs";
 
 /**
@@ -443,31 +443,53 @@ export async function runDoctorChecks(options = {}) {
     // Fall back to the default; config.present already reports a broken config.
   }
   const providerProbe = probeProvider(configuredProvider);
+  // A green row here used to read as "the provider works", when all it ever
+  // checked was a name on PATH or a variable in the environment. An installed
+  // CLI whose account has no entitlement passes both and then fails on the
+  // first dispatch, so the row has to say what it actually verified.
+  const liveness = activeProbe ? probeProviderLiveness(configuredProvider) : null;
+  const scopeNote =
+    providerProbe.kind === "exec"
+      ? "Checked: the binary is on PATH. Not checked: whether the CLI is signed in — only a dispatch can show that."
+      : "Checked: a credential is present in the environment. Not checked: whether the provider accepts it.";
+  const livenessFailed = Boolean(liveness && liveness.attempted && !liveness.ok);
+
   addResult({
     id: "provider.key",
     category: "Provider",
     title: `Provider Readiness (${providerProbe.name})`,
-    status: providerProbe.ready ? "pass" : "warn",
-    severity: providerProbe.ready ? "info" : "high",
+    alwaysShowSummary: true,
+    status: providerProbe.ready && !livenessFailed ? "pass" : "warn",
+    severity: providerProbe.ready && !livenessFailed ? "info" : "high",
     // Naming the variable, not the value: an operator who wonders which key a
     // dispatch will use should not have to echo a secret to find out.
-    summary: `${providerProbe.label} — ${providerProbe.reason}`,
-    remediation: providerProbe.ready
-      ? []
-      : [
-          {
-            summary: providerProbe.remedy,
-            risk: "low",
-            automatic: false,
-            requiresProbe: false,
-          },
-        ],
+    summary: [
+      `${providerProbe.label} — ${providerProbe.reason}`,
+      liveness && liveness.attempted ? liveness.detail : null,
+      providerProbe.ready ? scopeNote : null,
+      !activeProbe && providerProbe.kind === "exec" ? "Run `agentctl doctor --probe` to start the CLI and confirm it answers." : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    remediation:
+      providerProbe.ready && !livenessFailed
+        ? []
+        : [
+            {
+              summary: livenessFailed ? `The CLI is installed but did not run cleanly: ${liveness.detail}` : providerProbe.remedy,
+              risk: "low",
+              automatic: false,
+              requiresProbe: !providerProbe.ready ? false : true,
+            },
+          ],
     evidence: [
       { label: "provider", value: providerProbe.name, sensitive: false },
       { label: "providerKind", value: providerProbe.kind, sensitive: false },
       { label: "ready", value: providerProbe.ready, sensitive: false },
       { label: "keySource", value: providerProbe.keySource || "", sensitive: false },
       { label: "binaryFound", value: Boolean(providerProbe.binPath), sensitive: false },
+      { label: "livenessProbed", value: Boolean(liveness && liveness.attempted), sensitive: false },
+      { label: "livenessOk", value: liveness ? liveness.ok : null, sensitive: false },
     ],
   });
 

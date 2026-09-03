@@ -70,35 +70,44 @@ export const COMMAND_REGISTRY = [
     shortcuts: ["d", "doc"],
     examples: [
       "agentctl doctor",
-      "agentctl doctor --interactive",
-      "agentctl doctor --fix safe --yes",
+      "agentctl doctor --probe",
       "agentctl doctor --json",
     ],
+    // `--interactive`, `--fix` and `--yes` were listed here and implemented
+    // nowhere: the report carries remediation entries, but nothing applies
+    // them. Advertising a flag the command silently ignores is the same defect
+    // as documenting `queue` as a read-only browser. They come back to this
+    // list when an apply step exists.
     flags: [
-      { name: "interactive", type: "boolean", description: "Open full-screen diagnostic matrix" },
-      { name: "fix", type: "string", description: "Apply fix classes (e.g. 'safe' or check IDs)" },
-      { name: "probe", type: "boolean", description: "Enable active network/execution probes" },
+      { name: "probe", type: "boolean", description: "Actively start the provider CLI to check it answers, rather than only finding it on PATH" },
       { name: "json", type: "boolean", description: "Output structured JSON doctor report" },
-      { name: "yes", type: "boolean", description: "Bypass interactive confirmation for safe fixes" },
     ],
   },
   {
     id: "queue",
+    // This described a passive viewer — "Browse and manage", `mutates: false`,
+    // `risk: low` — while the handler runs the queue: it dispatches every task
+    // to the provider and spends budget. Someone reading `--help` before their
+    // first run was told the opposite of what the command does.
     path: ["queue"],
     title: "queue",
-    description: "Browse and manage canonical task queue",
+    description: "Execute pending task envelopes: dispatches each to the provider and moves it out of the queue",
     category: "Operate",
-    mutates: false,
-    risk: "low",
+    mutates: true,
+    risk: "moderate",
     interactive: "optional",
     requiresRepository: true,
     shortcuts: ["q"],
     examples: [
+      "agentctl queue --dry-run",
       "agentctl queue",
-      "agentctl queue --interactive",
+      "agentctl queue --dag --concurrency 3",
       "agentctl queue --json",
     ],
     flags: [
+      { name: "dag", type: "boolean", description: "Resolve depends-on order via Kahn's algorithm before running" },
+      { name: "concurrency", type: "string", description: "Parallel worker slots (defaults to limits.concurrency)" },
+      { name: "dry-run", type: "boolean", description: "Report what would run without dispatching or moving anything" },
       { name: "interactive", type: "boolean", description: "Open full-screen queue dashboard" },
       { name: "json", type: "boolean", description: "Output structured JSON queue snapshot" },
       { name: "limit", type: "string", description: "Maximum tasks to include in snapshot" },

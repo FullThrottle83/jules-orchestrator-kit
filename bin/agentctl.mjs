@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { applyEnvAliases } from "../src/env-aliases.mjs";
+import { selectFailureOutput } from "../src/ops/verify-output.mjs";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.mjs";
@@ -63,6 +64,7 @@ Commands:
   lock <action>         Manage mutex locks (acquire | release | status)
   doctor                Run system diagnostics and stack resolution checks
   providers             List agent providers and whether this machine can reach them (--json)
+  provider set <name>   Switch the active provider in .agent/config.yml
   profile               Show or set the verification profile (--list, --set <name>, --json)
   ci init               Generate a stack-aware CI gate workflow (--target github|gitlab, --force)
   bootstrap             Bootstrap zero-test repository with verification oracle
@@ -195,9 +197,7 @@ function printVerifyFailure(failure) {
   if (failure.command) console.log(`     - Command: ${failure.command}`);
   for (const d of failure.diagnostics || []) console.log(`     - ${d}`);
 
-  // stderr is where a failing suite says what it expected; stdout is the
-  // fallback for the runners that report everything there.
-  const output = (failure.stderr || "").trim() || (failure.stdout || "").trim();
+  const output = selectFailureOutput(failure);
   if (!output) return;
   const lines = output.split("\n");
   const tail = lines.slice(-VERIFY_OUTPUT_TAIL_LINES);
@@ -419,6 +419,13 @@ async function main() {
           if (p.findings) {
             p.findings.forEach((f) => console.log(`     - [${f.severity}] ${f.type}: ${f.description}`));
           }
+          // `git_resolution` reports its cause in `error` and nothing else.
+          // Never rendering it meant an unresolvable base branch printed a bare
+          // "Phase [GIT_RESOLUTION] : ❌ FAIL" and the operator had to re-run
+          // with --json to find out what the tool had objected to.
+          if (!p.ok && p.error) {
+            console.log(`     - Error: ${p.error}`);
+          }
           if (!p.ok && p.failure) {
             printVerifyFailure(p.failure);
           }
@@ -427,13 +434,49 @@ async function main() {
         console.log(`Overall Result: ${res.ok ? "APPROVED (Exit 0)" : `REJECTED (Exit ${res.code})`}\n`);
         if (!res.ok) {
           const failedPhase = res.phases.find((p) => !p.ok)?.phase;
+          // The secret scanner also carries the integrity findings, so exit 6
+          // alone cannot pick the hint: a weakened assertion and a leaked key
+          // arrive under the same phase and the same code.
+          const secretsPhase = res.phases.find((p) => p.phase === "secrets" && !p.ok);
+          const findingTypes = new Set((secretsPhase?.findings || []).map((f) => f.type));
+          const INTEGRITY_TYPES = new Set([
+            "TEST_TAMPERING_DETECTED",
+            "EDGE_RUNTIME_VIOLATION",
+            "CROSS_PACKAGE_BOUNDARY_VIOLATION",
+          ]);
+          const onlyIntegrityFindings =
+            findingTypes.size > 0 && [...findingTypes].every((t) => INTEGRITY_TYPES.has(t));
+
           // Exit 3 is also what a strictTestLock tamper verdict returns, so the
           // code alone cannot pick the hint — a scope remediation for a rewritten
           // test file sends the operator to the wrong flag entirely.
           if (res.repairs) {
-            console.log(`💡 Remediation Hint (Exit 4 OODA Repair Exhausted):`);
-            console.log(`   • Automated self-repair could not pass tests cleanly.`);
-            console.log(`   • Review error fingerprints via: agentctl doctor\n`);
+            // A repair loop that never reached the agent is not an exhausted
+            // repair loop. Telling someone their tests could not be fixed when
+            // the provider rejected the credential sends them to read test
+            // output that was never produced.
+            const providerFailure =
+              res.repairs.finalStatus === "PROVIDER_INFRASTRUCTURE_FAILURE" ||
+              (res.repairs.attempts || []).every((a) => a && a.ok === false && a.error);
+            const firstError = (res.repairs.attempts || []).find((a) => a && a.error)?.error || res.repairs.error;
+            if (providerFailure && firstError) {
+              console.log(`💡 Remediation Hint (Exit 4 — the repair agent never ran):`);
+              console.log(`   • The provider rejected the dispatch, so no repair was attempted.`);
+              console.log(`   • Provider error: ${firstError}`);
+              console.log(`   • Check the provider is usable: agentctl providers`);
+              console.log(`   • The verification failure above is unchanged — fix it locally, or retry once the provider works.\n`);
+            } else {
+              console.log(`💡 Remediation Hint (Exit 4 OODA Repair Exhausted):`);
+              console.log(`   • Automated self-repair could not pass tests cleanly.`);
+              if (firstError) console.log(`   • Last attempt error: ${firstError}`);
+              console.log(`   • Review error fingerprints via: agentctl doctor\n`);
+            }
+          } else if (onlyIntegrityFindings) {
+            console.log(`💡 Remediation Hint (Exit ${res.code} Test Integrity Violation — no secret was found):`);
+            console.log(`   • The diff weakens or removes verification rather than leaking a credential.`);
+            console.log(`   • Restore the assertion the finding names. A requirement that is not met belongs`);
+            console.log(`     RED with a stated reason, not silenced.`);
+            console.log(`   • Nothing needs rotating: this exit code is shared with the secret scanner.\n`);
           } else if (res.flakyVerdict?.verdict === "QUARANTINED") {
             console.log(`💡 Remediation Hint (Exit 8 Flaky Test Quarantined):`);
             console.log(`   • This command has alternated between pass and fail across recent runs.`);
@@ -446,9 +489,38 @@ async function main() {
             console.log(`   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.`);
             console.log(`   • To let agentctl attempt the repair loop itself, pass: agentctl gate --fix\n`);
           } else if (res.code === 3) {
-            console.log(`💡 Remediation Hint (Exit 3 Scope Violation):`);
-            console.log(`   • To allow protected files in this run, pass: agentctl gate --allow-protected`);
-            console.log(`   • Or remove protected/denied paths from the diff before dispatching.\n`);
+            // The same violation has two very different causes. Right after
+            // `init`, every offending path is a file the tool itself just wrote
+            // and has not committed — advising --allow-protected there teaches
+            // the newcomer to bypass the gate on their first run, when what
+            // they need is `git commit`.
+            const scopeFiles = (res.phases.find((p) => p.phase === "scope")?.violations || [])
+              .map((v) => v.file)
+              .filter(Boolean);
+            const { partitionTracked } = await import("../src/git.mjs");
+            const { tracked, untracked } = partitionTracked(root, scopeFiles);
+            const allNewScaffolding =
+              untracked.length > 0 &&
+              tracked.length === 0 &&
+              untracked.every((f) => /^(\.agent\/|AGENTS\.md$|SPEC\.md$|CONSTRAINTS\.md$|DESIGN\.md$)/.test(f));
+
+            if (allNewScaffolding) {
+              console.log(`💡 Remediation Hint (Exit ${res.code} — these are the files init just wrote):`);
+              console.log(`   • The agent manifest and guardrails are gate-protected on purpose: an agent must`);
+              console.log(`     not edit the rules it is governed by. Uncommitted, they read as exactly that.`);
+              console.log(`   • Commit them once and the gate goes green:`);
+              console.log(`       git add ${untracked.join(" ")} && git commit -m "chore: add agent config"\n`);
+            } else {
+              console.log(`💡 Remediation Hint (Exit ${res.code} Scope Violation):`);
+              console.log(`   • To allow protected files in this run, pass: agentctl gate --allow-protected`);
+              console.log(`   • Or remove protected/denied paths from the diff before dispatching.\n`);
+            }
+          } else if (failedPhase === "git_resolution") {
+            console.log(`💡 Remediation Hint (Exit ${res.code} Base Branch Unresolvable):`);
+            console.log(`   • The gate compares your work against a base branch, and this one is not reachable.`);
+            console.log(`   • This repository's branches: git branch -a`);
+            console.log(`   • Point the gate at the right one: agentctl check --base <branch>`);
+            console.log(`   • Or record it once in .agent/config.yml as: base_branch: <branch>\n`);
           } else if (res.code === 5) {
             console.log(`💡 Remediation Hint (Exit 5 Diff Payload Overflow):`);
             console.log(`   • Total diff exceeds ${config.limits?.diffKb || 75} KB limit.`);
@@ -554,7 +626,11 @@ async function main() {
 
       const root = resolveRoot();
       const minCoverage = values.min ? parseFloat(values.min) : (values["min-coverage"] ? parseFloat(values["min-coverage"]) : 100);
-      const diffStr = diffText(root, values.base || "main", values.mode || "working-tree");
+      // `config.baseBranch` was skipped here while every other gate honoured it,
+      // so `agentctl coverage` alone died on "Cannot resolve base reference
+      // main" in any repository not on `main`.
+      const coverageBase = values.base || config.baseBranch || "main";
+      const diffStr = diffText(root, coverageBase, values.mode || "working-tree");
 
       const covRes = runV8Coverage(values.cmd, { root });
       const report = calculateDiffCoverage(covRes.coverageByFile, diffStr, { root, minCoverage });
@@ -562,7 +638,7 @@ async function main() {
       if (values.json) {
         console.log(JSON.stringify({ ...report, testPass: covRes.ok }, null, 2));
       } else {
-        console.log(`\n📊 V8 Native Diff Coverage Report (Base: ${values.base || "main"})`);
+        console.log(`\n📊 V8 Native Diff Coverage Report (Base: ${coverageBase})`);
         console.log(`------------------------------------------------------------------`);
         console.log(`  Target Min Coverage : ${report.minCoverage}%`);
         console.log(`  Achieved Coverage   : ${report.score}%`);
@@ -1161,7 +1237,13 @@ async function main() {
     case "doctor": {
       const { values } = parseArgs({
         args: args.slice(1),
-        options: { json: { type: "boolean", short: "j" } },
+        options: {
+          json: { type: "boolean", short: "j" },
+          // `--probe` was advertised in the command registry and declared
+          // nowhere, so `runDoctorChecks` never saw `activeProbe` and the flag
+          // was silently inert.
+          probe: { type: "boolean" },
+        },
         allowPositionals: true,
         strict: false,
       });
@@ -1170,7 +1252,7 @@ async function main() {
       // them: this command printed a hand-written summary, so findings like a
       // git-tracked .env were computed, tested, and never shown to anyone.
       const { runDoctorChecks } = await import("../src/ops/doctor-registry.mjs");
-      const report = await runDoctorChecks({ root });
+      const report = await runDoctorChecks({ root, activeProbe: Boolean(values.probe) });
 
       if (values.json) {
         console.log(JSON.stringify(report, null, 2));
@@ -1190,7 +1272,11 @@ async function main() {
       const icon = { pass: "✅", warn: "⚠️ ", fail: "❌", skip: "⏭️ ", unknown: "❔" };
       for (const r of report.results) {
         console.log(`  ${icon[r.status] || "•"} ${r.title}`);
-        if (r.status !== "pass") {
+        // A passing row normally speaks for itself. Provider readiness does
+        // not: green there means "a binary was found", and read as "the
+        // provider works" it sends someone into a dispatch that cannot succeed.
+        // Such a row asks to be spelled out even when it passes.
+        if (r.status !== "pass" || r.alwaysShowSummary) {
           console.log(`       ${r.summary}`);
           for (const fix of r.remediation || []) console.log(`       → ${fix.summary}`);
         }
@@ -1203,7 +1289,32 @@ async function main() {
       break;
     }
 
+    case "provider":
     case "providers": {
+      // `agentctl providers` used to tell the operator to run
+      // `agentctl init --provider <name>` to switch — which restarts the whole
+      // onboarding wizard, plan question included, to change one line.
+      if (args[1] === "set") {
+        const target = args[2];
+        if (!target) {
+          console.error(`❌ Usage: agentctl provider set <name>   (see: agentctl providers)`);
+          process.exit(2);
+        }
+        const { setConfigProvider } = await import("../src/config-edit.mjs");
+        const res = setConfigProvider(root, target);
+        if (!res.ok) {
+          console.error(`❌ ${res.error}`);
+          process.exit(1);
+        }
+        const { probeProvider } = await import("../src/provider-readiness.mjs");
+        const probe = probeProvider(target);
+        console.log(`✅ Provider set to '${target}' in ${res.file}`);
+        console.log(`   ${probe.ready ? "Ready" : `Not ready — ${probe.remedy}`}`);
+        if (!probe.known) console.log(`   Note: '${target}' is not a built-in preset, so its readiness cannot be checked.`);
+        console.log(`   The manifest is gate-protected — commit it so the next check does not read it as an agent edit.`);
+        process.exit(0);
+      }
+
       const { values } = parseArgs({
         args: args.slice(1),
         options: { json: { type: "boolean", short: "j" } },
@@ -1231,7 +1342,9 @@ async function main() {
         console.log(`       ${activeProbe.reason}`);
       }
       console.log(`\n  Active: ${active} (provider: in ${config._file || ".agent/config.yml"})`);
-      console.log(`  Switch: agentctl init --provider <name>   ·   every gate below works with no provider at all\n`);
+      console.log(`  Switch: agentctl provider set <name>   ·   every gate below works with no provider at all`);
+      console.log(`  Note:   for the CLI providers, "ready" means the binary is on PATH — it does not prove`);
+      console.log(`          the CLI is signed in. A dispatch is the first thing that can tell you that.\n`);
       process.exit(activeProbe.ready ? 0 : 1);
       break;
     }
@@ -1254,13 +1367,14 @@ async function main() {
           console.error(`❌ Unknown profile '${values.set}'. Choose one of: ${PROFILE_NAMES.join(", ")}`);
           process.exit(2);
         }
-        const { setVerificationProfile } = await import("../src/profiles-io.mjs");
+        const { setVerificationProfile } = await import("../src/config-edit.mjs");
         const res = setVerificationProfile(root, name);
         if (!res.ok) {
           console.error(`❌ ${res.error}`);
           process.exit(1);
         }
         console.log(`✅ Verification profile set to '${name}' in ${res.file}`);
+        console.log(`   The manifest is gate-protected — commit it so the next check does not read it as an agent edit.`);
         process.exit(0);
       }
 
@@ -1512,8 +1626,15 @@ async function main() {
           allowPositionals: true,
         });
 
-        const isNonInteractive = Boolean(values["non-interactive"] || values["no-interactive"] || values.yes);
-        const isInteractive = values.interactive === true ? true : (isNonInteractive ? false : undefined);
+        const { resolveWizardInteractivity } = await import("../src/ops/cli-intent.mjs");
+        const isInteractive = resolveWizardInteractivity({
+          interactive: values.interactive,
+          nonInteractive: values["non-interactive"] || values["no-interactive"],
+          yes: values.yes,
+          // A title and a prompt together state the whole task; there is
+          // nothing left for the wizard to ask.
+          fullySpecified: Boolean(values.title && resolvePromptInput(values, positionals)),
+        });
 
         const { runTaskCreateWizard } = await import("../src/wizard-task.mjs");
         const res = await runTaskCreateWizard(root, {
@@ -1528,12 +1649,17 @@ async function main() {
           requirePlanApproval: values["require-plan-approval"],
           repoless: values.repoless,
           interactive: isInteractive,
+          dryRun: values["dry-run"],
         });
 
         if (values.json) {
           console.log(JSON.stringify(res, null, 2));
         } else {
-          console.log(`✅ Task synthesized & queued at ${res.taskFile}`);
+          console.log(
+            res.dryRun
+              ? `🧪 Dry run — envelope synthesized and validated, nothing written (would be ${res.taskFile})`
+              : `✅ Task synthesized & queued at ${res.taskFile}`
+          );
           console.log(`   Task ID  : ${res.plan.taskId}`);
           console.log(`   Title    : ${res.plan.title}`);
           if (res.plan.role) console.log(`   Role     : ${res.plan.role}`);
@@ -2349,26 +2475,32 @@ async function main() {
       const subAction = args[1];
       if (subAction === "init") {
         const { scaffoldIdeConfig } = await import("../src/ops/ide-scaffold.mjs");
-        const { values } = parseArgs({
+        const { values, positionals } = parseArgs({
           args: args.slice(2),
           options: {
-            target: { type: "string", short: "t", default: "all" },
+            // No `default: "all"` here. parseArgs sets a default eagerly, so
+            // `values.target` was always truthy and the `|| args[2]` fallback
+            // below could never be reached — `agentctl mcp init cursor`, the
+            // spelling --help advertises, silently scaffolded Cursor, VS Code
+            // and Claude Desktop alike. The default belongs at the end of the
+            // resolution chain, not at the start of it.
+            target: { type: "string", short: "t" },
             json: { type: "boolean", short: "j" },
             "dry-run": { type: "boolean", short: "d" },
           },
           allowPositionals: true,
         });
 
-        const target = values.target || args[2] || "all";
+        const target = values.target || positionals[0] || "all";
         try {
-          const res = scaffoldIdeConfig(target, { root });
+          const res = scaffoldIdeConfig(target, { root, dryRun: values["dry-run"] });
           if (values.json) {
             console.log(JSON.stringify(res, null, 2));
           } else {
-            console.log(`\n🔌 IDE MCP Config Scaffolded Successfully!`);
+            console.log(res.dryRun ? `\n🧪 IDE MCP Config — dry run, nothing written` : `\n🔌 IDE MCP Config Scaffolded Successfully!`);
             console.log(`   Target  : ${res.target}`);
             for (const item of res.results) {
-              console.log(`   - ${item.target.toUpperCase()} : ${item.file}`);
+              console.log(`   - ${item.target.toUpperCase()} : ${item.file}${res.dryRun ? " (would write)" : ""}`);
             }
             console.log("");
           }

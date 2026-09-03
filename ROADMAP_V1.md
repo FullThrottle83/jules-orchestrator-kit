@@ -11,13 +11,23 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.53.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Universal Portability)     (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.54.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Portability & First Run)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.53.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.54.0)
+
+
+### v0.54.0: First-Run Friction — Honest Errors, Detected Defaults
+- [x] **Base Branch Detection (`src/git.mjs`)** — `detectDefaultBranch()` resolves `origin/HEAD`, a local `main`/`master`, then the checked-out branch, replacing the hardcoded `main` that failed the first gate in every `master` or `develop` repository.
+- [x] **Diagnosable Gate Output (`bin/agentctl.mjs`, `src/ops/verify-output.mjs`)** — Phase errors are rendered instead of swallowed, and a failing stage's stdout is no longer discarded because the spawn wrapper wrote one line to stderr.
+- [x] **Truthful Remediation Hints (`bin/agentctl.mjs`)** — Test tampering no longer advises rotating API keys, and a provider that refused the dispatch is no longer reported as an exhausted repair loop.
+- [x] **Provider-First Onboarding & `agentctl provider set` (`src/wizard-init.mjs`, `src/config-edit.mjs`)** — The wizard asks which agent before asking about one vendor's plans, and switching providers no longer means re-running onboarding.
+- [x] **Named Targets And Flags Actually Take Effect (`bin/agentctl.mjs`, `src/ops/ide-scaffold.mjs`, `src/ops/cli-intent.mjs`)** — `mcp init <target>`, `task create --title/--prompt` and `doctor --probe` all did something other than what they said; each now does what it says, or is no longer advertised.
+- [x] **Onboarding Trap Distinguished From Overreach (`src/git.mjs`)** — `partitionTracked()` tells uncommitted scaffolding apart from an agent editing its own rules, so the first-run exit 3 advises committing rather than bypassing the gate.
+- [x] **Rehearsals Write Nothing (`src/wizard-task.mjs`)** — `task create --dry-run` synthesizes and validates the envelope without queueing it.
 
 
 ### v0.53.0: Universal Portability — Any Stack, Any Agent, Any CI
