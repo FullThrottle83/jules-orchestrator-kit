@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { detectStackOracles, runVerificationProbe } from "../src/wizard-oracle.mjs";
+import { pytestCmd } from "../src/stack-detector.mjs";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,7 +98,7 @@ test("Stack Oracle & Verification Probes", async (t) => {
       writeFileSync(join(tmpDir, "requirements.txt"), "pytest>=7.0.0\n");
 
       const res = detectStackOracles(tmpDir);
-      assert.equal(res.candidates.testCmd, "pytest");
+      assert.equal(res.candidates.testCmd, pytestCmd());
       // res.candidates.lintCmd should be a string (empty if uninstalled, or valid command if installed)
       assert.equal(typeof res.candidates.lintCmd, "string");
       assert.equal(typeof res.candidates.typecheckCmd, "string");

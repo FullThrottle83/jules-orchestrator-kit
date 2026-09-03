@@ -838,9 +838,56 @@ function splitDiffByFile(diffText) {
 
 const CANDIDATE_TOKEN_REGEX = /[A-Za-z0-9_-]{24,}/g;
 
+/** A whole data: URI, base64-encoded or not. Its payload is not a credential. */
+const DATA_URI_TOKEN = /\bdata:[a-z0-9.+-]+\/[a-z0-9.+-]*(?:;[a-z0-9.+=-]+)*,[^\s"'`<>)\]}]*/gi;
+
+/** A subresource-integrity digest. High entropy by construction, public by design. */
+const INTEGRITY_TOKEN = /\bsha(?:256|384|512)-[A-Za-z0-9+/=]+/gi;
+
+/** A URL, from its scheme to the first character that cannot be part of one. */
+const URL_TOKEN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>)\]},;]+/gi;
+
+/**
+ * Remove from a line the noise that made URLs worth ignoring, and keep the
+ * parts of a URL that can carry a credential.
+ *
+ * This used to be `if (rawLine.includes("://")) continue;` — one substring
+ * anywhere on the line switched off entropy analysis for the entire line. So
+ * the scanner caught a bare 32-character key and let the identical key through
+ * the moment a comment carrying any http link sat beside it. An agent does not
+ * need to know why that works to stumble into it; a fetch call and its endpoint
+ * on one line is ordinary code.
+ *
+ * What actually justified the skip is narrower: a CDN path segment or an npm
+ * integrity hash looks exactly like a secret and is neither. Those are dropped
+ * here. A URL's userinfo and its query values are the opposite — `?api_key=…`
+ * and `//user:password@host` are where credentials genuinely hide — so they
+ * are carried over and scanned on their own.
+ */
+function stripEntropyNoise(rawLine) {
+  const carried = [];
+  let line = rawLine.replace(DATA_URI_TOKEN, " ").replace(INTEGRITY_TOKEN, " ");
+  line = line.replace(URL_TOKEN, (url) => {
+    const afterScheme = url.slice(url.indexOf("://") + 3);
+    const authority = afterScheme.split(/[/?#]/)[0];
+    const at = authority.lastIndexOf("@");
+    if (at > 0) carried.push(authority.slice(0, at));
+    const q = url.indexOf("?");
+    if (q !== -1) {
+      for (const pair of url.slice(q + 1).split(/[&;#]/)) {
+        const eq = pair.indexOf("=");
+        if (eq !== -1) carried.push(pair.slice(eq + 1));
+      }
+    }
+    return " ";
+  });
+  return carried.length ? `${line} ${carried.join(" ")}` : line;
+}
+
 /**
  * Checks for high-entropy continuous tokens (>= 24 chars, entropy > 4.5) on added lines.
- * Filters out URLs, SRI hashes (sha512-, sha256-, sha384-), and lockfiles to eliminate false positives.
+ * Strips URLs, data: URIs, SRI hashes (sha512-, sha256-, sha384-) and skips lockfiles
+ * to eliminate false positives.
  *
  * @param {string} text - Text to scan
  * @param {string|null} [file=null] - File path associated with the text
@@ -863,19 +910,11 @@ export function hasHighEntropyToken(text = "", file = null) {
 
   const lines = text.split("\n");
   for (const rawLine of lines) {
-    if (
-      rawLine.includes("://") ||
-      rawLine.includes("data:image/") ||
-      rawLine.includes("sha512-") ||
-      rawLine.includes("sha256-") ||
-      rawLine.includes("sha384-")
-    ) {
-      continue;
-    }
+    const line = stripEntropyNoise(rawLine);
 
     CANDIDATE_TOKEN_REGEX.lastIndex = 0;
     let match;
-    while ((match = CANDIDATE_TOKEN_REGEX.exec(rawLine)) !== null) {
+    while ((match = CANDIDATE_TOKEN_REGEX.exec(line)) !== null) {
       const token = match[0];
       if (token.startsWith("sha512-") || token.startsWith("sha256-")) continue;
       if (token.length >= 24) {
@@ -1138,6 +1177,22 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   );
   const isSpecificAssertion = (str) => SPECIFIC_ASSERTION.test(str);
 
+  /**
+   * An assertion with every literal value replaced by a placeholder.
+   *
+   * Two lines that normalize to the same string are the same assertion about
+   * the same expression; whatever differs between them is a value.
+   */
+  const blankLiterals = (str) =>
+    str
+      .replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, "\u0000S")
+      // The sign belongs to the literal: without it `3` and `-1` normalized to
+      // different shapes and the rewritten expectation was never paired.
+      .replace(/(?<![\w$])-?\d+(?:\.\d+)?\b/g, "\u0000N")
+      .replace(/\b(?:true|false|null|undefined|None|True|False|nil)\b/g, "\u0000B")
+      .replace(/\s+/g, " ")
+      .trim();
+
   const fileAssertions = new Map();
 
   for (let i = 0; i < lines.length; i++) {
@@ -1169,7 +1224,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     }
 
     if (!fileAssertions.has(currentFile)) {
-      fileAssertions.set(currentFile, { removed: [], added: 0, removedSpecific: [], addedSpecific: 0 });
+      fileAssertions.set(currentFile, { removed: [], added: 0, addedTexts: [], removedSpecific: [], addedSpecific: 0 });
     }
     const fileStats = fileAssertions.get(currentFile);
 
@@ -1226,6 +1281,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       // If valid non-vacuous, non-commented assertion is added, increment added count
       if (!isVacuous && !isCommented && !isCommentLine(addedText) && ASSERTION_PATTERN.test(addedText)) {
         fileStats.added++;
+        fileStats.addedTexts.push({ line: currentNewLineNo, text: addedText });
         if (isSpecificAssertion(addedText)) fileStats.addedSpecific++;
       }
 
@@ -1237,6 +1293,58 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   }
 
   for (const [file, stats] of fileAssertions.entries()) {
+    // An expectation that was rewritten rather than removed.
+    //
+    // Counting assertions cannot see this one: `assert.equal(add(1,2), 3)`
+    // becoming `assert.equal(add(1,2), -1)` takes one specific assertion out
+    // and puts one specific assertion back, so every total stayed level and the
+    // guard said nothing — while the suite went from checking that addition
+    // works to certifying that it is broken. It is the single cheapest way to
+    // make a red suite green, and the one this tool exists to refuse.
+    //
+    // The signal is that the two lines are the *same assertion* with different
+    // values in it: identical once every literal is blanked out, different
+    // before. That does not distinguish an attack from a deliberate change of
+    // spec — nothing can, from the diff alone — so this reports rather than
+    // decides, and `--allow-test-modifications` is the answer when the new
+    // expectation is the correct one.
+    // Shapes are computed once per added line, not once per (removed, added)
+    // pair: a large test refactor is O(n²) comparisons and the normalisation is
+    // the expensive half of each one.
+    const unpairedAdded = stats.addedTexts
+      .filter((a) => isSpecificAssertion(a.text))
+      .map((a) => ({ ...a, shape: blankLiterals(a.text) }));
+    for (const removedItem of stats.removed.slice()) {
+      if (!isSpecificAssertion(removedItem.text)) continue;
+      const shape = blankLiterals(removedItem.text);
+      const idx = unpairedAdded.findIndex(
+        (a) => a.shape === shape && a.text.trim() !== removedItem.text.trim()
+      );
+      if (idx === -1) continue;
+      const addedItem = unpairedAdded.splice(idx, 1)[0];
+
+      violations.push({
+        file,
+        line: addedItem.line ?? removedItem.line,
+        type: "ASSERTION_EXPECTATION_CHANGED",
+        reason:
+          `Test Tamper Guard: Expected value rewritten in ${file}${addedItem.line ? `:${addedItem.line}` : ""} — ` +
+          `"${removedItem.text.trim()}" became "${addedItem.text.trim()}". ` +
+          `If the new value is the correct one, re-run with --allow-test-modifications.`,
+      });
+
+      // Both sides are accounted for here, so they must not also feed the
+      // count-based checks below — the same line reported twice under two
+      // names tells the operator nothing extra.
+      stats.removed.splice(stats.removed.indexOf(removedItem), 1);
+      const rsIdx = stats.removedSpecific.indexOf(removedItem);
+      if (rsIdx !== -1) {
+        stats.removedSpecific.splice(rsIdx, 1);
+        stats.addedSpecific--;
+      }
+      stats.added--;
+    }
+
     if (stats.removed.length > stats.added) {
       const unreplaced = stats.removed.slice(stats.added);
       for (const item of unreplaced) {

@@ -61,7 +61,7 @@ Commands:
   swarm                 Run parallel task swarm
   mcp                   Start stdio Model Context Protocol (MCP) server
   clean                 Clean stale branches, worktrees, locks, and ledgers
-  lock <action>         Manage mutex locks (acquire | release | status)
+  lock <action>         Manage mutex locks (acquire [--ttl <min>] [--pid <n>] | release | status)
   doctor                Run system diagnostics and stack resolution checks
   providers             List agent providers and whether this machine can reach them (--json)
   provider set <name>   Switch the active provider in .agent/config.yml
@@ -383,6 +383,12 @@ async function main() {
           committed: { type: "boolean" },
           fix: { type: "boolean" },
           "allow-protected": { type: "boolean" },
+          // The tamper guard has always had an override — `allowTestModifications`
+          // — and it was reachable only from JavaScript. So a legitimate change
+          // of spec, which necessarily rewrites what a test expects, hit a
+          // CRITICAL finding at exit 6 with no documented way past it. A guard
+          // with no override is not a guard, it is an outage.
+          "allow-test-modifications": { type: "boolean" },
           json: { type: "boolean", short: "j" },
           "json-report": { type: "string" },
           "dry-run": { type: "boolean", short: "d" },
@@ -402,6 +408,7 @@ async function main() {
         mode: selectedMode,
         fix: values.fix,
         allowProtected: values["allow-protected"],
+        allowTestModifications: values["allow-test-modifications"],
         jsonReport: values["json-report"],
       });
 
@@ -1278,14 +1285,46 @@ async function main() {
     case "lock": {
       const action = args[1];
       if (action === "acquire") {
-        const agent = args[2] || "agent";
-        const taskId = args[3] || "task-1";
-        const filePaths = args.slice(4);
-        const res = acquireLock(agent, taskId, filePaths, root);
+        // A lock taken from the command line outlives the command. The process
+        // that runs `lock acquire` writes the record and exits; the agent it
+        // speaks for is somewhere else entirely. So this is a time-bounded
+        // lease, not a pid the next acquire can test for liveness — that test
+        // always said "dead" and handed the same files to the next caller.
+        //
+        // `--pid` is the escape hatch for a caller that *does* have a durable
+        // process to point at: the lock then releases itself when that process
+        // dies, exactly as an in-process acquire does.
+        const flagIdx = args.findIndex((a, i) => i >= 2 && a.startsWith("--"));
+        const positional = flagIdx === -1 ? args.slice(2) : args.slice(2, flagIdx);
+        const { values } = parseArgs({
+          args: flagIdx === -1 ? [] : args.slice(flagIdx),
+          options: {
+            ttl: { type: "string" },
+            pid: { type: "string" },
+          },
+          allowPositionals: false,
+        });
+        const agent = positional[0] || "agent";
+        const taskId = positional[1] || "task-1";
+        const filePaths = positional.slice(2);
+        const ttlMinutes = Number(values.ttl);
+        const ownerPid = Number(values.pid);
+        const bindsToProcess = Number.isInteger(ownerPid) && ownerPid > 0;
+        const res = acquireLock(agent, taskId, filePaths, root, {
+          lease: !bindsToProcess,
+          ownerPid: bindsToProcess ? ownerPid : undefined,
+          ttlMs: Number.isFinite(ttlMinutes) && ttlMinutes > 0 ? ttlMinutes * 60_000 : undefined,
+        });
         if (res.ok) {
-          console.log(`✅ Acquired lock for ${taskId}`);
+          const held = filePaths.length ? ` (${filePaths.length} path${filePaths.length === 1 ? "" : "s"})` : "";
+          const until = bindsToProcess ? `bound to pid ${ownerPid}` : `expires ${new Date(Date.now() + (Number.isFinite(ttlMinutes) && ttlMinutes > 0 ? ttlMinutes : 120) * 60_000).toISOString()}`;
+          console.log(`✅ Acquired lock for ${taskId}${held} — ${until}`);
         } else {
-          console.log(`❌ Lock conflict detected: held by ${res.holder}`);
+          const overlap = Array.isArray(res.conflictingFiles) && res.conflictingFiles.length
+            ? `\n   Contested paths: ${res.conflictingFiles.join(", ")}`
+            : "";
+          const until = res.expiresAt ? `\n   Held until ${res.expiresAt} (or until \`agentctl lock release ${res.taskId}\`).` : "";
+          console.log(`❌ Lock conflict detected: held by ${res.holder} (task ${res.taskId})${overlap}${until}`);
           process.exit(1);
         }
       } else if (action === "release") {
@@ -2672,9 +2711,16 @@ async function main() {
         if (values.json) {
           console.log(JSON.stringify(res, null, 2));
         } else {
-          console.log(`\n🛡️ Cryptographic Evidence Manifest Generated!`);
+          // "Signature" was the wrong word and the wrong promise. There is no
+          // key anywhere in this system: the value is a SHA-256 digest of the
+          // manifest, so anyone who can write the file can also recompute it
+          // and have `evidence verify` agree. What it proves is that the
+          // manifest has not been edited *since* it was written — tamper
+          // evidence, not authorship. Calling that a signature invites an
+          // operator to trust it for something it cannot do.
+          console.log(`\n🛡️ Evidence Manifest Generated!`);
           console.log(`   Manifest ID : ${res.manifest.manifestId}`);
-          console.log(`   Signature   : ${res.manifest.evidenceHash}`);
+          console.log(`   Digest      : ${res.manifest.evidenceHash}`);
           console.log(`   Location    : ${res.manifestPath}`);
           console.log(`   Test Files  : ${res.manifest.testIntegrity.testFileCount}`);
           console.log(`   Tampered    : ${res.manifest.testIntegrity.tamperDetected ? "YES (FAILED)" : "NO (VERIFIED)"}\n`);
@@ -2690,7 +2736,7 @@ async function main() {
           if (res.ok) {
             console.log(`\n✅ Evidence Verification PASSED`);
             console.log(`   Manifest ID : ${res.manifestId}`);
-            console.log(`   Signature   : ${res.evidenceHash}\n`);
+            console.log(`   Digest      : ${res.evidenceHash}\n`);
           } else {
             console.error(`\n❌ Evidence Verification FAILED`);
             console.error(`   Reason      : ${res.reason}`);

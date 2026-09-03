@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo } from "../src/stack-detector.mjs";
+import { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo, pytestCmd } from "../src/stack-detector.mjs";
 
 test("detectPolyglotStack - detects PHP, .NET, Mobile, Systems, and Docker/Devcontainer stacks", () => {
   const tmp = mkdtempSync(join(tmpdir(), "stack-test-"));
@@ -64,7 +64,9 @@ test("resolveWorkspaceBoundary - maps changed files to subprojects and handles m
     // Single subproject changed
     let boundary = resolveWorkspaceBoundary(["backend/api/main.py"], tmp);
     assert.equal(boundary.isMonorepo, false);
-    assert.equal(boundary.testCmd, "(cd backend && pytest)");
+    // Not the bare console script: run as a module, so the package under test
+    // is importable from the working directory (see pytestCmd).
+    assert.equal(boundary.testCmd, `(cd backend && ${pytestCmd()})`);
 
     // Multiple subprojects changed
     boundary = resolveWorkspaceBoundary(["backend/api/main.py", "frontend/src/App.tsx"], tmp);

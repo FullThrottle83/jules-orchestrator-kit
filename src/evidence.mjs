@@ -54,6 +54,30 @@ export function computeFileHash(filePath) {
  * @param {string} [baseDir]
  * @returns {string[]}
  */
+/**
+ * Directories whose contents a build or a test run regenerates.
+ *
+ * These are not hashed. The test-integrity hash is taken before and after the
+ * verification command and any difference is reported as tampering — so a
+ * runner that writes its own cache *inside* the test tree accused itself. That
+ * is exactly what pytest does: it drops `tests/__pycache__/*.pyc` on first
+ * collection, the post-run hash no longer matched the pre-run hash, and every
+ * Python project on earth failed the gate with "test files changed during the
+ * run". A false accusation of tampering is worse than a missed one; it teaches
+ * the user to pass --allow-test-modifications by reflex.
+ */
+const ARTIFACT_DIRS = new Set([
+  ".git", "node_modules", "target", "vendor",
+  "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
+  ".venv", "venv", ".gradle", ".nyc_output", "coverage", "htmlcov",
+  ".next", ".nuxt", ".turbo", ".cache", ".parcel-cache",
+]);
+
+/** Compiled output. Regenerated from the sources that are hashed instead. */
+const ARTIFACT_EXTENSIONS = new Set([
+  ".pyc", ".pyo", ".pyd", ".class", ".o", ".obj", ".so", ".dll", ".dylib", ".exe", ".log",
+]);
+
 export function findFilesRecursively(dir, baseDir = dir) {
   if (!existsSync(dir)) return [];
   const results = [];
@@ -61,12 +85,11 @@ export function findFilesRecursively(dir, baseDir = dir) {
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = join(dir, entry.name);
-      if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "target" || entry.name === "vendor") {
-        continue;
-      }
+      if (ARTIFACT_DIRS.has(entry.name)) continue;
       if (entry.isDirectory()) {
         results.push(...findFilesRecursively(fullPath, baseDir));
       } else if (entry.isFile()) {
+        if (ARTIFACT_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
         results.push(normalizePath(relative(baseDir, fullPath)));
       }
     }
@@ -579,7 +602,7 @@ export function generateEvidenceMarkdown(manifest) {
   const lines = [
     "### 🛡️ Autonomous Verification & Evidence Proof",
     "",
-    `> **Evidence Manifest**: \`${manifest.manifestId}\` | **Signature**: \`${manifest.evidenceHash?.slice(0, 16)}...\``,
+    `> **Evidence Manifest**: \`${manifest.manifestId}\` | **Digest**: \`${manifest.evidenceHash?.slice(0, 16)}...\``,
     "",
     "| Gate / Policy | Status | Evidence Record |",
     "| :--- | :---: | :--- |",

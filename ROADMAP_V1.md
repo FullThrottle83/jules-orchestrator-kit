@@ -11,13 +11,23 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.57.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Honest Reporting)          (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.58.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Locks That Lock)           (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.57.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.58.0)
+
+
+### v0.58.0: Locks That Lock
+- [x] **A CLI Lock Is A Lease (`src/state.mjs`, `bin/agentctl.mjs`)** — `lock acquire` no longer witnesses its own exiting process, so two agents can no longer both hold the same file. `--ttl` bounds it; `--pid` binds it to a real long-lived process instead.
+- [x] **A URL No Longer Disables The Secret Scanner (`src/security.mjs`)** — URLs, data: URIs and integrity hashes are stripped from a line rather than skipping the whole line, and a URL's userinfo and query values are scanned on their own.
+- [x] **Untracked Symlinks Are Judged By Their Target (`src/git.mjs`)** — Working-tree mode resolves links git has never seen, and a symlink is rendered as its target *path* rather than read through.
+- [x] **Rewritten Expectations Are Reported (`src/security.mjs`)** — An assertion whose literal changed while its shape did not is `ASSERTION_EXPECTATION_CHANGED`, with `--allow-test-modifications` as the documented override.
+- [x] **Scope Guard Covers Every Forge (`src/config.mjs`)** — GitLab, CircleCI, Jenkins, Azure, Travis, Drone, Buildkite and Woodpecker definitions are denied alongside `.github/**`; build and test-runner configuration is protected.
+- [x] **Python Runs As A Module (`src/stack-detector.mjs`)** — `python -m pytest` under whichever interpreter name this machine has, so an ordinary layout is not rejected on first contact.
+- [x] **Build Artifacts Do Not Read As Tampering (`src/evidence.mjs`)** — Caches a test run writes itself are excluded from the integrity hash.
 
 
 ### v0.57.0: Honest Reporting

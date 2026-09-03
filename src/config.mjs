@@ -28,6 +28,34 @@ const DEFAULTS = {
   baseBranch: "main",
 };
 
+// A CI definition is code the forge runs with the repository's own
+// credentials, on the next push, without review. `.github/**` was the only one
+// listed, so the gate's answer depended on which forge the project happened to
+// use: an identical exfiltration job placed in `.gitlab-ci.yml` was approved
+// where `.github/workflows/x.yml` was rejected. A safety gate that is only
+// safe on GitHub is not a safety gate.
+const CI_DEFINITIONS = [
+  ".github/**",
+  ".gitlab-ci.yml",
+  "**/.gitlab-ci.yml",
+  ".gitlab/ci/**",
+  ".circleci/**",
+  "azure-pipelines.yml",
+  "azure-pipelines.yaml",
+  "**/azure-pipelines.yml",
+  "Jenkinsfile",
+  "**/Jenkinsfile",
+  ".travis.yml",
+  ".drone.yml",
+  "bitbucket-pipelines.yml",
+  ".buildkite/**",
+  ".woodpecker.yml",
+  ".woodpecker/**",
+  "appveyor.yml",
+  ".teamcity/**",
+  ".githooks/**",
+];
+
 export const BUILTIN_DENY = [
   ".git/**",
   "**/.env",
@@ -36,7 +64,7 @@ export const BUILTIN_DENY = [
   "**/*.key",
   "**/id_rsa*",
   ".agent/jules-queue/**",
-  ".github/**",
+  ...CI_DEFINITIONS,
 ];
 
 export const BUILTIN_PROTECT = [
@@ -59,6 +87,50 @@ export const BUILTIN_PROTECT = [
   "**/Makefile",
   "**/.npmrc",
   "**/.netrc",
+
+  // Build definitions that execute arbitrary code at install or build time.
+  // The same tier as package.json: legitimately edited, so not denied, but not
+  // edited quietly either.
+  "setup.py",
+  "**/setup.py",
+  "setup.cfg",
+  "**/setup.cfg",
+  "build.rs",
+  "**/build.rs",
+  "pom.xml",
+  "**/pom.xml",
+  "build.gradle",
+  "**/build.gradle",
+  "build.gradle.kts",
+  "**/build.gradle.kts",
+  "CMakeLists.txt",
+  "**/CMakeLists.txt",
+  "Gemfile",
+  "**/Gemfile",
+  "Dockerfile",
+  "**/Dockerfile",
+
+  // Test-runner configuration decides which tests run and what counts as a
+  // pass. Rewriting it is the cheapest way to make a suite green without
+  // touching a single assertion — `--passWithNoTests`, an added ignore
+  // pattern, a conftest.py fixture that stubs the thing under test — and the
+  // tamper guard reads test *files*, so none of it was visible to anything.
+  "conftest.py",
+  "**/conftest.py",
+  "pytest.ini",
+  "**/pytest.ini",
+  "tox.ini",
+  "**/tox.ini",
+  "jest.config.*",
+  "**/jest.config.*",
+  "vitest.config.*",
+  "**/vitest.config.*",
+  "**/.mocharc.*",
+  "karma.conf.*",
+  "**/karma.conf.*",
+  "phpunit.xml",
+  "**/phpunit.xml",
+  "**/.nycrc*",
 ];
 
 const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
