@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseYaml, TIER_PRESETS, VENDOR_TIERS, FALLBACK_TIER } from "./config.mjs";
+import { suggestProvider } from "./provider-readiness.mjs";
+import { PROFILE_NAMES } from "./profiles.mjs";
 import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { KIT_VERSION } from "./version.mjs";
@@ -158,18 +160,35 @@ export function planInit(root = process.cwd(), options = {}) {
 
   const selectedPresets = options.presets || existingConfig.presets || ["nightly-security-audit", "flaky-test-quarantine"];
 
+  // Scaffolding `provider: jules` into a repository whose operator has no Jules
+  // key — and a Claude Code or Codex CLI sitting on PATH — produced a config
+  // that could never dispatch, and gave no hint that three other providers were
+  // installed. Detection only fills a blank: an explicit option, and an
+  // existing config, both still win.
+  const provider =
+    options.provider || existingConfig.provider || suggestProvider({ env: options.env || process.env });
+
+  // How hard this repository wants its agents verified, in one word. Expanded
+  // into concrete stages at load time by `loadConfig`, never frozen here, so
+  // the gate list follows the stack instead of the day the repo was scaffolded.
+  const requestedProfile = String(options.profile || existingConfig.verify?.profile || "standard").toLowerCase();
+  const profile = PROFILE_NAMES.includes(requestedProfile) ? requestedProfile : "standard";
+
   const limitsBlock = isCustomLimits
     ? `\nlimits:\n  concurrency: ${limits.concurrency}\n  daily_tasks: ${limits.daily_tasks}\n  stagger_ms: ${limits.stagger_ms}\n  diff_kb: ${limits.diff_kb}\n`
     : "";
 
-  const configYaml = `# Google Jules Orchestrator Kit Config (v${KIT_VERSION})
+  const configYaml = `# Agent Orchestrator Kit Config (v${KIT_VERSION})
+# provider: jules | claude-code | codex | gemini-flash  (agentctl providers)
 version: 1
-provider: ${existingConfig.provider || "jules"}
+provider: ${provider}
 tier: ${tierName}
 base_branch: ${options.baseBranch || existingConfig.base_branch || "main"}
 branch_prefix: ${existingConfig.branch_prefix || "agent/"}
 ${limitsBlock}
 verify:
+  # minimal | standard | max  — see: agentctl profile --list
+  profile: ${profile}
   test: "${verify.test}"
   build: "${verify.build}"
   lint: "${verify.lint}"
@@ -179,12 +198,19 @@ presets:
 ${selectedPresets.map((p) => `  - ${p}`).join("\n")}
 `;
 
+  // Universal defaults only. This list used to name `**/lock-manager/**` and
+  // `scripts/jules-self-audit.mjs` — paths that exist in the kit's own
+  // repository and in no other, so every project scaffolded by the wizard
+  // inherited two rules that could never match anything it contained, and none
+  // for the credentials it actually had.
   const forbiddenPaths = options.forbiddenPaths || existingJules.forbidden_paths || [
     ".github/**",
     "**/secrets/**",
     "**/*.pem",
-    "**/lock-manager/**",
-    "scripts/jules-self-audit.mjs",
+    "**/*.key",
+    "**/.env",
+    "**/.env.*",
+    ".agent/config.yml",
     ".agent/jules.yml",
   ];
   const allowPaths = options.allowPaths || existingJules.allow_paths || [];
@@ -201,6 +227,8 @@ allow_paths: ${allowPaths.length > 0 ? "\n" + allowPaths.map((p) => `  - "${p}"`
   return {
     stack: oracle.stack,
     tier: tierName,
+    provider,
+    profile,
     verify,
     limits,
     presets: selectedPresets,

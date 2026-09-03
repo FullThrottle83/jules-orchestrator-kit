@@ -44,16 +44,17 @@ describe("src/ops/next-step.mjs", () => {
     }
   });
 
-  it("asks for a key once the repo is configured", () => {
+  it("asks for a key once a hosted-provider repo is configured", () => {
     const dir = gitDir("jok-next-nokey-");
     try {
       mkdirSync(join(dir, ".agent"), { recursive: true });
       writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\n");
 
       const step = resolveNextStep(dir, NO_KEY);
-      assert.equal(step.id, "key");
+      assert.equal(step.id, "provider");
       assert.equal(step.blocking, false, "gate and dry-run still work without a key");
-      assert.match(step.detail, /never written to config/);
+      assert.match(step.detail, /every verification gate works with no provider/);
+      assert.match(step.command, /JULES_API_KEY/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -65,7 +66,44 @@ describe("src/ops/next-step.mjs", () => {
       mkdirSync(join(dir, ".agent"), { recursive: true });
       writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\n");
 
-      assert.notEqual(resolveNextStep(dir, { GEMINI_API_KEY: "k" }).id, "key");
+      assert.notEqual(resolveNextStep(dir, { GEMINI_API_KEY: "k" }).id, "provider");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not demand an API key from a repo driving a local CLI provider", () => {
+    const dir = gitDir("jok-next-execprovider-");
+    try {
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\nprovider: claude-code\n");
+
+      // No key anywhere, and a PATH that holds the CLI the provider spawns.
+      const binDir = join(dir, "fakebin");
+      mkdirSync(binDir, { recursive: true });
+      const binName = process.platform === "win32" ? "claude.CMD" : "claude";
+      writeFileSync(join(binDir, binName), "#!/bin/sh\n", { mode: 0o755 });
+
+      const step = resolveNextStep(dir, { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD" });
+      assert.notEqual(step.id, "provider", "an exec provider on PATH is ready without any key");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("names the missing binary, not a key, for an unavailable local CLI provider", () => {
+    const dir = gitDir("jok-next-missingbin-");
+    try {
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\nprovider: codex\n");
+
+      const emptyBin = join(dir, "emptybin");
+      mkdirSync(emptyBin, { recursive: true });
+
+      const step = resolveNextStep(dir, { PATH: emptyBin });
+      assert.equal(step.id, "provider");
+      assert.match(step.reason ?? step.detail, /codex/);
+      assert.doesNotMatch(step.command, /JULES_API_KEY/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

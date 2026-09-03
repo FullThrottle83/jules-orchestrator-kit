@@ -293,6 +293,10 @@ export function detectPackageManager(root = process.cwd(), pkg = {}) {
   return "npm";
 }
 
+import { buildProfileStages, PROFILE_NAMES, PROFILE_DESCRIPTIONS } from "./profiles.mjs";
+
+export { buildProfileStages, PROFILE_NAMES, PROFILE_DESCRIPTIONS };
+
 import {
   detectPolyglotStack,
   resolveWorkspaceBoundary,
@@ -321,6 +325,10 @@ export function detectStack(projectRoot = process.cwd()) {
 export function resolveVerify(root = process.cwd(), userVerify = {}) {
   const s = detectStack(root);
   return {
+    // Carried through so `verify.profile` can gate stack-specific gates (V8
+    // diff coverage only exists where the test command runs on Node) without
+    // every caller re-running stack detection.
+    stack: s.stack || "unknown",
     setup: userVerify.setup ?? s.setupCmd ?? "",
     lint: userVerify.lint ?? s.fmtCmd ?? "",
     test: userVerify.test ?? s.testCmd ?? "",
@@ -501,22 +509,42 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     if (normalizedLimits[k] === undefined) delete normalizedLimits[k];
   }
 
+  // The verification commands, resolved once, so a profile can be expanded
+  // against the same values the gate will actually run.
+  const mergedVerify = {
+    setup: rawSetup ?? autoVerify.setup ?? "",
+    lint: rawLint ?? autoVerify.lint ?? "",
+    test: rawTest ?? autoVerify.test,
+    unit: rawUnit ?? rawTest ?? autoVerify.unit ?? autoVerify.test,
+    fuzz: rawFuzz ?? autoVerify.fuzz ?? "",
+    invariant: rawInvariant ?? autoVerify.invariant ?? "",
+    e2e: rawE2e ?? autoVerify.e2e ?? "",
+    teardown: rawTeardown ?? autoVerify.teardown ?? "",
+    build: rawBuild ?? autoVerify.build,
+    policy: parsed.verify?.policy ?? autoVerify.policy,
+  };
+
+  // A hand-written `verify.stages:` is the operator being explicit and always
+  // wins; `verify.profile:` is the shorthand, expanded here rather than frozen
+  // into the scaffolded YAML so it stays correct when the stack changes.
+  const rawProfile = parsed.verify?.profile ?? parsed.profile ?? null;
+  const explicitStages = parsed.verify?.stages ?? autoVerify.stages ?? null;
+  const profilePlan =
+    !explicitStages && rawProfile
+      ? buildProfileStages(rawProfile, { stack: autoVerify.stack, verify: mergedVerify })
+      : null;
+
   const config = {
     version: parsed.version || DEFAULTS.version,
     provider: parsed.provider || DEFAULTS.provider,
     tier: activeTier,
     verify: {
-      setup: rawSetup ?? autoVerify.setup ?? "",
-      lint: rawLint ?? autoVerify.lint ?? "",
-      test: rawTest ?? autoVerify.test,
-      unit: rawUnit ?? rawTest ?? autoVerify.unit ?? autoVerify.test,
-      fuzz: rawFuzz ?? autoVerify.fuzz ?? "",
-      invariant: rawInvariant ?? autoVerify.invariant ?? "",
-      e2e: rawE2e ?? autoVerify.e2e ?? "",
-      teardown: rawTeardown ?? autoVerify.teardown ?? "",
-      build: rawBuild ?? autoVerify.build,
-      stages: parsed.verify?.stages ?? autoVerify.stages ?? null,
-      policy: parsed.verify?.policy ?? autoVerify.policy,
+      ...mergedVerify,
+      stages: explicitStages ?? profilePlan?.stages ?? null,
+      profile: profilePlan?.profile ?? (rawProfile ? String(rawProfile).toLowerCase() : null),
+      // Named so `doctor` can tell an operator that the gate they enabled is
+      // running one fewer check than they think, and why.
+      profileSkipped: profilePlan?.skipped ?? [],
       timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 60000,
     },
     evidence: {

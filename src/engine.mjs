@@ -19,6 +19,7 @@ import { hydratePrompt, harvestFailure } from "./memory.mjs";
 import { resolveRolePrompt } from "./role-resolver.mjs";
 
 import { runAssertion } from "./assertions.mjs";
+import { buildDefaultStages } from "./profiles.mjs";
 import {
   computeDirectoryHash,
   generateEvidenceManifest,
@@ -283,27 +284,7 @@ export async function gate(opts = {}) {
   if (Array.isArray(trustedVerify.stages) && trustedVerify.stages.length > 0) {
     stagesToRun.push(...trustedVerify.stages);
   } else {
-    if (trustedVerify.setup) {
-      stagesToRun.push({ id: "setup", kind: "setup", cmd: trustedVerify.setup, required: true, networkAccess: "allow" });
-    }
-    if (trustedVerify.lint) {
-      stagesToRun.push({ id: "lint", kind: "lint", cmd: trustedVerify.lint, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
-    }
-    if (trustedVerify.test || trustedVerify.unit) {
-      stagesToRun.push({ id: "unit", kind: "test", cmd: trustedVerify.test || trustedVerify.unit, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
-    }
-    if (trustedVerify.fuzz) {
-      stagesToRun.push({ id: "fuzz", kind: "fuzz", cmd: trustedVerify.fuzz, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
-    }
-    if (trustedVerify.invariant) {
-      stagesToRun.push({ id: "invariant", kind: "invariant", cmd: trustedVerify.invariant, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
-    }
-    if (trustedVerify.e2e) {
-      stagesToRun.push({ id: "e2e", kind: "e2e", cmd: trustedVerify.e2e, required: true, networkAccess: "allow" });
-    }
-    if (trustedVerify.build) {
-      stagesToRun.push({ id: "build", kind: "build", cmd: trustedVerify.build, required: true, networkAccess: trustedVerify.policy?.networkAccess || "allow" });
-    }
+    stagesToRun.push(...buildDefaultStages(trustedVerify));
   }
 
   try {

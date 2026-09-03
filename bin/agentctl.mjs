@@ -3,6 +3,7 @@
 import { parseArgs } from "node:util";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { applyEnvAliases } from "../src/env-aliases.mjs";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.mjs";
@@ -10,6 +11,12 @@ import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
 import { budgetStatus, listOpenReservations, releaseOpenReservations, resolveConcurrency } from "../src/budget.mjs";
+
+// Vendor-neutral env spellings are filled in before any module reads
+// process.env, so `AGENT_API_KEY` works everywhere `JULES_API_KEY` does. A
+// value already present under the legacy name always wins — see
+// src/env-aliases.mjs.
+applyEnvAliases(process.env);
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -55,6 +62,9 @@ Commands:
   clean                 Clean stale branches, worktrees, locks, and ledgers
   lock <action>         Manage mutex locks (acquire | release | status)
   doctor                Run system diagnostics and stack resolution checks
+  providers             List agent providers and whether this machine can reach them (--json)
+  profile               Show or set the verification profile (--list, --set <name>, --json)
+  ci init               Generate a stack-aware CI gate workflow (--target github|gitlab, --force)
   bootstrap             Bootstrap zero-test repository with verification oracle
   review-repair         Parse PR review comments and synthesize OODA repair tasks
   dashboard             Start local HTTP telemetry and audit dashboard
@@ -1193,6 +1203,150 @@ async function main() {
       break;
     }
 
+    case "providers": {
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: { json: { type: "boolean", short: "j" } },
+        allowPositionals: true,
+      });
+      const { detectAvailableProviders, probeProvider } = await import("../src/provider-readiness.mjs");
+      const probes = detectAvailableProviders();
+      const active = config.provider || "jules";
+      const activeProbe = probeProvider(active);
+
+      if (values.json) {
+        console.log(JSON.stringify({ active, activeReady: activeProbe.ready, providers: probes }, null, 2));
+        process.exit(0);
+      }
+
+      console.log(`\n🔌 Agent providers\n`);
+      for (const p of probes) {
+        const marker = p.name === active ? "▸" : " ";
+        console.log(`  ${marker} ${p.ready ? "✅" : "⬜"} ${p.name.padEnd(14)} ${p.label}`);
+        console.log(`       ${p.reason}`);
+        if (!p.ready) console.log(`       Fix: ${p.remedy}`);
+      }
+      if (!probes.some((p) => p.name === active)) {
+        console.log(`  ▸ ⬜ ${active.padEnd(14)} ${activeProbe.label}`);
+        console.log(`       ${activeProbe.reason}`);
+      }
+      console.log(`\n  Active: ${active} (provider: in ${config._file || ".agent/config.yml"})`);
+      console.log(`  Switch: agentctl init --provider <name>   ·   every gate below works with no provider at all\n`);
+      process.exit(activeProbe.ready ? 0 : 1);
+      break;
+    }
+
+    case "profile": {
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          list: { type: "boolean", short: "l" },
+          set: { type: "string" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+      const { PROFILE_NAMES, PROFILE_DESCRIPTIONS, buildProfileStages, buildDefaultStages } = await import("../src/profiles.mjs");
+
+      if (values.set) {
+        const name = String(values.set).toLowerCase();
+        if (!PROFILE_NAMES.includes(name)) {
+          console.error(`❌ Unknown profile '${values.set}'. Choose one of: ${PROFILE_NAMES.join(", ")}`);
+          process.exit(2);
+        }
+        const { setVerificationProfile } = await import("../src/profiles-io.mjs");
+        const res = setVerificationProfile(root, name);
+        if (!res.ok) {
+          console.error(`❌ ${res.error}`);
+          process.exit(1);
+        }
+        console.log(`✅ Verification profile set to '${name}' in ${res.file}`);
+        process.exit(0);
+      }
+
+      if (values.list) {
+        if (values.json) {
+          console.log(JSON.stringify(PROFILE_NAMES.map((n) => ({ name: n, description: PROFILE_DESCRIPTIONS[n] })), null, 2));
+        } else {
+          console.log(`\n🎚️  Verification profiles\n`);
+          for (const n of PROFILE_NAMES) console.log(`  ${n.padEnd(10)} ${PROFILE_DESCRIPTIONS[n]}`);
+          console.log(`\n  Set with: agentctl profile --set max\n`);
+        }
+        process.exit(0);
+      }
+
+      const stack = detectStack(root).stack;
+      const activeProfile = config.verify.profile || "(none — running the built-in pipeline)";
+      const plan = config.verify.profile
+        ? buildProfileStages(config.verify.profile, { stack, verify: config.verify })
+        : { profile: null, stages: config.verify.stages || buildDefaultStages(config.verify), skipped: [] };
+
+      if (values.json) {
+        console.log(JSON.stringify({ profile: config.verify.profile, stack, stages: plan.stages, skipped: plan.skipped }, null, 2));
+        process.exit(0);
+      }
+
+      console.log(`\n🎚️  Verification profile: ${activeProfile}   (stack: ${stack})\n`);
+      if (plan.stages.length === 0) {
+        console.log(`  No stages resolved — no verification command is configured or detectable.`);
+        console.log(`  Set verify.test in .agent/config.yml, or run: agentctl bootstrap`);
+      }
+      for (const st of plan.stages) {
+        const what = st.assert ? `assert:${st.assert}` : st.cmd;
+        console.log(`  ${String(st.id).padEnd(14)} ${what}`);
+      }
+      for (const sk of plan.skipped) {
+        console.log(`  ${String(sk.id).padEnd(14)} — skipped: ${sk.reason}`);
+      }
+      console.log(`\n  Change with: agentctl profile --set ${config.verify.profile === "max" ? "standard" : "max"}\n`);
+      process.exit(0);
+      break;
+    }
+
+    case "ci": {
+      const sub = args[1];
+      if (sub !== "init") {
+        console.error(`❌ Unknown 'ci' action '${sub || ""}'. Usage: agentctl ci init [--target github|gitlab] [--force]`);
+        process.exit(2);
+      }
+      const { values } = parseArgs({
+        args: args.slice(2),
+        options: {
+          target: { type: "string", default: "github" },
+          force: { type: "boolean", short: "f" },
+          "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+      const { writeCiWorkflow } = await import("../src/ci-templates.mjs");
+      const res = writeCiWorkflow(root, {
+        target: values.target,
+        force: values.force,
+        dryRun: values["dry-run"],
+        config,
+        version: VERSION,
+        stack: detectStack(root),
+      });
+
+      if (values.json) {
+        console.log(JSON.stringify(res, null, 2));
+        process.exit(res.ok ? 0 : 1);
+      }
+      if (!res.ok) {
+        console.error(`❌ ${res.error}`);
+        process.exit(1);
+      }
+      console.log(`✅ ${res.written ? "Wrote" : "Would write"} ${res.file}`);
+      console.log(`   Stack: ${res.stack} · runtime setup: ${res.setupSummary}`);
+      console.log(`   The workflow runs: agentctl check --mode committed`);
+      if (!res.written && !values["dry-run"]) {
+        console.log(`   (unchanged — pass --force to overwrite)`);
+      }
+      process.exit(0);
+      break;
+    }
+
     case "bootstrap": {
       const { values } = parseArgs({
         args: args.slice(1),
@@ -1250,6 +1404,8 @@ async function main() {
           "no-interactive": { type: "boolean" },
           yes: { type: "boolean", short: "y" },
           tier: { type: "string", short: "t" },
+          provider: { type: "string" },
+          profile: { type: "string" },
           json: { type: "boolean", short: "j" },
           "dry-run": { type: "boolean", short: "d" },
           force: { type: "boolean", short: "f" },
@@ -1267,6 +1423,10 @@ async function main() {
         // re-run. Undefined lets the wizard seed the menu from the existing
         // config and fall back to FALLBACK_TIER when there is nothing to seed.
         tier: values.tier,
+        // Both undefined by default so the wizard can detect a provider the
+        // machine can actually reach and keep the profile already in config.
+        provider: values.provider,
+        profile: values.profile,
         allowDefaults: true,
       });
 
@@ -1282,6 +1442,17 @@ async function main() {
       } else {
         console.log(`✅ Onboarding complete! Manifest generated at ${res.configPath}`);
         console.log(`   Tier: ${res.plan.tier.toUpperCase()} (${res.plan.limits.concurrency} worker(s), ${res.plan.limits.daily_tasks} daily tasks)`);
+        {
+          const { probeProvider } = await import("../src/provider-readiness.mjs");
+          const probe = probeProvider(res.plan.provider);
+          console.log(`   Provider                  : ${probe.name} ${probe.ready ? "(ready)" : `(not ready — ${probe.remedy})`}`);
+          const { buildProfileStages, describeProfilePlan } = await import("../src/profiles.mjs");
+          const planned = buildProfileStages(res.plan.profile, {
+            stack: res.plan.stack,
+            verify: { ...res.plan.verify, unit: res.plan.verify.test },
+          });
+          console.log(`   Verification Profile      : ${res.plan.profile} → ${describeProfilePlan(planned)}`);
+        }
         if (res.plan.verify.test) {
           console.log(`   Verification Test Command : "${res.plan.verify.test}"`);
         } else {

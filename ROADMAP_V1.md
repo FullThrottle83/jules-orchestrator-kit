@@ -1,6 +1,6 @@
 # 🗺️ Jules Orchestrator Kit — Roadmap to v1.0 & Beyond
 
-The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self-healing engineering kernel for autonomous coding agents running on **Google Jules**.
+The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self-healing engineering kernel for autonomous coding agents — **Google Jules**, **Claude Code**, **Codex** and the **Gemini CLI** — in any repository and any stack.
 
 > [!IMPORTANT]
 > **Zero Runtime Dependencies is a strict core invariant.**  
@@ -11,13 +11,21 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.52.8 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Session Ops & MCP Suite)   (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.53.0 (Current Stable) ──► v0.60.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Universal Portability)     (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.52.8)
+## ✅ Shipped Milestones (v0.20.0 – v0.53.0)
+
+
+### v0.53.0: Universal Portability — Any Stack, Any Agent, Any CI
+- [x] **Provider Readiness Probe (`src/provider-readiness.mjs`, `agentctl providers`)** — Per-provider capability descriptors: a credential for the hosted `jules` adapter, a `PATH` binary for the `claude-code`/`codex`/`gemini-flash` exec adapters, with a cross-platform PATHEXT-aware resolver that spawns nothing.
+- [x] **Vendor-Neutral Environment Spellings (`src/env-aliases.mjs`)** — Every `JULES_*` knob also answers to `AGENT_*`, normalised once at CLI entry, with the legacy name always winning.
+- [x] **Verification Profiles (`src/profiles.mjs`, `agentctl profile`)** — `minimal | standard | max` expanded at load time into a stack-aware pipeline that skips unsupported gates with a stated reason rather than failing the diff.
+- [x] **Generated Stack-Aware CI (`src/ci-templates.mjs`, `agentctl ci init`)** — GitHub Actions and GitLab jobs carrying the detected stack's toolchain, replacing the copy of this repository's own nine-way Node matrix.
+- [x] **Consumer Repository Hygiene (`bin/init.js`)** — `init` no longer copies the kit's twenty internal scripts into the target repository, and both entry points now write the same manifest pair.
 
 
 ### v0.52.x: Entropy Hardening, Egress Auditing & CI Defense

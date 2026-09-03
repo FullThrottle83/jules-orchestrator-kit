@@ -328,6 +328,47 @@ export function isForbiddenPath(filePath, config = {}) {
   return forbidden.some((pattern) => matchesGlob(normFile, pattern, { caseInsensitive: true }));
 }
 
+/**
+ * The builtin deny patterns that exist to keep credentials out of a diff, and
+ * the documented template filenames those patterns must not catch.
+ *
+ * The recursive dot-env glob is correct for `.env.local` and `.env.production`
+ * and wrong for `.env.example` — a file nearly every repository commits
+ * precisely so the environment can be documented without the values. Denying it
+ * meant no agent could ever be asked to document a new variable, in any project.
+ *
+ * The exemption is deliberately narrow. It applies only when one of the two
+ * *builtin* patterns matched: a repository that writes its own broader dot-env
+ * deny rule blocks templates too, because the pattern string is not one of
+ * these. And the diff secret scanner runs over every changed file regardless of
+ * scope, so a real credential pasted into a template still fails on exit 6.
+ */
+const BUILTIN_ENV_DENY_PATTERNS = new Set(["**/.env", "**/.env.*"]);
+export const ENV_TEMPLATE_BASENAMES = new Set([
+  ".env.example",
+  ".env.sample",
+  ".env.template",
+  ".env.dist",
+  ".env.defaults",
+]);
+
+/**
+ * True when a deny hit is the builtin credential rule catching a committed
+ * environment *template* rather than an environment file.
+ *
+ * @param {string} file - canonicalised repo-relative path
+ * @param {string} pattern - the deny pattern that matched
+ * @returns {boolean}
+ */
+export function isEnvTemplateException(file, pattern) {
+  if (!BUILTIN_ENV_DENY_PATTERNS.has(pattern)) return false;
+  const name = basename(file).toLowerCase();
+  if (ENV_TEMPLATE_BASENAMES.has(name)) return true;
+  // `.env.production.example`, `.env.test.sample`, ... — the documented-template
+  // suffix is what matters, not how many environment segments precede it.
+  return /^\.env\..+\.(example|sample|template|dist|defaults)$/.test(name);
+}
+
 export function checkScope(files = [], scope = {}, opts = {}) {
   const violations = [];
   const deny = scope.deny || [];
@@ -360,7 +401,7 @@ export function checkScope(files = [], scope = {}, opts = {}) {
     // Deny folds case: on macOS/Windows ".GitHub/" resolves to the same
     // directory as ".github/", so a case-sensitive deny is bypassable there.
     const matchedDeny = deny.find((pat) => matchesGlob(file, pat, { caseInsensitive: true }));
-    if (matchedDeny) {
+    if (matchedDeny && !isEnvTemplateException(file, matchedDeny)) {
       violations.push({ file, reason: `Forbidden path restriction matched pattern "${matchedDeny}"`, rule: "deny", pattern: matchedDeny });
       continue;
     }

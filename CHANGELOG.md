@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.0] - 2026-09-03
+### Added
+- **Provider Readiness Probe (`src/provider-readiness.mjs`, `agentctl providers`, `index.mjs`)**: Introduced per-provider capability descriptors so readiness is evaluated against the *selected* provider — a credential for the hosted `jules` adapter, a `PATH` binary for the `claude-code`, `codex` and `gemini-flash` exec adapters — plus `whichBinary()` (cross-platform, PATHEXT-aware, no subprocess), `probeProvider()`, `detectAvailableProviders()` and `suggestProvider()`.
+- **Vendor-Neutral Environment Spellings (`src/env-aliases.mjs`, `bin/agentctl.mjs`, `.env.example`)**: Every `JULES_*` variable now also answers to an `AGENT_*` alias (`AGENT_API_KEY`, `AGENT_REPO`, `AGENT_SWARM_CONCURRENCY`, …), normalised once at CLI entry. An existing `JULES_*` value always wins, so an alias can never alter a working setup.
+- **Verification Profiles (`src/profiles.mjs`, `src/profiles-io.mjs`, `src/config.mjs`, `agentctl profile`)**: `verify.profile: minimal | standard | max` expands at load time into a stack-aware stage pipeline — `max` adds mutation scoring, a 3-pass stability probe and, only on V8-coverage-capable runtimes, diff coverage. Unsupported gates are skipped with a stated reason instead of failing the diff. `agentctl profile --set` rewrites the key in place without disturbing comments.
+- **Generated Stack-Aware CI (`src/ci-templates.mjs`, `agentctl ci init`)**: Emits a GitHub Actions or GitLab job carrying the detected stack's toolchain (`setup-python`, `setup-go`, `setup-java`, `setup-dotnet`, Bun/Deno) alongside Node for the CLI, targeting the repository's own base branch. Refuses to overwrite an existing workflow without `--force`.
+- **`agentctl init --provider / --profile`**: Both selectable at onboarding; the wizard detects a provider the machine can actually reach when none is given.
+### Fixed
+- **Consumer Repository Pollution (`bin/init.js`)**: `init` no longer copies the kit's own twenty orchestration scripts into the target repository's `scripts/` directory, nor its nine-way Node CI matrix (`jules-audit.yml`) into repositories of any other stack. Both are replaced by the `agentctl` CLI and a generated workflow.
+- **Divergent Init Entry Points (`bin/init.js`, `src/wizard-init.mjs`)**: `jules-init` wrote a thinner `.agent/jules.yml` while `agentctl init` wrote the `.agent/config.yml` the runtime reads, so which scaffolder was run decided whether a repository had a provider, tier or profile at all. Both now go through `planInit`.
+- **Kit-Private Paths In Scaffolded Deny Lists (`src/wizard-init.mjs`)**: The scaffolded `forbidden_paths` named `**/lock-manager/**` and `scripts/jules-self-audit.mjs` — paths that exist only in this repository — and omitted `**/.env*` and `**/*.key`.
+- **Committed Environment Templates Denied (`src/security.mjs`)**: The builtin `**/.env` and `**/.env.*` deny rules blocked `.env.example`, `.env.sample`, `.env.template`, `.env.dist` and their `.env.<env>.<suffix>` forms — the file nearly every repository commits to document its variables — so no agent in any project could be asked to document a new one. Exempted narrowly: only when a builtin pattern matched, never for a repository's own broader dot-env rule, and the diff secret scanner still fails a real credential pasted into a template on exit 6.
+- **Provider-Blind Guidance (`src/ops/next-step.mjs`, `src/ops/doctor-registry.mjs`)**: The next-step advisor and `doctor` demanded `JULES_API_KEY` regardless of the configured provider, permanently reporting a correctly configured `claude-code` or `codex` repository as misconfigured. Both now probe the selected provider, and `doctor` additionally reports which other providers are ready on the machine.
+### Changed
+- **Default Pipeline Deduplicated (`src/engine.mjs`, `src/profiles.mjs`)**: `gate()`'s built-in stage sequence moved to `buildDefaultStages()` so `agentctl profile` describes exactly what the gate runs rather than a second implementation of it.
+- **Vendor-Neutral npm Scripts (`bin/init.js`)**: Injected helpers are now `agent:gate`, `agent:dispatch`, `agent:queue`, `agent:create`, `agent:status`, `agent:doctor`, `agent:swarm`, `agent:clean`. Pre-existing `jules:*` entries are left untouched.
+
 ## [0.52.8] - 2026-09-03
 ### Fixed
 - **Binary Asset Classification Guard (`src/security.mjs`, `test/hardening-vulnerabilities.test.mjs`)**: Bound the binary asset skipping condition (`printableRatio < 0.9`) strictly to payloads with `token.length >= 256`.

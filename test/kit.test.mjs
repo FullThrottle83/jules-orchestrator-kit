@@ -542,7 +542,7 @@ describe("Node.js SDK Entrypoint (index.mjs)", () => {
 });
 
 describe("CLI Initializer (bin/init.js)", () => {
-  test("scaffolds target repo, injects missing scripts, updates .gitignore, and creates JULES_WEB_SETUP.md", () => {
+  test("scaffolds target repo, injects vendor-neutral scripts, updates .gitignore, and creates JULES_WEB_SETUP.md", () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-init-"));
     try {
       fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify({ name: "test-app", scripts: { test: "node --test" } }));
@@ -550,9 +550,10 @@ describe("CLI Initializer (bin/init.js)", () => {
       execFileSync("node", [initScript], { cwd: tmpDir, stdio: "pipe" });
 
       const pkg = JSON.parse(fs.readFileSync(path.join(tmpDir, "package.json"), "utf-8"));
-      assert.ok(pkg.scripts["jules:queue"]);
-      assert.ok(pkg.scripts["jules:scan"]);
-      assert.ok(pkg.scripts["jules:dispatch"]);
+      assert.ok(pkg.scripts["agent:queue"]);
+      assert.ok(pkg.scripts["agent:gate"]);
+      assert.ok(pkg.scripts["agent:dispatch"]);
+      assert.equal(pkg.scripts.test, "node --test", "the project's own scripts are left alone");
 
       const gitignore = fs.readFileSync(path.join(tmpDir, ".gitignore"), "utf-8");
       assert.ok(gitignore.includes(".env"));
@@ -561,6 +562,47 @@ describe("CLI Initializer (bin/init.js)", () => {
       const setupMd = fs.readFileSync(path.join(tmpDir, ".agent/JULES_WEB_SETUP.md"), "utf-8");
       assert.ok(setupMd.includes("https://jules.google"));
       assert.equal(setupMd.includes("app.jules.ai"), false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not copy the kit's own orchestration scripts into the target repository", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-init-clean-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify({ name: "test-app", scripts: { test: "node --test" } }));
+      execFileSync("node", [path.resolve(process.cwd(), "bin/init.js")], { cwd: tmpDir, stdio: "pipe" });
+
+      // These are the kit's internals. Copying them made every consumer repo
+      // carry twenty files that aged independently of the installed version.
+      for (const leaked of ["jules-dispatch.mjs", "jules-self-audit.mjs", "command-resolver.mjs"]) {
+        assert.equal(
+          fs.existsSync(path.join(tmpDir, "scripts", leaked)),
+          false,
+          `${leaked} must stay inside the kit`
+        );
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("generates a CI gate matching the target repository's stack, not the kit's", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-init-ci-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "go.mod"), "module example.com/demo\n\ngo 1.22\n");
+      execFileSync("node", [path.resolve(process.cwd(), "bin/init.js")], { cwd: tmpDir, stdio: "pipe" });
+
+      const wfPath = path.join(tmpDir, ".github/workflows/agent-gate.yml");
+      assert.ok(fs.existsSync(wfPath), "a workflow is generated");
+      const wf = fs.readFileSync(wfPath, "utf-8");
+      assert.ok(wf.includes("actions/setup-go"), "a Go repo gets a Go toolchain");
+      assert.equal(wf.includes("jules-self-audit"), false, "and none of the kit's private script paths");
+      assert.equal(
+        fs.existsSync(path.join(tmpDir, ".github/workflows/jules-audit.yml")),
+        false,
+        "the kit's own nine-way Node matrix is not copied into a Go repo"
+      );
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

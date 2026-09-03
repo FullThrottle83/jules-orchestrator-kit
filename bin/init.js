@@ -8,6 +8,8 @@ import readline from "node:readline/promises";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
 import { resolveProjectCommands } from "../scripts/command-resolver.mjs";
+import { KIT_VERSION } from "../src/version.mjs";
+import { detectStack } from "../src/config.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,7 +54,7 @@ Options:
   process.exit(0);
 }
 
-console.log("\n🚀 Initializing Google Jules Orchestration Kit...\n");
+console.log("\n🚀 Initializing agent orchestrator kit...\n");
 console.log(`📁 Target Directory: ${targetDir}`);
 if (isForce) console.log("⚠️ Force mode enabled (existing files will be overwritten).");
 
@@ -129,65 +131,62 @@ for (const item of scaffolded.created) {
 
 const agentDir = path.join(targetDir, ".agent");
 
-// Scaffold .agent/jules.yml
+// Scaffold the manifest pair.
+//
+// This entry point used to hand-roll a thinner `.agent/jules.yml` while
+// `agentctl init` wrote a `.agent/config.yml` the runtime actually reads, so
+// which of the two scaffolders you happened to run decided whether the
+// repository had a provider, a tier and a verification profile at all. Both
+// now go through `planInit`.
+const { planInit } = await import("../src/wizard-init.mjs");
+const initPlan = planInit(targetDir, {
+  testCmd: detected.testCmd,
+  buildCmd: detected.buildCmd,
+  lintCmd: detected.lintCmd,
+  baseBranch: answerBranchVal || process.env.BASE_BRANCH || undefined,
+});
+
+const configPath = path.join(agentDir, "config.yml");
+if (!fs.existsSync(configPath) || isForce) {
+  fs.writeFileSync(configPath, initPlan.configYaml, "utf-8");
+  console.log(`✅ Created: .agent/config.yml (provider: ${initPlan.provider}, profile: ${initPlan.profile})`);
+}
+
 const yamlConfigPath = path.join(agentDir, "jules.yml");
 if (!fs.existsSync(yamlConfigPath) || isForce) {
-  const yamlContent = `# Google Jules Repository Configuration (Version 2)
-version: 2
-test_cmd: "${detected.testCmd || "npm test"}"
-build_cmd: "${detected.buildCmd || "npm run build"}"
-forbidden_paths: [".github/**", "**/.env*", "**/*.pem", "**/lock-manager*"]
-`;
-  fs.writeFileSync(yamlConfigPath, yamlContent, "utf-8");
+  fs.writeFileSync(yamlConfigPath, initPlan.julesYaml, "utf-8");
   console.log("✅ Created: .agent/jules.yml");
 }
 
-// Scaffold .github/workflows/jules-audit.yml
-const githubWorkflowsDir = path.join(targetDir, ".github/workflows");
-const auditWfSource = path.join(kitRoot, ".github/workflows/jules-audit.yml");
-const auditWfTarget = path.join(githubWorkflowsDir, "jules-audit.yml");
-
-if (fs.existsSync(auditWfSource)) {
-  if (!fs.existsSync(githubWorkflowsDir)) {
-    fs.mkdirSync(githubWorkflowsDir, { recursive: true });
-  }
-  if (!fs.existsSync(auditWfTarget) || isForce) {
-    fs.copyFileSync(auditWfSource, auditWfTarget);
-    console.log("✅ Added GitHub Actions workflow: .github/workflows/jules-audit.yml");
-  }
+// 3b. Generate a CI gate workflow for *this* repository's stack.
+//
+// This used to copy the kit's own audit workflow verbatim: a nine-way Node
+// matrix running `npm install`, `npm test` and a script path that exists only
+// inside the kit. In a Rust, Python or Go repository it was red on the first
+// push for reasons that had nothing to do with that repository's code.
+const { writeCiWorkflow } = await import("../src/ci-templates.mjs");
+const ciRes = writeCiWorkflow(targetDir, {
+  target: "github",
+  force: isForce,
+  // `resolveProjectCommands` reports a human-readable source string; the CI
+  // generator needs the machine-readable stack id.
+  stack: detectStack(targetDir),
+  config: { baseBranch: answerBranchVal || process.env.BASE_BRANCH || "main" },
+  version: KIT_VERSION,
+});
+if (ciRes.ok && ciRes.written) {
+  console.log(`✅ Generated CI gate for '${ciRes.stack}': ${ciRes.file}`);
+} else if (ciRes.ok) {
+  console.log(`↩️  Kept existing ${ciRes.file} (use --force to regenerate)`);
 }
 
-// 4. Copy scripts/ directory with PER-FILE existence guard
-const targetScriptsDir = path.join(targetDir, "scripts");
-if (!fs.existsSync(targetScriptsDir)) {
-  fs.mkdirSync(targetScriptsDir, { recursive: true });
-}
-
-const sourceScriptsDir = path.join(kitRoot, "scripts");
-let copiedCount = 0;
-let skippedCount = 0;
-
-if (fs.existsSync(sourceScriptsDir)) {
-  const scriptFiles = fs.readdirSync(sourceScriptsDir);
-  const excludeFiles = new Set(["release.mjs"]);
-  scriptFiles.forEach((file) => {
-    if (excludeFiles.has(file)) return;
-    const srcFile = path.join(sourceScriptsDir, file);
-    const destFile = path.join(targetScriptsDir, file);
-    if (!fs.existsSync(destFile) || isForce) {
-      fs.copyFileSync(srcFile, destFile);
-      try {
-        fs.chmodSync(destFile, 0o755);
-      } catch (err) {
-        console.warn(`⚠️ Could not set executable permissions on ${file}:`, err.message);
-      }
-      copiedCount++;
-    } else {
-      skippedCount++;
-    }
-  });
-  console.log(`✅ Copied ${copiedCount} orchestration scripts to ./scripts/ (${skippedCount} skipped, use --force to overwrite)`);
-}
+// 4. The kit's own scripts/ directory is NOT copied here.
+//
+// It used to be — twenty orchestration scripts dropped into the target repo's
+// scripts/ folder, where they collided with the project's own files, aged
+// independently of the installed kit, and duplicated commands that `agentctl`
+// already exposes. Everything they did is reachable through the CLI, which is
+// what the injected package.json entries below point at.
 
 // 5. Optionally inject scripts into target package.json if present
 const targetPkgPath = path.join(targetDir, "package.json");
@@ -196,18 +195,22 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
     const pkg = JSON.parse(fs.readFileSync(targetPkgPath, "utf-8"));
     pkg.scripts = pkg.scripts || {};
     let updated = false;
-    const julesScripts = {
-      "jules:dispatch": "agentctl dispatch",
-      "jules:queue": "agentctl queue",
-      "jules:create": "agentctl task create",
-      "jules:status": "agentctl status",
-      "jules:audit": "agentctl gate",
-      "jules:scan": "agentctl scan",
-      "jules:swarm": "agentctl swarm",
-      "jules:nightly": "agentctl clean"
+    // Vendor-neutral names: these run `agentctl`, which dispatches to whichever
+    // provider the repository selected. `jules:*` entries from an older init are
+    // left in place — removing scripts a project may reference in CI is not
+    // this command's business.
+    const agentScripts = {
+      "agent:gate": "agentctl check",
+      "agent:dispatch": "agentctl dispatch",
+      "agent:queue": "agentctl queue",
+      "agent:create": "agentctl task create",
+      "agent:status": "agentctl status",
+      "agent:doctor": "agentctl doctor",
+      "agent:swarm": "agentctl swarm",
+      "agent:clean": "agentctl clean"
     };
 
-    for (const [key, val] of Object.entries(julesScripts)) {
+    for (const [key, val] of Object.entries(agentScripts)) {
       if (!pkg.scripts[key] || isForce) {
         pkg.scripts[key] = val;
         updated = true;
@@ -216,7 +219,7 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
 
     if (updated) {
       fs.writeFileSync(targetPkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
-      console.log("✅ Added Jules commands to package.json");
+      console.log("✅ Added agent:* commands to package.json");
     }
   } catch (err) {
     console.warn("⚠️ Failed to inject helper scripts into target package.json:", err.message);
@@ -229,7 +232,7 @@ if (scaffolded.gitignore.length > 0) {
   console.log(`✅ Added ${scaffolded.gitignore.length} runtime state entries to .gitignore`);
 }
 
-console.log("\n🎉 Google Jules Orchestration Kit successfully initialized!");
+console.log("\n🎉 Agent orchestrator kit initialized.");
 
 // 6. Generate Encoded Workspace Manifest (JULES_WEB_SETUP.md)
 const agentState = {
@@ -272,13 +275,23 @@ ${payloadToken}
 
 fs.writeFileSync(path.join(targetDir, ".agent", "JULES_WEB_SETUP.md"), setupMdContent, "utf-8");
 
-console.log("\n🔗 Google Jules Setup Complete");
-console.log("  Your local agent configurations are ready.");
-console.log(`  👉 Encoded Workspace Manifest: \x1b[36m${payloadToken}\x1b[0m`);
-console.log("\n  (A backup was written to .agent/JULES_WEB_SETUP.md)");
+// The encoded manifest is a Google Jules convenience — it pastes the detected
+// workspace into the Jules web UI. It is written unconditionally because it
+// costs nothing and a repository can change provider later, but it is only
+// *announced* when Jules is the provider this repo actually selected;
+// otherwise it is one more Google-specific string in the way of someone who
+// chose a different agent.
+if (initPlan.provider === "jules") {
+  console.log("\n🔗 Google Jules workspace manifest");
+  console.log(`  👉 Paste into the Jules web UI: \x1b[36m${payloadToken}\x1b[0m`);
+  console.log("  (A copy was written to .agent/JULES_WEB_SETUP.md)");
+} else {
+  console.log(`\n  Provider: ${initPlan.provider}. A Google Jules workspace manifest was also written to .agent/JULES_WEB_SETUP.md if you ever switch.`);
+}
 console.log("\nNext Steps:");
-console.log("  1. See official documentation at https://jules.google");
-console.log("  2. Set environment variables: JULES_REPO=\"owner/repo\"");
-console.log("  3. Scaffold a new task: npm run jules:create \"My Feature\"");
-console.log("  4. Dispatch the queue:  npm run jules:queue");
-console.log("  5. Run pre-merge audit: npm run jules:audit\n");
+console.log("  1. Pick a provider:      agentctl providers   (jules | claude-code | codex | gemini)");
+console.log("  2. Pick a gate depth:    agentctl profile --list   (minimal | standard | max)");
+console.log("  3. Scaffold a task:      agentctl task create");
+console.log("  4. Dispatch the queue:   agentctl queue");
+console.log("  5. Run the pre-merge gate: agentctl check\n");
+console.log("  Not sure? Run `agentctl` with no arguments — it reads the repo and names one step.\n");

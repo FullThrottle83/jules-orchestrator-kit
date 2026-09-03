@@ -1,7 +1,32 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { isTaskFile } from "../engine.mjs";
+import { probeProvider } from "../provider-readiness.mjs";
+
+/**
+ * The provider named in `.agent/config.yml`, without paying for a full
+ * `loadConfig()` (which detects the stack and shells out to git).
+ *
+ * A bare `agentctl` invocation has to stay instant, and the only field this
+ * advisor needs is one line of YAML.
+ *
+ * @param {string} root
+ * @returns {string}
+ */
+function readConfiguredProvider(root) {
+  for (const name of ["config.yml", "jules.yml"]) {
+    const file = join(root, ".agent", name);
+    if (!existsSync(file)) continue;
+    try {
+      const match = readFileSync(file, "utf-8").match(/^provider:\s*["']?([\w.-]+)["']?\s*$/m);
+      if (match) return match[1];
+    } catch (_) {
+      // An unreadable config is already reported by the `init` branch above.
+    }
+  }
+  return "jules";
+}
 
 /**
  * Work out the one thing the operator should do next.
@@ -52,13 +77,19 @@ export function resolveNextStep(root, env = process.env) {
     };
   }
 
-  if (!env.JULES_API_KEY && !env.GEMINI_API_KEY) {
+  // Which credential (or binary) is missing depends entirely on the provider
+  // the repository selected. Asking for JULES_API_KEY in a repository driving
+  // `claude-code` told the operator to fix something that was never broken.
+  const providerName = readConfiguredProvider(root);
+  const probe = probeProvider(providerName, { env });
+  if (!probe.ready) {
     return {
-      id: "key",
-      headline: "No provider API key in the environment",
-      detail:
-        "The key is read from the environment only — never written to config and never sent anywhere but the provider. Until it is set you can still run `agentctl gate` and `--dry-run` dispatches locally.",
-      command: "export JULES_API_KEY=...",
+      id: "provider",
+      headline: probe.known
+        ? `Provider '${probe.name}' is not usable yet`
+        : `Provider '${probe.name}' is not a built-in preset`,
+      detail: `${probe.reason} Until it is resolved you can still run \`agentctl gate\` and \`--dry-run\` dispatches locally — every verification gate works with no provider at all.`,
+      command: probe.remedy,
       blocking: false,
     };
   }

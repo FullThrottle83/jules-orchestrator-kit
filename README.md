@@ -2,7 +2,7 @@
 
 # jules-orchestrator-kit
 
-### Task orchestration and automated verification harness for Google Jules
+### Task orchestration and automated verification harness for coding agents
 
 <br/>
 
@@ -24,6 +24,7 @@
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> &nbsp;•&nbsp;
+  <a href="#any-repository">Any Repository</a> &nbsp;•&nbsp;
   <a href="#overview">Overview</a> &nbsp;•&nbsp;
   <a href="#target-workflows">Target Workflows</a> &nbsp;•&nbsp;
   <a href="#triage-guidelines">Triage</a> &nbsp;•&nbsp;
@@ -67,6 +68,20 @@ git add .agent AGENTS.md SPEC.md CONSTRAINTS.md .gitignore && git commit -m "cho
 npx jules-orchestrator-kit task create
 ```
 
+`init` reads the repository, not a template: it detects the stack, picks a
+provider this machine can actually reach, and generates a CI workflow for the
+toolchain the project uses. Nothing about your setup is assumed.
+
+```bash
+# Which agents can this machine dispatch to, and what is missing for the rest?
+npx jules-orchestrator-kit providers
+```
+
+```bash
+# How hard should the gate verify agent work? (minimal | standard | max)
+npx jules-orchestrator-kit profile --set max
+```
+
 > [!TIP]
 > **Not sure what to run next?**  
 > `agentctl` with no arguments reads the repository state and prints the single
@@ -80,6 +95,44 @@ npx jules-orchestrator-kit task create
 > npm install -g jules-orchestrator-kit
 > agentctl init && agentctl task create && agentctl queue
 > ```
+
+<br/>
+
+---
+
+<br/>
+
+<a id="any-repository"></a>
+## Using It In Any Repository
+
+Four things differ between projects, and the kit resolves each one from the
+repository rather than from a template.
+
+| What differs | How it is resolved | Inspect / override |
+| :--- | :--- | :--- |
+| **The stack** | `detectStack()` recognises 24+ ecosystems (Cargo, Go, Python/Django, Maven/Gradle, .NET, PHP/Laravel, Ruby, Elixir, Swift, Flutter/Dart, CMake, Bun, Deno, Node + Turbo/pnpm/Nx workspaces) and derives the setup, lint, test and build commands from the manifest it finds. | `agentctl doctor` · `verify:` in `.agent/config.yml` |
+| **The agent** | `provider:` selects Google Jules (hosted REST), the Claude Code CLI, the Codex CLI or the Gemini CLI. Readiness means a credential for the hosted one and a binary on `PATH` for the local ones — never both. | `agentctl providers` · `agentctl init --provider <name>` |
+| **How hard to verify** | `verify.profile` expands at load time into a stage pipeline that skips gates the runtime cannot support, and says which and why. | `agentctl profile` · `agentctl profile --set max` |
+| **Where CI runs** | A workflow is *generated* for the detected stack — the project's toolchain plus Node for the CLI — not copied from this repository. | `agentctl ci init [--target github\|gitlab]` |
+
+### Verification profiles
+
+| Profile | Runs | Use when |
+| :--- | :--- | :--- |
+| `minimal` | setup → tests | The suite is slow, the stack is unfamiliar, or it is day one. |
+| `standard` | setup → lint → tests → build → anti-tamper on the diff | The everyday gate. Scaffolded by default. |
+| `max` | everything above → mutation scoring → V8 diff coverage *(Node runtimes only)* → 3-pass flakiness probe | The change is consequential, or an agent has been getting green too easily. |
+
+Nothing in a profile is Node-specific by assumption. Gates a runtime cannot
+support are skipped with a stated reason rather than failing the diff — a Cargo
+repository on `max` runs mutation and stability probing and is never asked for
+`NODE_V8_COVERAGE`.
+
+### No provider? Still useful
+
+Every gate below runs locally with no API key, no CLI and no network:
+`agentctl check`, `mutate`, `coverage`, `probe`, `assert`, `evidence`, `rules`,
+`doctor`. The provider is only needed to *dispatch* work, not to verify it.
 
 <br/>
 
@@ -137,13 +190,17 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 
 ## Core Capabilities
 
+* **Provider-Agnostic:** Dispatches to Google Jules (hosted REST), the Claude Code CLI, the OpenAI Codex CLI or the Gemini CLI. `agentctl providers` probes each one — a credential for the hosted provider, a binary on `PATH` for the local ones — and every verification gate works with no provider configured at all.
+* **Vendor-Neutral Configuration:** Every `JULES_*` environment variable also answers to an `AGENT_*` spelling (`AGENT_API_KEY`, `AGENT_REPO`, `AGENT_SWARM_CONCURRENCY`). The legacy name always wins where both are set, so adding an alias cannot change a working setup.
+* **One-Word Verification Depth:** `verify.profile: minimal | standard | max` expands at load time into a stack-aware pipeline — `max` adds mutation scoring, flakiness probing and, where the runtime emits it, V8 diff coverage. A Cargo repository is never asked for `NODE_V8_COVERAGE`.
+* **Generated, Not Copied, CI:** `agentctl ci init` writes a GitHub Actions or GitLab job carrying the toolchain the detected stack needs (`setup-python`, `setup-go`, `setup-java`, …) plus Node for the CLI itself.
 * **Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-in modules (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`).
 * **Cross-Platform Parity:** Verified 100% green across Linux, macOS (Darwin), and Windows on Node 20, 22, and 24.
 * **Autonomous Self-Healing Loop:** Captures test stderr/stdout, fingerprints error traces, and feeds structured context back into automated repair turns (up to 3 attempts) before human escalation.
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **759 unit tests across 91 suites passing in < 10.0s**.
+* **Verified Test Suite:** Tested with **797 unit tests across 98 suites passing in < 12.0s**.
 
 <br/>
 
@@ -158,7 +215,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 
 | Command | Usage | Description | Exit Codes |
 | :--- | :--- | :--- | :--- |
-| `init` | `agentctl init [--interactive] [--tier pro] [--force]` | Interactive onboarding wizard & stack detector. Generates `.agent/config.yml` and scaffolds `AGENTS.md`, the role prompts, the guardrails and the runtime `.gitignore` entries. Existing files are preserved unless `--force`. | `0` (Created) |
+| `init` | `agentctl init [--interactive] [--tier pro] [--provider <name>] [--profile <name>] [--force]` | Interactive onboarding wizard & stack detector. Generates `.agent/config.yml` and scaffolds `AGENTS.md`, the role prompts, the guardrails and the runtime `.gitignore` entries. Existing files are preserved unless `--force`. | `0` (Created) |
 | `budget` | `agentctl budget [--by-user] [--json] [reset]` | Reports rolling 24h task budget, quota headroom, and per-developer task attribution without external auth servers. | `0` (Status), `2` (Arg Error) |
 | `task create` | `agentctl task create [<prompt>] [--title <t>] [-p <prompt>] [-f <file>] [--template <id>] [--role <name>] [--tier fast\|complex]` | Interactively authors & scopes falsifiable task envelopes with secret scrubbing, preflight gate checks, and DAG dependency wiring. | `0` (Queued), `1` (Secret/Unfalsifiable) |
 | `task template` | `agentctl task template [<id>] [--list] [--json]` | Lists and synthesizes pre-calibrated task envelopes (Web, Deep Think, Universal & Agent Hardening: `web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `agent-dead-code-audit`, `web-flaky-heal`, `web-i18n`, `web-ai-access`, `agent-qa-mutation`, `agent-ci-falsify`, `agent-service-isolate`, `agent-error-paths`, `agent-security-audit`, `agent-dep-audit`, `agent-doc-drift`, `agent-config-audit`, `agent-api-contract`, `deep-debug`, `deep-feature`, `deep-optimize`, `deep-harden`). | `0` (Listed/Synthesized) |
@@ -169,6 +226,9 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | `retry` | `agentctl retry <sessionId> [--role <role>] [--with-failure] [--json]` | Fetches error traces and activity logs from a failed session and synthesizes a targeted OODA retry dispatch. | `0` (Dispatched), `1` (Error) |
 | `prune` | `agentctl prune [--age 7d] [--state <state>] [--delete] [--yes] [--json]` | Queries and batch-archives or deletes stale/completed sessions via Jules v1alpha API to keep workspaces clean. | `0` (Cleaned) |
 | `pr harvest` | `agentctl pr harvest [--tier r0,r1] [--limit <n>] [--auto] [--allow-no-checks] [--dry-run]` | Discovers open agent PRs, evaluates CI checks & risk tiers, and auto-squashes green low-risk changes autonomously. A PR reporting **no** CI checks is skipped unless `--allow-no-checks` is passed, and an unavailable changed-file list blocks rather than classifying as low risk. | `0` (Triaged/Merged), `1` (Error) |
+| `providers` | `agentctl providers [--json]` | Probes every built-in provider and reports which ones this machine can dispatch to, what each one is missing, and which is active. | `0` (Active provider ready), `1` (Not ready) |
+| `profile` | `agentctl profile [--list] [--set minimal\|standard\|max] [--json]` | Shows the verification stages the configured profile expands to on this stack, or writes a new profile into `.agent/config.yml` without disturbing comments. | `0` (Shown/Set), `2` (Unknown profile) |
+| `ci init` | `agentctl ci init [--target github\|gitlab] [--force] [--dry-run] [--json]` | Generates a stack-aware CI gate workflow (`.github/workflows/agent-gate.yml` or `.gitlab-ci.agent-gate.yml`) that runs `agentctl check --mode committed`. Refuses to overwrite without `--force`. | `0` (Written/Skipped), `1` (Write error), `2` (Unknown target) |
 | `doctor` | `agentctl doctor [--json]` | Diagnostic DAG check runner & automated transactional self-repair engine. | `0` (Healthy), `1` (Failures) |
 | `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. Non-task files (manifests, `README.md`) are skipped, and `--dry-run` previews without moving anything. | `0` (Complete) |
 | `swarm` | `agentctl swarm [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
