@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseYaml, TIER_PRESETS, VENDOR_TIERS, FALLBACK_TIER } from "./config.mjs";
-import { suggestProvider } from "./provider-readiness.mjs";
-import { PROFILE_NAMES } from "./profiles.mjs";
+import { suggestProvider, detectAvailableProviders } from "./provider-readiness.mjs";
+import { detectDefaultBranch } from "./git.mjs";
+import { PROFILE_NAMES, PROFILE_DESCRIPTIONS } from "./profiles.mjs";
 import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { KIT_VERSION } from "./version.mjs";
@@ -174,6 +175,11 @@ export function planInit(root = process.cwd(), options = {}) {
   const requestedProfile = String(options.profile || existingConfig.verify?.profile || "standard").toLowerCase();
   const profile = PROFILE_NAMES.includes(requestedProfile) ? requestedProfile : "standard";
 
+  // Detected, not assumed. A hardcoded `main` made the very first
+  // `agentctl check` fail with an unresolvable base ref in every repository
+  // whose git chose `master`, or whose team standardised on `develop`.
+  const baseBranch = options.baseBranch || existingConfig.base_branch || detectDefaultBranch(root);
+
   const limitsBlock = isCustomLimits
     ? `\nlimits:\n  concurrency: ${limits.concurrency}\n  daily_tasks: ${limits.daily_tasks}\n  stagger_ms: ${limits.stagger_ms}\n  diff_kb: ${limits.diff_kb}\n`
     : "";
@@ -183,7 +189,7 @@ export function planInit(root = process.cwd(), options = {}) {
 version: 1
 provider: ${provider}
 tier: ${tierName}
-base_branch: ${options.baseBranch || existingConfig.base_branch || "main"}
+base_branch: ${baseBranch}
 branch_prefix: ${existingConfig.branch_prefix || "agent/"}
 ${limitsBlock}
 verify:
@@ -229,6 +235,7 @@ allow_paths: ${allowPaths.length > 0 ? "\n" + allowPaths.map((p) => `  - "${p}"`
     tier: tierName,
     provider,
     profile,
+    baseBranch,
     verify,
     limits,
     presets: selectedPresets,
@@ -292,6 +299,8 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
   }
 
   let selectedTier = options.tier || existingConfig.tier || FALLBACK_TIER;
+  let selectedProvider = options.provider || existingConfig.provider;
+  let selectedProfile = options.profile || existingConfig.verify?.profile;
   let testCmd = options.testCmd;
   let buildCmd = options.buildCmd;
   let selectedPresets = options.presets;
@@ -302,14 +311,51 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
     await new Promise((resolve) => setTimeout(resolve, 300));
     sp.stop(`Detected Stack: ${oracle.stack}`);
 
-    const optionsList = tierOptions();
-    const defaultTierIdx = Math.max(0, optionsList.findIndex((t) => t.value === selectedTier));
-
-    selectedTier = await select(
-      optionsList,
-      "Which plan does your Jules account use? (limits are adjustable later)",
-      { ...options, defaultIdx: defaultTierIdx }
+    // Which agent, before anything about one vendor's plans.
+    //
+    // The wizard's first question used to be "Which plan does your Jules
+    // account use?", asked of everyone — including people who came to drive
+    // Claude Code or Codex and were now left guessing whether a Jules
+    // subscription was a prerequisite. Ask what the repository is for first,
+    // and ask the plan question only of the provider it belongs to.
+    const probes = detectAvailableProviders({ env: options.env || process.env });
+    const providerOptions = probes.map((pr) => ({
+      label: `${pr.name}${pr.ready ? "" : "  (not available here)"}`,
+      value: pr.name,
+      hint: pr.ready ? pr.label : `${pr.label} — ${pr.remedy}`,
+    }));
+    const defaultProviderIdx = Math.max(
+      0,
+      providerOptions.findIndex((o) => o.value === (selectedProvider || probes.find((pr) => pr.ready)?.name))
     );
+    selectedProvider = await select(providerOptions, "Which agent should run the tasks?", {
+      ...options,
+      defaultIdx: defaultProviderIdx,
+    });
+
+    // Only the hosted provider meters work against an account plan; asking a
+    // local-CLI user about tiers is asking about something that does not exist
+    // for them.
+    if (selectedProvider === "jules") {
+      const optionsList = tierOptions();
+      const defaultTierIdx = Math.max(0, optionsList.findIndex((t) => t.value === selectedTier));
+      selectedTier = await select(
+        optionsList,
+        "Which plan does your Jules account use? (limits are adjustable later)",
+        { ...options, defaultIdx: defaultTierIdx }
+      );
+    }
+
+    const profileOptions = PROFILE_NAMES.map((n) => ({
+      label: n,
+      value: n,
+      hint: PROFILE_DESCRIPTIONS[n],
+    }));
+    const defaultProfileIdx = Math.max(0, profileOptions.findIndex((o) => o.value === (selectedProfile || "standard")));
+    selectedProfile = await select(profileOptions, "How hard should the gate verify agent work?", {
+      ...options,
+      defaultIdx: defaultProfileIdx,
+    });
 
     testCmd = await input("Verification Test Command", {
       defaultValue: testCmd || existingConfig.verify?.test || oracle.candidates.testCmd || "npm test",
@@ -357,6 +403,8 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
   const plan = planInit(root, {
     ...options,
     tier: selectedTier,
+    provider: selectedProvider,
+    profile: selectedProfile,
     testCmd,
     buildCmd,
     presets: selectedPresets,

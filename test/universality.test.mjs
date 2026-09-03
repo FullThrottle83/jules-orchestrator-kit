@@ -14,7 +14,7 @@ import {
 } from "../src/provider-readiness.mjs";
 import { ENV_ALIASES, applyEnvAliases, describeEnvVar } from "../src/env-aliases.mjs";
 import { PROFILE_NAMES, buildProfileStages, buildDefaultStages, describeProfilePlan } from "../src/profiles.mjs";
-import { setVerificationProfile } from "../src/profiles-io.mjs";
+import { setVerificationProfile } from "../src/config-edit.mjs";
 import { buildCiWorkflow, writeCiWorkflow, CI_TARGETS } from "../src/ci-templates.mjs";
 import { loadConfig, BUILTIN_DENY } from "../src/config.mjs";
 import { checkScope, isEnvTemplateException } from "../src/security.mjs";

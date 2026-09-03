@@ -257,7 +257,8 @@ ${fullPrompt}
  * Run interactive or headless task creation wizard.
  * @param {string} [root=process.cwd()]
  * @param {object} [options]
- * @returns {Promise<{ ok: boolean, taskFile: string, plan: object }>}
+ * @param {boolean} [options.dryRun] - synthesize and validate the envelope without writing it
+ * @returns {Promise<{ ok: boolean, dryRun: boolean, taskFile: string, written: boolean, plan: object }>}
  */
 export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
   const interactive = options.interactive !== false && isTTY(options.stdin || process.stdin);
@@ -338,20 +339,36 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
 
   // Write Task File to canonical queue directory (getQueueDir)
   const queueDir = getQueueDir(root);
-  if (!existsSync(queueDir)) {
-    mkdirSync(queueDir, { recursive: true });
-  }
-
   const taskFile = resolve(queueDir, `${plan.taskId}.md`);
   if (!taskFile.startsWith(resolve(queueDir))) {
     throw new Error("Task ID path traversal blocked.");
+  }
+
+  // `--dry-run` was accepted by the CLI parser and then dropped on the floor:
+  // the envelope was written to the queue either way, so a rehearsal queued
+  // real work. A rehearsal returns the same plan and touches nothing — not even
+  // the queue directory, which would otherwise be created as a side effect.
+  if (options.dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      taskFile,
+      written: false,
+      plan,
+    };
+  }
+
+  if (!existsSync(queueDir)) {
+    mkdirSync(queueDir, { recursive: true });
   }
 
   writeFileSync(taskFile, plan.taskFileContent, "utf-8");
 
   return {
     ok: true,
+    dryRun: false,
     taskFile,
+    written: true,
     plan,
   };
 }

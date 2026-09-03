@@ -59,8 +59,14 @@ test("Interactive Init Wizard Smoke Test", async (t) => {
     const stdout = new PassThrough();
 
     const driver = drive(stdin, stdout, [
+      // Provider select: confirm the default. An empty PATH below makes that
+      // default deterministic — no agent CLI is reachable, so the menu opens on
+      // the hosted provider, which is the only one that asks about a plan.
+      { expect: "Which agent should run the tasks?", send: "\r" },
       // Plan select: arrow down once, then confirm.
       { expect: "Which plan does your Jules account use?", send: "\u001b[B\r" },
+      // Verification profile: confirm the default (standard).
+      { expect: "How hard should the gate verify agent work?", send: "\r" },
       { expect: "Verification Test Command", send: "pytest -q\n" },
       { expect: "Verification Build Command", send: "\n" },
       { expect: "Select Autonomous Workflows", send: "\r" },
@@ -68,9 +74,9 @@ test("Interactive Init Wizard Smoke Test", async (t) => {
       { expect: "Run verification probe", send: "n\n" },
     ]);
 
-    const res = await runInitWizard(root, { stdin, stdout });
+    const res = await runInitWizard(root, { stdin, stdout, env: { PATH: "" } });
 
-    assert.equal(driver.remaining(), 0, `wizard never reached: ${driver.sent.length} of 5 prompts seen`);
+    assert.equal(driver.remaining(), 0, `wizard never reached: ${driver.sent.length} of 7 prompts seen`);
     assert.equal(res.ok, true);
     assert.ok(existsSync(res.configPath), "wizard must write .agent/config.yml");
 
@@ -81,6 +87,8 @@ test("Interactive Init Wizard Smoke Test", async (t) => {
     // meaningful — accepting the default would pass whether or not the escape
     // sequence was decoded.
     assert.match(config, /tier:\s*["']?pro/, "arrow-down must actually move the selection");
+    assert.match(config, /provider: jules/, "the answered provider must reach the config");
+    assert.match(config, /profile: standard/, "so must the answered verification profile");
 
     // The regression that shipped to a real user: the first prompt tore down
     // stdin, so every prompt after it failed with an ABORT_ERR.
@@ -108,14 +116,25 @@ test("Interactive Init Wizard Smoke Test", async (t) => {
     const stdout = new PassThrough();
 
     const driver = drive(stdin, stdout, [
+      // The hosted provider is the default with no agent CLI on PATH, and is
+      // the only one the plan question is asked of.
+      { expect: "Which agent should run the tasks?", send: "\r" },
       { expect: "Which plan does your Jules account use?", send: "\u001b[B\u001b[B\r" },
+      { expect: "How hard should the gate verify agent work?", send: "\r" },
       { expect: "Verification Test Command", send: "go test ./...\n" },
       { expect: "Verification Build Command", send: "\n" },
       { expect: "Select Autonomous Workflows", send: "\r" },
       { expect: "Run verification probe", send: "n\n" },
     ]);
 
-    const res = await runInitWizard(root, { interactive: true, tier: undefined, allowDefaults: true, stdin, stdout });
+    const res = await runInitWizard(root, {
+      interactive: true,
+      tier: undefined,
+      allowDefaults: true,
+      env: { PATH: "" },
+      stdin,
+      stdout,
+    });
 
     assert.equal(driver.remaining(), 0);
     assert.equal(res.plan.tier, "ultra", "two arrow-downs from `free` must land on `ultra`");
@@ -129,15 +148,24 @@ test("Interactive Init Wizard Smoke Test", async (t) => {
     const stdout = new PassThrough();
 
     const driver = drive(stdin, stdout, [
+      { expect: "Which agent should run the tasks?", send: "\r" },
       // Accept the highlighted entry, which `--tier ultra` should have moved.
       { expect: "Which plan does your Jules account use?", send: "\r" },
+      { expect: "How hard should the gate verify agent work?", send: "\r" },
       { expect: "Verification Test Command", send: "cargo test\n" },
       { expect: "Verification Build Command", send: "\n" },
       { expect: "Select Autonomous Workflows", send: "\r" },
       { expect: "Run verification probe", send: "n\n" },
     ]);
 
-    const res = await runInitWizard(root, { interactive: true, tier: "ultra", allowDefaults: true, stdin, stdout });
+    const res = await runInitWizard(root, {
+      interactive: true,
+      tier: "ultra",
+      allowDefaults: true,
+      env: { PATH: "" },
+      stdin,
+      stdout,
+    });
 
     assert.equal(driver.remaining(), 0);
     assert.equal(res.plan.tier, "ultra");

@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { join, delimiter } from "node:path";
+import { spawnSync } from "node:child_process";
 
 /**
  * What each provider actually needs before a dispatch can succeed.
@@ -172,6 +173,7 @@ export function probeProvider(name, opts = {}) {
   return {
     name: descriptor.name,
     kind: descriptor.kind,
+    bin: descriptor.bin,
     label: descriptor.label,
     ready,
     known: true,
@@ -180,6 +182,59 @@ export function probeProvider(name, opts = {}) {
     keySource,
     binPath,
   };
+}
+
+/**
+ * Actually run the provider's CLI, rather than only finding it on PATH.
+ *
+ * `probeProvider` deliberately spawns nothing — it is called from a bare
+ * `agentctl` invocation and from `doctor`, both of which must stay instant. But
+ * a binary on PATH is a weak claim: a `gemini` that is installed and whose
+ * account has no access still reports ready, `doctor` still says 11 passed, and
+ * the first thing that disagrees is a dispatch that dies. This is the check
+ * that can disagree earlier, so it is opt-in (`agentctl doctor --probe`).
+ *
+ * It proves the binary starts and answers, not that the account is entitled —
+ * no CLI exposes "am I authorised" without doing work — but the common failures
+ * (broken install, wrong architecture, a CLI that refuses to start unauthenticated)
+ * surface here instead of mid-repair.
+ *
+ * @param {string} name
+ * @param {object} [opts]
+ * @param {NodeJS.ProcessEnv} [opts.env=process.env]
+ * @param {number} [opts.timeoutMs=8000]
+ * @returns {{ name: string, attempted: boolean, ok: boolean, detail: string }}
+ */
+export function probeProviderLiveness(name, opts = {}) {
+  const env = opts.env || process.env;
+  const base = probeProvider(name, { env });
+  if (base.kind !== "exec" || !base.binPath) {
+    return {
+      name: base.name,
+      attempted: false,
+      ok: base.ready,
+      detail: base.kind === "http" ? "Hosted provider — a credential cannot be validated without spending a request." : base.reason,
+    };
+  }
+
+  try {
+    const res = spawnSync(base.binPath, ["--version"], {
+      encoding: "utf-8",
+      timeout: Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 8000,
+      env,
+    });
+    if (res.error) {
+      return { name: base.name, attempted: true, ok: false, detail: `\`${base.bin || base.name} --version\` could not run: ${res.error.message}` };
+    }
+    if (res.status !== 0) {
+      const why = ((res.stderr || res.stdout || "").trim().split("\n")[0] || `exit ${res.status}`).slice(0, 200);
+      return { name: base.name, attempted: true, ok: false, detail: `\`--version\` exited ${res.status}: ${why}` };
+    }
+    const version = (res.stdout || "").trim().split("\n")[0].slice(0, 80);
+    return { name: base.name, attempted: true, ok: true, detail: version ? `CLI responds: ${version}` : "CLI responds." };
+  } catch (err) {
+    return { name: base.name, attempted: true, ok: false, detail: `Probe failed: ${err.message}` };
+  }
 }
 
 /**

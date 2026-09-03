@@ -454,6 +454,85 @@ export function parseGitHubRepo(remoteUrl) {
  * @param {string} [root=process.cwd()]
  * @returns {string}
  */
+/**
+ * Work out which branch this repository actually treats as its base.
+ *
+ * `main` was hardcoded as the scaffolded default, which is wrong the moment
+ * `git init` picks `master` (still the default on many installed gits) or the
+ * project standardised on `develop`. The failure was not graceful: the first
+ * `agentctl check` could not resolve the base ref and rejected with exit 1.
+ *
+ * Resolution order, strongest evidence first:
+ *   1. `origin/HEAD` — the remote states its own default branch.
+ *   2. A local `main`, then `master` — the conventional names, preferred over
+ *      the checked-out branch so running `init` from a feature branch does not
+ *      record that feature branch as the base for everything after.
+ *   3. The current branch — covers a fresh `git init` with no commits, where
+ *      HEAD points at an unborn branch that `--show-current` still names.
+ *   4. `main`, when there is no git information at all to go on.
+ *
+ * @param {string} [root=process.cwd()]
+ * @returns {string}
+ */
+/**
+ * Split a list of repo-relative paths into the ones git already tracks and the
+ * ones it does not.
+ *
+ * Used to tell an onboarding mistake apart from an agent overstepping. Both
+ * arrive as the same exit-3 scope violation on the same protected paths, but
+ * "the files `init` just wrote are not committed yet" and "something edited the
+ * rules it is governed by" need opposite advice, and the operator who has just
+ * met the tool gets the wrong half if the two are not distinguished.
+ *
+ * @param {string} root
+ * @param {string[]} files - repo-relative paths
+ * @returns {{ tracked: string[], untracked: string[] }}
+ */
+export function partitionTracked(root = process.cwd(), files = []) {
+  const list = files.filter((f) => typeof f === "string" && f && !f.startsWith("-"));
+  if (list.length === 0) return { tracked: [], untracked: [] };
+  let out = "";
+  try {
+    out = git(["ls-files", "--", ...list], { cwd: root, ignoreError: true }) || "";
+  } catch (_) {
+    // Without an answer, claim nothing is tracked-or-not: callers fall back to
+    // the generic advice rather than to a guess.
+    return { tracked: [], untracked: [] };
+  }
+  const tracked = new Set(out.split("\n").map((l) => l.trim()).filter(Boolean));
+  return {
+    tracked: list.filter((f) => tracked.has(f)),
+    untracked: list.filter((f) => !tracked.has(f)),
+  };
+}
+
+export function detectDefaultBranch(root = process.cwd()) {
+  // `git()` returns trimmed stdout, and "" for a non-zero exit under
+  // ignoreError — there is no status field to read.
+  const ask = (args) => {
+    try {
+      return git(args, { cwd: root, ignoreError: true }) || "";
+    } catch (_) {
+      return "";
+    }
+  };
+
+  const remoteHead = ask(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+  if (remoteHead.startsWith("origin/")) {
+    const name = remoteHead.slice("origin/".length).trim();
+    if (name) return name;
+  }
+
+  for (const candidate of ["main", "master"]) {
+    if (ask(["rev-parse", "--verify", "--quiet", `refs/heads/${candidate}`])) return candidate;
+  }
+
+  const current = ask(["branch", "--show-current"]);
+  if (current) return current;
+
+  return "main";
+}
+
 export function resolveGitRemoteOrigin(root = process.cwd()) {
   try {
     const raw = git(["config", "--get", "remote.origin.url"], { cwd: root, ignoreError: true });
