@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.0] - 2026-09-03
+*Verification integrity. Three more ways an agent's work could look checked without being checked, all reproduced before being fixed.*
+
+### Security
+- **Test Weakening By Replacement (`src/security.mjs`)**: `checkTestTampering` counted assertions — `removed.length > added` — so swapping `assert.strictEqual(add(2,3), 5)` for `assert.ok(add(2,3) !== undefined)` was one out and one in, the guard stayed silent, and the suite stopped checking the answer. Assertions that name an expected value are now counted separately across dialects (`strictEqual`/`toBe`/`assert_eq!`/`require.Equal`/`t.Errorf`), and a fall in that count is reported as `ASSERTION_WEAKENED`. Strengthening, renaming and adding are unaffected; an assertion deleted outright stays a single `ASSERTION_REMOVAL` rather than being reported twice.
+- **Symlinks Walked Past Scope (`src/git.mjs`, `src/engine.mjs`)**: `checkScope` is lexical by design, so a link named `notes.md` pointing at `.agent/config.yml` was judged as `notes.md` and the protected path it reached was never considered. New `symlinkChanges()` reads each added link's target from the git object — resolved lexically against the link's own directory, never followed on disk — and the gate now judges both names, reporting the violation against the link the diff actually adds.
+- **Evidence That Outlived What It Attested To (`src/evidence.mjs`)**: manifests hashed the test files and nothing else, so `evidence generate` followed by rewriting `src/` left verification reporting PASSED over an implementation nobody had checked. Manifests now carry `sourceIntegrity`, and `verifyEvidenceManifest` fails when the source tree has moved, naming both the manifest's commit and the current one. Separately, `computeDirectoryHash` only walked `test/`, `tests/`, `__tests__/`, `spec/` and `src/` — a suite living beside `package.json` was invisible to every hash the manifest recorded, which is why a rewritten root-level test file verified clean. Root-level source files are now included at depth one, restricted to source extensions so the hash cannot churn on the kit's own `EVIDENCE.md`.
+
+### Changed
+- **`parseRawDiff()` (`src/git.mjs`)**: the `git diff --raw -z` parsing behind binary sizing and symlink detection lives in one place rather than two.
+
 ## [0.54.1] - 2026-09-03
 *Security hotfix. Three ways the gate could report APPROVED for work it had not checked, all found by a cold-start adversarial review and all reproduced before being fixed. The first two predate this series — the false green is present in 0.52.8.*
 

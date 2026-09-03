@@ -198,11 +198,12 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Cross-Platform Parity:** Verified 100% green across Linux, macOS (Darwin), and Windows on Node 20, 22, and 24.
 * **Autonomous Self-Healing Loop:** Captures test stderr/stdout, fingerprints error traces, and feeds structured context back into automated repair turns (up to 3 attempts) before human escalation.
 * **Fail-Closed Verification:** A change that ran no verification command at all is rejected, not approved — "nothing to run" is not a pass. Repositories using only the scope and secret phases opt out explicitly with `verify.required: false`.
+* **Anti-Tamper That Reads Semantics:** Counting assertions cannot see a value check swapped for a truthiness check. The guard tracks assertions that name an expected value, so weakening a test is a violation even when the line count is unchanged.
 * **Binary-Aware Scanning:** Files git renders as `Binary files ... differ` are read directly for structured credentials, and their real size is charged against the diff ceiling, so a leading NUL byte cannot hide a token and a committed blob cannot walk past the payload governor.
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **835 unit tests across 109 suites passing in < 14.0s**.
+* **Verified Test Suite:** Tested with **842 unit tests across 112 suites passing in < 14.0s**.
 
 <br/>
 

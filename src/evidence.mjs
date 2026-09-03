@@ -11,7 +11,7 @@ import {
   renameSync,
   unlinkSync,
 } from "node:fs";
-import { join, resolve, relative, isAbsolute, sep } from "node:path";
+import { join, resolve, relative, isAbsolute, sep, extname } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 
@@ -83,6 +83,19 @@ export function findFilesRecursively(dir, baseDir = dir) {
  * @param {string[]} [options.directories] - Specific directory names to scan (e.g. ['test', 'tests'])
  * @returns {{ treeHash: string, fileCount: number, fileHashes: Record<string, string> }}
  */
+/**
+ * Extensions that count as code when scanning the repository root.
+ *
+ * The directory walk above takes everything under `src/` and the test
+ * directories; this list only governs the loose files beside package.json,
+ * where a `.md` is documentation rather than something the evidence attests to.
+ */
+const SOURCE_EXTENSIONS = new Set([
+  ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts",
+  ".py", ".go", ".rs", ".rb", ".php", ".java", ".kt", ".kts", ".cs", ".fs",
+  ".swift", ".dart", ".ex", ".exs", ".c", ".h", ".cc", ".cpp", ".hpp", ".sol",
+]);
+
 export function computeDirectoryHash(root, options = {}) {
   let fileList = [];
 
@@ -100,6 +113,29 @@ export function computeDirectoryHash(root, options = {}) {
         fileList.push(...found);
       }
     }
+
+    // Plenty of projects keep `app.test.mjs` or `index.js` beside package.json
+    // rather than under one of the directories above, and those files were
+    // invisible to every hash computed here — a manifest could attest to a
+    // pristine test suite while the only test in the repository had been
+    // replaced with garbage.
+    //
+    // Depth one only: recursing from the root would walk node_modules and
+    // vendor trees. Source extensions only: the hash exists to bind the
+    // manifest to the code it verified, and pulling in README.md or the
+    // EVIDENCE.md this very command is about to write would make the hash churn
+    // on its own output.
+    try {
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        if (!entry.isFile()) continue;
+        if (entry.name.startsWith(".")) continue;
+        if (!SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
+        fileList.push(normalizePath(entry.name));
+      }
+    } catch (_) {
+      // An unreadable root yields whatever the directory walk already found.
+    }
+
     fileList = Array.from(new Set(fileList)).sort();
   }
 
@@ -154,6 +190,7 @@ export function computeEvidenceHash(manifest) {
     intent: manifest.intent,
     provenance: manifest.provenance,
     testIntegrity: manifest.testIntegrity,
+    ...(manifest.sourceIntegrity ? { sourceIntegrity: manifest.sourceIntegrity } : {}),
     executionRecords: manifest.executionRecords,
     securityChecks: manifest.securityChecks,
     ...(manifest.status ? { status: manifest.status } : {}),
@@ -235,6 +272,7 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
   // Compute test tree integrity
   const preTestHash = options.preTestHash || null;
   const currentTestState = computeDirectoryHash(root, { testOnly: true });
+  const currentSourceState = computeDirectoryHash(root);
   const postTestHash = currentTestState.treeHash;
 
   let tamperDetected = false;
@@ -277,6 +315,14 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
       tamperDetected,
       testFileCount: currentTestState.fileCount,
       fileHashes: currentTestState.fileHashes,
+    },
+    // The manifest attested to the test files and to nothing else, so the code
+    // under test could be replaced wholesale after the fact and verification
+    // still passed. Evidence that survives the thing it attests to being
+    // rewritten is not evidence.
+    sourceIntegrity: {
+      treeHash: currentSourceState.treeHash,
+      fileCount: currentSourceState.fileCount,
     },
     executionRecords: options.executionRecords || [],
     securityChecks: {
@@ -466,7 +512,28 @@ export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "m
     };
   }
 
-  // 3. Verify security checks
+  // 3. Verify the code the manifest attests to still is that code.
+  //
+  // Without this the manifest proved only that the *tests* had not changed,
+  // so `evidence generate` followed by rewriting src/ and committing left
+  // verification reporting PASSED over an implementation nobody had checked.
+  if (manifest.sourceIntegrity?.treeHash) {
+    const currentSourceState = computeDirectoryHash(root);
+    if (currentSourceState.treeHash !== manifest.sourceIntegrity.treeHash) {
+      return {
+        ok: false,
+        reason: `Source tree has changed since this evidence was generated (${manifest.sourceIntegrity.treeHash.slice(0, 12)} → ${currentSourceState.treeHash.slice(0, 12)}); the manifest no longer attests to what is on disk`,
+        details: {
+          currentHash: currentSourceState.treeHash,
+          manifestHash: manifest.sourceIntegrity.treeHash,
+          manifestCommit: manifest.provenance?.commitSha || null,
+          currentCommit: getGitProvenance(root).commitSha,
+        },
+      };
+    }
+  }
+
+  // 4. Verify security checks
   if (manifest.securityChecks?.secretScanOk === false) {
     return { ok: false, reason: "Evidence manifest records secret scanning failure" };
   }

@@ -1120,6 +1120,24 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   const ASSERTION_PATTERN = /(?:\b(?:assert(?:\.[a-zA-Z0-9_$]+)?|expect|t\.(?:assert|expect|is|equal|true|false|Errorf|Fatalf)|require\.[a-zA-Z0-9_$]+)\b|assert!|assert_eq!|assert_ne!)/i;
   const isCommentLine = (str) => /^\s*(?:\/\/|\/\*|\*|#|--|;)/.test(str);
 
+  // An assertion that states a *specific* expected value. Counting assertions
+  // alone let a test be gutted while looking untouched: swapping
+  // `assert.strictEqual(add(2,3), 5)` for `assert.ok(add(2,3) !== undefined)`
+  // removes one and adds one, so `removed > added` stayed false and the guard
+  // said nothing — while the suite stopped checking the answer.
+  const SPECIFIC_ASSERTION = new RegExp(
+    [
+      "\\bassert(?:\\.strict)?\\.?(?:strictEqual|deepStrictEqual|deepEqual|notStrictEqual|notDeepStrictEqual|equal|notEqual|match|doesNotMatch|throws|rejects|doesNotThrow)\\s*\\(",
+      "\\bexpect\\s*\\([^)]*\\)\\s*\\.(?:toBe|toEqual|toStrictEqual|toMatch|toMatchObject|toContain|toHaveBeenCalledWith|toThrow|toHaveLength|toBeCloseTo)\\s*\\(",
+      "\\bassert\\.(?:equals|deepEquals|include|lengthOf)\\s*\\(",
+      "assert_eq!|assert_ne!",
+      "\\bt\\.(?:Errorf|Fatalf)\\s*\\(",
+      "\\brequire\\.(?:Equal|NotEqual|Len|Contains|Error|NoError)\\s*\\(",
+    ].join("|"),
+    "i"
+  );
+  const isSpecificAssertion = (str) => SPECIFIC_ASSERTION.test(str);
+
   const fileAssertions = new Map();
 
   for (let i = 0; i < lines.length; i++) {
@@ -1151,7 +1169,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     }
 
     if (!fileAssertions.has(currentFile)) {
-      fileAssertions.set(currentFile, { removed: [], added: 0 });
+      fileAssertions.set(currentFile, { removed: [], added: 0, removedSpecific: [], addedSpecific: 0 });
     }
     const fileStats = fileAssertions.get(currentFile);
 
@@ -1159,6 +1177,9 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       const deletedText = line.slice(1);
       if (!isCommentLine(deletedText) && ASSERTION_PATTERN.test(deletedText)) {
         fileStats.removed.push({ line: currentOldLineNo, text: deletedText });
+        if (isSpecificAssertion(deletedText)) {
+          fileStats.removedSpecific.push({ line: currentOldLineNo, text: deletedText });
+        }
       }
       if (currentOldLineNo !== null) currentOldLineNo++;
     } else if (line.startsWith("+") && !line.startsWith("+++")) {
@@ -1205,6 +1226,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       // If valid non-vacuous, non-commented assertion is added, increment added count
       if (!isVacuous && !isCommented && !isCommentLine(addedText) && ASSERTION_PATTERN.test(addedText)) {
         fileStats.added++;
+        if (isSpecificAssertion(addedText)) fileStats.addedSpecific++;
       }
 
       if (currentNewLineNo !== null) currentNewLineNo++;
@@ -1223,6 +1245,31 @@ export function checkTestTampering(diffOrText = "", options = {}) {
           line: item.line,
           type: "ASSERTION_REMOVAL",
           reason: `Test Tamper Guard: Assertion removed without replacement in ${file}${item.line ? `:${item.line}` : ""}: "${item.text.trim()}"`,
+        });
+      }
+    }
+
+    // Replacing an assertion is not the same as keeping one. Counting totals
+    // let a specific expectation be swapped for a vague one at no cost — one
+    // out, one in, guard silent, suite no longer checking the answer. What must
+    // not fall is the number of assertions that name an expected value.
+    //
+    // Only the *replaced* ones are reported here. An assertion deleted outright
+    // is already an ASSERTION_REMOVAL above, and emitting both would report the
+    // same line twice under two names.
+    const alreadyReportedSpecific = stats.removed
+      .slice(stats.added)
+      .filter((item) => isSpecificAssertion(item.text)).length;
+    const specificLost = Math.max(0, stats.removedSpecific.length - stats.addedSpecific);
+    const weakenedCount = Math.max(0, specificLost - alreadyReportedSpecific);
+
+    if (weakenedCount > 0) {
+      for (const item of stats.removedSpecific.slice(stats.addedSpecific, stats.addedSpecific + weakenedCount)) {
+        violations.push({
+          file,
+          line: item.line,
+          type: "ASSERTION_WEAKENED",
+          reason: `Test Tamper Guard: Assertion weakened in ${file}${item.line ? `:${item.line}` : ""} — an assertion naming an expected value was replaced by one that does not: "${item.text.trim()}"`,
         });
       }
     }
