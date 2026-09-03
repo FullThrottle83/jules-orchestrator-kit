@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.1] - 2026-09-03
+*Security hotfix. Three ways the gate could report APPROVED for work it had not checked, all found by a cold-start adversarial review and all reproduced before being fixed. The first two predate this series — the false green is present in 0.52.8.*
+
+### Security
+- **The Gate Approved Changes It Never Verified (`src/engine.mjs`, `src/config.mjs`)**: `testResult` started optimistic and the stage loop skipped any stage without a command, so a repository with no test oracle ran **zero** verification steps and was told `APPROVED (Exit 0)` — syntactically broken code included. The gate now fails closed (`Exit 4`, stage `oracle`) when no command executed against the change, naming `agentctl bootstrap` and `verify.test` as the fix. Assertions do not count as verification: `assert:test-integrity` proves a test was not weakened, not that the code works. A repository that deliberately uses only the scope and secret phases opts out with `verify.required: false`, read from the base commit like every other trusted field so an uncommitted edit cannot switch the gate off.
+- **Credentials Hidden In Binary Files (`src/security.mjs`, `src/git.mjs`, `src/engine.mjs`)**: `git diff` renders a binary file as one 43-byte summary line, and every scanner downstream reads the diff *text* — so prefixing a file with a single NUL byte walked a live GitHub token through a green gate. New `binaryDiffEntries()` identifies those files and `scanBinaryPayloads()` inspects their contents directly, extracting printable runs the way `strings(1)` does. Only structured high-confidence patterns are applied, never entropy: a real PNG is high-entropy by nature, while `ghp_[A-Za-z0-9]{36}` inside one is not a coincidence. A file above the 8 MB scan ceiling is reported as `BINARY_PAYLOAD_UNSCANNED` rather than passed silently.
+- **Payload Governor Bypassed By Binary Blobs (`src/git.mjs`)**: `diffBytes` measured the diff text, so a committed 500 KB binary weighed 250 bytes and the 75 KB ceiling could be walked past with a file of any size. It now adds the real size of every binary blob, taken from the object git recorded or from the working file when there is none, so both `committed` and `working-tree` modes get a true figure.
+
+### Fixed
+- **Wrong Remediation For A Missing Oracle (`bin/agentctl.mjs`)**: the exit-4 hint offered `--fix`, which cannot help when there was no command to run and no failure to repair.
+
 ## [0.54.0] - 2026-09-03
 *First-run friction pass. Every item here was found by running a fresh dummy project through the whole chain; the engine was not the problem, the CLI's presentation layer was.*
 

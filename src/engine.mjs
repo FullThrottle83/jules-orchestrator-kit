@@ -1,6 +1,6 @@
 import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
-import { checkScope, scanDiff, redactSecrets } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, showFromOrigin, runCmd } from "./git.mjs";
+import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets } from "./security.mjs";
+import { changedFiles, diffBytes, diffText, binaryDiffEntries, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
@@ -198,6 +198,9 @@ export async function gate(opts = {}) {
           build: parsed.verify?.build || parsed.build_cmd || config.verify.build,
           stages: parsed.verify?.stages || config.verify.stages,
           policy: parsed.verify?.policy || config.verify.policy,
+          // Read from the base commit like every other trusted field: an
+          // uncommitted `required: false` must not be able to switch the gate off.
+          required: parsed.verify?.required !== undefined ? parsed.verify.required !== false : config.verify.required !== false,
           timeoutMs: parsed.verify?.timeoutMs || parsed.verify?.timeout_ms || config.verify.timeoutMs,
         };
       }
@@ -242,13 +245,25 @@ export async function gate(opts = {}) {
 
   // Phase 3: Diff Secret Scanner & Security Checks
   const secretResult = scanDiff(diffStr, { root });
-  phases.push({ phase: "secrets", ok: secretResult.ok, findings: secretResult.findings });
-  appendTelemetry(root, "gate_phase", { phase: "secrets", ok: secretResult.ok });
+  // A binary file reaches the scanner as one summary line, so its contents were
+  // never looked at — a NUL byte in front of a token was enough to hide it.
+  // Inspect those files directly and fold the verdict in.
+  let binaryFindings = [];
+  try {
+    binaryFindings = scanBinaryPayloads(binaryDiffEntries(root, base, mode), root);
+  } catch (_) {
+    // Never let the extra pass break a gate that would otherwise have run; the
+    // text scan above has already been applied.
+  }
+  const allSecretFindings = [...(secretResult.findings || []), ...binaryFindings];
+  const secretsOk = secretResult.ok && binaryFindings.length === 0;
+  phases.push({ phase: "secrets", ok: secretsOk, findings: allSecretFindings });
+  appendTelemetry(root, "gate_phase", { phase: "secrets", ok: secretsOk });
   if (progressBus && progressToken) {
     progressBus.reportProgress(progressToken, 75, 100, "Phase 3/4: Diff Secret Scanner check complete");
   }
 
-  if (!secretResult.ok) {
+  if (!secretsOk) {
     appendTelemetry(root, "gate_finished", { ok: false, code: 6 });
     return { ok: false, code: 6, phases };
   }
@@ -415,7 +430,23 @@ export async function gate(opts = {}) {
     }
   }
 
-  const verifyOk = !failingCmd && !testTampered;
+  // A gate that ran no verification at all must not report APPROVED.
+  //
+  // `testResult` starts optimistic and the stage loop skips a stage with no
+  // command, so a repository with no test oracle produced zero execution
+  // records and a clean bill of health — syntactically broken code included.
+  // That is the product's central claim inverted: the whole point is that a
+  // change is verified before it is approved, and "nothing to run" is not
+  // verification. Repositories that deliberately use only the scope and secret
+  // phases opt out with `verify.required: false`.
+  // Assertions are guards, not oracles: `assert:test-integrity` proves the diff
+  // did not weaken a test, which says nothing about whether the code works. The
+  // question is whether any command was executed against the change at all.
+  const verificationRequired = trustedVerify.required !== false;
+  const ranNoVerification = !executionRecords.some((r) => r && r.kind !== "assert");
+  const missingOracle = verificationRequired && ranNoVerification;
+
+  const verifyOk = !failingCmd && !testTampered && !missingOracle;
 
   // What actually broke. Without this the verify phase reported `ok: false` and
   // nothing else — not the stage, not the exit code, not a line of output — so
@@ -448,7 +479,21 @@ export async function gate(opts = {}) {
           stderr: `Test files changed during the run (${preTestHash.slice(0, 12)} → ${postTestHash.slice(0, 12)}). evidence.strictTestLock treats a passing suite that the diff also rewrote as unproven.`,
           diagnostics: [],
         }
-      : null;
+      : missingOracle
+        ? {
+            stageId: "oracle",
+            command: null,
+            exitCode: null,
+            stdout: "",
+            stderr:
+              "No verification command ran, so nothing about this change was checked. " +
+              "Set verify.test in .agent/config.yml (or run `agentctl bootstrap` to generate one). " +
+              "If this repository intentionally uses only the scope and secret phases, set verify.required: false.",
+            diagnostics: [
+              "The gate approves a change because verification passed. Zero stages executed is not a pass.",
+            ],
+          }
+        : null;
 
   // Generate & persist Evidence Manifest
   const evidenceManifest = generateEvidenceManifest(root, {
