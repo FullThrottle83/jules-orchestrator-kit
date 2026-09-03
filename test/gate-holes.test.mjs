@@ -17,10 +17,26 @@ import { scanBinaryPayloads } from "../src/security.mjs";
  * hole reopens.
  */
 
-const git = (dir, args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+const git = (dir, args, input) =>
+  execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe", ...(input === undefined ? {} : { input }) });
 const commit = (dir, msg) => {
   git(dir, ["add", "-A"]);
   git(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", msg]);
+};
+
+/**
+ * Add a symlink to the index without creating one on disk.
+ *
+ * `ln` does not exist on Windows, and git there stores symlinks as ordinary
+ * files unless core.symlinks is on — so a fixture built with either would test
+ * nothing on the platform where scope bypasses are least examined. Writing mode
+ * 120000 straight into the index produces the object the gate actually reads
+ * (`symlinkChanges` takes the target from the blob), identically everywhere.
+ */
+const addSymlinkToIndex = (dir, linkPath, target) => {
+  const sha = git(dir, ["hash-object", "-w", "--stdin"], target).trim();
+  git(dir, ["update-index", "--add", "--cacheinfo", `120000,${sha},${linkPath}`]);
+  git(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", `link ${linkPath}`]);
 };
 
 /** A repo with a real passing suite, committed on `main`. */
@@ -246,8 +262,7 @@ describe("a symlink is judged by where it points", () => {
     const dir = repoWithSuite();
     try {
       git(dir, ["checkout", "-q", "-b", "agent/link"]);
-      execFileSync("ln", ["-s", ".agent/config.yml", "notes.md"], { cwd: dir });
-      commit(dir, "link");
+      addSymlinkToIndex(dir, "notes.md", ".agent/config.yml");
 
       const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "committed" });
       assert.equal(res.ok, false);
@@ -267,8 +282,8 @@ describe("a symlink is judged by where it points", () => {
       git(dir, ["checkout", "-q", "-b", "agent/oklink"]);
       mkdirSync(join(dir, "docs"), { recursive: true });
       writeFileSync(join(dir, "docs", "real.md"), "hi\n");
-      execFileSync("ln", ["-s", "docs/real.md", "shortcut.md"], { cwd: dir });
-      commit(dir, "oklink");
+      commit(dir, "docs");
+      addSymlinkToIndex(dir, "shortcut.md", "docs/real.md");
 
       const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "committed" });
       assert.equal(res.phases.find((p) => p.phase === "scope").ok, true);
