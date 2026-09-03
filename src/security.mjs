@@ -1138,8 +1138,11 @@ function locateFindingLine(lines, type, file = null) {
 // assertion — identical once every literal is blanked out — with different
 // values. That does not distinguish an attack from a deliberate change of
 // spec; nothing can, from a diff alone. This reports rather than decides,
-// and `--allow-test-modifications` is the answer when the new expectation is
-// the correct one.
+// and `--allow-test-change expectation` is the answer when the new
+// expectation is the correct one. Narrow on purpose: the blunt
+// `--allow-test-modifications` turns off the other five checks too, and a
+// check that can only be answered by disabling its neighbours ends up
+// disabling its neighbours.
 
 // An assertion that states a *specific* expected value. Counting assertions
 // alone let a test be gutted while looking untouched: swapping
@@ -1628,6 +1631,135 @@ const collapseWhitespace = (s) => s.replace(/\s+/g, " ").trim();
 const shorten = (s) => (s.length > 160 ? `${s.slice(0, 157)}…` : s);
 
 /**
+ * Split the argument list of the outermost assertion call in `clean`.
+ *
+ * Comments are already stripped by the caller, so only string state has to be
+ * tracked. Returns null whenever the shape is not confidently understood — a
+ * truncated fragment, an unbalanced hunk, a quoting form not handled here —
+ * because every caller uses this to *suppress* a finding, and failing to
+ * understand a statement must never become a reason to stay quiet about it.
+ *
+ * @param {string} clean - comment-stripped statement text
+ * @param {string} lang
+ * @returns {string[] | null} top-level arguments, trimmed
+ */
+function splitAssertionArgs(clean, lang) {
+  SPECIFIC_ASSERTION.lastIndex = 0;
+  const m = SPECIFIC_ASSERTION.exec(clean);
+  if (!m) return null;
+
+  let i = m.index + m[0].length; // just past the opening paren
+  let depth = 1;
+  let quote = null;
+  let triple = false;
+  const args = [];
+  let start = i;
+
+  while (i < clean.length) {
+    const c = clean[i];
+
+    if (quote !== null) {
+      if (c === "\\") { i += 2; continue; }
+      if (triple && c === quote && clean[i + 1] === quote && clean[i + 2] === quote) {
+        quote = null; triple = false; i += 3; continue;
+      }
+      if (!triple && c === quote) { quote = null; i += 1; continue; }
+      i += 1;
+      continue;
+    }
+
+    if (c === '"' || c === "'" || c === "`") {
+      if (lang === "python" && clean[i + 1] === c && clean[i + 2] === c) {
+        quote = c; triple = true; i += 3; continue;
+      }
+      quote = c; i += 1; continue;
+    }
+
+    if (c === "(" || c === "[" || c === "{") { depth += 1; i += 1; continue; }
+    if (c === ")" || c === "]" || c === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        args.push(clean.slice(start, i).trim());
+        return args;
+      }
+      i += 1;
+      continue;
+    }
+    if (c === "," && depth === 1) {
+      args.push(clean.slice(start, i).trim());
+      start = i + 1;
+      i += 1;
+      continue;
+    }
+    i += 1;
+  }
+  return null; // never closed: an unbalanced fragment, so no suppression
+}
+
+/** One plain string literal and nothing else. */
+const PURE_STRING_LITERAL = new RegExp(
+  [
+    "^'(?:\\\\.|[^'\\\\])*'$",
+    '^"(?:\\\\.|[^"\\\\])*"$',
+    "^`(?:\\\\.|[^`\\\\])*`$",
+    '^"""[\\s\\S]*"""$',
+    "^'''[\\s\\S]*'''$",
+  ].join("|")
+);
+
+function isPureStringLiteral(arg) {
+  if (!arg) return false;
+  return PURE_STRING_LITERAL.test(arg.trim());
+}
+
+/**
+ * Argument positions that carry a message for a human rather than an expected
+ * value.
+ *
+ * Trailing, for `assert.equal(got, want, "message")` and
+ * `assert_eq!(a, b, "message")`; leading, for Go's
+ * `t.Errorf("got %d want %d", got, want)`. Two arguments is the classic
+ * `(actual, expected)` shape, so a string in last position *there* is the
+ * expected value: `assert.equal(name, "Alice")` must still be judged when
+ * "Alice" becomes "Bob".
+ */
+function messageArgIndices(args) {
+  const idx = new Set();
+  if (args.length >= 3 && isPureStringLiteral(args[args.length - 1])) idx.add(args.length - 1);
+  if (args.length >= 2 && isPureStringLiteral(args[0])) idx.add(0);
+  return idx;
+}
+
+/**
+ * True when two assertions differ only in text written to be read by a person.
+ *
+ * Rewording the message on a failing assertion is among the most common edits
+ * any test file receives, and it says nothing whatsoever about what the suite
+ * checks. But a message is a literal, so blanking literals made the two
+ * statements the same shape and the pairing reported a rewritten expectation
+ * every time somebody improved the wording of a failure. Firing on that is
+ * how an operator learns to pass the override without reading it.
+ */
+function differsOnlyInMessage(cleanRemoved, cleanAdded, lang) {
+  const a = splitAssertionArgs(cleanRemoved, lang);
+  const b = splitAssertionArgs(cleanAdded, lang);
+  if (!a || !b || a.length !== b.length || a.length === 0) return false;
+
+  const msgIdx = messageArgIndices(a);
+  if (msgIdx.size === 0) return false;
+
+  let sawDifference = false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].replace(/\s+/g, "") === b[i].replace(/\s+/g, "")) continue;
+    // A difference outside a message position, or in a position that stopped
+    // being a plain string, is a real change.
+    if (!msgIdx.has(i) || !isPureStringLiteral(b[i])) return false;
+    sawDifference = true;
+  }
+  return sawDifference;
+}
+
+/**
  * Pair rewritten expectations across the removed and added images of every
  * hunk of one file, and report each pair.
  *
@@ -1664,14 +1796,14 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
       if (s.removedLines.length === 0) continue;
       const clean = stripComments(s.text, lang);
       if (!isSpecificAssertion(clean)) continue;
-      oldCands.push({ s, shape: blankLiterals(clean), canon: clean.replace(/\s+/g, "") });
+      oldCands.push({ s, clean, shape: blankLiterals(clean), canon: clean.replace(/\s+/g, "") });
     }
     const newCands = [];
     for (const s of newStmts) {
       if (s.addedLines.length === 0) continue;
       const clean = stripComments(s.text, lang);
       if (!isSpecificAssertion(clean)) continue;
-      newCands.push({ s, shape: blankLiterals(clean), canon: clean.replace(/\s+/g, "") });
+      newCands.push({ s, clean, shape: blankLiterals(clean), canon: clean.replace(/\s+/g, "") });
     }
 
     // The t-th removed candidate of a shape pairs with the t-th added
@@ -1698,11 +1830,32 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
     const pairs = [];
     for (const [shape, olds] of oldByShape) {
       const news = newByShape.get(shape) || [];
-      const k = Math.min(olds.length, news.length);
+
+      // Cancel the assertions that are byte-identical on both sides before
+      // aligning anything.
+      //
+      // Reordering two assertions removes both and adds both back unchanged.
+      // Positional alignment then matched the first removed against the first
+      // added — a different assertion — and reported two rewritten
+      // expectations for an edit that changed no expected value at all. The
+      // same happened to an assertion that simply moved within its block.
+      // What is present unchanged on both sides did not change; only the
+      // residue can have been rewritten.
+      const survivingNew = news.slice();
+      const survivingOld = [];
+      for (const o of olds) {
+        const twin = survivingNew.findIndex((n) => n.canon === o.canon);
+        if (twin === -1) survivingOld.push(o);
+        else survivingNew.splice(twin, 1);
+      }
+
+      const k = Math.min(survivingOld.length, survivingNew.length);
       for (let t = 0; t < k; t++) {
-        if (olds[t].canon !== news[t].canon) {
-          pairs.push({ r: olds[t].s, a: news[t].s });
-        }
+        const r = survivingOld[t];
+        const a = survivingNew[t];
+        if (r.canon === a.canon) continue;
+        if (differsOnlyInMessage(r.clean, a.clean, lang)) continue;
+        pairs.push({ r: r.s, a: a.s });
       }
     }
 
@@ -1717,9 +1870,11 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
         const sr = blankLiterals(stripComments(r.text, lang));
         const sa = blankLiterals(stripComments(a.text, lang));
         if (sr === sa && hasLiteralPlaceholder(sr)) {
-          const cr = stripComments(r.text, lang).replace(/\s+/g, "");
-          const ca = stripComments(a.text, lang).replace(/\s+/g, "");
-          if (cr !== ca) pairs.push({ r, a });
+          const clr = stripComments(r.text, lang);
+          const cla = stripComments(a.text, lang);
+          if (clr.replace(/\s+/g, "") !== cla.replace(/\s+/g, "") && !differsOnlyInMessage(clr, cla, lang)) {
+            pairs.push({ r, a });
+          }
         }
       }
     }
@@ -1736,9 +1891,10 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
           `"${shorten(collapseWhitespace(p.r.text))}" became "${shorten(collapseWhitespace(p.a.text))}". ` +
           `A deliberately changed spec looks identical to a test bent to match broken ` +
           `output, and a diff alone cannot tell the two apart, so this is flagged for ` +
-          `review rather than assumed. If the new expectation is correct, re-run with ` +
-          `--allow-test-modifications (which also silences the skip, vacuous, removal ` +
-          `and weakening checks for this diff).`,
+          `review rather than assumed. If the new expectation is the correct one, ` +
+          `re-run with --allow-test-change expectation — which allows exactly this ` +
+          `check and leaves the skip, vacuous, commented, removal and weakening ` +
+          `checks doing their job.`,
       });
 
       // Both sides are accounted for here, so they must not also feed the
@@ -1772,6 +1928,61 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
 }
 
 /**
+ * The tamper checks, by the name an operator uses to allow one of them.
+ *
+ * There was one override for all six, and it was a switch marked "off". A
+ * deliberate change of spec rewrites what a test expects, which is
+ * indistinguishable from bending a test to match broken output — so the honest
+ * answer to that finding is sometimes an override. But reaching for it also
+ * silenced injected `.skip()`, `expect(true).toBe(true)`, commented-out
+ * assertions and outright deletions, none of which the operator had looked at.
+ * The check with the highest firing rate therefore set the ceiling for every
+ * other check in the bundle: the more useful this one became, the more often
+ * it would be used to turn the others off.
+ */
+export const TAMPER_KINDS = new Map([
+  ["TEST_SKIP_INJECTION", "skip"],
+  ["VACUOUS_ASSERTION", "vacuous"],
+  ["COMMENTED_ASSERTION", "commented"],
+  ["ASSERTION_REMOVAL", "removal"],
+  ["ASSERTION_WEAKENED", "weakening"],
+  ["ASSERTION_EXPECTATION_CHANGED", "expectation"],
+]);
+
+/** Every kind name, for CLI validation and help text. */
+export const TAMPER_KIND_NAMES = Object.freeze([...new Set(TAMPER_KINDS.values())].sort());
+
+/**
+ * Which tamper checks this run is allowed to stay quiet about.
+ *
+ * @param {object} options
+ * @param {boolean} [options.allowTestModifications] - the blunt form: all of them.
+ * @param {string|string[]} [options.allowTestChanges] - kind names, comma-separated or an array.
+ * @returns {{ all: boolean, kinds: Set<string>, unknown: string[] }}
+ */
+export function resolveAllowedTamperKinds(options = {}) {
+  if (options.allowTestModifications === true) {
+    return { all: true, kinds: new Set(TAMPER_KIND_NAMES), unknown: [] };
+  }
+  const raw = options.allowTestChanges;
+  const list = (Array.isArray(raw) ? raw : [raw])
+    .flatMap((v) => String(v == null ? "" : v).split(","))
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (list.includes("all")) {
+    return { all: true, kinds: new Set(TAMPER_KIND_NAMES), unknown: [] };
+  }
+  const kinds = new Set();
+  const unknown = [];
+  for (const name of list) {
+    if (TAMPER_KIND_NAMES.includes(name)) kinds.add(name);
+    else unknown.push(name);
+  }
+  return { all: false, kinds, unknown };
+}
+
+/**
  * Detects test file assertion tampering, weakening, or test skips.
  *
  * @param {string} diffOrText - Unified git diff
@@ -1781,7 +1992,8 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
  */
 export function checkTestTampering(diffOrText = "", options = {}) {
   if (!diffOrText || typeof diffOrText !== "string") return { ok: true, violations: [] };
-  if (options.allowTestModifications === true) return { ok: true, violations: [] };
+  const allowed = resolveAllowedTamperKinds(options);
+  if (allowed.all) return { ok: true, violations: [] };
 
   const violations = [];
   const lines = diffOrText.split("\n");
@@ -1987,9 +2199,17 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     }
   }
 
+  // A kind the operator has already looked at and accepted is dropped here
+  // rather than never being computed, so the reasoning above stays one code
+  // path regardless of what any given run allows.
+  const reported =
+    allowed.kinds.size === 0
+      ? violations
+      : violations.filter((v) => !allowed.kinds.has(TAMPER_KINDS.get(v.type)));
+
   return {
-    ok: violations.length === 0,
-    violations,
+    ok: reported.length === 0,
+    violations: reported,
   };
 }
 

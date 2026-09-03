@@ -388,7 +388,12 @@ async function main() {
           // of spec, which necessarily rewrites what a test expects, hit a
           // CRITICAL finding at exit 6 with no documented way past it. A guard
           // with no override is not a guard, it is an outage.
+          //
+          // This one is the blunt form and turns off all six checks. Prefer
+          // `--allow-test-change <kind>`: answering one finding should not
+          // silence five other checks nobody looked at.
           "allow-test-modifications": { type: "boolean" },
+          "allow-test-change": { type: "string", multiple: true },
           json: { type: "boolean", short: "j" },
           "json-report": { type: "string" },
           "dry-run": { type: "boolean", short: "d" },
@@ -409,6 +414,7 @@ async function main() {
         fix: values.fix,
         allowProtected: values["allow-protected"],
         allowTestModifications: values["allow-test-modifications"],
+        allowTestChanges: values["allow-test-change"],
         jsonReport: values["json-report"],
       });
 
