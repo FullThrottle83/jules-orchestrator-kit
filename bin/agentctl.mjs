@@ -959,7 +959,13 @@ async function main() {
         console.log(`------------------------------------------------------------------`);
         console.log(`  Original Session    : ${res.originalSessionId}`);
         console.log(`  New Session ID      : ${res.newSession?.id || "N/A"}`);
-        console.log(`  Failure Trace Added : ${res.failureReason ? "YES" : "NO"}`);
+        console.log(
+          `  Failure Trace Added : ${
+            res.diagnosticsFound > 0
+              ? `YES (${res.diagnosticsFound} block${res.diagnosticsFound === 1 ? "" : "s"} from ${[...new Set(res.diagnosticSources || [])].join(", ")})`
+              : "NO — the session carried no readable diagnostics; the retry got the generic sentence"
+          }`
+        );
         console.log(`------------------------------------------------------------------\n`);
       }
 

@@ -32,6 +32,106 @@ export function parseAgeDuration(duration) {
 }
 
 /**
+ * Output shapes that mean "this command failed" even when the runner exited 0.
+ *
+ * Kept deliberately narrow: this list is only consulted for a `bashOutput`
+ * whose `exitCode` is `0` or absent, where the alternative is reporting
+ * nothing at all. A false positive here costs a few hundred characters of
+ * retry prompt; a false negative costs the retry its only evidence.
+ */
+const BASH_FAILURE_HINTS = [
+  /(^|\n)\s*not ok\b/i,
+  /(^|\n)# fail [1-9]/i,
+  /\b[1-9]\d* failed\b/i,
+  /\b[1-9]\d* failing\b/i,
+  /\bAssertionError\b/,
+  /\bFAILED\b/,
+  /\bTraceback \(most recent call last\)/,
+  /\bpanic: /,
+  /\berror:/i,
+];
+
+/**
+ * Collects the diagnostics a session actually carries.
+ *
+ * The documented Activity type — the Jules API types reference, transcribed
+ * in `docs/jules-quality-plan.md` — puts command output under
+ * `artifacts[].bashOutput.{command,output,exitCode}` and the failure reason
+ * under `sessionFailed.reason`. Neither `act.error` nor `act.executionOutput`
+ * — the only two fields this file used to read — exists in that schema, so a
+ * real failure came back as the generic fallback sentence and the retry session
+ * was dispatched without the assertion it existed to fix.
+ *
+ * Blocks are returned highest-signal first, because `retrySession` truncates
+ * the joined result to 4000 characters from the front: the ordering decides
+ * which evidence survives the cut.
+ *
+ * The legacy spellings are still read. They cost nothing, and an unrecognised
+ * provider shape that does carry an error is better served by it than by the
+ * fallback sentence.
+ *
+ * @param {Array<object>} activities - Activities as returned by `listActivities`.
+ * @returns {Array<{ source: string, text: string }>} Highest-signal first.
+ */
+export function extractFailureDiagnostics(activities) {
+  const list = Array.isArray(activities) ? activities : [];
+  const failingBash = [];
+  const failureReasons = [];
+  const suspiciousBash = [];
+  const legacy = [];
+  const agentNotes = [];
+  const seen = new Set();
+
+  const push = (bucket, source, text) => {
+    const clean = String(text ?? "").trim();
+    if (!clean) return;
+    const key = `${source}\u0000${clean}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    bucket.push({ source, text: clean });
+  };
+
+  for (const act of list) {
+    if (!act || typeof act !== "object") continue;
+
+    const artifacts = Array.isArray(act.artifacts) ? act.artifacts : [];
+    for (const art of artifacts) {
+      const bash = art && typeof art === "object" ? art.bashOutput : null;
+      if (!bash || typeof bash !== "object") continue;
+      const command = typeof bash.command === "string" ? bash.command : "";
+      const output = typeof bash.output === "string" ? bash.output : "";
+      if (!command && !output) continue;
+      const rendered = `$ ${command || "(unknown command)"}\n${output || "(no output)"}`;
+      const exitCode = bash.exitCode;
+      if (typeof exitCode === "number" && exitCode !== 0) {
+        push(failingBash, "bashOutput", `${rendered}\n(exit code ${exitCode})`);
+      } else if (BASH_FAILURE_HINTS.some((re) => re.test(output))) {
+        const codeNote = typeof exitCode === "number" ? String(exitCode) : "not reported";
+        push(suspiciousBash, "bashOutput", `${rendered}\n(exit code ${codeNote})`);
+      }
+    }
+
+    const failed = act.sessionFailed && typeof act.sessionFailed === "object" ? act.sessionFailed : null;
+    if (failed && typeof failed.reason === "string") {
+      push(failureReasons, "sessionFailed", failed.reason);
+    }
+
+    if (act.error) {
+      push(legacy, "legacy.error", typeof act.error === "string" ? act.error : JSON.stringify(act.error));
+    }
+    if (act.executionOutput && (act.exitCode !== 0 || act.status === "FAILED")) {
+      push(legacy, "legacy.executionOutput", act.executionOutput);
+    }
+
+    if (act.originator === "agent" && typeof act.description === "string") {
+      push(agentNotes, "agentMessage", act.description);
+    }
+  }
+
+  return [...failingBash, ...failureReasons, ...suspiciousBash, ...legacy, ...agentNotes];
+}
+
+/**
  * Extracts git diff patch, PR details, and modified files from a Jules session.
  *
  * @param {string} sessionId
@@ -213,7 +313,7 @@ export async function applySessionPatch(sessionId, opts = {}) {
  *
  * @param {string} sessionId
  * @param {object} opts
- * @returns {Promise<{ ok: boolean, originalSessionId: string, newSession: object, failureReason: string }>}
+ * @returns {Promise<{ ok: boolean, originalSessionId: string, newSession: object, failureReason: string, diagnosticsFound: number, diagnosticSources: string[] }>}
  */
 export async function retrySession(sessionId, opts = {}) {
   if (!sessionId || typeof sessionId !== "string") {
@@ -227,18 +327,19 @@ export async function retrySession(sessionId, opts = {}) {
   const activitiesRes = await provider.listActivities(sessionId, opts).catch(() => ({ activities: [] }));
   const activities = activitiesRes.activities || [];
 
-  // Extract failure diagnostics
-  const errors = [];
-  for (const act of activities) {
-    if (act.error) errors.push(typeof act.error === "string" ? act.error : JSON.stringify(act.error));
-    if (act.executionOutput && (act.exitCode !== 0 || act.status === "FAILED")) {
-      errors.push(act.executionOutput);
-    }
-  }
+  // Extract failure diagnostics. `extractFailureDiagnostics` reads the fields
+  // the API actually documents (artifacts[].bashOutput, sessionFailed.reason)
+  // and returns them highest-signal first, so the 4000-character cut below
+  // drops the least useful evidence rather than the assertion that failed.
+  const diagnostics = extractFailureDiagnostics(activities);
 
   const rawPrompt = session?.raw?.prompt || session?.prompt || "";
   const title = session?.raw?.title || `Retry of Session ${sessionId}`;
-  const failureReason = errors.join("\n").slice(0, 4000) || "Previous session did not complete cleanly.";
+  const failureReason =
+    diagnostics
+      .map((d) => d.text)
+      .join("\n")
+      .slice(0, 4000) || "Previous session did not complete cleanly.";
 
   let synthesizedPrompt = rawPrompt;
   if (opts.withFailure !== false && failureReason) {
@@ -264,6 +365,12 @@ export async function retrySession(sessionId, opts = {}) {
     originalSessionId: sessionId,
     newSession: dispatchRes,
     failureReason,
+    // Non-zero only when the session carried evidence the retry could act on.
+    // A zero here with a non-empty `failureReason` means the fallback sentence
+    // was sent — the distinction the CLI and any telemetry need, because the
+    // two look identical in `failureReason` alone.
+    diagnosticsFound: diagnostics.length,
+    diagnosticSources: diagnostics.map((d) => d.source),
   };
 }
 

@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import {
   parseAgeDuration,
   extractSessionPatch,
+  extractFailureDiagnostics,
   applySessionPatch,
   retrySession,
   pruneSessions,
@@ -212,6 +213,203 @@ test("Jules Power-User Session Operations & Lifecycle Engine", async (t) => {
     assert.ok(capturedTask.prompt.includes("FAIL: test_arithmetic failed with AssertionError"));
     assert.equal(capturedTask.role, "sentinel");
     assert.equal(capturedTask.source, "sources/github/org/repo");
+  });
+
+  await t.test("extractFailureDiagnostics reads the fields the API actually documents", () => {
+    // Shaped exactly like https://jules.google/docs/api/reference/activities —
+    // the previous reader looked for act.error / act.executionOutput, neither
+    // of which exists in that schema, and returned nothing.
+    const activities = [
+      {
+        id: "act1",
+        originator: "system",
+        description: "Session started",
+      },
+      {
+        id: "act2",
+        originator: "agent",
+        description: "Running the verification command",
+        artifacts: [
+          {
+            bashOutput: {
+              command: "npm test",
+              output:
+                "not ok 1 - invoice totals must round to cents\n  AssertionError [ERR_ASSERTION]: expected 10.01 to equal 10.00\n    at Test.<anonymous> (test/invoice.test.mjs:41:12)\n# fail 1",
+              exitCode: 1,
+            },
+          },
+        ],
+      },
+      {
+        id: "act3",
+        originator: "system",
+        description: "Session failed",
+        sessionFailed: { reason: "Verification command exited non-zero" },
+      },
+    ];
+
+    const diagnostics = extractFailureDiagnostics(activities);
+    const text = diagnostics.map((d) => d.text).join("\n");
+
+    assert.ok(diagnostics.length >= 2, "the failing command and the failure reason are both evidence");
+    assert.equal(diagnostics[0].source, "bashOutput", "the failing command leads, it is the strongest evidence");
+    assert.ok(text.includes("invoice totals must round to cents"), "the assertion message survives");
+    assert.ok(text.includes("test/invoice.test.mjs:41"), "the file and line survive");
+    assert.ok(text.includes("(exit code 1)"), "the exit code is stated");
+    assert.ok(text.includes("$ npm test"), "the command that produced it is stated");
+    assert.ok(
+      diagnostics.some((d) => d.source === "sessionFailed"),
+      "sessionFailed.reason is collected"
+    );
+    assert.ok(
+      !diagnostics.some((d) => d.text === "Session started"),
+      "a system activity with no evidence is not padded into the prompt"
+    );
+  });
+
+  await t.test("extractFailureDiagnostics orders evidence so the cut keeps the useful part", () => {
+    const activities = [
+      {
+        id: "a1",
+        originator: "agent",
+        description: "I looked around the invoice module for a while and found some things.",
+      },
+      {
+        id: "a2",
+        originator: "agent",
+        artifacts: [
+          { bashOutput: { command: "ls", output: "src\n", exitCode: 0 } },
+          { bashOutput: { command: "npm test", output: "not ok 1 - rounding", exitCode: 1 } },
+        ],
+      },
+    ];
+    const diagnostics = extractFailureDiagnostics(activities);
+    assert.equal(diagnostics[0].source, "bashOutput");
+    assert.ok(diagnostics[0].text.includes("not ok 1 - rounding"));
+    assert.ok(
+      !diagnostics.some((d) => d.text.includes("ls\nsrc")),
+      "a passing, unremarkable command is not evidence"
+    );
+  });
+
+  await t.test("extractFailureDiagnostics flags a runner that exits 0 while reporting failure", () => {
+    const diagnostics = extractFailureDiagnostics([
+      {
+        id: "a1",
+        artifacts: [{ bashOutput: { command: "pytest", output: "1 failed, 12 passed", exitCode: 0 } }],
+      },
+    ]);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].source, "bashOutput");
+    assert.match(diagnostics[0].text, /1 failed, 12 passed/);
+  });
+
+  await t.test("extractFailureDiagnostics stays quiet on a green run", () => {
+    // The opposite failure matters as much: a collector that flags every
+    // command buries the one that failed under a hundred passing ones.
+    const green = [
+      { id: "a1", artifacts: [{ bashOutput: { command: "pytest", output: "13 passed in 0.42s", exitCode: 0 } }] },
+      { id: "a2", artifacts: [{ bashOutput: { command: "npm test", output: "# pass 13\n# fail 0", exitCode: 0 } }] },
+      { id: "a3", artifacts: [{ bashOutput: { command: "go test ./...", output: "ok  acme/shop 0.011s", exitCode: 0 } }] },
+    ];
+    assert.deepEqual(extractFailureDiagnostics(green), []);
+  });
+
+  await t.test("extractFailureDiagnostics still reads the legacy field spellings", () => {
+    const diagnostics = extractFailureDiagnostics([
+      { status: "FAILED", exitCode: 1, executionOutput: "FAIL: test_arithmetic", error: { code: "E_ASSERT" } },
+    ]);
+    assert.equal(diagnostics.length, 2);
+    assert.ok(diagnostics.some((d) => d.source === "legacy.executionOutput"));
+    assert.ok(diagnostics.some((d) => d.source === "legacy.error"));
+  });
+
+  await t.test("extractFailureDiagnostics deduplicates repeated evidence", () => {
+    const same = {
+      id: "x",
+      artifacts: [{ bashOutput: { command: "npm test", output: "not ok 1 - rounding", exitCode: 1 } }],
+    };
+    const diagnostics = extractFailureDiagnostics([same, same, same]);
+    assert.equal(diagnostics.length, 1);
+  });
+
+  await t.test("extractFailureDiagnostics survives junk input", () => {
+    assert.deepEqual(extractFailureDiagnostics([]), []);
+    assert.deepEqual(extractFailureDiagnostics(null), []);
+    assert.deepEqual(extractFailureDiagnostics([null, 7, "x", {}]), []);
+    assert.deepEqual(extractFailureDiagnostics([{ artifacts: "not-an-array" }]), []);
+    assert.deepEqual(extractFailureDiagnostics([{ artifacts: [{ bashOutput: {} }] }]), []);
+  });
+
+  await t.test("retrySession carries the real failure into the retry prompt", async () => {
+    let capturedTask = null;
+    const mockProvider = {
+      async getSession(id) {
+        return {
+          id,
+          raw: {
+            title: "Fix invoice rounding",
+            prompt: "Fix invoice rounding",
+            state: "FAILED",
+            sourceContext: {
+              source: "sources/github-acme-shop",
+              githubRepoContext: { startingBranch: "main" },
+            },
+          },
+        };
+      },
+      async listActivities() {
+        return {
+          activities: [
+            {
+              id: "act2",
+              originator: "agent",
+              description: "Verification failed",
+              artifacts: [
+                {
+                  bashOutput: {
+                    command: "npm test",
+                    output: "not ok 1 - invoice totals must round to cents\n  AssertionError: expected 10.01 to equal 10.00",
+                    exitCode: 1,
+                  },
+                },
+              ],
+            },
+          ],
+        };
+      },
+      async dispatch(task) {
+        capturedTask = task;
+        return { id: "session-retry-1000" };
+      },
+    };
+
+    const res = await retrySession("session-failed-2", { provider: mockProvider, root: tmpdir() });
+
+    assert.equal(res.ok, true);
+    assert.ok(res.diagnosticsFound > 0, "the session carried readable diagnostics");
+    assert.deepEqual(res.diagnosticSources, ["bashOutput", "agentMessage"]);
+    assert.notEqual(res.failureReason, "Previous session did not complete cleanly.");
+    assert.ok(capturedTask.prompt.includes("invoice totals must round to cents"));
+    assert.ok(capturedTask.prompt.includes("AssertionError: expected 10.01 to equal 10.00"));
+  });
+
+  await t.test("retrySession says so when the session carried no readable diagnostics", async () => {
+    const mockProvider = {
+      async getSession(id) {
+        return { id, raw: { prompt: "Do the thing", title: "Do the thing" } };
+      },
+      async listActivities() {
+        return { activities: [{ id: "a1", description: "Session started" }] };
+      },
+      async dispatch() {
+        return { id: "session-retry-1001" };
+      },
+    };
+
+    const res = await retrySession("session-empty", { provider: mockProvider, root: tmpdir() });
+    assert.equal(res.diagnosticsFound, 0);
+    assert.equal(res.failureReason, "Previous session did not complete cleanly.");
   });
 
   await t.test("pruneSessions filters by age and state, dry-runs, and archives stale sessions", async () => {

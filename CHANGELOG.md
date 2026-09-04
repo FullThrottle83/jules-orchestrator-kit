@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+*A session that has not finished is not a session that passed.*
+
+An audit of the Jules session layer against the API it talks to. Twelve findings, each traced to a file and line in `docs/jules-quality-plan.md`; the three below are the ones that let the kit believe something about a session that was not true.
+
+### Fixed
+- **The Retry Was Dispatched Without The Failure It Existed To Fix (`src/session-ops.mjs`)**: `retrySession` collected its diagnostics from `act.error`, `act.executionOutput`, `act.exitCode` and `act.status`. None of those four fields exists in the documented `Activity` type — what the API returns is `artifacts[].bashOutput.{command,output,exitCode}` and `sessionFailed.reason`. Measured against a response shaped exactly like the documentation, a `FAILED` session whose bash artifact carries `not ok 1 - invoice totals must round to cents … AssertionError: expected 10.01 to equal 10.00` with `exitCode: 1`, the retry went out with `[PREVIOUS_ATTEMPT_FAILURE_DIAGNOSTIC]` set to *"Previous session did not complete cleanly."* It was handed a sentence when it needed the assertion, the file and the line. `extractFailureDiagnostics` reads the documented fields, returns them highest-signal first so the 4000-character cut drops the least useful evidence rather than the one that failed, deduplicates repeats, and still reads the legacy spellings for provider shapes that have not been observed.
+- **An Unfinished Session Was Reported As COMPLETED (`src/engine.mjs`)**: `pollSessionState` recognised two of the nine documented `SessionState` values and returned `String(session.status || "COMPLETED")` for every other exit — and `session.status` is never set on a fresh dispatch. Measured: a session in `AWAITING_USER_FEEDBACK` and one still `IN_PROGRESS` when the poll budget expired both came back `COMPLETED`, so `QUEUED`, `PLANNING`, `PAUSED` and a session waiting on a human were indistinguishable from success. Terminal, blocked and timed-out are now three distinct verdicts, a provider that stops answering is `unreachable` rather than a timeout describing the wrong thing, and nothing synthesises `COMPLETED` any more. The one path that still returns it is the dry-run simulation, and it is now flagged `simulated`.
+
+### Added
+- **A Contract For The Poll (`test/session-poll.test.mjs`)**: 22 cases across all nine `SessionState` values, the timeout and wall-clock paths, the `approvePlan` side effect granted and refused, the unreachable paths, and the dry-run short-circuit. `pollSessionState` decides whether an agent session is believed to have finished writing — every later gate builds on that — and `grep -rn "pollSession" test/` returned nothing. That is the same class of hole `scripts/guard-reach-check.mjs` exists to close, in the one function that most needed it.
+- **A Green Run Is Not Evidence (`test/session-ops.test.mjs`)**: the opposite failure of a diagnostic collector is one that flags everything, which buries the command that failed under a hundred that passed. `pytest` printing `13 passed`, node:test printing `# fail 0` and `go test` printing `ok` on exit 0 each yield no diagnostics.
+
+### Changed
+- **`agentctl retry` Says When The Trace Is The Fallback (`bin/agentctl.mjs`, `src/session-ops.mjs`)**: `failureReason` alone cannot tell a real trace from the generic sentence — both are non-empty strings. `retrySession` now returns `diagnosticsFound` and `diagnosticSources`, and the CLI prints the count and where the evidence came from, or says plainly that the retry is going out with nothing but the generic line.
+- **A Non-Terminal Session Is Announced Before The Gate Runs (`src/engine.mjs`)**: the repair loop polled the session and discarded the answer, then ran re-verification against a tree the agent might not have finished writing. The verdict is now read: a non-terminal session prints `[SESSION_NOT_TERMINAL]` naming what it is waiting on and appends a `session_not_terminal` telemetry event. The gate still runs either way — it is the authority on whether the change works — but it no longer runs silently on a half-applied patch.
+
 ## [0.69.0] - 2026-09-04
 *A denominator is not evidence if the things counted in it were never read.*
 

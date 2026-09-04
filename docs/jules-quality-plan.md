@@ -16,20 +16,20 @@ to do with what comes back.
 
 ## Summary
 
-| # | Finding | Severity | Effort |
-| :-- | :-- | :-- | :-- |
-| 1 | The OODA retry re-dispatches blind — real diagnostics are dropped | **P0** | S |
-| 2 | `pollSessionState` reports unfinished sessions as `COMPLETED` | **P0** | S |
-| 3 | `pollSessionState` has zero test coverage | **P0** | S |
-| 4 | `:sendMessage` is implemented but never called — no mid-session steering | P1 | M |
-| 5 | `AWAITING_USER_FEEDBACK` sessions die silently | P1 | M |
-| 6 | The generated plan is never inspected before it is approved | P1 | M |
-| 7 | Risk tier does not influence dispatch policy | P1 | S |
-| 8 | Activity stream is read one page deep | P1 | S |
-| 9 | `archiveSession` targets an endpoint the API does not document | P1 | S |
-| 10 | No session-outcome telemetry — merge rate is unmeasurable | P2 | M |
-| 11 | `v1alpha` is hardcoded in three files | P2 | S |
-| 12 | Test scratch directories are committed to the repository | P2 | S |
+| # | Finding | Severity | Effort | Status |
+| :-- | :-- | :-- | :-- | :-- |
+| 1 | The OODA retry re-dispatches blind — real diagnostics are dropped | **P0** | S | **Fixed** |
+| 2 | `pollSessionState` reports unfinished sessions as `COMPLETED` | **P0** | S | **Fixed** |
+| 3 | `pollSessionState` has zero test coverage | **P0** | S | **Fixed** |
+| 4 | `:sendMessage` is implemented but never called — no mid-session steering | P1 | M | Open |
+| 5 | `AWAITING_USER_FEEDBACK` sessions die silently | P1 | M | Open |
+| 6 | The generated plan is never inspected before it is approved | P1 | M | Open |
+| 7 | Risk tier does not influence dispatch policy | P1 | S | Open |
+| 8 | Activity stream is read one page deep | P1 | S | Open |
+| 9 | `archiveSession` targets an endpoint the API does not document | P1 | S | Open |
+| 10 | No session-outcome telemetry — merge rate is unmeasurable | P2 | M | Open |
+| 11 | `v1alpha` is hardcoded in three files | P2 | S | Open |
+| 12 | Test scratch directories are committed to the repository | P2 | S | Open |
 
 ---
 
@@ -57,24 +57,37 @@ So the new session is dispatched with `[PREVIOUS_ATTEMPT_FAILURE_DIAGNOSTIC]`
 containing a sentence instead of the assertion, the file and the line. This is
 the loop `AGENTS.md` §2 rule 5 exists to prevent.
 
-**Change.** Add a single `extractFailureDiagnostics(activities)` helper and
-read, in priority order:
+**Change (shipped).** `extractFailureDiagnostics(activities)` in
+`src/session-ops.mjs`, returning `{ source, text }` blocks in this order — the
+order matters, because `retrySession` truncates the joined result to 4000
+characters from the front, so it decides which evidence survives the cut:
 
-1. `artifacts[].bashOutput` where `exitCode !== 0` — render as
-   `` `$ ${command}\n${output}` ``.
+1. `artifacts[].bashOutput` where `exitCode !== 0`, rendered as
+   `` `$ ${command}\n${output}\n(exit code N)` ``.
 2. `sessionFailed.reason`.
-3. `artifacts[].bashOutput` with `exitCode === 0` that still contains a
-   `not ok` / `FAILED` / `error:` line (runners that exit 0).
-4. `description` of activities whose `originator` is `"agent"`.
-5. Only then the current fallback string.
+3. `artifacts[].bashOutput` whose `exitCode` is `0` or absent but whose output
+   still reads as a failure (`not ok`, `# fail N`, `N failed`, `N failing`,
+   `AssertionError`, `FAILED`, a Python traceback, a Go panic, `error:`).
+4. The legacy spellings, kept because they cost nothing and cover provider
+   shapes that have not been observed.
+5. `description` of activities whose `originator` is `"agent"`.
+6. Only then the previous fallback sentence.
 
-Keep the legacy field reads — they cost nothing and cover provider shapes we
-have not seen. Route the result through `redactSecrets()` exactly as today.
+Repeated blocks are deduplicated, and redaction stays where it was — at the
+point `retrySession` builds the prompt.
 
-**Acceptance.** A unit test in `test/session-ops.test.mjs` asserts that a
+`retrySession` now also returns `diagnosticsFound` and `diagnosticSources`,
+because `failureReason` alone cannot tell a real trace from the fallback
+sentence: both are non-empty strings. `agentctl retry` prints the difference,
+and says so out loud when the retry is going out with nothing but the generic
+line.
+
+**Acceptance (met).** `test/session-ops.test.mjs` asserts that a
 documented-shape failed session yields a `failureReason` containing the
-assertion message and the non-zero exit code, and that the fallback string is
-*not* returned when `bashOutput` is present.
+assertion message, the file and line, and the exit code; that a green run
+produces no diagnostics at all — a collector that flags everything buries the
+one that failed; and that the fallback sentence is returned only when the
+session genuinely carried nothing readable.
 
 ### 2. `pollSessionState` fails open
 
@@ -101,18 +114,36 @@ Four of the nine documented `SessionState` values — `PLANNING`,
 success. The OODA loop at `src/engine.mjs:902` then runs the gate against a
 tree the agent never finished writing.
 
-**Change.**
+**Change (shipped).** `src/engine.mjs` now exports `TERMINAL_SESSION_STATES`
+and `BLOCKING_SESSION_STATES`, and the verdict says which of three things
+happened:
 
-- Terminal set: `COMPLETED`, `FAILED`.
-- Blocking set: `AWAITING_PLAN_APPROVAL`, `AWAITING_USER_FEEDBACK`, `PAUSED` —
-  return immediately with the real state and a `blockedOn` field; do not spin
-  the budget on a state that cannot advance without an actor.
-- On budget exhaustion return the **last observed** state plus
-  `timedOut: true`. Never synthesise `COMPLETED`.
+- `COMPLETED` / `FAILED` → `terminal: true`.
+- `AWAITING_PLAN_APPROVAL` / `AWAITING_USER_FEEDBACK` / `PAUSED` →
+  `terminal: false, blockedOn: <state>`, returned on the first poll. Polling a
+  state that needs an actor is not waiting, it is spending the budget.
+- Anything else, when the budget runs out → the **last observed** state with
+  `timedOut: true`, or `UNKNOWN` if the provider never answered. A provider
+  that stops answering mid-flight returns `unreachable: true` rather than
+  looping to a timeout that describes the wrong thing.
 
-**Acceptance.** `pollSessionState` returns `AWAITING_USER_FEEDBACK` for a
-session that asks a question, and `IN_PROGRESS` + `timedOut: true` for one that
-never terminates. Both asserted in a test.
+`AWAITING_PLAN_APPROVAL` is still the one blocking state the loop may resolve
+itself, and only when the caller asked for it — and a refused
+`approvePlan` now surfaces as `approvePlanError` instead of being swallowed.
+
+Nothing synthesises `COMPLETED` any more. The one place that returns it is the
+dry-run path, which is a simulation and is now flagged `simulated: true`.
+
+The caller at `src/engine.mjs` (the OODA repair loop) consumes the verdict: a
+non-terminal session prints `[SESSION_NOT_TERMINAL] …` naming what it is
+waiting on, and appends a `session_not_terminal` telemetry event, because the
+re-verification gate is about to judge a tree the agent may not have finished
+writing. The gate still runs either way — it is the authority on whether the
+change works — but it no longer runs silently on a half-applied patch.
+
+**Acceptance (met).** `pollSessionState` returns `AWAITING_USER_FEEDBACK` for a
+session that asks a question and spends exactly one poll doing it, and
+`IN_PROGRESS` + `timedOut: true` for one that never terminates.
 
 ### 3. The most decision-bearing function in the kit is untested
 
@@ -123,9 +154,13 @@ repository's own standard ("a guard that cannot be made red is switched off"),
 this is the same class of hole `scripts/guard-reach-check.mjs` was written to
 close.
 
-**Acceptance.** A `test/session-poll.test.mjs` covering all nine
-`SessionState` values, the timeout path, the `approvePlan` side effect at
-`src/engine.mjs:1044`, and a dry-run short-circuit.
+**Acceptance (met).** `test/session-poll.test.mjs` — 22 cases: all nine
+`SessionState` values, a loop asserting every non-terminal one is
+distinguishable from success, the timeout path, the wall-clock budget, the
+`approvePlan` side effect (granted, refused, and requested from the session
+object), the unreachable paths for a provider that returns `null` and one that
+throws, the `pollFn` fallback, the dry-run short-circuit, and the no-session
+case.
 
 ---
 
@@ -276,10 +311,26 @@ committed.
 
 ---
 
+### Noted in passing: the egress guard does not read `.js`
+
+`test/egress-allowlist.test.mjs` picks its files with
+`entry.endsWith(".mjs")`. `bin/init.js` — a shipped entry point, published as
+`jules-init` in `package.json` — is therefore outside the scan, and it carries a
+host literal at line 264 (`https://jules.google`, in generated documentation
+text rather than a fetch). Harmless as it stands. But the guard's stated claim
+is that a reviewer can trust the boundary without auditing every future commit,
+and a shipped binary outside the scan is the exception to that. Widening the
+glob to `.js` and `.cjs` is a one-line change that puts it under the same rule
+as everything else.
+
+---
+
 ## Sequencing
 
-1. **Findings 1-3** — small, contained, and they stop the system from
-   believing a session that is not finished. Roughly one PR.
+1. ~~**Findings 1-3**~~ — **shipped on this branch**: `src/session-ops.mjs`
+   (`extractFailureDiagnostics`), `src/engine.mjs` (`pollSessionState` and its
+   caller), `bin/agentctl.mjs`, `test/session-poll.test.mjs` and new cases in
+   `test/session-ops.test.mjs`.
 2. **Findings 8, 9, 12** — correctness and hygiene, no design work.
 3. **Findings 4-7** — the closed loop: read the plan, steer the session,
    answer its questions, gate on risk. This is where the merge rate actually
