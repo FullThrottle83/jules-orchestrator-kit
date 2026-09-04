@@ -383,6 +383,15 @@ export const INNOCENT_EDITS = [
     why: "`require(` is an import, not a claim — the loose net must not read it as one",
   },
   {
+    id: "reword-comment-inside-assertion/node",
+    file: "test/calc.test.js",
+    context: "// arithmetic",
+    lead: ["  assert.equal(", "    add(1, 2),"],
+    removed: ["    3, // the answer", "  );"],
+    added: ["    3, // the correct answer", "  );"],
+    why: "line comments were never stripped — `copyCode(i)` left `pending` at the comment and the copy after the loop put it back",
+  },
+  {
     id: "rename-helper/node",
     file: "test/calc.test.js",
     context: "// setup",
@@ -508,5 +517,37 @@ export const COUNTED_RUN_CANARIES = [
     output: "--- PASS: TestAdd (0.00s)\n--- PASS: TestSub (0.00s)\nok  \texample.com/lib\t0.004s",
     atLeast: 1,
     why: "Go's own `ok  <package>` line, which a bare `^ok\\s` confused with TAP's `ok 1 - name`",
+  },
+];
+
+/**
+ * Changes that sit inside an assertion whose keyword never appears in the diff.
+ *
+ * Counting `+`/`-` lines answered zero here, and nothing among the changed
+ * lines looked assertion-shaped either, so the guard reported a clean PASS on
+ * a five-element expected list rewritten to one element to match broken
+ * output. Measured on a real repository: five green phases, `APPROVED`.
+ *
+ * The statement machinery that pairs rewrites already assembles context lines
+ * together with changed ones. The denominator has to use it.
+ */
+export const MULTILINE_CANARIES = [
+  {
+    id: "expectation/python-multiline",
+    file: "tests/test_headers.py",
+    context: "# headers",
+    lead: ["    def test_parse(self):", "        self.assertEqual(", "            _parse_http_header(x),"],
+    removed: ['            [("text/xml", {}),', '             ("text/plain", {}),', '             ("more", {})])'],
+    added: ['            [("text/xml", {"tampered": True})])'],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "expectation/js-multiline",
+    file: "test/headers.test.js",
+    context: "// headers",
+    lead: ["  assert.deepStrictEqual(", "    parse(input),"],
+    removed: ["    [{ type: \"a\" }, { type: \"b\" }, { type: \"c\" }]", "  );"],
+    added: ["    [{ type: \"a\" }]", "  );"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
   },
 ];

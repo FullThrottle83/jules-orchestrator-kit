@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.66.0] - 2026-09-04
+*Saying nothing and saying approved must not look the same.*
+
+### Fixed
+- **An Assertion Is A Statement, Not A Line (`src/security.mjs`)**: the denominator counted `+`/`-` lines, so the commonest shape in every language with multi-line calls was invisible — `self.assertEqual(` on an unchanged context line, only its argument lines edited. Nothing among the changed lines matched an assertion pattern and nothing looked assertion-shaped, so a five-element expected list rewritten to one element to match broken output reported `assertionsSeen: 0` and a clean `PASS`. Measured on a real repository: five green phases and `APPROVED`. Detection missed it a second time even after the count was honest, because shape pairing compares statements with their literals blanked and a list that shrank lands in a different bucket; a new argument-level pass takes the arguments as the witness — same assertion, same arity, same *subject*, different expected value.
+- **Line Comments Were Never Stripped (`src/security.mjs`)**: `copyCode(i)` copied the code up to the comment and left `pending` sitting at its start, and the `copyCode(n)` after the loop copied the comment straight back in. Block comments were stripped, which is why `/* … */` behaved and `// …` did not. Comment edits stayed silent only by landing in a different shape bucket — an accident that ran out the moment pairing learned to look across buckets.
+- **The Boundary Warning Reached Nobody (`src/security.mjs`)**: `UNREADABLE` was computed and then wired into `assertTestIntegrity`, which the gate does not call. The gate calls `scanDiff`. An operator whose repository used an unlisted assertion library was shown an unblemished pass while the guard had already concluded it could not read a single assertion. It now reports `TEST_DIALECT_UNREADABLE` on the path the gate actually uses — without blocking, because an unlisted library is not the user's fault.
+- **Absence Of Evidence Is Reported As Absence (`src/ops/test-collection.mjs`, `src/engine.mjs`)**: the collection floor stays deliberately one-sided — failing on "I could not tell" would break every runner not on the list — but passing silently made `echo "all tests passed"` indistinguishable from a real suite. The verify phase now prints what it could not establish.
+- **The Checkpoint Test Left 239 MB Behind Per Run (`test/checkpoint.test.mjs`)**: the checkpoint store lives inside the tree it snapshots, so without the ignore rule `init` writes, checkpoint N captures checkpoints 1..N-1 and each is roughly three times the last — 12 KB at the fifth, 157 MB at the fifteenth, 18 GB accumulated across runs, and a full disk. A real repository has that line; the fixture did not.
+
+### Changed
+- **Evidence Before Rules In The Learning Ledger (`src/memory.mjs`)**: everything here is prepended to every dispatch prompt, so it decides what the agent is told is true. `harvestFailure` wrote one hardcoded sentence into `solution` on every call and `hydratePrompt` rendered it as `WHEN X → THEN <sentence>` — a record of *failing* to solve something, shipped as instructions for solving it. Its trigger carried 120 characters of raw log line, so exact-string dedup never matched twice: measured at five entries, five injected rows and five fabricated solutions for one recurring `ECONNREFUSED`. Triggers now normalize to a signature, recurrences update in place with a count, and the ledger is bounded. Harvested failures record no solution, because there is none; once one has recurred three times it reaches the prompt in its own block, stated as a count in the past tense. Learnings a person recorded deliberately are confirmed on sight — choosing to write something down is evidence of a different kind. Two mechanisms here already had this discipline: `flaky-ledger` wants repeated runs before calling a test flaky, `remediation` is fingerprint-keyed and short-lived. This was the one learning path that skipped both.
+
+### Credit
+The first three come from the cold-start trial's severity-1 findings. Two of them were defects in the mechanism built one release earlier to prevent exactly this class, which is the argument for having somebody else measure.
+
 ## [0.65.0] - 2026-09-04
 *A gate that refuses its own installation is not strict, it is broken.*
 

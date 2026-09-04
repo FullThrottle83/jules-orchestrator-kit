@@ -692,6 +692,13 @@ export async function gate(opts = {}) {
       postTestHash,
       tamperDetected: testTampered,
     },
+    // Verified by exit code alone. Not a failure, and not an approval either:
+    // an unrecognised runner passes on purpose, but the operator has to be
+    // able to tell that apart from a suite the gate actually counted.
+    ...(collectionFloor.unverified ? { unverified: collectionFloor.note } : {}),
+    ...(collectionFloor.count !== null && collectionFloor.count !== undefined
+      ? { testsCollected: collectionFloor.count, runner: collectionFloor.runner }
+      : {}),
   });
   phases.push({
     phase: "evidence",

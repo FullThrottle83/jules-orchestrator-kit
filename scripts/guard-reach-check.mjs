@@ -49,6 +49,7 @@ import { parseCollectedTests } from "../src/ops/test-collection.mjs";
 import {
   TEST_PATH_CASES,
   TAMPER_CANARIES,
+  MULTILINE_CANARIES,
   PREDICATE_MUTANTS,
   EMPTY_RUN_CANARIES,
   COUNTED_RUN_CANARIES,
@@ -68,6 +69,9 @@ import {
 function canaryDiff(c) {
   const ctx = c.context || "// context";
   const lines = [`--- a/${c.file}`, `+++ b/${c.file}`, "@@ -1,20 +1,20 @@", ` ${ctx}`];
+  // Unchanged lines the change sits inside. An assertion whose keyword is on
+  // one of these is the shape the line-level denominator could not see.
+  for (const l of c.lead || []) lines.push(` ${l}`);
   for (const l of c.removed) lines.push(`-${l}`);
   for (const l of c.added) lines.push(`+${l}`);
   lines.push(` ${ctx}`);
@@ -130,7 +134,7 @@ const canaryResults = new Map();
   const silent = [];
   const noDenominator = [];
   const noAssertions = [];
-  for (const c of TAMPER_CANARIES) {
+  for (const c of [...TAMPER_CANARIES, ...MULTILINE_CANARIES]) {
     const res = checkTestTampering(canaryDiff(c));
     const hit = (res.violations || []).some((v) => v.type === c.expect);
     canaryResults.set(c.id, hit);
@@ -144,7 +148,7 @@ const canaryResults = new Map();
       noAssertions.push(`${c.id} (${res.assertionsSeen} assertions parsed)`);
     }
   }
-  add("canaries: every tamper rule still fires", silent.length === 0, silent.length ? silent.join("; ") : `${TAMPER_CANARIES.length} canaries red as required`);
+  add("canaries: every tamper rule still fires", silent.length === 0, silent.length ? silent.join("; ") : `${TAMPER_CANARIES.length + MULTILINE_CANARIES.length} canaries red as required`);
   add("canaries: every finding carries a denominator", noDenominator.length === 0, noDenominator.length ? noDenominator.join(", ") : "inputsSeen > 0 on every hit");
   add("canaries: assertion rules parsed an assertion", noAssertions.length === 0, noAssertions.length ? noAssertions.join(", ") : "assertionsSeen > 0 on every assertion finding");
 }
@@ -186,7 +190,7 @@ const canaryResults = new Map();
   const survivors = [];
   for (const mutant of PREDICATE_MUTANTS) {
     let killed = false;
-    for (const c of TAMPER_CANARIES) {
+    for (const c of [...TAMPER_CANARIES, ...MULTILINE_CANARIES]) {
       // Only canaries the healthy predicate catches can kill a mutant.
       if (!canaryResults.get(c.id)) continue;
       const res = checkTestTampering(canaryDiff(c), { isTestPath: mutant.fn });

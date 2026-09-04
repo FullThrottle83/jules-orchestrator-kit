@@ -11,14 +11,20 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.65.0 (Current Stable) ──► v0.66.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.66.0 (Current Stable) ──► v0.67.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Can It Still Go Red?)      (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.65.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.66.0)
 
+
+### v0.66.0: Saying Nothing Is Not Saying Approved
+- [x] **An Assertion Is A Statement (`src/security.mjs`)** — a rewritten expected value whose keyword sat on a context line collected five green phases.
+- [x] **Line Comments Are Stripped (`src/security.mjs`)** — they never were; `pending` was left at the comment and the copy after the loop put it back.
+- [x] **The Boundary Reaches The Operator (`src/security.mjs`)** — the warning was wired to a function the gate does not call.
+- [x] **Evidence Before Rules (`src/memory.mjs`)** — a hardcoded sentence was being injected into every prompt as if it were a fix.
 
 ### v0.65.0: The First Hour
 - [x] **The Quickstart No Longer Rejects Its Own Output (`src/engine.mjs`)** — `init` wrote the scaffold, told the user to commit it, and the gate called that commit a scope violation while advising `--allow-protected`.
