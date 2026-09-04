@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.68.0] - 2026-09-04
+*A check that examined nothing does not get to say APPROVED.*
+
+A second cold-start trial against v0.67.0, run as an unprimed stranger against the published package. Thirteen findings; eleven reproduced.
+
+### Changed
+- **An Unreadable Dialect Now Blocks (`src/security.mjs`, `src/engine.mjs`, `bin/agentctl.mjs`)**: the guard printed *"this change was NOT checked for tampering … it is not an approval either"* and then returned `APPROVED (Exit 0)`. That is the exact shape this project exists to refuse — a verdict from a check that examined nothing, dressed as a pass — and the trial walked a tampered test over broken production code straight through it on node-tap, and again on BATS. Changed test files with no recognisable assertion are now `Exit 6`. Three ways out, best first: report the dialect so it gets covered; set `verify.tamperGuard: "warn"` in the committed config, which says so on the record; or allow one run with `--allow-unreadable-tests`. Like every other trusted field, the config setting is read from the base commit, so an uncommitted edit cannot switch the guard off.
+- **A Command That Cannot Fail Is Not An Oracle (`src/engine.mjs`)**: `agentctl task create` already refused one — *"Unfalsifiable Task Rejected: Task must include a non-trivial verification test/build command"* — while the gate approved against `verify.test: "true"` and printed an advisory. The same kit disagreed with itself about the same string. The collection floor cannot catch this (`true` states no count, and failing on "I could not tell" would break every unlisted runner), but a command that is *recognisably* a placeholder is not an unlisted runner. `Exit 4`, naming the command.
+
+### Fixed
+- **chai And node-tap Were Invisible (`src/security.mjs`)**: chai's `.to.equal(` is a dot chain where RSpec's is a space, so it never reached that branch — swapping `expect(x).to.equal(v)` for `expect(x).toBeDefined()` lost no *specific* assertion and the weakening check stayed quiet, in direct contradiction of a README promise. node-tap's assertions hang off whatever the sub-test callback named its argument, which is `ct` as often as `t`. And `{ skip: true }` puts the comma before the brace, not before the key.
+- **A Reformat Read As A Weakening (`src/security.mjs`)**: `assert (` alone on a line names no value, so Black or Ruff splitting one assertion across three lines removed one specific assertion and added none — a `CRITICAL` finding for running a formatter. The denominator had been moved to statement level one release earlier; the weakening count had not. It is the same defect one level down, for the second release running.
+- **`bootstrap` Wrote An Oracle That Asserts Its Own Impossibility (`src/stack-detector.mjs`)**: a CSS library, icon set or font package has a `package.json` and no JavaScript, and `bootstrap` wrote `node --test .agent/smoke.test.mjs` into one anyway. The next gate run died on the generated suite's own assertion — correct, but arriving after the config had been written, which left the user following the gate's repair advice into a dead end. It declines now, and says what to set instead.
+- **`npm run jules:doc-sync` Failed In The Installed Package (`scripts/doc-sync-check.mjs`, `package.json`)**: it compares documentation against the test suite, which is not shipped. It says so now, and `CHANGELOG.md`, `ROADMAP_V1.md` and `AGENTS.md` are shipped, because a consumer has reason to read them.
+- **Exit 6 Is Documented As What It Is (`README.md`)**: "Secret **or** test integrity", not "Secret".
+
+### Not Reproduced
+Two findings did not reproduce against the shipped code. The assertion-message case (`assert enc == expect` → `assert enc == expect, "..."`) returns `PASS` on a real clone of `pallets/itsdangerous` running the reported command verbatim — and the transcript names a function, `test_int_to_bytes`, that the repository does not contain. The scaffold-exemption case does not collapse on an untracked file; it collapses on a *protected* one, such as a lockfile, which is the rule working as designed.
+
 ## [0.67.0] - 2026-09-04
 *The last four from the trial, and the rule that a move is not a deletion.*
 

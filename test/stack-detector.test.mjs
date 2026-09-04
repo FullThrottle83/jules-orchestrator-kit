@@ -121,6 +121,10 @@ test("bootstrapZeroTestRepo - succeeds on existing config with empty verify.test
     mkdirSync(join(tmp, ".agent"), { recursive: true });
     const initialConfig = `version: 1\nprovider: jules\ntier: free\nlimits:\n  daily_tasks: 15\nverify:\n  test: ""\n  build: ""\n`;
     writeFileSync(join(tmp, ".agent", "config.yml"), initialConfig);
+    // Something for the generated oracle to actually check. Without a source
+    // file the smoke test asserts its own impossibility, which is now a
+    // refusal rather than a config that deadlocks on its first run.
+    writeFileSync(join(tmp, "index.mjs"), "export const add = (a, b) => a + b;\n");
 
     // First bootstrap without --force must succeed because verify.test is empty
     const res = bootstrapZeroTestRepo(tmp);
@@ -181,3 +185,23 @@ test("detectPolyglotStack - package manager lockfiles and missing scripts.test",
   }
 });
 
+
+test("bootstrapZeroTestRepo - declines when no oracle is possible", () => {
+  // A CSS library, an icon set or a font package has a package.json and no
+  // JavaScript at all. `bootstrap` wrote `node --test .agent/smoke.test.mjs`
+  // into one anyway, and the next gate run died on the generated suite's own
+  // assertion — the user followed the gate's repair advice into a dead end.
+  const tmp = mkdtempSync(join(tmpdir(), "bootstrap-no-oracle-"));
+  try {
+    writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "normalize.css", version: "8.0.1" }));
+    writeFileSync(join(tmp, "normalize.css"), "html { line-height: 1.15; }\n");
+
+    const res = bootstrapZeroTestRepo(tmp);
+    assert.equal(res.bootstrapped, false);
+    assert.equal(res.reason, "NO_ORACLE_POSSIBLE");
+    assert.match(res.detail, /no JavaScript sources/);
+    assert.equal(existsSync(join(tmp, ".agent", "smoke.test.mjs")), false, "and it wrote nothing that cannot pass");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

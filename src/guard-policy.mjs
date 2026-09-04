@@ -235,6 +235,42 @@ export const TAMPER_CANARIES = [
     added: ["        $this->markTestSkipped(\"later\");"],
     expect: "TEST_SKIP_INJECTION",
   },
+  // Dialects a second cold-start trial found silent. chai's `.to.equal(` is a
+  // dot chain where RSpec's is a space, so the RSpec branch never reached it;
+  // node-tap's assertions hang off whatever the sub-test callback named its
+  // argument, which is `ct` as often as `t`.
+  {
+    id: "weakening/chai",
+    file: "packages/core/test/signal.test.tsx",
+    context: "// signals",
+    removed: ["    expect(s.value).to.equal(v);"],
+    added: ["    expect(s.value).toBeDefined();"],
+    expect: "ASSERTION_WEAKENED",
+  },
+  {
+    id: "expectation/chai",
+    file: "test/signal.test.js",
+    context: "// signals",
+    removed: ["    expect(s.value).to.equal(3);"],
+    added: ["    expect(s.value).to.equal(-1);"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "expectation/node-tap",
+    file: "tests/test-config.js",
+    context: "// config",
+    removed: ["    ct.equal(process.env.BASIC, 'basic')"],
+    added: ["    ct.equal(process.env.BASIC, 'BROKEN_OVERRIDE')"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "skip-injection/node-tap-options",
+    file: "tests/test-populate.js",
+    context: "// populate",
+    removed: ["t.test('does not write over keys', ct => {"],
+    added: ["t.test('does not write over keys', { skip: true }, ct => {"],
+    expect: "TEST_SKIP_INJECTION",
+  },
   // Skipping from inside the test body, which is how every one of these
   // ecosystems actually does it. The decorator and annotation forms were
   // covered; the standard library's own method was not, so a test could be
@@ -442,6 +478,15 @@ export const INNOCENT_EDITS = [
     removed: ["    3, // the answer", "  );"],
     added: ["    3, // the correct answer", "  );"],
     why: "line comments were never stripped — `copyCode(i)` left `pending` at the comment and the copy after the loop put it back",
+  },
+  {
+    id: "reformat-assertion-multiline/python",
+    file: "tests/test_encoding.py",
+    context: "# encoding",
+    lead: ["def test_int_bytes(value, expect):", "    enc = int_to_bytes(value)"],
+    removed: ["    assert enc == expect"],
+    added: ["    assert (", "        enc == expect", "    )"],
+    why: "Black and Ruff do this; `assert (` alone on a line names no value, so a line-level count read a reformat as a weakening",
   },
   {
     id: "rename-helper/node",

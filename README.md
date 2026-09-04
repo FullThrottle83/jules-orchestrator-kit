@@ -68,7 +68,8 @@ git add .agent AGENTS.md SPEC.md CONSTRAINTS.md .gitignore && git commit -m "cho
 
 ```bash
 # 3. Author a scoped, verified task envelope with guardrails & secret scrubbing
-npx jules-orchestrator-kit task create
+#    Interactive by default. Pass the prompt to skip straight to review:
+npx jules-orchestrator-kit task create -p "Refactor the invoice module"
 ```
 
 `init` reads the repository, not a template: it detects the stack, picks a
@@ -240,7 +241,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | `doctor` | `agentctl doctor [--probe] [--json]` | Diagnostic check runner. `--probe` additionally starts the configured provider's CLI to confirm it answers, rather than only finding it on `PATH`. | `0` (Healthy), `1` (Failures) |
 | `queue` | `agentctl queue [--dag] [--concurrency <n>] [--dry-run] [--json]` | Consumes and executes task envelopes in `.agent/jules-queue/` with Kahn's DAG dependency resolution. Non-task files (manifests, `README.md`) are skipped, and `--dry-run` previews without moving anything. | `0` (Complete) |
 | `swarm` | `agentctl swarm [--json]` | Runs parallel multi-agent swarm across worker slots with PID liveness detection. | `0` (Complete) |
-| `check` / `gate` / `audit`| `agentctl check [--mode working-tree] [--fix] [--allow-protected] [--allow-test-change <kind>] [--json] [--json-report <path>]` | Runs security, secret scanning, rules budget audit, and tiered verification gates (with declarative assertion support) against working tree or branch. | `0` (Approved), `1` (Budget/Arg), `3` (Scope), `4` (Verify), `5` (Diff >75K), `6` (Secret), `8` (Flaky) |
+| `check` / `gate` / `audit`| `agentctl check [--mode working-tree] [--fix] [--allow-protected] [--allow-test-change <kind>] [--json] [--json-report <path>]` | Runs security, secret scanning, rules budget audit, and tiered verification gates (with declarative assertion support) against working tree or branch. | `0` (Approved), `1` (Budget/Arg), `3` (Scope), `4` (Verify), `5` (Diff >75K), `6` (Secret **or** test integrity), `8` (Flaky) |
 | `mutate` / `mutation` | `agentctl mutate [--min-score <n>] [--max-mutants <n>] [--cmd <testCmd>] [--json]` | Runs zero-dependency diff mutation testing harness on changed hunks with operator inversion and safety rollback. | `0` (Passed), `1` (Score Low) |
 | `coverage` | `agentctl coverage [--min <pct>] [--cmd <testCmd>] [--base <ref>] [--json]` | Runs native zero-dependency V8 diff coverage check against added diff lines. | `0` (Passed), `1` (Low Coverage) |
 | `probe` / `stability` | `agentctl probe [--repeat <n>] [--min <passRate>] [--cmd <testCmd>] [--json]` | Probes test suite flakiness across N consecutive iterations with oscillation detection. | `0` (Passed), `1` (Flaky) |

@@ -11,14 +11,21 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.67.0 (Current Stable) ──► v0.68.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.68.0 (Current Stable) ──► v0.69.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Can It Still Go Red?)      (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.67.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.68.0)
 
+
+### v0.68.0: Not An Approval Either
+- [x] **An Unreadable Dialect Blocks (`src/security.mjs`)** — the guard said it had not checked, and approved anyway.
+- [x] **A Command That Cannot Fail Is Not An Oracle (`src/engine.mjs`)** — `task create` already refused what the gate accepted.
+- [x] **chai And node-tap (`src/security.mjs`)** — a dot chain where RSpec has a space, and a receiver named `ct`.
+- [x] **A Reformat Is Not A Weakening (`src/security.mjs`)** — the weakening count was still line-based.
+- [x] **`bootstrap` Declines (`src/stack-detector.mjs`)** — rather than writing an oracle that asserts its own impossibility.
 
 ### v0.67.0: A Move Is Not A Deletion
 - [x] **In-Body Skips (`src/security.mjs`)** — a test could be silenced with `self.skipTest()`, the form unittest's own documentation uses.

@@ -208,7 +208,18 @@ describe("the guard reports its boundary on the path the gate uses", () => {
       (res.findings || []).some((f) => f.type === "TEST_DIALECT_UNREADABLE"),
       `no boundary finding in ${JSON.stringify((res.findings || []).map((f) => f.type))}`
     );
-    assert.equal(res.ok, true, "an unlisted assertion library is not the user's fault and must not block");
+    // It blocks. Printing "this change was NOT checked for tampering" and
+    // then returning APPROVED is the shape this project exists to refuse, and
+    // a second cold-start trial walked a tampered test and broken production
+    // code straight through on node-tap and again on BATS.
+    assert.equal(res.ok, false, "a change the guard could not check must not be approved");
+
+    const allowed = scanDiff(diffFor(UNREADABLE_DIALECTS[0]), { tamperGuard: "warn" });
+    assert.equal(allowed.ok, true, "and a repository whose dialect is genuinely unsupported can say so");
+    assert.ok((allowed.findings || []).some((f) => f.type === "TEST_DIALECT_UNREADABLE"), "still reported, never silent");
+
+    const oneShot = scanDiff(diffFor(UNREADABLE_DIALECTS[0]), { allowUnreadableTests: true });
+    assert.equal(oneShot.ok, true, "and a single run can be allowed from the command line");
   });
 });
 

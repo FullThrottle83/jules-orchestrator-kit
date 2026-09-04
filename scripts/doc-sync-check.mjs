@@ -331,6 +331,15 @@ function compareSemver(a, b) {
 
 // ---- CLI ----
 const isMain = process.argv[1] && process.argv[1].endsWith("doc-sync-check.mjs");
+// This gate compares the documentation against the test suite, which the
+// published package does not contain. Run from an installed copy it reported
+// six failures about files that were never meant to be there.
+if (isMain && !existsSync(join(process.cwd(), "test"))) {
+  console.error("Documentation sync is a release gate for the repository, not a check on an installed package.");
+  console.error("It compares README/ROADMAP/CHANGELOG against the test suite, which is not shipped.");
+  console.error("Clone the repository to run it. To check an installed copy, run: npm run guard-reach");
+  process.exit(1);
+}
 if (isMain) {
   const argv = process.argv.slice(2);
   const flag = (name) => {
