@@ -11,14 +11,20 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.64.0 (Current Stable) ──► v0.65.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.65.0 (Current Stable) ──► v0.66.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Can It Still Go Red?)      (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.64.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.65.0)
 
+
+### v0.65.0: The First Hour
+- [x] **The Quickstart No Longer Rejects Its Own Output (`src/engine.mjs`)** — `init` wrote the scaffold, told the user to commit it, and the gate called that commit a scope violation while advising `--allow-protected`.
+- [x] **A Stated Count Outranks A Phrase (`src/ops/test-collection.mjs`)** — a healthy 190-test TAP suite was rejected as empty because a skipped fixture printed `no tests found`.
+- [x] **`init` Probes On The Headless Path (`src/wizard-init.mjs`)** — `--yes` means "do not ask me", not "do not check".
+- [x] **`verify.minTests` Reaches The Floor (`src/engine.mjs`)** — the failure message named a lever that was connected to nothing.
 
 ### v0.64.0: What The Guard Could Not Read
 - [x] **The Package Is Checked The Way It Is Installed (`scripts/package-integrity-check.mjs`)** — the tarball's own import graph, resolved inside the tarball. The previous release shipped the activation-coverage check without the contract it imports.

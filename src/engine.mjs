@@ -204,6 +204,16 @@ export async function gate(opts = {}) {
           // Read from the base commit like every other trusted field: an
           // uncommitted `required: false` must not be able to switch the gate off.
           required: parsed.verify?.required !== undefined ? parsed.verify.required !== false : config.verify.required !== false,
+          // The floor the collection check applies. Omitting it here meant
+          // `verify.minTests` was silently dropped and always defaulted to 1
+          // — while the failure message told the operator to set exactly
+          // that. A remediation hint that does nothing is worse than none.
+          minTests:
+            parsed.verify?.minTests !== undefined
+              ? parsed.verify.minTests
+              : parsed.verify?.min_tests !== undefined
+                ? parsed.verify.min_tests
+                : config.verify.minTests,
           scope: parsed.verify?.scope || config.verify.scope || "global",
           timeoutMs: parsed.verify?.timeoutMs || parsed.verify?.timeout_ms || config.verify.timeoutMs,
         };
@@ -249,7 +259,45 @@ export async function gate(opts = {}) {
     violation.file = link;
   }
 
-  phases.push({ phase: "scope", ok: scopeResult.ok, violations: scopeResult.violations });
+  // Bootstrap: the files that bring a repository under the gate are not agent
+  // edits to the gate.
+  //
+  // `init` writes `.agent/**` and then tells the user to commit it. Doing
+  // exactly that produced Exit 3 on the very first run, because the base
+  // branch does not have the commit yet and every scaffolded path matches
+  // BUILTIN_PROTECT or BUILTIN_DENY. The advice printed alongside it was
+  // `--allow-protected` — so a newcomer's first lesson was how to switch the
+  // scope guard off. A gate that refuses its own installation is not strict,
+  // it is broken.
+  //
+  // Narrow on purpose, and only where it cannot weaken anything: the base
+  // commit must have no gate config at all — in which case `trustedScope` is
+  // already built-ins only and nothing in the added files is trusted — and
+  // every violating path must be scaffold that the base does not have. A
+  // repository already under the gate keeps the full rule, so an agent still
+  // cannot touch the policy it is governed by.
+  let acceptedScaffold = [];
+  if (!scopeResult.ok && !trustedConfigRaw) {
+    const violations = scopeResult.violations || [];
+    const isScaffold = (f) => typeof f === "string" && f.replace(/\\/g, "/").startsWith(".agent/");
+    if (
+      violations.length > 0 &&
+      violations.every((v) => isScaffold(v.file) && showFromOrigin(root, base, v.file) === null)
+    ) {
+      acceptedScaffold = violations.map((v) => v.file);
+      scopeResult.violations = [];
+      scopeResult.ok = true;
+    }
+  }
+
+  phases.push({
+    phase: "scope",
+    ok: scopeResult.ok,
+    violations: scopeResult.violations,
+    // Reported, never silent: the operator has to see that the gate accepted
+    // files it would otherwise have blocked, and why.
+    ...(acceptedScaffold.length > 0 ? { setup: acceptedScaffold } : {}),
+  });
   appendTelemetry(root, "gate_phase", { phase: "scope", ok: scopeResult.ok });
   if (progressBus && progressToken) {
     progressBus.reportProgress(progressToken, 25, 100, "Phase 1/4: Scope Guard verification complete");

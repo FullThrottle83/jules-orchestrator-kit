@@ -71,8 +71,15 @@ const EXPLICIT_ZERO = [
 
 /** Go prints this per package that has no test files at all. */
 const GO_NO_TEST_FILES = /\[no test files\]/;
-/** Any sign that a Go package did run tests. */
-const GO_RAN_SOMETHING = /^(?:ok|FAIL|---\s+(?:PASS|FAIL|SKIP)):?\s/m;
+/**
+ * Any sign that a Go package did run tests.
+ *
+ * The negative lookahead is what separates Go from TAP. `ok 1 - performance`
+ * is a TAP result line and `ok  example.com/lib 0.004s` is a Go package
+ * summary, and a bare `^ok\s` matched both — so a 190-test TAP suite was
+ * classified as Go and reported as having stated no count at all.
+ */
+const GO_RAN_SOMETHING = /^(?:(?:ok|FAIL)\s+(?!\d+\s)\S+|---\s+(?:PASS|FAIL|SKIP):?\s)/m;
 
 /**
  * Read a collected-test count out of a runner's output.
@@ -87,8 +94,20 @@ export function parseCollectedTests(stdout = "", stderr = "") {
   const text = `${stdout || ""}\n${stderr || ""}`;
   if (!text.trim()) return { count: null, runner: null };
 
-  for (const rule of EXPLICIT_ZERO) {
-    if (rule.re.test(text)) return { count: 0, runner: rule.name };
+  // A stated count wins over a phrase that merely resembles one.
+  //
+  // `EXPLICIT_ZERO` used to be consulted first, so any output containing the
+  // words "no tests found" was read as a zero — including a healthy TAP run
+  // of 190 passing tests whose one skipped fixture printed
+  // `# SKIP no tests found`. The gate rejected the suite as empty and named
+  // Jest as the runner, in a repository that does not use Jest. A phrase
+  // appears anywhere in a stream; a count is stated deliberately, so the
+  // count is the better witness and has to be asked first.
+  for (const rule of COUNT_PATTERNS) {
+    const m = rule.re.exec(text);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (Number.isFinite(n)) return { count: n, runner: rule.name };
   }
 
   // Go states absence per package rather than as a count, so it needs its own
@@ -104,11 +123,9 @@ export function parseCollectedTests(stdout = "", stderr = "") {
     return { count: perTest && perTest.length > 0 ? perTest.length : null, runner: "go" };
   }
 
-  for (const rule of COUNT_PATTERNS) {
-    const m = rule.re.exec(text);
-    if (!m) continue;
-    const n = Number(m[1]);
-    if (Number.isFinite(n)) return { count: n, runner: rule.name };
+  // Only now: no runner stated a number, so a declared absence is all there is.
+  for (const rule of EXPLICIT_ZERO) {
+    if (rule.re.test(text)) return { count: 0, runner: rule.name };
   }
 
   return { count: null, runner: null };

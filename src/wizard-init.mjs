@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { parseYaml, TIER_PRESETS, VENDOR_TIERS, FALLBACK_TIER } from "./config.mjs";
 import { suggestProvider, detectAvailableProviders } from "./provider-readiness.mjs";
 import { detectDefaultBranch } from "./git.mjs";
-import { resolveWorkspaceBoundary } from "./stack-detector.mjs";
+import { resolveWorkspaceBoundary, oracleCandidates } from "./stack-detector.mjs";
 import { PROFILE_NAMES, PROFILE_DESCRIPTIONS } from "./profiles.mjs";
 import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
@@ -302,6 +302,51 @@ export function loadPresets(root = process.cwd()) {
  * @param {object} [options]
  * @returns {Promise<{ ok: boolean, configPath: string, plan: object }>}
  */
+/**
+ * Probe the chosen test command, and take detection's next choice if it fails.
+ *
+ * Runs on the non-interactive path too. `--yes` means "do not ask me", not
+ * "do not check" — and the user who is not watching is exactly the one who
+ * cannot notice that the command written into their config does not run.
+ * Before this, the probe lived inside the interactive branch, so
+ * `agentctl init --yes` wrote `make test` into a repository where `make test`
+ * exits 2 and `npm test` passes, and the first gate run was a hard red.
+ *
+ * @returns {Promise<string>} the command to save
+ */
+async function resolveRunnableOracle(root, testCmd, options = {}) {
+  if (!testCmd) return testCmd;
+  const probeSp = spinner(`Probing oracle: ${testCmd}`, options);
+  const probeRes = await runVerificationProbe(testCmd, root);
+  if (probeRes.ok) {
+    probeSp.stop(`Oracle verified successfully (${probeRes.durationMs}ms)`);
+    return testCmd;
+  }
+  probeSp.fail(`Oracle verification probe failed (Exit ${probeRes.code})`);
+
+  const alternates = oracleCandidates(root, testCmd).filter((c) => c !== testCmd).slice(0, 3);
+  for (const cand of alternates) {
+    const altSp = spinner(`Trying ${cand}`, options);
+    const altRes = await runVerificationProbe(cand, root);
+    if (altRes.ok) {
+      altSp.stop(`${cand} runs here (${altRes.durationMs}ms) — using it instead`);
+      return cand;
+    }
+    altSp.fail(`${cand} also failed (Exit ${altRes.code})`);
+  }
+
+  // Nothing runs. Say so in terms the user can act on, rather than leaving a
+  // failed spinner to scroll past and a broken command in the config.
+  const out = options.stdout || process.stdout;
+  out.write("\n");
+  out.write("   \u26a0\ufe0f  No test command could be run in this environment.\n");
+  out.write(`      Keeping "${testCmd}" \u2014 the gate will fail until it runs here.\n`);
+  out.write("      Point verify.test in .agent/config.yml at a command that works,\n");
+  out.write("      or, if this repository genuinely has no suite, set\n");
+  out.write("      verify.required: false deliberately rather than by accident.\n\n");
+  return testCmd;
+}
+
 export async function runInitWizard(root = process.cwd(), options = {}) {
   const interactive = options.interactive !== false && isTTY(options.stdin || process.stdin);
 
@@ -322,6 +367,7 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
   let selectedProvider = options.provider || existingConfig.provider;
   let selectedProfile = options.profile || existingConfig.verify?.profile;
   let testCmd = options.testCmd;
+  let probeInteractive = null;
   let buildCmd = options.buildCmd;
   let selectedPresets = options.presets;
 
@@ -402,16 +448,20 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
 
     selectedPresets = await multiSelect(presetOptions, "Select Autonomous Workflows to Enable", options);
 
-    const shouldProbe = await confirm("Run verification probe on test command before saving?", true, options);
-    if (shouldProbe && testCmd) {
-      const probeSp = spinner(`Probing oracle: ${testCmd}`, options);
-      const probeRes = await runVerificationProbe(testCmd, root);
-      if (probeRes.ok) {
-        probeSp.stop(`Oracle verified successfully (${probeRes.durationMs}ms)`);
-      } else {
-        probeSp.fail(`Oracle verification probe failed (Exit ${probeRes.code})`);
-      }
-    }
+    probeInteractive = await confirm("Run verification probe on test command before saving?", true, options);
+  }
+
+  // The probe runs whether or not anyone was asked: interactive users can
+  // decline it, but silence from `--yes` is not a decline.
+  if (probeInteractive !== false && options.probe !== false) {
+    // Resolve the command the way planInit will, or there is nothing to
+    // probe: on the headless path `testCmd` stays undefined until planInit
+    // fills it in from detection, so the probe silently examined nothing —
+    // the exact fail-open shape this project keeps finding in itself.
+    const effective =
+      testCmd || existingConfig.verify?.test || detectStackOracles(root)?.candidates?.testCmd || "";
+    const adopted = await resolveRunnableOracle(root, effective, options);
+    if (adopted) testCmd = adopted;
   }
 
   // `...options` first, for the same reason as in wizard-task.mjs: spreading it

@@ -188,6 +188,56 @@ export function detectEdgeRuntime(projectRoot = process.cwd()) {
 /**
  * Detects 24+ polyglot stacks and container environments.
  */
+/**
+ * Test commands worth trying, best first, when the detected one does not run.
+ *
+ * `init` probes the command it picked. On a repository whose Makefile
+ * declares a `test` target that needs a build environment the machine does
+ * not have, that probe failed, printed `Oracle verification probe failed`,
+ * and the wizard wrote the broken command into the config anyway — in a
+ * repository where `pytest` was on PATH and all 360 tests passed in 1.3s.
+ * Measuring something and then ignoring the measurement is worse than not
+ * measuring: it produces a hard red on day one, which is how a user learns
+ * the gate is broken and turns it off.
+ *
+ * Kept deliberately generic — a per-ecosystem convention, never a per-project
+ * or per-provider guess.
+ *
+ * @param {string} root
+ * @param {string} [detected] - the command detection chose; always first.
+ * @returns {string[]} ordered, de-duplicated candidates
+ */
+export function oracleCandidates(root = process.cwd(), detected = "") {
+  const out = [];
+  const push = (c) => {
+    const v = (c || "").trim();
+    if (v && !out.includes(v) && !isPlaceholderTestScript(v)) out.push(v);
+  };
+  const has = (f) => existsSync(join(root, f));
+
+  push(detected);
+
+  if (has("package.json")) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+      if (pkg.scripts?.test && !isPlaceholderTestScript(pkg.scripts.test)) push("npm test");
+    } catch (_) {}
+  }
+  if (has("pytest.ini") || has("pyproject.toml") || has("setup.py") || has("tox.ini") || has("setup.cfg")) {
+    push(pytestCmd());
+  }
+  if (has("Cargo.toml")) push("cargo test");
+  if (has("go.mod")) push("go test ./...");
+  if (has("Gemfile")) push("bundle exec rspec");
+  if (has("composer.json")) push("./vendor/bin/phpunit");
+  if (has("pom.xml")) push("mvn -q test");
+  if (has("build.gradle") || has("build.gradle.kts")) push("./gradlew test");
+  if (has("pubspec.yaml")) push("dart test");
+  if (has("Package.swift")) push("swift test");
+
+  return out;
+}
+
 export function detectPolyglotStack(projectRoot = process.cwd()) {
   const edgeInfo = detectEdgeRuntime(projectRoot);
   const isDevcontainer = existsSync(join(projectRoot, ".devcontainer", "devcontainer.json"));

@@ -51,6 +51,7 @@ import {
   TAMPER_CANARIES,
   PREDICATE_MUTANTS,
   EMPTY_RUN_CANARIES,
+  COUNTED_RUN_CANARIES,
   SCOPE_CANARIES,
   INNOCENT_EDITS,
   UNREADABLE_DIALECTS,
@@ -105,6 +106,17 @@ const add = (name, ok, detail) => {
 
 {
   const missed = EMPTY_RUN_CANARIES.filter((c) => parseCollectedTests(c.output, "").count !== 0);
+  const undercounted = COUNTED_RUN_CANARIES.filter((c) => {
+    const n = parseCollectedTests(c.output, "").count;
+    return n === null || n < c.atLeast;
+  });
+  add(
+    "policy: a stated count is never read as empty",
+    undercounted.length === 0,
+    undercounted.length
+      ? undercounted.map((c) => `${c.id} (${c.why})`).join("; ")
+      : `${COUNTED_RUN_CANARIES.length} healthy runs counted, not rejected`
+  );
   add(
     "policy: empty-run detection",
     missed.length === 0,

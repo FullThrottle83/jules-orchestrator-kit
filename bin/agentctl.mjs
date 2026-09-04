@@ -429,6 +429,11 @@ async function main() {
           if (p.violations) {
             p.violations.forEach((v) => console.log(`     - Violation: ${v.file} (Rule: ${v.rule})`));
           }
+          if (p.setup) {
+            console.log(`     - Setup: accepted ${p.setup.length} gate scaffold file(s) this repository did not have yet`);
+            p.setup.forEach((f) => console.log(`         ${f}`));
+            console.log(`       Commit them to the base branch and the full protect rules apply from then on.`);
+          }
           if (p.findings) {
             p.findings.forEach((f) => console.log(`     - [${f.severity}] ${f.type}: ${f.description}`));
           }
