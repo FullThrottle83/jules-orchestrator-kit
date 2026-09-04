@@ -39,6 +39,17 @@ const COUNT_PATTERNS = [
   { name: "jest", re: /^\s*Tests:\s+.*?(\d+)\s+total\s*$/m },
   // mocha — "12 passing"
   { name: "mocha", re: /^\s*(\d+)\s+passing/m },
+  // Maven / Surefire — "Tests run: 12, Failures: 0"
+  { name: "surefire", re: /\bTests run:\s*(\d+)/i },
+  // PHPUnit — "OK (12 tests, 30 assertions)"
+  { name: "phpunit", re: /\bOK\s*\((\d+)\s+tests?/i },
+  // RSpec / ExUnit — "12 examples, 0 failures" / "12 tests, 0 failures"
+  { name: "rspec", re: /^\s*(\d+)\s+examples?,\s*\d+\s+failures?/m },
+  { name: "exunit", re: /^\s*(\d+)\s+tests?,\s*\d+\s+failures?/m },
+  // dotnet test — "Total tests: 12" / "Passed!  - Failed: 0, Passed: 12"
+  { name: "dotnet", re: /\bTotal(?:\s+tests)?:\s*(\d+)/i },
+  // swift test / XCTest — "Executed 12 tests"
+  { name: "xctest", re: /\bExecuted\s+(\d+)\s+tests?/i },
 ];
 
 /** Per-test lines, which `go test` only prints under -v. */
@@ -52,6 +63,10 @@ const EXPLICIT_ZERO = [
   { name: "vitest", re: /\bNo test files found\b/i },
   { name: "mocha", re: /^\s*0\s+passing/m },
   { name: "cargo", re: /^\s*running\s+0\s+tests?\s*$/m },
+  { name: "phpunit", re: /\bNo tests executed!/i },
+  { name: "gradle", re: /^>\s*Task\s+:\S*test\S*\s+NO-SOURCE\s*$/mi },
+  { name: "ctest", re: /\bNo tests were found\b/i },
+  { name: "flutter", re: /\bNo tests ran\.?/i },
 ];
 
 /** Go prints this per package that has no test files at all. */

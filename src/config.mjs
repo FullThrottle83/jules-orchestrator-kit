@@ -54,6 +54,9 @@ const CI_DEFINITIONS = [
   "appveyor.yml",
   ".teamcity/**",
   ".githooks/**",
+  "buildspec.yml",
+  "**/buildspec.yml",
+  ".buildspec/**",
 ];
 
 export const BUILTIN_DENY = [
@@ -64,6 +67,24 @@ export const BUILTIN_DENY = [
   "**/*.key",
   "**/id_rsa*",
   ".agent/jules-queue/**",
+
+  // Shell that runs on `cd`, and credentials in plaintext. Same class as a CI
+  // definition: code or secrets that take effect before anyone reviews them.
+  "**/.envrc",
+  "**/.git-credentials",
+  "**/.aws/**",
+  "**/.ssh/**",
+  "**/.kube/**",
+  "**/kubeconfig*",
+  "**/.docker/config.json",
+  "**/*.p12",
+  "**/*.pfx",
+  "**/*.p8",
+  "**/id_ed25519*",
+  "**/credentials.json",
+  "**/service-account*.json",
+  "**/*.tfstate",
+  "**/*.tfstate.*",
   ...CI_DEFINITIONS,
 ];
 
@@ -109,6 +130,53 @@ export const BUILTIN_PROTECT = [
   "**/Gemfile",
   "Dockerfile",
   "**/Dockerfile",
+
+  // Lockfiles decide which code actually *runs*. `package.json` was protected
+  // and `package-lock.json` was not, so an agent could change a resolved URL
+  // or an integrity hash — swapping the code that gets installed — without
+  // touching a single declared dependency, and the gate said nothing. The
+  // entropy scanner is deliberately blind to lockfiles too (they are full of
+  // hashes), so the change was invisible twice over. `BUILTIN_RESTRICTED` in
+  // risk.mjs already knew these mattered; only the risk tier consumed it,
+  // never checkScope.
+  "package-lock.json",
+  "**/package-lock.json",
+  "pnpm-lock.yaml",
+  "**/pnpm-lock.yaml",
+  "yarn.lock",
+  "**/yarn.lock",
+  "bun.lockb",
+  "bun.lock",
+  "Cargo.lock",
+  "**/Cargo.lock",
+  "go.sum",
+  "**/go.sum",
+  "poetry.lock",
+  "uv.lock",
+  "Pipfile.lock",
+  "Gemfile.lock",
+  "composer.lock",
+  "gradle.lockfile",
+  "npm-shrinkwrap.json",
+  "mix.lock",
+  "pubspec.lock",
+  "Podfile.lock",
+  "Package.resolved",
+  ".terraform.lock.hcl",
+
+  // Toolchain pins choose the compiler that runs the whole suite.
+  ".nvmrc",
+  ".tool-versions",
+  ".mise.toml",
+  "rust-toolchain",
+  "rust-toolchain.toml",
+  "**/gradle/wrapper/gradle-wrapper.properties",
+  "**/gradle/wrapper/gradle-wrapper.jar",
+
+  // Who has to approve a change, and what runs on every developer's machine.
+  "CODEOWNERS",
+  "docs/CODEOWNERS",
+  ".pre-commit-config.yaml",
 
   // Test-runner configuration decides which tests run and what counts as a
   // pass. Rewriting it is the cheapest way to make a suite green without

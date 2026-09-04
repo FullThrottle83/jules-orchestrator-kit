@@ -129,12 +129,30 @@ export function computeDirectoryHash(root, options = {}) {
       .filter((p) => existsSync(join(root, p)) && statSync(join(root, p)).isFile())
       .sort();
   } else {
-    const targetDirs = options.directories || ["test", "tests", "__tests__", "spec", "src"];
+    // A sixth spelling of "where do the tests live?", and the one that got
+    // missed when the other five were unified behind `isTestPath`: this is a
+    // list of *directory names at the repository root*, not a predicate. Go
+    // puts its tests beside the code (`internal/calc/calc_test.go`), and every
+    // monorepo puts them under `packages/*/test/`. Neither is under a
+    // root-level `test/`, so the walk found nothing, `fileCount` was 0, and
+    // `strictTestLock` — which requires `fileCount > 0` — switched itself off
+    // without saying so. The tree hash then became the SHA-256 of the empty
+    // string, and the evidence manifest attested to it.
+    //
+    // The named directories stay as a fast path; when they yield nothing, walk
+    // the repository and let the shared predicate decide. The walk already
+    // skips node_modules, vendor, target and the build caches.
+    const targetDirs = options.directories || ["test", "tests", "__tests__", "spec", "specs", "src"];
     for (const dirName of targetDirs) {
       const dirPath = join(root, dirName);
       if (existsSync(dirPath)) {
         const found = findFilesRecursively(dirPath, root);
         fileList.push(...found);
+      }
+    }
+    if (options.testOnly && !fileList.some((f) => isTestPath(f))) {
+      for (const f of findFilesRecursively(root, root)) {
+        if (isTestPath(f)) fileList.push(f);
       }
     }
 
@@ -201,6 +219,7 @@ export function computeEvidenceHash(manifest) {
     intent: manifest.intent,
     provenance: manifest.provenance,
     testIntegrity: manifest.testIntegrity,
+    ...(manifest.verification ? { verification: manifest.verification } : {}),
     ...(manifest.sourceIntegrity ? { sourceIntegrity: manifest.sourceIntegrity } : {}),
     executionRecords: manifest.executionRecords,
     securityChecks: manifest.securityChecks,
@@ -342,6 +361,24 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
       maxDiffKb: options.maxDiffKb || 75,
       protectedScopeOk: options.protectedScopeOk ?? true,
     },
+    // How many tests the runner said it collected, and whether it said at all.
+    //
+    // The collection floor fails a *stated* zero and lets an unstated count
+    // pass, because failing on "I could not tell" would break every runner not
+    // on the list. That is the right call for the verdict and the wrong thing
+    // to leave out of the record: a manifest that says nothing here reads as
+    // though a suite ran. `counted: false` is the honest shape for a run where
+    // the number was never observable — a quiet runner (`cargo test --quiet`,
+    // `pytest -q`) suppresses the very line the floor reads.
+    ...(options.collection
+      ? {
+          verification: {
+            testsCollected: options.collection.count,
+            counted: options.collection.count !== null,
+            runner: options.collection.runner,
+          },
+        }
+      : {}),
     ...(diagnostics.length > 0 ? { diagnostics } : {}),
     ...(Object.keys(metrics).length > 0 ? { metrics } : {}),
   };

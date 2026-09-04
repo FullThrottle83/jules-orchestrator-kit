@@ -613,6 +613,7 @@ export async function gate(opts = {}) {
     failedStage: failingCmd?.stageId || failingCmd?.phase || null,
     diagnostics: failingCmd?.diagnostics?.length ? failingCmd.diagnostics : (failingCmd?.stderr ? [failingCmd.stderr] : []),
     metrics: failingCmd?.metrics || {},
+    collection: collectionFloor,
     ok: verifyOk,
   });
   if (testTampered) {

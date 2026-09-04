@@ -39,7 +39,65 @@ export function pytestCmd(env = process.env) {
 }
 
 /**
- * Generate a zero-dependency smoke test file using node:test for untested JS/Generic repos.
+ * Does this Makefile declare a `test` target?
+ *
+ * Read rather than assumed: the presence of the file says nothing about
+ * whether `make test` will run.
+ */
+function makefileHasTestTarget(root) {
+  try {
+    const text = readFileSync(join(root, "Makefile"), "utf-8");
+    return /^\.PHONY:.*\btest\b/m.test(text) || /^test\s*:/m.test(text);
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * A declared test script that runs no tests and exits 0.
+ *
+ * This is the single most dangerous input the gate can receive, because every
+ * downstream check reads "a command ran and passed". `bootstrapZeroTestRepo`
+ * called `"test": "echo 'no tests yet' && exit 0"` an
+ * EXISTING_VERIFICATION_ORACLE — it asked whether the field was set, never
+ * what was in it.
+ *
+ * npm's own default (`echo "Error: no test specified" && exit 1`) is not a
+ * placeholder by this definition, and correctly so: it exits non-zero, which
+ * fails loudly rather than certifying nothing.
+ */
+export function isPlaceholderTestScript(cmd) {
+  if (typeof cmd !== "string") return false;
+  const trimmed = cmd.trim();
+  if (!trimmed) return true;
+  // Drop the announcements; what matters is what the shell is left doing.
+  const remainder = trimmed
+    .split(/&&|;/)
+    .map((part) => part.trim())
+    .filter((part) => part && !/^(?:echo|printf|:)\b/.test(part));
+  if (remainder.length === 0) return true;
+  return remainder.every((part) => /^(?:exit\s+0|true|:)$/.test(part));
+}
+
+/**
+ * Generate the fallback verification oracle for a JS/generic repo with no tests.
+ *
+ * What this used to write could not fail:
+ *
+ *   assert.ok(fs.existsSync(process.cwd()));
+ *   assert.ok(fs.readdirSync(process.cwd()).length > 0);
+ *
+ * Both hold for every repository and every change, so the generated "oracle"
+ * was green against arbitrary broken code — and worse, it *silenced* the
+ * `missingOracle` guard in engine.mjs, which fires only when no command ran at
+ * all. A repository that honestly had no oracle was converted into one that
+ * claimed to have one. That is the tool writing its own blindness to disk.
+ *
+ * The other stacks already get a real static gate at this point — `tsc
+ * --noEmit`, `cargo check`, `go vet`, `compileall` — each of which fails on a
+ * real class of defect. This is the JavaScript equivalent: every source file
+ * must parse. It proves the code compiles, not that it works, and the caller
+ * says so; but a syntax error fails it, which is one more than before.
  */
 export function generateSmokeTestScript(root = process.cwd()) {
   const agentDir = join(root, ".agent");
@@ -48,15 +106,45 @@ export function generateSmokeTestScript(root = process.cwd()) {
   } catch (_) {}
 
   const smokePath = join(agentDir, "smoke.test.mjs");
-  const content = `// Auto-generated zero-dependency smoke test gate (.agent/smoke.test.mjs)
+  const content = `// Auto-generated zero-dependency parse gate (.agent/smoke.test.mjs)
+//
+// Written by \`agentctl bootstrap\` for a repository that had no test suite.
+// It proves that every source file still parses. It does NOT prove the code
+// is correct — replace it with real tests as soon as there are any.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { readdirSync, statSync } from "node:fs";
+import { join, extname } from "node:path";
+import { spawnSync } from "node:child_process";
 
-test("Zero-Test Bootstrapped Smoke Verification", () => {
-  assert.ok(fs.existsSync(process.cwd()), "Working directory exists and is accessible");
-  const entries = fs.readdirSync(process.cwd());
-  assert.ok(entries.length > 0, "Repository contains files");
+const SKIP = new Set([".git", "node_modules", "vendor", "dist", "build", "coverage", ".venv", "venv", ".next", ".agent"]);
+const SOURCE = new Set([".js", ".mjs", ".cjs"]);
+
+function sources(dir, acc = [], depth = 0) {
+  if (depth > 8) return acc;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith(".") && entry.name !== ".agent") continue;
+    if (SKIP.has(entry.name)) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) sources(full, acc, depth + 1);
+    else if (SOURCE.has(extname(entry.name))) acc.push(full);
+  }
+  return acc;
+}
+
+test("every source file parses", () => {
+  const files = sources(process.cwd());
+
+  // A gate with nothing to check is not a passing gate. Reporting success
+  // over an empty file list is exactly the vacuous oracle this replaced.
+  assert.ok(files.length > 0, "No JavaScript sources found to verify — this is not an oracle. Set verify.test in .agent/config.yml.");
+
+  const broken = [];
+  for (const file of files) {
+    const res = spawnSync(process.execPath, ["--check", file], { encoding: "utf-8" });
+    if (res.status !== 0) broken.push(\`\${file}: \${(res.stderr || "").trim().split("\\n")[0]}\`);
+  }
+  assert.deepEqual(broken, [], \`\${broken.length} file(s) failed to parse\`);
 });
 `;
   writeFileSync(smokePath, content, "utf-8");
@@ -173,7 +261,15 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
   if (existsSync(join(projectRoot, "Package.swift"))) {
     return { ...container, stack: "swift", testCmd: "swift test", buildCmd: "swift build", triggerFile: "Package.swift" };
   }
-  if (existsSync(join(projectRoot, "app.json")) || existsSync(join(projectRoot, "react-native.config.js"))) {
+  // `app.json` is not a manifest, it is an Expo/React Native *configuration*
+  // file, and the name is generic enough that unrelated projects use it. Its
+  // test command is `npm test`, so without a package.json beside it the
+  // detector was claiming a Node stack for a repository that has no Node in
+  // it: `Cargo.toml` + `app.json` was measured as `react-native` / `npm test`.
+  if (
+    (existsSync(join(projectRoot, "app.json")) && existsSync(join(projectRoot, "package.json"))) ||
+    existsSync(join(projectRoot, "react-native.config.js"))
+  ) {
     const triggerFile = existsSync(join(projectRoot, "app.json")) ? "app.json" : "react-native.config.js";
     return { ...container, stack: "react-native", testCmd: "npm test", buildCmd: "npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/main.jsbundle", triggerFile };
   }
@@ -188,7 +284,14 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
   if (existsSync(join(projectRoot, "go.mod"))) {
     return { ...container, stack: "go", testCmd: "go test ./...", buildCmd: "go build ./...", triggerFile: "go.mod" };
   }
-  if (existsSync(join(projectRoot, "Makefile"))) {
+  // A Makefile is only an oracle if it declares the target we are about to
+  // run. `make test` on a Makefile with only a `build:` target exits 2 with
+  // "No rule to make target 'test'" — measured on a repository whose
+  // package.json declared a perfectly good `vitest run`, because the Makefile
+  // was checked first and the presence of the *file* was the whole test. A
+  // hard red on day one is how a user learns the gate is broken and turns it
+  // off, so the file must earn the claim.
+  if (existsSync(join(projectRoot, "Makefile")) && makefileHasTestTarget(projectRoot)) {
     return { ...container, stack: "make", testCmd: "make test", buildCmd: "make build", triggerFile: "Makefile" };
   }
 
@@ -715,7 +818,7 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
   if (existsSync(join(root, "package.json"))) {
     try {
       const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
-      hasPkgTest = Boolean(pkg?.scripts?.test);
+      hasPkgTest = Boolean(pkg?.scripts?.test) && !isPlaceholderTestScript(pkg.scripts.test);
     } catch (_) {}
   }
 
