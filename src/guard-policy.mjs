@@ -479,3 +479,34 @@ IMPORT_EXTRACTION_CASES.push(
     why: "same, in the other place examples live",
   }
 );
+
+/**
+ * Runs that stated a count, which must never be read as empty.
+ *
+ * The floor was written to be one-sided — only a *stated* zero fails — and
+ * then a phrase was allowed to outrank a statement. A healthy 190-test TAP
+ * suite whose one skipped fixture printed `# SKIP no tests found` was
+ * rejected as empty and attributed to Jest, in a repository that does not
+ * use Jest. A false red on a correct repository is how a user learns the
+ * gate is broken and turns it off.
+ */
+export const COUNTED_RUN_CANARIES = [
+  {
+    id: "tap with a skip message",
+    output: "TAP version 13\n# Subtest: performance\n    # SKIP no tests found\nok 1 - performance # SKIP\n1..191\n# tests 191\n# pass 190\n# skip 1",
+    atLeast: 1,
+    why: "`no tests found` inside a skip comment is not a statement about the run",
+  },
+  {
+    id: "pytest mentioning an empty module",
+    output: "collected 12 items\n\ntests/test_a.py ............\n\n12 passed in 0.3s",
+    atLeast: 1,
+    why: "a stated count is present and must win",
+  },
+  {
+    id: "go, verbose, two tests",
+    output: "--- PASS: TestAdd (0.00s)\n--- PASS: TestSub (0.00s)\nok  \texample.com/lib\t0.004s",
+    atLeast: 1,
+    why: "Go's own `ok  <package>` line, which a bare `^ok\\s` confused with TAP's `ok 1 - name`",
+  },
+];

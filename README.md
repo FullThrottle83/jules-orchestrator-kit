@@ -49,12 +49,15 @@
 <a id="quickstart"></a>
 ## Quickstart
 
-Get running in any repository in 3 commands (zero configuration required):
+Get running in any repository in 3 commands. `init` asks seven questions and
+fills in a sensible answer for each; `--yes` accepts all of them, detects the
+stack, and probes the test command it picked before writing it down.
 
 ```bash
 # 1. Scaffold config, AGENTS.md, role prompts and guardrails
 #    (auto-detects Python, Rust, Go, Node, PHP, etc.)
-npx jules-orchestrator-kit init
+#    Drop --yes to choose provider, plan, profile and workflows yourself.
+npx jules-orchestrator-kit init --yes
 ```
 
 ```bash
@@ -204,7 +207,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **1085 unit tests across 150 suites passing in < 15.0s**.
+* **Verified Test Suite:** Tested with **1109 unit tests across 154 suites passing in < 15.0s**.
 
 <br/>
 

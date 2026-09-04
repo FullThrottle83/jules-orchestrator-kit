@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.65.0] - 2026-09-04
+*A gate that refuses its own installation is not strict, it is broken.*
+
+Four failures from a cold-start trial on four public repositories nobody here chose. Every one of them meets a user before they have done anything, and every one was invisible to a suite measured in a repository that was already set up correctly by someone who knew how the tool worked.
+
+### Fixed
+- **The Quickstart Rejected Its Own Output (`src/engine.mjs`, `bin/agentctl.mjs`)**: `init` writes `.agent/**` and then tells the user to commit it. Doing exactly that produced `Exit 3` with five scope violations on the first gate run, because the base branch does not have that commit yet and every scaffolded path matches `BUILTIN_PROTECT` or `BUILTIN_DENY`. The hint printed alongside it advised `--allow-protected` — so a newcomer's first lesson was how to switch the scope guard off. The gate now accepts that scaffold, and *says* it accepted it, under conditions narrow enough that nothing is weakened: the base commit must have no gate config at all — in which case `trustedScope` is already built-ins only and nothing in the added files is trusted — and every violating path must be scaffold the base does not have. A repository already under the gate keeps the full rule, verified: editing `.agent/config.yml` is still `Exit 3`, adding a rules file is still `Exit 3`, and one `.github/workflows/ci.yml` in the diff withdraws the exemption from all of it.
+- **A Phrase Outranked A Stated Count (`src/ops/test-collection.mjs`)**: `EXPLICIT_ZERO` was consulted before any positive count, so any output containing the words "no tests found" was read as empty — including a healthy TAP suite of 190 passing tests whose one skipped fixture printed `# SKIP no tests found`. The gate rejected it as an empty suite and named Jest as the runner, in a repository that does not use Jest. A phrase appears anywhere in a stream; a count is stated deliberately. The count is asked first now. Go's `^ok\s` witness was equally undiscriminating — `ok 1 - performance` is TAP and `ok  example.com/lib` is Go — so it now requires the package-shaped form.
+- **`init` Saved A Command It Had Just Watched Fail (`src/wizard-init.mjs`, `src/stack-detector.mjs`)**: the probe ran, printed `Oracle verification probe failed (Exit 2)`, and the wizard wrote the broken command into the config anyway — in a repository where `pytest` was on PATH and all 360 tests passed in 1.3s. Worse, on the `--yes` path the probe did not run at all, because it lived inside the interactive branch: the user who is not watching, and therefore cannot notice, was the only one who got no check. The probe now runs on both paths, and `oracleCandidates` offers the ecosystem's other conventions when the first one does not run. When nothing runs, it says so in terms the operator can act on instead of leaving a failed spinner to scroll past.
+- **The Remediation Hint Named A Lever Connected To Nothing (`src/engine.mjs`)**: the empty-suite failure tells the operator to "lower the floor with `verify.minTests`". `trustedVerify` copied thirteen fields and not that one, so the setting was silently dropped and the floor stayed at 1 no matter what the config said.
+
+### Changed
+- **The Quickstart Describes What `init` Does (`README.md`)**: it promised "zero configuration required" and then asked seven questions. `--yes` answers them, and is now what the quickstart shows.
+
+### Credit
+Found by a cold-start trial conducted as an unprimed stranger — install from the registry, `init` on four foreign stacks, then try to make the tool lie. Eleven of its twelve findings reproduced against the shipped code; two were worse than reported. The four here are the ones a user meets first. The rest — the silent-negative family, skip dialects, cross-file test moves, packaging — follow.
+
 ## [0.64.0] - 2026-09-04
 *A guard that cannot read your dialect must say so, not pass.*
 
