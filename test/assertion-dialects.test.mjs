@@ -10,6 +10,7 @@ import {
   UNREADABLE_DIALECTS,
   IMPORT_EXTRACTION_CASES,
   MULTILINE_CANARIES,
+  CROSS_FILE_CASES,
 } from "../src/guard-policy.mjs";
 
 /**
@@ -225,5 +226,73 @@ describe("absence of evidence is reported as absence", () => {
     const res = checkCollectionFloor({ ok: true, stdout: "# tests 191\n# pass 190" });
     assert.equal(res.ok, true);
     assert.ok(!res.unverified);
+  });
+});
+
+describe("a test can be silenced from inside its own body", () => {
+  // The decorator and annotation forms were covered — `@pytest.mark.skip`,
+  // `@Disabled`, `it.skip` — and the standard library's own method was not.
+  // Measured silent on six of seven in-body forms, including
+  // `self.skipTest()`, which is how unittest documents it.
+  const inBody = [
+    ["unittest", "tests/test_app.py", '        self.skipTest("disabled")'],
+    ["pytest", "tests/test_app.py", '    pytest.skip("not now")'],
+    ["raise SkipTest", "tests/test_app.py", '    raise unittest.SkipTest("nope")'],
+    ["mocha", "test/app.test.js", "  this.skip();"],
+    ["jest todo", "test/app.test.js", '  test.todo("adds two numbers");'],
+    ["go", "internal/calc/calc_test.go", "\tt.SkipNow()"],
+  ];
+
+  for (const [name, file, line] of inBody) {
+    it(`catches the ${name} form`, () => {
+      const types = (checkTestTampering(diffFor({ file, added: [line] })).violations || []).map((v) => v.type);
+      assert.ok(types.includes("TEST_SKIP_INJECTION"), `silent on ${JSON.stringify(line)}`);
+    });
+  }
+
+  const innocent = [
+    ["a variable named skipCount", "  const skipCount = 0;"],
+    ["an assertion about skipping", "  assert.equal(result.skipped, 0);"],
+    ["a helper called thisSkipper", "  const thisSkipper = build();"],
+  ];
+  for (const [name, line] of innocent) {
+    it(`is quiet about ${name}`, () => {
+      assert.deepEqual((checkTestTampering(diffFor({ file: "test/a.test.js", added: [line] })).violations || []).map((v) => v.type), []);
+    });
+  }
+});
+
+describe("moving a test is not deleting it", () => {
+  const build = (c) => {
+    const lines = [];
+    for (const f of c.files) {
+      lines.push(`--- a/${f.file}`, `+++ b/${f.file}`, "@@ -1,20 +1,20 @@", ` ${c.context}`);
+      for (const l of f.removed) lines.push(`-${l}`);
+      for (const l of f.added) lines.push(`+${l}`);
+      lines.push(` ${c.context}`);
+    }
+    return lines.join("\n");
+  };
+
+  for (const c of CROSS_FILE_CASES) {
+    it(`${c.id} — ${c.why}`, () => {
+      // Tracking was strictly per file, so ordinary refactoring produced
+      // CRITICAL tampering findings for assertions that still exist and
+      // still run.
+      const got = (checkTestTampering(build(c)).violations || []).map((v) => v.type).sort();
+      assert.deepEqual(got, [...c.expect].sort());
+    });
+  }
+
+  it("two removals cannot both claim one arrival", () => {
+    const diff = build({
+      context: "# ctx",
+      files: [
+        { file: "test/a_test.py", removed: ["    assert f(x) == 1", "    assert f(x) == 1"], added: [] },
+        { file: "test/b_test.py", removed: [], added: ["    assert f(x) == 1"] },
+      ],
+    });
+    const types = (checkTestTampering(diff).violations || []).map((v) => v.type);
+    assert.equal(types.filter((t) => t === "ASSERTION_REMOVAL").length, 1, "one arrival accounts for one departure, not two");
   });
 });

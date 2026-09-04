@@ -11,14 +11,20 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.66.0 (Current Stable) ──► v0.67.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.67.0 (Current Stable) ──► v0.68.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Can It Still Go Red?)      (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.66.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.67.0)
 
+
+### v0.67.0: A Move Is Not A Deletion
+- [x] **In-Body Skips (`src/security.mjs`)** — a test could be silenced with `self.skipTest()`, the form unittest's own documentation uses.
+- [x] **Cross-File Moves (`src/security.mjs`)** — refactoring produced CRITICAL findings for assertions that still run.
+- [x] **The Published Package Explains Itself (`scripts/run-tests.mjs`)** — `npm test` crashed with a raw ENOENT in an installed copy.
+- [x] **The Label Names What Failed (`bin/agentctl.mjs`)** — a deleted assertion was reported under a bare SECRETS heading.
 
 ### v0.66.0: Saying Nothing Is Not Saying Approved
 - [x] **An Assertion Is A Statement (`src/security.mjs`)** — a rewritten expected value whose keyword sat on a context line collected five green phases.

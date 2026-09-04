@@ -425,7 +425,17 @@ async function main() {
         console.log(`-----------------------------------------------------`);
         for (const p of res.phases) {
           const status = p.ok ? "✅ PASS" : "❌ FAIL";
-          console.log(`  Phase [${p.phase.toUpperCase()}] : ${status}`);
+          // Test tampering shares this phase, and its exit code, with the
+          // secret scanner. The codes are frozen, but reporting an assertion
+          // deletion under a bare "SECRETS" heading sent operators looking for
+          // a credential to rotate. Name what actually failed.
+          const tamperOnly =
+            p.phase === "secrets" &&
+            !p.ok &&
+            (p.findings || []).length > 0 &&
+            (p.findings || []).every((f) => f.type !== "SECRET_DETECTED" && !/SECRET/i.test(f.type || ""));
+          const label = tamperOnly ? "SECRETS (test integrity — no secret found)" : p.phase.toUpperCase();
+          console.log(`  Phase [${label}] : ${status}`);
           if (p.violations) {
             p.violations.forEach((v) => console.log(`     - Violation: ${v.file} (Rule: ${v.rule})`));
           }

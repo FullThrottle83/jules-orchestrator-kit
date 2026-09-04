@@ -235,6 +235,58 @@ export const TAMPER_CANARIES = [
     added: ["        $this->markTestSkipped(\"later\");"],
     expect: "TEST_SKIP_INJECTION",
   },
+  // Skipping from inside the test body, which is how every one of these
+  // ecosystems actually does it. The decorator and annotation forms were
+  // covered; the standard library's own method was not, so a test could be
+  // silenced with the most ordinary call in the language.
+  {
+    id: "skip-injection/unittest-body",
+    file: "tests/test_app.py",
+    context: "# app",
+    removed: [],
+    added: ['        self.skipTest("disabled")'],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/pytest-body",
+    file: "tests/test_app.py",
+    context: "# app",
+    removed: [],
+    added: ['    pytest.skip("not now")'],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/raise-skiptest",
+    file: "tests/test_app.py",
+    context: "# app",
+    removed: [],
+    added: ['    raise unittest.SkipTest("nope")'],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/mocha-body",
+    file: "test/app.test.js",
+    context: "// app",
+    removed: [],
+    added: ["  this.skip();"],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/jest-todo",
+    file: "test/app.test.js",
+    context: "// app",
+    removed: [],
+    added: ['  test.todo("adds two numbers");'],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/go-skipnow",
+    file: "internal/calc/calc_test.go",
+    context: "// calc",
+    removed: [],
+    added: ["\tt.SkipNow()"],
+    expect: "TEST_SKIP_INJECTION",
+  },
   {
     id: "skip-injection/xctest",
     file: "Tests/CalcTests/CalcTests.swift",
@@ -549,5 +601,59 @@ export const MULTILINE_CANARIES = [
     removed: ["    [{ type: \"a\" }, { type: \"b\" }, { type: \"c\" }]", "  );"],
     added: ["    [{ type: \"a\" }]", "  );"],
     expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+];
+
+/**
+ * Diffs that touch two files at once, where the verdict depends on both.
+ *
+ * Assertion tracking is per file, so moving a test between files — ordinary
+ * refactoring, done constantly — read as deleting every assertion in it and
+ * was reported as CRITICAL tampering. The assertion still exists and still
+ * runs. What the removal check is for is verification that *disappeared*.
+ *
+ * `expect: []` means the whole diff must produce no finding.
+ */
+export const CROSS_FILE_CASES = [
+  {
+    id: "move-a-test-between-files",
+    context: "# ctx",
+    files: [
+      {
+        file: "test/test_app.py",
+        removed: ["    def test_setattr(self):", "        self.assertEqual(5, app.test)", "        self.assertRaises(AttributeError, setattr, app, 't', 6)"],
+        added: [],
+      },
+      {
+        file: "test/test_html.py",
+        removed: [],
+        added: ["    def test_setattr_moved(self):", "        self.assertEqual(5, app.test)", "        self.assertRaises(AttributeError, setattr, app, 't', 6)"],
+      },
+    ],
+    expect: [],
+    why: "a move is not a removal",
+  },
+  {
+    id: "delete-a-test-outright",
+    context: "# ctx",
+    files: [
+      {
+        file: "test/test_app.py",
+        removed: ["    def test_setattr(self):", "        self.assertEqual(5, app.test)", "        self.assertRaises(AttributeError, setattr, app, 't', 6)"],
+        added: [],
+      },
+    ],
+    expect: ["ASSERTION_REMOVAL", "ASSERTION_REMOVAL"],
+    why: "nothing caught it on the way, so verification really did disappear",
+  },
+  {
+    id: "change-it-on-the-way-across",
+    context: "# ctx",
+    files: [
+      { file: "test/test_app.py", removed: ["        self.assertEqual(5, app.test)"], added: [] },
+      { file: "test/test_html.py", removed: [], added: ["        self.assertEqual(99, app.test)"] },
+    ],
+    expect: ["ASSERTION_REMOVAL"],
+    why: "what arrived is a different claim; only an exact arrival is a move",
   },
 ];

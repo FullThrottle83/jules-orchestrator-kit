@@ -1,11 +1,28 @@
 #!/usr/bin/env node
-import { readdirSync } from "node:fs";
+import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { cpus } from "node:os";
 
 const root = process.cwd();
 const testDir = join(root, "test");
+
+// The published package ships `scripts/` and not `test/`, so running
+// `npm test` inside an installed copy crashed with a raw
+// `ENOENT: no such file or directory, scandir '.../test'`. The suite is not
+// missing; it was never part of the tarball. Say that, rather than leaving
+// someone to work it out from a stack trace.
+if (!existsSync(testDir)) {
+  console.error("No test/ directory here.");
+  console.error("");
+  console.error("If this is an installed copy of jules-orchestrator-kit, that is expected:");
+  console.error("the test suite is not part of the published package. Clone the repository");
+  console.error("to run it:  git clone https://github.com/FullThrottle83/jules-orchestrator-kit");
+  console.error("");
+  console.error("To check an installed copy instead, run:  npm run guard-reach");
+  process.exit(1);
+}
+
 const testFiles = readdirSync(testDir)
   .filter((f) => f.endsWith(".test.mjs"))
   .sort()

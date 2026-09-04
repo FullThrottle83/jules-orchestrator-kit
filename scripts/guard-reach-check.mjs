@@ -56,6 +56,7 @@ import {
   SCOPE_CANARIES,
   INNOCENT_EDITS,
   UNREADABLE_DIALECTS,
+  CROSS_FILE_CASES,
 } from "../src/guard-policy.mjs";
 
 /**
@@ -182,6 +183,29 @@ const canaryResults = new Map();
     quiet.length
       ? `${quiet.join("; ")} — coverage ending is fine, ending silently is not`
       : `${UNREADABLE_DIALECTS.length} unsupported dialects reported, not passed`
+  );
+}
+
+{
+  const wrong = [];
+  for (const c of CROSS_FILE_CASES) {
+    const lines = [];
+    for (const f of c.files) {
+      lines.push(`--- a/${f.file}`, `+++ b/${f.file}`, "@@ -1,20 +1,20 @@", ` ${c.context}`);
+      for (const l of f.removed) lines.push(`-${l}`);
+      for (const l of f.added) lines.push(`+${l}`);
+      lines.push(` ${c.context}`);
+    }
+    const got = (checkTestTampering(lines.join("\n")).violations || []).map((v) => v.type).sort();
+    const want = [...c.expect].sort();
+    if (JSON.stringify(got) !== JSON.stringify(want)) {
+      wrong.push(`${c.id}: got ${JSON.stringify(got)}, policy says ${JSON.stringify(want)} (${c.why})`);
+    }
+  }
+  add(
+    "a move across files is judged as a move",
+    wrong.length === 0,
+    wrong.length ? wrong.join("; ") : `${CROSS_FILE_CASES.length} two-file diffs judged as declared`
   );
 }
 
