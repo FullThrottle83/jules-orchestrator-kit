@@ -11,14 +11,22 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.68.0 (Current Stable) ──► v0.69.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Can It Still Go Red?)      (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.69.0 (Current Stable) ──► v0.70.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Read, Not Just Counted)    (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.68.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.69.0)
 
+
+### v0.69.0: Read, Not Just Counted
+- [x] **Expected-Value-First Assertions (`src/security.mjs`)** — JUnit and PHPUnit document the order the guard read as prose.
+- [x] **A Regex Is An Expected Value (`src/security.mjs`)** — a rewritten pattern was neither a change nor a loss.
+- [x] **Renaming A Test Is Not Tampering (`src/security.mjs`)** — on the one-line form, the name blanked into the expectation.
+- [x] **An Environment Prefix Runs (`src/git.mjs`)** — `PYTHONPATH=src pytest` never started, and was reported as a failure.
+- [x] **`node -e ""` Is A Placeholder (`src/stack-detector.mjs`)** — the same no-op, spelled to look like work.
+- [x] **`init` Rejects An Oracle That Proves Nothing (`src/wizard-init.mjs`)** — silence at setup is silence at every gate after it.
 
 ### v0.68.0: Not An Approval Either
 - [x] **An Unreadable Dialect Blocks (`src/security.mjs`)** — the guard said it had not checked, and approved anyway.

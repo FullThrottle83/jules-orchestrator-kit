@@ -68,6 +68,62 @@ export const TEST_PATH_CASES = [
  * the guard the layout the implementation was written from.
  */
 export const TAMPER_CANARIES = [
+  // Argument order is not a detail. JUnit and PHPUnit document
+  // `assertEquals(expected, actual)`, and Python's containment helpers take
+  // the expected member first — all of which the guard used to read as "a
+  // human message was reworded" and dismiss. Each of these was a silent PASS.
+  {
+    id: "expectation/junit-expected-first",
+    file: "src/test/java/CalcTest.java",
+    removed: ['        assertEquals("Hello World", out);'],
+    added: ['        assertEquals("Hello Tampered", out);'],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "expectation/phpunit-expected-first",
+    file: "tests/CalcTest.php",
+    removed: ['        $this->assertSame("Hello World", $out);'],
+    added: ['        $this->assertSame("Hello Tampered", $out);'],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "expectation/unittest-assert-in",
+    file: "tests/test_cli.py",
+    removed: ['        self.assertIn("Hello World", result.output)'],
+    added: ['        self.assertIn("Hello Tampered", result.output)'],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "expectation/unittest-assert-not-in",
+    file: "tests/test_cli.py",
+    removed: ['        self.assertNotIn("error", result.output)'],
+    added: ['        self.assertNotIn("zzz", result.output)'],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  // A regex literal is an expected value. It never blanked, so the rewritten
+  // pattern never met its original in a shape bucket and the swap was
+  // reported as neither a change nor a loss.
+  {
+    id: "expectation/jest-to-match-regex",
+    file: "test/cli.test.js",
+    removed: ["  expect(out).toMatch(/Hello World/);"],
+    added: ["  expect(out).toMatch(/Hello Tampered/);"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "expectation/jest-to-throw-regex",
+    file: "test/cli.test.js",
+    removed: ["  expect(fn).toThrow(/permission denied/);"],
+    added: ["  expect(fn).toThrow(/x/);"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "expectation/rspec-match-regex",
+    file: "spec/cli_spec.rb",
+    removed: ["    expect(out).to match(/Hello World/)"],
+    added: ["    expect(out).to match(/Hello Tampered/)"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
   {
     id: "skip-injection/node",
     file: "test/calc.test.js",
@@ -398,6 +454,41 @@ export const SCOPE_CANARIES = [
  * from never showed it.
  */
 export const INNOCENT_EDITS = [
+  // Renaming a test is one of the most ordinary edits there is. On the
+  // one-line form the name blanked to the same shape as its replacement, the
+  // two paired, and the pair was reported as a rewritten expectation.
+  {
+    id: "rename-test-oneline/node",
+    file: "test/calc.test.js",
+    context: "// arithmetic",
+    removed: ['test("adds", () => { assert.strictEqual(add(2, 3), 5); });'],
+    added: ['test("adds positives", () => { assert.strictEqual(add(2, 3), 5); });'],
+    why: "the test name is prose about the test, not a value it asserts",
+  },
+  {
+    id: "rename-test-oneline/jest",
+    file: "test/calc.spec.js",
+    context: "// arithmetic",
+    removed: ['it("adds", () => { expect(add(2, 3)).toBe(5); });'],
+    added: ['it("adds two positives", () => { expect(add(2, 3)).toBe(5); });'],
+    why: "same rename, the dialect a new user is most likely to be in",
+  },
+  {
+    id: "rename-test-oneline/tap",
+    file: "test/calc.test.js",
+    context: "// arithmetic",
+    removed: ['t.test("adds", (ct) => { ct.equal(add(2, 3), 5); ct.end(); });'],
+    added: ['t.test("adds positives", (ct) => { ct.equal(add(2, 3), 5); ct.end(); });'],
+    why: "the receiver is a sub-test callback argument, not an assertion subject",
+  },
+  {
+    id: "reword-junit-message-first",
+    file: "src/test/java/CalcTest.java",
+    context: "// arithmetic",
+    removed: ['        assertEquals("why", expected, out);'],
+    added: ['        assertEquals("why this matters", expected, out);'],
+    why: "JUnit 4 puts the message first — rewording it changes no expectation",
+  },
   {
     id: "add-assertion-beside-comment/node",
     file: "test/calc.test.js",

@@ -50,6 +50,27 @@ const COUNT_PATTERNS = [
   { name: "dotnet", re: /\bTotal(?:\s+tests)?:\s*(\d+)/i },
   // swift test / XCTest — "Executed 12 tests"
   { name: "xctest", re: /\bExecuted\s+(\d+)\s+tests?/i },
+  // Every runner below states a count the gate used to read as silence, and
+  // silence is what makes `pnpm -r test` on a workspace with no package-level
+  // test script indistinguishable from a suite that ran. The floor stays
+  // one-sided — an unrecognised runner still passes — so widening the list
+  // only ever converts an "I could not tell" into an answer.
+  // Python unittest — "Ran 12 tests in 0.003s"
+  { name: "unittest", re: /^Ran\s+(\d+)\s+tests?\s+in\b/m },
+  // GoogleTest — "[==========] 12 tests from 3 test suites ran."
+  { name: "gtest", re: /\[=+\]\s+(\d+)\s+tests?\s+from\b/ },
+  // Catch2 — "test cases: 12 | 12 passed"
+  { name: "catch2", re: /\btest cases:\s*(\d+)/i },
+  // deno test — "ok | 12 passed | 0 failed"
+  { name: "deno", re: /\|\s*(\d+)\s+passed\s*\|/ },
+  // bun test — "12 pass"
+  { name: "bun", re: /^\s*(\d+)\s+pass\s*$/m },
+  // ava — "12 tests passed"
+  { name: "ava", re: /^\s*(\d+)\s+tests?\s+passed\s*$/m },
+  // A bare TAP plan, which is how tape, bats and the TAP producers that
+  // print no summary state their count. Last of the count patterns: node:test
+  // emits TAP too, and its own line above is the more specific reading.
+  { name: "tap", re: /^1\.\.(\d+)\s*$/m },
 ];
 
 /** Per-test lines, which `go test` only prints under -v. */

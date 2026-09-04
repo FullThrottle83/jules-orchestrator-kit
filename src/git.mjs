@@ -15,6 +15,10 @@ export class GateError extends Error {
   }
 }
 
+// `NAME=value` at the head of a command line: a POSIX environment prefix,
+// not the name of a program.
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
 const DEFAULT_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024; // 10 MB
 
@@ -139,6 +143,8 @@ export function runCmd(command, opts = {}) {
   let args = [];
   let useShell = false;
   let shellCmd = "";
+  /** @type {Record<string,string>|null} */
+  let envOverlay = null;
   // True when `args` came from splitting a whitespace-separated string, which
   // means no element can itself contain whitespace. See the Windows note below.
   let tokenized = false;
@@ -153,6 +159,24 @@ export function runCmd(command, opts = {}) {
       shellCmd = trimmed;
     } else {
       const tokens = trimmed.split(/\s+/).filter(Boolean);
+
+      // A POSIX command may be prefixed with environment assignments, and
+      // half the Python world writes its test command exactly that way:
+      // `PYTHONPATH=src python3 -m pytest`. execFileSync took the first token
+      // as the program and failed with `spawnSync PYTHONPATH=src ENOENT` —
+      // which the gate then reported as a failed verification, so the user
+      // was told their tests broke when the command had never started.
+      //
+      // Peeling the assignments into the child's environment behaves the same
+      // on every platform. Handing the string to a shell would not: cmd.exe
+      // has no such syntax, so the Windows matrix would keep failing.
+      while (tokens.length > 1 && ENV_ASSIGNMENT.test(tokens[0])) {
+        const token = tokens.shift();
+        const eq = token.indexOf("=");
+        if (!envOverlay) envOverlay = {};
+        envOverlay[token.slice(0, eq)] = token.slice(eq + 1);
+      }
+
       binary = tokens[0] || "";
       args = tokens.slice(1);
       tokenized = true;
@@ -177,10 +201,12 @@ export function runCmd(command, opts = {}) {
   // wrapped in cmd.exe with every element quoted per the C-runtime + cmd.exe
   // rules, which preserves argv exactly while still letting the shell resolve
   // the `.cmd` shim (P-07).
+  const childEnv = envOverlay ? { ...(opts.env || process.env), ...envOverlay } : opts.env || process.env;
+
   const winShim = tokenized && process.platform === "win32";
   const winSpawn =
     !useShell && !winShim && process.platform === "win32"
-      ? resolveWindowsSpawn(binary, args, opts.env || process.env)
+      ? resolveWindowsSpawn(binary, args, childEnv)
       : null;
 
   if (!binary && !useShell) {
@@ -194,7 +220,7 @@ export function runCmd(command, opts = {}) {
           cwd,
           encoding: "utf-8",
           stdio: ["ignore", "pipe", "pipe"],
-          env: opts.env || process.env,
+          env: childEnv,
           timeout,
           maxBuffer,
         })
@@ -204,7 +230,7 @@ export function runCmd(command, opts = {}) {
           shell: winShim,
           windowsVerbatimArguments: Boolean(winSpawn && winSpawn.verbatim),
           stdio: ["ignore", "pipe", "pipe"],
-          env: opts.env || process.env,
+          env: childEnv,
           timeout,
           maxBuffer,
         });
@@ -218,8 +244,16 @@ export function runCmd(command, opts = {}) {
     let stdout = (err.stdout || "").toString().trim();
     let stderr = (err.stderr || err.message || "").toString().trim();
 
-    if (isTimeout && !stderr.includes("ETIMEDOUT")) {
-      stderr = `Command execution timed out after ${timeout}ms (ETIMEDOUT)${stderr ? "\n" + stderr : ""}`;
+    if (isTimeout) {
+      // Node's own message for this is `spawnSync sh ETIMEDOUT`, which already
+      // contains the token the old guard tested for — so the explanation was
+      // skipped exactly when it was needed, and the user was left with five
+      // words that name neither the limit nor the way to raise it.
+      stderr =
+        `Command execution timed out after ${timeout}ms (ETIMEDOUT). ` +
+        `The command was killed, not failed: raise verify.timeout_ms in ` +
+        `.agent/config.yml if this suite legitimately takes longer.` +
+        (stderr ? "\n" + stderr : "");
     }
     if (isNobufs && !stderr.includes("ENOBUFS")) {
       stderr = `Command output buffer exceeded limit of ${maxBuffer} bytes (ENOBUFS)${stderr ? "\n" + stderr : ""}`;
