@@ -561,12 +561,28 @@ export function assertTestIntegrity(config = {}, root = process.cwd()) {
   const res = checkTestTampering(diffStr, config);
   const diagnostics = (res.violations || []).map((v) => v.reason);
 
+  // A clean result from a guard that could not read the dialect is not a
+  // clean result, and it must not be reported as one. This does not fail the
+  // check — an unlisted assertion library is the user's normal, not their
+  // fault — but they get to know the guard is not covering them.
+  for (const u of res.unreadable || []) {
+    diagnostics.push(
+      `Test Tamper Guard: ${u.count} assertion-shaped line(s) in ${u.file} matched no known dialect, ` +
+        `so this file was not checked for tampering (e.g. ${JSON.stringify(u.samples[0])}). ` +
+        `The guard reports what it could not read rather than passing silently.`
+    );
+  }
+
   return {
     ok: res.ok,
     violations: res.violations || [],
     diagnostics,
     metrics: {
       violationCount: res.violations?.length || 0,
+      assertionsSeen: res.assertionsSeen ?? 0,
+      filesSeen: res.filesSeen ?? 0,
+      unreadableFiles: (res.unreadable || []).length,
+      status: res.status,
     },
   };
 }
