@@ -11,13 +11,22 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.61.0 (Current Stable) ──► v0.62.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Green Against Nothing)     (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.62.0 (Current Stable) ──► v0.63.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (No Denominator, No Claim)  (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.61.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.62.0)
+
+
+### v0.62.0: No Denominator, No Claim
+- [x] **A File Is Not A Claim (`src/stack-detector.mjs`)** — `make test` requires the Makefile to declare the target; `app.json` requires a package.json beside it; a `test` script that is `echo … && exit 0` is a placeholder, not an oracle.
+- [x] **The Generated Fallback Oracle Can Fail (`src/stack-detector.mjs`)** — It checks that every source file parses instead of asserting that the working directory exists, and refuses to pass with nothing to check.
+- [x] **Lockfiles And Toolchain Pins Are Protected (`src/config.mjs`)** — `package.json` was protected and `package-lock.json` was not. Plus `.envrc`, `.git-credentials`, cloud credential trees and CodeBuild.
+- [x] **The Sixth Spelling Of "Where Are The Tests" (`src/evidence.mjs`)** — Go co-located tests and every monorepo produced `fileCount: 0`, which switched `strictTestLock` off in silence.
+- [x] **Seven More Runners In The Collection Floor** — Maven, Gradle, PHPUnit, RSpec, dotnet, XCTest, ctest, ExUnit.
+- [x] **100% Of Nothing Is Not 100% (`src/coverage.mjs`)** — Diff coverage reports `scored: false` where V8 measured nothing, instead of the best possible number.
 
 
 ### v0.61.0: Green Against Nothing

@@ -300,12 +300,27 @@ export function calculateDiffCoverage(coverageByFile, diffStr = "", options = {}
     }
   }
 
-  const score = totalLines > 0 ? Math.round((coveredLines / totalLines) * 10000) / 100 : 100;
-  const ok = score >= minCoverage;
+  // 100% of nothing is not 100%.
+  //
+  // The denominator counts only the added lines V8 actually mapped, and V8
+  // maps nothing outside Node. So a Python diff adding three executable lines
+  // measured zero of them and was reported as `score: 100` — the best possible
+  // number, produced by a measurement that never happened, on 20-odd of the 25
+  // stacks this kit claims to support. `mutation.mjs` had the identical bug and
+  // was fixed in v0.57.0; this is the same shape one module over.
+  //
+  // `ok` stays true because nothing failed to be covered, and a gate that
+  // blocks every non-Node diff gets switched off. What changes is the claim:
+  // `scored: false` and a reason, instead of a number nobody measured.
+  const scored = totalLines > 0;
+  const score = scored ? Math.round((coveredLines / totalLines) * 10000) / 100 : null;
+  const ok = scored ? score >= minCoverage : true;
 
   return {
     ok,
     score,
+    scored,
+    ...(scored ? {} : { reason: "No added executable lines were measurable — V8 coverage only observes code Node itself ran, so nothing was scored." }),
     minCoverage,
     totalLines,
     coveredLines,

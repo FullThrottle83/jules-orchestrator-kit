@@ -265,9 +265,13 @@ export function scorePromptFalsifiability(promptText, options = {}) {
   let isTrivial = false;
 
   if (!verifyCmd) {
-    const detectedOracles = detectStackOracles(rootDir);
-    if (detectedOracles.length > 0 && detectedOracles[0].testCmd) {
-      verifyCmd = detectedOracles[0].testCmd;
+    // `detectStackOracles` returns an object, not an array: `.length` was
+    // undefined, so this branch never ran and every task without an explicit
+    // --verify-cmd was scored MISSING_ORACLE even in a repository with a
+    // working suite.
+    const detected = detectStackOracles(rootDir);
+    if (detected?.candidates?.testCmd) {
+      verifyCmd = detected.candidates.testCmd;
       autoDetected = true;
     }
   }
