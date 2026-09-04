@@ -3,14 +3,44 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { gate, dispatch, run, synthesizePrDescription } from "../src/engine.mjs";
 import { checkDailyBudget } from "../src/state.mjs";
 
 describe("src/engine.mjs", () => {
   it("gate passes clean repository verification", async () => {
-    const res = await gate({ root: process.cwd(), base: "main" });
-    assert.equal(typeof res.ok, "boolean");
-    assert.ok(Array.isArray(res.phases));
+    // Against a fixture, not against this repository.
+    //
+    // This ran `gate({ root: process.cwd() })`, so the kit gated itself and
+    // the verify stage ran `npm test` — the whole suite, from inside the
+    // suite. It never finished; the stage timeout was its only stopping
+    // condition, so the test cost exactly one timeout every run and asserted
+    // only that `ok` was a boolean, which it would have been either way.
+    // Raising the default from 60s to 300s turned that into a CI failure,
+    // which is how a test that verified nothing finally got noticed.
+    const repo = mkdtempSync(join(tmpdir(), "jok-gate-clean-"));
+    try {
+      const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+      git("init", "-b", "main");
+      git("config", "user.email", "test@example.com");
+      git("config", "user.name", "EngineTest");
+      writeFileSync(join(repo, "index.js"), "module.exports = (a, b) => a + b;\n");
+      writeFileSync(
+        join(repo, "package.json"),
+        JSON.stringify({ name: "gate-clean", scripts: { test: "node --check index.js" } }, null, 2)
+      );
+      mkdirSync(join(repo, ".agent"), { recursive: true });
+      writeFileSync(join(repo, ".agent", "jules.yml"), 'version: 2\ntest_cmd: "node --check index.js"\nforbidden_paths: []\n');
+      git("add", ".");
+      git("commit", "-m", "initial commit");
+
+      const res = await gate({ root: repo, base: "main" });
+      assert.equal(res.ok, true, "a clean repository with a working oracle is approved");
+      assert.ok(Array.isArray(res.phases));
+      assert.ok(res.phases.some((p) => p.phase === "verify"), "the verify phase ran");
+    } finally {
+      try { rmSync(repo, { recursive: true, force: true }); } catch (_) {}
+    }
   });
 
   it("dispatch generates dry-run session in dry-run mode", async () => {

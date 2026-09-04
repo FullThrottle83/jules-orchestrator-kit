@@ -139,8 +139,28 @@ allow_paths:
     assert.equal(worktrees.ok, true);
     assert.ok(worktrees.worktreeDir);
 
-    const gates = await auditGates({ root: process.cwd() });
-    assert.ok(typeof gates.ok === "boolean");
+    // Against a fixture, not against this repository. `auditGates` runs the
+    // gate, and this repository's verify command is `npm test` — so this line
+    // ran the whole suite from inside the suite and was stopped only by the
+    // stage timeout, costing exactly one timeout per run to assert that a
+    // boolean is a boolean.
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "jok-audit-gates-"));
+    try {
+      const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+      git("init", "-b", "main");
+      git("config", "user.email", "test@example.com");
+      git("config", "user.name", "KitTest");
+      fs.writeFileSync(path.join(repo, "index.js"), "module.exports = 1;\n");
+      fs.mkdirSync(path.join(repo, ".agent"), { recursive: true });
+      fs.writeFileSync(path.join(repo, ".agent", "jules.yml"), 'version: 2\ntest_cmd: "node --check index.js"\nforbidden_paths: []\n');
+      git("add", ".");
+      git("commit", "-m", "initial commit");
+
+      const gates = await auditGates({ root: repo });
+      assert.ok(typeof gates.ok === "boolean");
+    } finally {
+      try { fs.rmSync(repo, { recursive: true, force: true }); } catch (_) {}
+    }
   });
 });
 
