@@ -894,18 +894,48 @@ export async function repair(failure, opts = {}) {
       break;
     }
 
-    attempts.push({ n, session, ok: true });
-    appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: true });
-
     // Poll async provider for terminal session state before executing re-verification gates
+    let pollVerdict = null;
     if (provider && session) {
-      await pollSessionState(provider, session, {
+      pollVerdict = await pollSessionState(provider, session, {
         root,
         dryRun: opts.dryRun,
         pollIntervalMs: opts.pollIntervalMs,
         maxPollAttempts: opts.maxPollAttempts,
       });
+
+      // The gate below is the authority on whether the change works, so it runs
+      // either way. But a non-terminal session means it is about to judge a
+      // tree the agent may not have finished writing, and saying nothing here
+      // turns that into a confusing cascade of repair attempts against a
+      // half-applied patch.
+      if (pollVerdict && pollVerdict.terminal !== true) {
+        const why = pollVerdict.blockedOn
+          ? `waiting on an actor (${pollVerdict.blockedOn})`
+          : pollVerdict.unreachable
+            ? "the provider stopped answering"
+            : `still ${pollVerdict.status} when the poll budget ran out`;
+        console.warn(
+          `[SESSION_NOT_TERMINAL] Session ${session.id} is ${why}. Re-verification is running against a tree the agent may not have finished writing.`
+        );
+        appendTelemetry(root, "session_not_terminal", {
+          attempt: n,
+          sessionId: session.id,
+          status: pollVerdict.status,
+          blockedOn: pollVerdict.blockedOn || null,
+          timedOut: Boolean(pollVerdict.timedOut),
+          unreachable: Boolean(pollVerdict.unreachable),
+        });
+      }
     }
+
+    attempts.push({
+      n,
+      session,
+      ok: true,
+      poll: pollVerdict ? { status: pollVerdict.status, terminal: pollVerdict.terminal } : null,
+    });
+    appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: true });
 
     // Re-verify after repair attempt
     const gateRes = await gate({ root, config, fix: false, progressBus, progressToken });
@@ -1000,10 +1030,38 @@ export async function checkTaskPremise(task = {}, opts = {}) {
 }
 
 /**
- * Polls the provider until the session terminates in COMPLETED, FAILED, or reaches timeout.
+ * Session states the API documents as final. The full `SessionState` enum is
+ * transcribed in `docs/jules-quality-plan.md`.
+ */
+export const TERMINAL_SESSION_STATES = new Set(["COMPLETED", "FAILED"]);
+
+/**
+ * Session states that cannot advance without an actor — a human approving a
+ * plan, a human answering a question, or whoever paused it resuming it.
+ *
+ * Polling these is not waiting, it is spending the budget: the state cannot
+ * change on its own no matter how long the loop runs.
+ */
+export const BLOCKING_SESSION_STATES = new Set(["AWAITING_PLAN_APPROVAL", "AWAITING_USER_FEEDBACK", "PAUSED"]);
+
+/**
+ * Polls the provider until the session reaches a terminal state, blocks on an
+ * actor, or the poll budget runs out.
+ *
+ * The verdict is explicit about which of those three happened, because the
+ * caller runs the verification gate on the assumption that the agent has
+ * finished writing. A previous version returned `COMPLETED` for every
+ * non-terminal exit — a session sitting in `AWAITING_USER_FEEDBACK` and one
+ * still `IN_PROGRESS` when the budget expired were both reported as success,
+ * which is the same shape this project exists to refuse.
+ *
+ * @returns {Promise<object>} Always carries `status` and `terminal`. Non-terminal
+ *   exits additionally carry one of `blockedOn`, `timedOut` or `unreachable`.
+ *   `status` is never synthesised: it is the last state the provider reported,
+ *   or `UNKNOWN` when it never answered.
  */
 export async function pollSessionState(provider, session, opts = {}) {
-  if (!session || !session.id) return { status: "COMPLETED" };
+  if (!session || !session.id) return { status: "UNKNOWN", terminal: false, unpolled: true };
   const initialStatus = String(session.status || session.state || "").toUpperCase();
   if (
     initialStatus === "COMPLETED" ||
@@ -1013,13 +1071,20 @@ export async function pollSessionState(provider, session, opts = {}) {
     session.id.startsWith("mock-") ||
     session.id.startsWith("dry-run-")
   ) {
-    return { status: initialStatus || "COMPLETED" };
+    // A dry run has no session to watch, so it reports the outcome a real
+    // dispatch would have had to earn. Flagged as simulated so a caller can
+    // tell the two apart; a terminal state already reported by the provider is
+    // a fact, not a simulation, and is returned as itself.
+    const status = initialStatus || "COMPLETED";
+    return { status, terminal: TERMINAL_SESSION_STATES.has(status), simulated: true, polls: 0 };
   }
 
   const maxAttempts = opts.maxPollAttempts || 30;
   const pollIntervalMs = opts.pollIntervalMs || 1000;
   const timeoutMs = opts.pollTimeoutMs || 300000;
   const startTime = Date.now();
+  let lastStatus = "";
+  let polls = 0;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (Date.now() - startTime > timeoutMs) break;
@@ -1035,30 +1100,59 @@ export async function pollSessionState(provider, session, opts = {}) {
       } catch (_) {}
     }
 
-    if (currentSession) {
-      const status = String(currentSession.status || currentSession.state || "").toUpperCase();
-      if (
-        (status === "AWAITING_PLAN_APPROVAL" || status === "PENDING_APPROVAL") &&
-        (opts.autoApprovePlan || opts.autoApprove || session.autoApprovePlan)
-      ) {
-        if (provider && typeof provider.approvePlan === "function") {
-          try {
-            await provider.approvePlan(session.id, opts);
-          } catch (_) {}
+    if (!currentSession) {
+      return {
+        ...session,
+        status: lastStatus || "UNKNOWN",
+        terminal: false,
+        unreachable: true,
+        polls,
+      };
+    }
+
+    polls += 1;
+    const status = String(currentSession.status || currentSession.state || "").toUpperCase();
+    if (status) lastStatus = status;
+
+    if (TERMINAL_SESSION_STATES.has(status)) {
+      return { ...currentSession, status, terminal: true, polls };
+    }
+
+    if (BLOCKING_SESSION_STATES.has(status)) {
+      // A pending plan approval is the one blocking state this loop is allowed
+      // to resolve itself, and only when the caller said so.
+      const isPlanApproval = status === "AWAITING_PLAN_APPROVAL";
+      const wantsAutoApprove = Boolean(opts.autoApprovePlan || opts.autoApprove || session.autoApprovePlan);
+      if (isPlanApproval && wantsAutoApprove && provider && typeof provider.approvePlan === "function") {
+        try {
+          await provider.approvePlan(session.id, opts);
+          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          continue;
+        } catch (err) {
+          return {
+            ...currentSession,
+            status,
+            terminal: false,
+            blockedOn: status,
+            approvePlanError: err && err.message ? err.message : String(err),
+            polls,
+          };
         }
       }
 
-      if (status === "COMPLETED" || status === "FAILED") {
-        return { ...currentSession, status };
-      }
-    } else {
-      break;
+      return { ...currentSession, status, terminal: false, blockedOn: status, polls };
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
-  return { ...session, status: String(session.status || "COMPLETED").toUpperCase() };
+  return {
+    ...session,
+    status: lastStatus || "UNKNOWN",
+    terminal: false,
+    timedOut: true,
+    polls,
+  };
 }
 
 function buildRepairPrompt(failure, attempt, _config, extraPromptDirective = null) {
