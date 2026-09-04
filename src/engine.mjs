@@ -393,7 +393,11 @@ export async function gate(opts = {}) {
   }
 
   let flakyVerdictResult = null;
-  const verifyTimeout = trustedVerify.timeoutMs || 60000;
+  // Five minutes. A minute was too short for an ordinary suite — a mid-sized
+  // Node repository takes longer than that on cold caches — and the timeout
+  // surfaced as a plain non-zero verification, so the gate told the user their
+  // tests failed when it had killed them. Raise it with verify.timeout_ms.
+  const verifyTimeout = trustedVerify.timeoutMs || 300_000;
 
   // Monorepo scoping: run the suites the change can actually break.
   //

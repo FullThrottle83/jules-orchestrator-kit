@@ -6,6 +6,7 @@ import { detectDefaultBranch } from "./git.mjs";
 import { resolveWorkspaceBoundary, oracleCandidates } from "./stack-detector.mjs";
 import { PROFILE_NAMES, PROFILE_DESCRIPTIONS } from "./profiles.mjs";
 import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
+import { parseCollectedTests } from "./ops/test-collection.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { KIT_VERSION } from "./version.mjs";
 
@@ -215,6 +216,9 @@ verify:
   # to their sub-projects and runs only those suites (monorepos)
   scope: ${verifyScope}
   test: "${verify.test}"
+  # How long a verification stage may run before the gate kills it (default
+  # 300000). Raise it for a suite that legitimately takes longer.
+  timeout_ms: 300000
   build: "${verify.build}"
   lint: "${verify.lint}"
   typecheck: "${verify.typecheck}"
@@ -314,25 +318,77 @@ export function loadPresets(root = process.cwd()) {
  *
  * @returns {Promise<string>} the command to save
  */
+/**
+ * How much a probe actually proved.
+ *
+ * Exit 0 is the weakest of the three answers. `pnpm -r test` on a workspace
+ * whose packages declare no test script exits 0, prints nothing, and runs
+ * nothing — and it was accepted here as a verified oracle, which left the
+ * repository configured to approve every future change against silence.
+ *
+ * Choosing a command is the right moment to be strict about this: at init the
+ * cost of rejecting a candidate is trying the next one, where at gate time it
+ * would be a hard red on a repository that is fine.
+ */
+function probeVerdict(probeRes) {
+  if (!probeRes.ok) return "failed";
+  const { count } = parseCollectedTests(probeRes.stdout, probeRes.stderr);
+  if (count === null) return "silent";
+  return count > 0 ? "ran" : "empty";
+}
+
 async function resolveRunnableOracle(root, testCmd, options = {}) {
   if (!testCmd) return testCmd;
   const probeSp = spinner(`Probing oracle: ${testCmd}`, options);
   const probeRes = await runVerificationProbe(testCmd, root);
-  if (probeRes.ok) {
+  const verdict = probeVerdict(probeRes);
+  if (verdict === "ran") {
     probeSp.stop(`Oracle verified successfully (${probeRes.durationMs}ms)`);
     return testCmd;
   }
-  probeSp.fail(`Oracle verification probe failed (Exit ${probeRes.code})`);
+  if (verdict === "failed") {
+    probeSp.fail(`Oracle verification probe failed (Exit ${probeRes.code})`);
+  } else {
+    probeSp.fail(
+      verdict === "empty"
+        ? `"${testCmd}" exited 0 but ran no tests — looking for a command that does`
+        : `"${testCmd}" exited 0 without stating how many tests it ran — looking for a better one`
+    );
+  }
 
   const alternates = oracleCandidates(root, testCmd).filter((c) => c !== testCmd).slice(0, 3);
+  // Two passes: prefer a command that proves it ran something, and only then
+  // settle for one that merely exits 0. Falling back on the first exit-0
+  // candidate would reintroduce exactly the silence this rejects.
+  const settled = [];
   for (const cand of alternates) {
     const altSp = spinner(`Trying ${cand}`, options);
     const altRes = await runVerificationProbe(cand, root);
-    if (altRes.ok) {
+    const altVerdict = probeVerdict(altRes);
+    if (altVerdict === "ran") {
       altSp.stop(`${cand} runs here (${altRes.durationMs}ms) — using it instead`);
       return cand;
     }
-    altSp.fail(`${cand} also failed (Exit ${altRes.code})`);
+    if (altVerdict === "silent") {
+      altSp.fail(`${cand} exited 0 without stating a test count`);
+      settled.push(cand);
+      continue;
+    }
+    altSp.fail(altVerdict === "empty" ? `${cand} ran no tests` : `${cand} also failed (Exit ${altRes.code})`);
+  }
+
+  // Nothing proved it ran a suite. A command that at least starts and exits 0
+  // still beats one that does not run at all, so it is used — and said out
+  // loud, because the gate will only be able to check it by exit code.
+  if (settled.length > 0 || verdict === "silent") {
+    const chosen = verdict === "silent" ? testCmd : settled[0];
+    const out = options.stdout || process.stdout;
+    out.write("\n");
+    out.write(`   \u26a0\ufe0f  "${chosen}" exits 0 but states no test count.\n`);
+    out.write("      The gate can verify it by exit code alone, which cannot tell a\n");
+    out.write("      full suite from a command that ran nothing. If this repository\n");
+    out.write("      has a suite, point verify.test at it in .agent/config.yml.\n\n");
+    return chosen;
   }
 
   // Nothing runs. Say so in terms the user can act on, rather than leaving a

@@ -1219,6 +1219,21 @@ const isSpecificAssertion = (str) => SPECIFIC_ASSERTION.test(str);
 const blankLiterals = (str) =>
   str
     .replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, "\u0000S")
+    // A regex literal is an expected value like any other. Without this,
+    // `toMatch(/Hello World/)` and `toMatch(/Hello Tampered/)` normalized to
+    // two different shapes, never met in a bucket, and the rewrite was
+    // reported as neither a change nor a loss — one specific assertion out,
+    // one in, and silence. Runs after the string pass so a `/` inside a
+    // string is already gone, and before the number pass so a pattern
+    // containing digits collapses whole.
+    //
+    // The lookbehind is what separates a regex from a division: an operand
+    // never precedes `/` here, only an opening paren, a comma, or an
+    // operator, which is where a test's expected pattern actually sits.
+    .replace(
+      /(?<=[(,=:[!&|?{;]\s{0,8})\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n])+\/[dgimsuvy]*/g,
+      "\u0000R"
+    )
     // The sign belongs to the literal: without it `3` and `-1` normalized to
     // different shapes and the rewritten expectation was never paired.
     .replace(
@@ -1802,8 +1817,22 @@ function isPureStringLiteral(arg) {
  */
 function messageArgIndices(args) {
   const idx = new Set();
-  if (args.length >= 3 && isPureStringLiteral(args[args.length - 1])) idx.add(args.length - 1);
-  if (args.length >= 2 && isPureStringLiteral(args[0])) idx.add(0);
+  const lastIsMessage = args.length >= 3 && isPureStringLiteral(args[args.length - 1]);
+  if (lastIsMessage) idx.add(args.length - 1);
+
+  // JUnit 4 is the one common dialect that puts the message *first*:
+  // `assertEquals("why this matters", expected, actual)`. It is also
+  // distinguishable, because its trailing argument is the actual value rather
+  // than prose — so a call that already carries a trailing message is not
+  // that shape, whatever its first argument looks like.
+  //
+  // Reading argument 0 as prose whenever it happened to be a string is what
+  // made a whole family of assertions invisible: `assertEquals(expected,
+  // actual)` — JUnit's and PHPUnit's own two-argument order — along with
+  // Python's `assertIn(member, container)` and `assertNotIn`. A rewritten
+  // expectation in any of them was dismissed as a reworded message, and the
+  // guard reported PASS on a check it had not performed.
+  if (!lastIsMessage && args.length >= 3 && isPureStringLiteral(args[0])) idx.add(0);
   return idx;
 }
 
@@ -1846,6 +1875,63 @@ function splitTrailingMessage(clean) {
   return { head: clean.slice(0, lastComma), msg: tail };
 }
 
+// A test declaration whose first argument is the test's name. The name is
+// prose about the test, not a value the test asserts — `test("adds", ...)`
+// renamed to `test("adds positives", ...)` is the rename the diff says it is.
+const TEST_DECL_CALL =
+  /\b(?:it|test|describe|context|suite|specify|bench|scenario)\s*\(|\b[a-z_$][\w$]{0,2}\.(?:test|Run|describe)\s*\(/;
+
+/**
+ * Replace the name argument of a test declaration with a placeholder.
+ *
+ * @param {string} clean - comment-stripped statement text
+ * @returns {string|null} the text with the name blanked, or null when the
+ *   statement is not a test declaration with a literal name.
+ */
+function blankTestName(clean) {
+  const m = TEST_DECL_CALL.exec(clean);
+  if (!m) return null;
+
+  let i = m.index + m[0].length;
+  while (i < clean.length && /\s/.test(clean[i])) i++;
+  const quote = clean[i];
+  if (quote !== '"' && quote !== "'" && quote !== "`") return null;
+
+  let j = i + 1;
+  while (j < clean.length) {
+    if (clean[j] === "\\") { j += 2; continue; }
+    if (clean[j] === quote) break;
+    j += 1;
+  }
+  if (j >= clean.length) return null;
+
+  return clean.slice(0, i) + "\u0000T" + clean.slice(j + 1);
+}
+
+/**
+ * True when the only thing that changed was the test's name.
+ *
+ * A one-line `test("adds", () => { assert.strictEqual(add(2, 3), 5); });`
+ * blanks to the same shape as its renamed copy, so the two pair — and the
+ * pair was then reported as a rewritten expectation, quoting the whole line
+ * back at an author who had renamed a test and nothing else. Renaming a test
+ * is one of the most ordinary edits there is, and a gate that calls it
+ * tampering is a gate that gets switched off.
+ *
+ * The multi-line form was never affected: NON_JOINING_CALL already keeps a
+ * test name from joining to the assertion below it. This is the same rule for
+ * the statements that fit on one line.
+ *
+ * A rename that also moves the expectation still differs after the name is
+ * blanked, so it is still reported.
+ */
+function differsOnlyInTestName(cleanRemoved, cleanAdded) {
+  const a = blankTestName(cleanRemoved);
+  const b = blankTestName(cleanAdded);
+  if (a === null || b === null) return false;
+  return a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
+}
+
 function differsOnlyInMessage(cleanRemoved, cleanAdded, lang) {
   const ta = splitTrailingMessage(cleanRemoved);
   const tb = splitTrailingMessage(cleanAdded);
@@ -1872,6 +1958,17 @@ function differsOnlyInMessage(cleanRemoved, cleanAdded, lang) {
     sawDifference = true;
   }
   return sawDifference;
+}
+
+/**
+ * True when a paired difference is something other than a rewritten
+ * expectation — a reworded message, or a renamed test.
+ */
+function isNonExpectationDifference(cleanRemoved, cleanAdded, lang) {
+  return (
+    differsOnlyInMessage(cleanRemoved, cleanAdded, lang) ||
+    differsOnlyInTestName(cleanRemoved, cleanAdded)
+  );
 }
 
 /**
@@ -1988,7 +2085,7 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
         pairedOld.add(r);
         pairedNew.add(a);
         if (r.canon === a.canon) continue;
-        if (differsOnlyInMessage(r.clean, a.clean, lang)) continue;
+        if (isNonExpectationDifference(r.clean, a.clean, lang)) continue;
         pairs.push({ r: r.s, a: a.s });
       }
     }
@@ -2018,7 +2115,7 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
         // different assertions that merely resemble each other.
         if (!same(0)) continue;
         if (ra.every((_, i) => same(i))) continue;
-        if (differsOnlyInMessage(r.clean, a.clean, lang)) continue;
+        if (isNonExpectationDifference(r.clean, a.clean, lang)) continue;
         pairs.push({ r: r.s, a: a.s });
         pairedOld.add(r);
         pairedNew.add(a);
@@ -2039,7 +2136,7 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
         if (sr === sa && hasLiteralPlaceholder(sr)) {
           const clr = stripComments(r.text, lang);
           const cla = stripComments(a.text, lang);
-          if (clr.replace(/\s+/g, "") !== cla.replace(/\s+/g, "") && !differsOnlyInMessage(clr, cla, lang)) {
+          if (clr.replace(/\s+/g, "") !== cla.replace(/\s+/g, "") && !isNonExpectationDifference(clr, cla, lang)) {
             pairs.push({ r, a });
           }
         }

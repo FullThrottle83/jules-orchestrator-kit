@@ -66,10 +66,20 @@ function makefileHasTestTarget(root) {
  * placeholder by this definition, and correctly so: it exits non-zero, which
  * fails loudly rather than certifying nothing.
  */
+// An interpreter handed an empty program: `node -e ""`, `python3 -c ''`,
+// `sh -c ""`. It reads as a test command at a glance and runs nothing.
+//
+// This does not enumerate every way to write a no-op — nothing can, and the
+// collection floor is what reports the general case, one-sidedly and by
+// design. It closes the spellings that look like work.
+const EMPTY_PROGRAM =
+  /^(?:\S*[/\\])?(?:node|nodejs|deno|bun|python[\d.]*|ruby|perl|php|sh|bash|zsh|dash)(?:\s+-{1,2}[\w-]+)*\s+(?:-e|-c|--eval|--execute)(?:\s*(?:""|''|``))?\s*$/;
+
 export function isPlaceholderTestScript(cmd) {
   if (typeof cmd !== "string") return false;
   const trimmed = cmd.trim();
   if (!trimmed) return true;
+  if (EMPTY_PROGRAM.test(trimmed)) return true;
   // Drop the announcements; what matters is what the shell is left doing.
   const remainder = trimmed
     .split(/&&|;/)
