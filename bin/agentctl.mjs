@@ -2667,13 +2667,21 @@ async function main() {
       const taskId = values.task || "unknown";
       const agent = values.agent || "jules";
 
+      const { CONFIRM_AFTER } = await import("../src/memory.mjs");
       const res = harvestFailure(root, { exitCode, logPath, diffText, taskId, agent });
       if (values.json) {
         console.log(JSON.stringify(res, null, 2));
       } else {
         if (res.status === "HARVESTED") {
-          console.log(`🌾 Harvested failure candidate: ${res.candidate.trigger}`);
-          console.log(`   Solution: ${res.candidate.solution}`);
+          // No "Solution:" line any more, because there is no solution: the
+          // repair loop exhausting its budget is the definition of not having
+          // found one. It used to print a fixed sentence here and store it as
+          // if it were a remedy.
+          console.log(`🌾 Recorded failure observation: ${res.candidate.trigger}`);
+          console.log(`   Seen ${res.occurrences}× — ${res.confirmed ? "stated as a rule" : `not injected into prompts until it recurs ${CONFIRM_AFTER}×`}`);
+          if (!res.confirmed) {
+            console.log(`   Record an actual fix for it with: agentctl learning add "<trigger>" "<solution>"`);
+          }
         } else {
           console.log(`⚠️ Harvest rejected: ${res.reason}`);
         }
