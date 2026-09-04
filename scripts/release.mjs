@@ -41,6 +41,23 @@ try {
   process.exit(1);
 }
 
+// 1a. Activation coverage (blocking).
+//
+// Step 1 proved the suite is green. Green is only evidence if the guards were
+// switched on: a check that silently stopped applying contributes passing
+// tests and a zero exit code exactly like one that ran. This asks the question
+// the suite cannot — can every blocking guard still be made red? — and it runs
+// before the doc-sync gate because a silent guard makes every later signal
+// meaningless.
+console.log("1a. Verifying every blocking guard can still be made red...");
+try {
+  execSync("node scripts/guard-reach-check.mjs", { cwd: root, stdio: "inherit" });
+  console.log("");
+} catch (_) {
+  console.error("\n❌ Release Aborted: a guard has gone silent. See the failing rows above.");
+  process.exit(1);
+}
+
 // 1b. Documentation / version consistency gate (blocking).
 console.log("1b. Verifying documentation is in sync with package.json & test suite...");
 {

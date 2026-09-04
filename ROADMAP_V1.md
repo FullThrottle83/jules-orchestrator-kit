@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.62.0 (Current Stable) ──► v0.63.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (No Denominator, No Claim)  (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.63.0 (Current Stable) ──► v0.64.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Can It Still Go Red?)      (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.62.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.63.0)
+
+
+### v0.63.0: Can It Still Go Red?
+- [x] **Activation Coverage (`scripts/guard-reach-check.mjs`)** — Blocking in CI and in the release. Eleven known-bad canaries across six ecosystems must each still produce the finding they name; four hand-written mutants of the applicability predicate must each break at least one. Runs in 88 ms.
+- [x] **A Hand-Written Policy Contract (`test/fixtures/guard-policy.mjs`)** — Derived from what the tool advertises, never from the regexes that implement it, so the implementation cannot be its own oracle.
+- [x] **Verdicts Carry Their Denominator (`src/security.mjs`)** — `checkTestTampering` reports `inputsSeen` and a `PASS`/`FAIL`/`NOT_APPLICABLE` status, so "checked and clean" is no longer byte-identical to "nothing was checked".
 
 
 ### v0.62.0: No Denominator, No Claim
