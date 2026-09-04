@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.61.0] - 2026-09-04
+*A command that ran is not a command that tested something.*
+
+### Fixed
+- **A Runner That Collected Nothing Counted As Verification (`src/ops/test-collection.mjs`, `src/engine.mjs`)**: the gate's oracle is one number — the verification command's exit code — and that number cannot tell "every test passed" from "there were no tests". Several runners report the second as success by design: `go test ./...` prints `[no test files]` and exits 0, jest has `--passWithNoTests`, and `npm test --workspaces` is green when the one package the diff touched has no suite. So a change could invert a function, add an untested one, and collect five green phases, verified against nothing at all. The v0.57.0 `missingOracle` check catches "no stage executed"; it cannot catch "a stage executed and tested nothing". The collected count is now read out of the runner's own summary (node:test, pytest, cargo, jest, vitest, mocha, go) and a stated zero fails the verify phase as `empty-suite`.
+
+  The parsing is one-sided on purpose. A count is only used when a recognised runner stated one; anything else yields no count and passes, because failing on "I could not tell" would break every runner not on the list. Two cases that cost a false rejection were found while building it and are covered by tests: a Go monorepo where only some packages have tests is healthy, not empty, and `go test` without `-v` prints no per-test lines at all — reading their absence as zero would have failed every ordinary Go run in existence. `verify.minTests` sets the floor (default 1, `0` opts out); `verify.required: false` remains the switch for a repository that genuinely has no oracle.
+
+### Credit
+Identified in an independent analysis of the oracle problem, which named the collection floor and cross-revision discrimination as the two gaps that are still *checks* rather than proxies for effort. The floor is shipped here. Discrimination — running the new tests against the base revision, and failing when they pass on both — is not, and is under consideration: its own author estimates a 10–25% false-positive rate on behaviour-preserving refactors, which is above the rate at which an operator starts reaching for the override by reflex.
+
 ## [0.60.0] - 2026-09-03
 *Making the expectation guard worth reading a month from now.*
 
