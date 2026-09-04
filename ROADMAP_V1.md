@@ -11,18 +11,24 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.63.0 (Current Stable) ──► v0.64.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ v0.64.0 (Current Stable) ──► v0.65.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
  (Can It Still Go Red?)      (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.63.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.64.0)
 
+
+### v0.64.0: What The Guard Could Not Read
+- [x] **The Package Is Checked The Way It Is Installed (`scripts/package-integrity-check.mjs`)** — the tarball's own import graph, resolved inside the tarball. The previous release shipped the activation-coverage check without the contract it imports.
+- [x] **Five Silent Ecosystems (`src/security.mjs`)** — JUnit, RSpec, PHPUnit, Minitest and XCTest all returned `PASS` on a rewritten expected value, and `assertEqual` had been working only by accident.
+- [x] **`UNREADABLE` (`src/security.mjs`)** — coverage ending is fine; coverage ending silently is not.
+- [x] **Contracts For The Opposite Failure (`src/guard-policy.mjs`)** — ten ordinary edits that must produce no finding, because a guard that flags everything is switched off within a week.
 
 ### v0.63.0: Can It Still Go Red?
 - [x] **Activation Coverage (`scripts/guard-reach-check.mjs`)** — Blocking in CI and in the release. Eleven known-bad canaries across six ecosystems must each still produce the finding they name; four hand-written mutants of the applicability predicate must each break at least one. Runs in 88 ms.
-- [x] **A Hand-Written Policy Contract (`test/fixtures/guard-policy.mjs`)** — Derived from what the tool advertises, never from the regexes that implement it, so the implementation cannot be its own oracle.
+- [x] **A Hand-Written Policy Contract (`src/guard-policy.mjs`)** — Derived from what the tool advertises, never from the regexes that implement it, so the implementation cannot be its own oracle.
 - [x] **Verdicts Carry Their Denominator (`src/security.mjs`)** — `checkTestTampering` reports `inputsSeen` and a `PASS`/`FAIL`/`NOT_APPLICABLE` status, so "checked and clean" is no longer byte-identical to "nothing was checked".
 
 

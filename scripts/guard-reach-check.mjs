@@ -27,7 +27,7 @@
  *
  * Three steps, all in-process, no dependencies, well under a second:
  *
- *   1. POLICY   — the hand-written witness table in test/fixtures/guard-policy.mjs
+ *   1. POLICY   — the hand-written witness table in src/guard-policy.mjs
  *                 must hold. It is derived from what the tool advertises, never
  *                 from the regexes that implement it.
  *   2. CANARIES — every known-bad input must produce the finding it names. A
@@ -52,14 +52,24 @@ import {
   PREDICATE_MUTANTS,
   EMPTY_RUN_CANARIES,
   SCOPE_CANARIES,
-} from "../test/fixtures/guard-policy.mjs";
+  INNOCENT_EDITS,
+  UNREADABLE_DIALECTS,
+} from "../src/guard-policy.mjs";
 
-/** Build a unified diff for one canary. */
+/**
+ * Build a unified diff for one canary.
+ *
+ * The context line carries the comment syntax of the file's own language.
+ * A `//` line in a `.py` fixture is not a comment, and a fixture that lies
+ * about the language under test measures the fixture rather than the guard —
+ * which is how two false results were once read as two defects.
+ */
 function canaryDiff(c) {
-  const lines = [`--- a/${c.file}`, `+++ b/${c.file}`, "@@ -1,20 +1,20 @@", " // context"];
+  const ctx = c.context || "// context";
+  const lines = [`--- a/${c.file}`, `+++ b/${c.file}`, "@@ -1,20 +1,20 @@", ` ${ctx}`];
   for (const l of c.removed) lines.push(`-${l}`);
   for (const l of c.added) lines.push(`+${l}`);
-  lines.push(" // context");
+  lines.push(` ${ctx}`);
   return lines.join("\n");
 }
 
@@ -107,6 +117,7 @@ const canaryResults = new Map();
 {
   const silent = [];
   const noDenominator = [];
+  const noAssertions = [];
   for (const c of TAMPER_CANARIES) {
     const res = checkTestTampering(canaryDiff(c));
     const hit = (res.violations || []).some((v) => v.type === c.expect);
@@ -114,12 +125,51 @@ const canaryResults = new Map();
     if (!hit) silent.push(`${c.id} expected ${c.expect}, got ${JSON.stringify((res.violations || []).map((v) => v.type))}`);
     // A finding with no denominator is the shape this script exists to reject.
     if (hit && !(res.inputsSeen > 0)) noDenominator.push(c.id);
+    // Counting lines was not enough: a JUnit diff reported one input examined
+    // and a clean PASS while every assertion in it went unrecognised. A rule
+    // about assertions has to say how many assertions it actually read.
+    if (hit && c.expect !== "TEST_SKIP_INJECTION" && !(res.assertionsSeen > 0)) {
+      noAssertions.push(`${c.id} (${res.assertionsSeen} assertions parsed)`);
+    }
   }
   add("canaries: every tamper rule still fires", silent.length === 0, silent.length ? silent.join("; ") : `${TAMPER_CANARIES.length} canaries red as required`);
   add("canaries: every finding carries a denominator", noDenominator.length === 0, noDenominator.length ? noDenominator.join(", ") : "inputsSeen > 0 on every hit");
+  add("canaries: assertion rules parsed an assertion", noAssertions.length === 0, noAssertions.length ? noAssertions.join(", ") : "assertionsSeen > 0 on every assertion finding");
 }
 
-// --- 3. Predicate mutants ---------------------------------------------------
+// --- 3. The opposite failure: flagging what is innocent ---------------------
+{
+  const noisy = [];
+  for (const e of INNOCENT_EDITS) {
+    const res = checkTestTampering(canaryDiff(e));
+    const types = (res.violations || []).map((v) => v.type);
+    if (types.length > 0) noisy.push(`${e.id} → ${JSON.stringify(types)} (${e.why})`);
+  }
+  add(
+    "innocent edits stay silent",
+    noisy.length === 0,
+    noisy.length
+      ? noisy.join("; ")
+      : `${INNOCENT_EDITS.length} ordinary edits produce no finding`
+  );
+}
+
+{
+  const quiet = [];
+  for (const d of UNREADABLE_DIALECTS) {
+    const res = checkTestTampering(canaryDiff(d));
+    if (res.status !== "UNREADABLE") quiet.push(`${d.id} → ${res.status} (${d.why})`);
+  }
+  add(
+    "an unparsable dialect says so",
+    quiet.length === 0,
+    quiet.length
+      ? `${quiet.join("; ")} — coverage ending is fine, ending silently is not`
+      : `${UNREADABLE_DIALECTS.length} unsupported dialects reported, not passed`
+  );
+}
+
+// --- 4. Predicate mutants ---------------------------------------------------
 {
   const survivors = [];
   for (const mutant of PREDICATE_MUTANTS) {

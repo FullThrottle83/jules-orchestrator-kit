@@ -58,6 +58,22 @@ try {
   process.exit(1);
 }
 
+// Step 1a proved the guards work here. Here is not where users run them.
+//
+// Every signal so far was measured in the source tree, where every file
+// exists by construction. What ships is a tarball built from the `files`
+// list, and v0.63.0 published the guard-reach check without the policy
+// contract it imports — green suite, green matrix, green release, and a
+// module that threw ERR_MODULE_NOT_FOUND the moment anyone installed it.
+console.log("1a-2. Verifying the package we would publish is self-contained...");
+try {
+  execSync("node scripts/package-integrity-check.mjs", { cwd: root, stdio: "inherit" });
+  console.log("");
+} catch (_) {
+  console.error("\n❌ Release Aborted: the tarball is not what the source tree looks like.");
+  process.exit(1);
+}
+
 // 1b. Documentation / version consistency gate (blocking).
 console.log("1b. Verifying documentation is in sync with package.json & test suite...");
 {

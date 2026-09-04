@@ -1155,14 +1155,42 @@ function locateFindingLine(lines, type, file = null) {
 // (`expect(\n  formatInvoice(bill)\n).toBe(…`) still recognises the chain.
 // The bound is a guess: an argument list longer than 240 characters is
 // rarer than a missed chain.
+// The dialect list is not decoration. `assertEqual` was recognised only
+// because `\.?` made the dot optional and the `i` flag let `Equal` match
+// `equal`; `assertEquals`, one letter longer, fell out of the pattern and
+// took JUnit, PHPUnit, Minitest, RSpec and XCTest with it. The weak forms
+// — assertTrue, assertNotNull, XCTAssertTrue — are deliberately absent:
+// they state no expected value, so their arrival in place of one of these
+// is a weakening, which is a finding of its own.
 const SPECIFIC_ASSERTION = new RegExp(
   [
     "\\bassert(?:\\.strict)?\\.?(?:strictEqual|deepStrictEqual|deepEqual|notStrictEqual|notDeepStrictEqual|equal|notEqual|match|doesNotMatch|throws|rejects|doesNotThrow)\\s*\\(",
     "\\bexpect\\s*\\([\\s\\S]{0,240}?\\)\\s*\\.(?:toBe|toEqual|toStrictEqual|toMatch|toMatchObject|toContain|toHaveBeenCalledWith|toThrow|toHaveLength|toBeCloseTo)\\s*\\(",
     "\\bassert\\.(?:equals|deepEquals|include|lengthOf)\\s*\\(",
     "assert_eq!|assert_ne!",
+    // The bare comparison form. `assert add(1, 2) == 3` is how pytest is
+    // actually written, and Rust's `assert!(a == b)` and Elixir's
+    // `assert f(x) == 3` follow it; none of them name a comparison
+    // function, so a list of function names could never reach them.
+    // Equality only. `assert!(x != 0)` names no expected value — it is the
+    // weaker claim you arrive at by giving one up, and counting it as
+    // specific would make the downgrade from `assert_eq!(x, 5)` invisible to
+    // the weakening check.
+    "\\bassert\\s+[^\\n]*(?:===|==)(?!=)",
+    "\\bassert!\\s*\\([^\\n]*==(?!=)",
     "\\bt\\.(?:Errorf|Fatalf)\\s*\\(",
     "\\brequire\\.(?:Equal|NotEqual|Len|Contains|Error|NoError)\\s*\\(",
+    // Python unittest, stated rather than inherited from the optional dot.
+    "\\bassert(?:Equal|NotEqual|AlmostEqual|NotAlmostEqual|Regex|NotRegex|Raises|In|NotIn|Is|IsNot|ListEqual|DictEqual|SetEqual|TupleEqual|CountEqual|Greater|Less|GreaterEqual|LessEqual)\\s*\\(",
+    // JUnit / TestNG / PHPUnit
+    "\\bassert(?:Equals|NotEquals|Same|NotSame|ArrayEquals|IterableEquals|LinesMatch|Count|StringContainsString|StringEqualsFile|InstanceOf|Contains|Throws)\\s*\\(",
+    "\\bassertThat\\s*\\([\\s\\S]{0,240}?\\)\\s*\\.(?:isEqualTo|isSameAs|contains|containsExactly|hasSize|isCloseTo|matches)\\s*\\(",
+    // Minitest
+    "\\b(?:assert|refute)_(?:equal|includes|match|nil|same|in_delta|in_epsilon|raises|empty|operator|predicate)\\b",
+    // RSpec
+    "\\bexpect\\s*\\([\\s\\S]{0,240}?\\)\\s*\\.(?:to|not_to|to_not)\\s+(?:eq|eql|equal|be|be_within|match|include|contain_exactly|match_array|have_attributes|raise_error|start_with|end_with)\\b",
+    // XCTest
+    "\\bXCTAssert(?:Equal|NotEqual|EqualWithAccuracy|Identical|NotIdentical|GreaterThan|LessThan|GreaterThanOrEqual|LessThanOrEqual|ThrowsError|NoThrow)\\s*\\(",
   ].join("|"),
   "i"
 );
@@ -1203,6 +1231,15 @@ const TEST_LANG_BY_EXT = new Map([
   [".py", "python"], [".pyi", "python"],
   [".go", "go"],
   [".rs", "rust"],
+  // Approximations, chosen for comment and continuation syntax rather than
+  // for kinship: the C-like family reads correctly under the `js` scanner,
+  // and Ruby under the `python` one because both end a comment at `#` and a
+  // statement at the newline. Naming them beats falling through to `js` by
+  // default, which is how a `#` comment came to be read as code.
+  [".java", "js"], [".kt", "js"], [".kts", "js"], [".scala", "js"], [".groovy", "js"],
+  [".swift", "js"], [".cs", "js"], [".php", "js"], [".c", "js"], [".cc", "js"],
+  [".cpp", "js"], [".h", "js"], [".hpp", "js"], [".m", "js"], [".sol", "js"],
+  [".rb", "python"],
 ]);
 
 function langForTestFile(file) {
@@ -1540,6 +1577,21 @@ function stripComments(text, lang) {
 const CONTINUATION_START = /^[)\],.]/;
 const CONTINUATION_OP_START = /^[+\-*/%<>=&|^:]/;
 
+// A comment is not a continuation, however much it looks like one.
+//
+// `//` begins with a division sign and `--` with a minus, so both matched
+// CONTINUATION_OP_START and folded the following comment line into the
+// statement above it. The cost was a false accusation on a virtuous act:
+// adding an assertion next to a `// ...` line made the new assertion absorb
+// the comment, stop matching its unchanged twin, and get reported as a
+// rewritten expectation. Python was unaffected only because `#` is not an
+// operator — which is why the same fixture passed in pytest and failed in
+// Jest, and why it survived every suite written against the pytest layout.
+//
+// A comment inside an open delimiter still joins: `cur.delta > 0` decides
+// that before this test is ever reached.
+const COMMENT_LINE_START = /^(?:\/\/|\/\*|#|--)/;
+
 // A scanner miscount (an unbalanced delimiter inside a regex literal is the
 // usual cause) must not be able to merge a whole file into one statement,
 // which would pair *any* literal change anywhere in the file.
@@ -1578,14 +1630,15 @@ function assembleStatements(sliceLines, lang) {
 
   for (const L of sliceLines) {
     const trimmed = L.text.replace(/^\s+/, "");
+    const startsComment = COMMENT_LINE_START.test(trimmed);
     const joins =
       cur !== null &&
       (cur.delta > 0 ||
         cur.state.str !== null ||
         cur.state.block > 0 ||
         cur.trailingBackslash ||
-        CONTINUATION_START.test(trimmed) ||
-        CONTINUATION_OP_START.test(trimmed));
+        (!startsComment &&
+          (CONTINUATION_START.test(trimmed) || CONTINUATION_OP_START.test(trimmed))));
 
     if (
       joins &&
@@ -1648,7 +1701,17 @@ function splitAssertionArgs(clean, lang) {
   const m = SPECIFIC_ASSERTION.exec(clean);
   if (!m) return null;
 
-  let i = m.index + m[0].length; // just past the opening paren
+  // Not every branch of SPECIFIC_ASSERTION ends at an opening paren:
+  // `assert_eq!`, `assert_equal` and RSpec's `.to eq` all match a bare name.
+  // Starting the walk one character early made every argument boundary wrong,
+  // so a reworded message read as a rewritten value.
+  let i = m.index + m[0].length;
+  if (clean[i - 1] !== "(") {
+    let j = i;
+    while (j < clean.length && /\s/.test(clean[j])) j++;
+    if (clean[j] !== "(") return null;
+    i = j + 1;
+  }
   let depth = 1;
   let quote = null;
   let triple = false;
@@ -1740,7 +1803,45 @@ function messageArgIndices(args) {
  * every time somebody improved the wording of a failure. Firing on that is
  * how an operator learns to pass the override without reading it.
  */
+/**
+ * Split a statement at a trailing `, "message"` written outside the call.
+ *
+ * RSpec puts the message there — `expect(x).to eq(3), "explain"` — and so do
+ * Ruby and Elixir assertions generally. An argument-position check can never
+ * see it, so rewording one read as a rewritten expectation.
+ */
+function splitTrailingMessage(clean) {
+  let depth = 0;
+  let quote = null;
+  let lastComma = -1;
+  for (let i = 0; i < clean.length; i++) {
+    const c = clean[i];
+    if (quote !== null) {
+      if (c === "\\") { i += 1; continue; }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { quote = c; continue; }
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (c === "," && depth === 0) lastComma = i;
+  }
+  if (lastComma === -1) return { head: clean, msg: null };
+  const tail = clean.slice(lastComma + 1).trim();
+  if (!isPureStringLiteral(tail)) return { head: clean, msg: null };
+  return { head: clean.slice(0, lastComma), msg: tail };
+}
+
 function differsOnlyInMessage(cleanRemoved, cleanAdded, lang) {
+  const ta = splitTrailingMessage(cleanRemoved);
+  const tb = splitTrailingMessage(cleanAdded);
+  if (
+    (ta.msg !== null || tb.msg !== null) &&
+    ta.head.replace(/\s+/g, "") === tb.head.replace(/\s+/g, "")
+  ) {
+    return true;
+  }
+
   const a = splitAssertionArgs(cleanRemoved, lang);
   const b = splitAssertionArgs(cleanAdded, lang);
   if (!a || !b || a.length !== b.length || a.length === 0) return false;
@@ -1988,7 +2089,9 @@ export function resolveAllowedTamperKinds(options = {}) {
  * @param {string} diffOrText - Unified git diff
  * @param {Object} [options]
  * @param {boolean} [options.allowTestModifications=false]
- * @returns {{ ok: boolean, violations: Array<object>, inputsSeen: number, status: "PASS"|"FAIL"|"NOT_APPLICABLE" }}
+ * @returns {{ ok: boolean, violations: Array<object>, inputsSeen: number, filesSeen: number,
+ *            assertionsSeen: number, unreadable: Array<{file: string, count: number, samples: string[]}>,
+ *            status: "PASS"|"FAIL"|"UNREADABLE"|"NOT_APPLICABLE" }}
  *   `status` distinguishes "checked and clean" from "nothing was checked";
  *   `ok: true` alone cannot, and that ambiguity is the defect class this
  *   field exists to make visible.
@@ -2024,9 +2127,24 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     { pattern: /#\[ignore\]/i, desc: "Injected Rust test ignore attribute (#[ignore])" },
     { pattern: /\/\/\s*@ts-ignore/i, desc: "Injected TypeScript ignore comment (// @ts-ignore)" },
     { pattern: /\/\/\s*@ts-nocheck/i, desc: "Injected TypeScript nocheck directive (// @ts-nocheck)" },
+    // A suite that never runs cannot fail, and `@Disabled` is exactly as
+    // effective at arranging that as `it.skip` is.
+    { pattern: /@Disabled\b/, desc: "Injected JUnit 5 disable annotation (@Disabled)" },
+    { pattern: /@Ignore\b/, desc: "Injected JUnit 4 / TestNG ignore annotation (@Ignore)" },
+    { pattern: /@Test\s*\([^)]*enabled\s*=\s*false/i, desc: "Injected TestNG disabled test (enabled = false)" },
+    { pattern: /@unittest\.skip/i, desc: "Injected unittest skip decorator (@unittest.skip)" },
+    { pattern: /\bmarkTest(?:Skipped|Incomplete)\s*\(/i, desc: "Injected PHPUnit skip (markTestSkipped())" },
+    { pattern: /\bXCTSkip(?:If|Unless|IfNot)?\s*\(/, desc: "Injected XCTest skip (XCTSkip())" },
+    { pattern: /\b(?:xit|xdescribe|xcontext|xspecify)\b\s*["\x27]/i, desc: "Injected RSpec disabled example (xit)" },
+    { pattern: /,\s*skip:\s*(?:true|["\x27])/i, desc: "Injected RSpec skip metadata (skip:)" },
+    { pattern: /^\s*(?:skip|pending)\s*(?:["\x27(]|$)/i, desc: "Injected Minitest/RSpec skip statement" },
   ];
 
-  const COMMENTED_ASSERTION = /^\+\s*(?:\/\/|\/\*)\s*(?:expect\(|assert\.|assert\(|t\.expect|t\.assert)/i;
+  // `#` and `--` belong here for the same reason the dialects belong in
+  // ASSERTION_PATTERN: a Ruby or Python assertion commented out is exactly
+  // as gone as a JavaScript one, and was previously not looked for.
+  const COMMENTED_ASSERTION =
+    /^\+\s*(?:\/\/|\/\*|#|--)\s*(?:expect\s*\(|assert(?!ion|ing|ed\b|s\b)[a-zA-Z0-9_$]*\s*[.(]|assert\s|refute_|XCTAssert|t\.expect|t\.assert)/i;
 
   const VACUOUS_ASSERTIONS = [
     { pattern: /\bassert(?:\.ok)?\s*\(\s*true\s*(?:,[^)]*)?\)/i, desc: "Vacuous truth assertion (assert.ok(true))" },
@@ -2037,10 +2155,43 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     { pattern: /\bexpect\s*\(\s*false\s*\)\s*\.toBeFalsy\s*\(/i, desc: "Vacuous falsity expectation (expect(false).toBeFalsy())" },
     { pattern: /\bassert\.(?:isTrue|isOk)\s*\(\s*true\s*(?:,[^)]*)?\)/i, desc: "Vacuous truth assertion (assert.isTrue(true))" },
     { pattern: /\bassert\.(?:isFalse|isNotOk)\s*\(\s*false\s*(?:,[^)]*)?\)/i, desc: "Vacuous falsity assertion (assert.isFalse(false))" },
+    { pattern: /\b(?:XCT)?assertTrue\s*\(\s*true\s*[,)]/i, desc: "Vacuous truth assertion (assertTrue(true))" },
+    { pattern: /\b(?:XCT)?assertFalse\s*\(\s*false\s*[,)]/i, desc: "Vacuous falsity assertion (assertFalse(false))" },
+    { pattern: /\b(?:assertEquals|assertSame|XCTAssertEqual)\s*\(\s*([^,]+?)\s*,\s*\1\s*[,)]/i, desc: "Vacuous identity assertion (assertEquals(X, X))" },
+    { pattern: /\bassert_equal\s*\(?\s*([^,]+?)\s*,\s*\1\s*\)?\s*$/i, desc: "Vacuous identity assertion (assert_equal X, X)" },
+    { pattern: /\bexpect\s*\(\s*true\s*\)\s*\.to\s+be(?:\s+true)?\b/i, desc: "Vacuous truth expectation (expect(true).to be true)" },
   ];
 
-  const ASSERTION_PATTERN = /(?:\b(?:assert(?:\.[a-zA-Z0-9_$]+)?|expect|t\.(?:assert|expect|is|equal|true|false|Errorf|Fatalf)|require\.[a-zA-Z0-9_$]+)\b|assert!|assert_eq!|assert_ne!)/i;
+  // Broad on purpose: this is the denominator, not the verdict. A word
+  // boundary immediately after `assert` never falls in `assertEquals`,
+  // `assert_equal` or `XCTAssertEqual`, so five ecosystems contributed no
+  // assertions to count at all and a gutted JUnit suite was arithmetically
+  // indistinguishable from an untouched one. The lookahead keeps prose and
+  // identifiers — `assertion`, `asserts`, `asserted` — out of the count.
+  const ASSERTION_PATTERN =
+    /(?:\b(?:assert(?!ion|ing|ed\b|s\b)[a-zA-Z0-9_$]*(?:\.[a-zA-Z0-9_$]+)?|refute[a-zA-Z0-9_$]*|XCTAssert[a-zA-Z0-9_$]*|XCTFail|expect|t\.(?:assert|expect|is|equal|true|false|Errorf|Fatalf)|require\.[a-zA-Z0-9_$]+)\b|assert!|assert_eq!|assert_ne!)/i;
+  // The loose net. Not a verdict and never a block — its only job is to
+  // notice that a line was plainly an assertion in *some* dialect that
+  // ASSERTION_PATTERN did not recognise. Without it, adding the seventh
+  // ecosystem is indistinguishable from having covered it all along: the
+  // guard returns the same clean PASS either way. This is the denominator
+  // for the denominator.
+  // Deliberately not call-shaped. Haskell's `x `shouldBe` 3` is an
+  // assertion with no parentheses anywhere near it, and a net that only
+  // catches `name(` reports the same confident PASS on it as on a clean
+  // Node suite. `require` and `check` are absent on purpose: in a
+  // CommonJS test file `require("./calc")` is an import, not a claim.
+  const ASSERTION_SHAPED =
+    /\b(?:assert(?!ion|ing|ed\b|s\b)|expect(?!ed\b|ation)|refute)[a-zA-Z0-9_$]*\b|`\s*should[a-zA-Z0-9_$]*\s*`|\b(?:should|must|verify|ensure|confirm)[a-zA-Z0-9_$]*\s*[(!]|\.\s*(?:should|to|to_not|not_to|must)\b|\bBOOST_[A-Z_]+\s*\(|\b[A-Z]+_(?:EQ|NE|TRUE|FALSE|THAT)\s*\(/;
   const isCommentLine = (str) => /^\s*(?:\/\/|\/\*|\*|#|--|;)/.test(str);
+
+  /** Book-keeping only: what this run looked at, before deciding anything. */
+  const countExamined = (stats, text) => {
+    if (!text.trim() || isCommentLine(text)) return;
+    stats.examined++;
+    if (ASSERTION_PATTERN.test(text)) stats.recognised++;
+    else if (ASSERTION_SHAPED.test(text) && stats.unreadable.length < 5) stats.unreadable.push(text.trim().slice(0, 120));
+  };
 
   const fileAssertions = new Map();
   let pendingHunk = false;
@@ -2077,7 +2228,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     }
 
     if (!fileAssertions.has(currentFile)) {
-      fileAssertions.set(currentFile, { removed: [], added: 0, addedTexts: [], removedSpecific: [], addedSpecific: 0, hunks: [] });
+      fileAssertions.set(currentFile, { removed: [], added: 0, addedTexts: [], removedSpecific: [], addedSpecific: 0, hunks: [], examined: 0, recognised: 0, unreadable: [] });
     }
     const fileStats = fileAssertions.get(currentFile);
     if (pendingHunk) {
@@ -2089,6 +2240,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     if (line.startsWith("-") && !line.startsWith("---")) {
       const deletedText = line.slice(1);
       if (hunk) hunk.lines.push({ kind: "-", text: deletedText, oldNo: currentOldLineNo, newNo: null });
+      countExamined(fileStats, deletedText);
       if (!isCommentLine(deletedText) && ASSERTION_PATTERN.test(deletedText)) {
         fileStats.removed.push({ line: currentOldLineNo, text: deletedText });
         if (isSpecificAssertion(deletedText)) {
@@ -2099,6 +2251,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     } else if (line.startsWith("+") && !line.startsWith("+++")) {
       const addedText = line.slice(1);
       if (hunk) hunk.lines.push({ kind: "+", text: addedText, oldNo: null, newNo: currentNewLineNo });
+      countExamined(fileStats, addedText);
       let isVacuous = false;
 
       // Check skip injections
@@ -2225,17 +2378,44 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   // `ok: true` from a guard that looked at everything and approved it. That
   // ambiguity is how a substring bug in the file classifier switched this
   // entire guard off for the standard pytest, Rust and RSpec layouts while
-  // every signal stayed green. A verdict without a denominator is not a
-  // verdict, so `inputsSeen` reports the number of test files this run
-  // actually reasoned about, and `status` distinguishes "nothing to check"
-  // from "checked and clean".
-  const inputsSeen = fileAssertions.size;
+  // every signal stayed green.
+  //
+  // Counting *files* was not enough. A JUnit diff that rewrote an expected
+  // value produced `inputsSeen: 1` and a clean PASS while not one assertion
+  // in it had been recognised — the same ambiguity, one level down, inside
+  // the mechanism built to remove it. So the denominator is now the thing
+  // the rules actually consume: lines examined, and of those, assertions
+  // understood. `UNREADABLE` is the state that has no business being silent
+  // — assertion-shaped lines were present and none of them parsed, which
+  // means this repository speaks a dialect the guard does not.
+  let examined = 0;
+  let assertionsSeen = 0;
+  const unreadable = [];
+  for (const [file, stats] of fileAssertions.entries()) {
+    examined += stats.examined;
+    assertionsSeen += stats.recognised;
+    if (stats.unreadable.length > 0) {
+      unreadable.push({ file, count: stats.unreadable.length, samples: stats.unreadable.slice(0, 3) });
+    }
+  }
+
+  const status =
+    reported.length > 0
+      ? "FAIL"
+      : assertionsSeen === 0 && unreadable.length > 0
+        ? "UNREADABLE"
+        : examined > 0
+          ? "PASS"
+          : "NOT_APPLICABLE";
 
   return {
     ok: reported.length === 0,
     violations: reported,
-    inputsSeen,
-    status: reported.length > 0 ? "FAIL" : inputsSeen > 0 ? "PASS" : "NOT_APPLICABLE",
+    inputsSeen: examined,
+    filesSeen: fileAssertions.size,
+    assertionsSeen,
+    unreadable,
+    status,
   };
 }
 

@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { checkTestTampering } from "../src/security.mjs";
-import { TAMPER_CANARIES, PREDICATE_MUTANTS } from "./fixtures/guard-policy.mjs";
+import { TAMPER_CANARIES, PREDICATE_MUTANTS } from "../src/guard-policy.mjs";
 
 /**
  * The meta-check has to be able to fail, for the same reason the guards do.

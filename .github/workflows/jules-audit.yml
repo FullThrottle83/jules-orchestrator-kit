@@ -112,6 +112,9 @@ jobs:
       - name: Verify every blocking guard can still be made red
         run: npm run guard-reach
 
+      - name: Verify the published package is self-contained
+        run: npm run package-integrity
+
       - name: Run Documentation Sync Gate
         run: npm run jules:doc-sync
 
