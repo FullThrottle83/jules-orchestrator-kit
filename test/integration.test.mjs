@@ -14,12 +14,21 @@ function createTmpGitRepo() {
   execFileSync("git", ["config", "user.email", "test@example.com"], opts);
 
   // Initial commit
+  //
+  // The oracle has to be a command that can actually fail. This fixture used
+  // `echo pass`, and the gate now refuses to approve against a command that
+  // cannot fail — the same rule `agentctl task create` has always applied.
+  // A harness whose oracle is `echo pass` proves nothing about the harness.
   fs.writeFileSync(path.join(tmpDir, "README.md"), "# Test Repo\n");
-  fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify({ name: "test-repo", scripts: { test: "echo pass" } }, null, 2));
-  
+  fs.writeFileSync(path.join(tmpDir, "index.js"), "module.exports = (a, b) => a + b;\n");
+  fs.writeFileSync(
+    path.join(tmpDir, "package.json"),
+    JSON.stringify({ name: "test-repo", scripts: { test: "node --check index.js" } }, null, 2)
+  );
+
   const agentDir = path.join(tmpDir, ".agent");
   fs.mkdirSync(agentDir, { recursive: true });
-  fs.writeFileSync(path.join(agentDir, "jules.yml"), "version: 2\ntest_cmd: \"echo pass\"\nforbidden_paths: [\".github/**\", \"**/*.pem\", \"**/lock-manager*\"]\n");
+  fs.writeFileSync(path.join(agentDir, "jules.yml"), "version: 2\ntest_cmd: \"node --check index.js\"\nforbidden_paths: [\".github/**\", \"**/*.pem\", \"**/lock-manager*\"]\n");
   
   execFileSync("git", ["add", "."], opts);
   execFileSync("git", ["commit", "-m", "initial commit"], opts);
