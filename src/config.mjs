@@ -626,7 +626,13 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
   const rawTeardown = parsed.teardown_cmd ?? parsed.verify?.teardown;
   const rawBuild = parsed.build_cmd ?? parsed.verify?.build;
   const rawUnit = parsed.verify?.unit;
-  const verifyTimeoutMs = parsed.verify?.timeoutMs ?? parsed.verify?.timeout_ms ?? 60000;
+  // Five minutes, matching the value `init` writes and the README documents.
+  // The engine carries the same number as a fallback, but this loader always
+  // supplies one — so the fallback never fired, and every repository without
+  // an explicit `timeout_ms` kept the old one-minute limit while the
+  // changelog said otherwise. The default has to live where the value is
+  // resolved, not where it is consumed.
+  const verifyTimeoutMs = parsed.verify?.timeoutMs ?? parsed.verify?.timeout_ms ?? 300_000;
   const autoVerify = resolveVerify(root);
 
   const rawTier = String(process.env.JULES_TIER || parsed.tier || FALLBACK_TIER).toLowerCase();
@@ -697,7 +703,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       // Named so `doctor` can tell an operator that the gate they enabled is
       // running one fewer check than they think, and why.
       profileSkipped: profilePlan?.skipped ?? [],
-      timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 60000,
+      timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 300_000,
     },
     evidence: {
       enabled: parsed.evidence?.enabled ?? true,
