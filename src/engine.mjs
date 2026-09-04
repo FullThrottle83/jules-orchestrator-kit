@@ -1,5 +1,6 @@
 import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
 import { isTestPath } from "./test-paths.mjs";
+import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
@@ -521,7 +522,25 @@ export async function gate(opts = {}) {
   const ranNoVerification = !executionRecords.some((r) => r && r.kind !== "assert");
   const missingOracle = verificationRequired && ranNoVerification;
 
-  const verifyOk = !failingCmd && !testTampered && !missingOracle;
+  // A command that ran is not the same as a command that tested something.
+  //
+  // `missingOracle` above catches "no stage executed". It cannot catch the
+  // case where a stage executed, exited 0, and collected zero tests — which
+  // several runners report as success by design: `go test ./...` prints
+  // "[no test files]" and exits 0, jest has --passWithNoTests, and
+  // `npm test --workspaces` is green when the one package the diff touched
+  // has no suite. A repository could invert a function, add an untested one
+  // and collect five green phases, verified against nothing at all.
+  //
+  // The count is read out of the runner's own summary and only a *stated*
+  // zero counts. An unrecognised runner yields null and passes: failing on
+  // "I could not tell" would break every runner not on the list.
+  const collectionFloor = verificationRequired
+    ? checkCollectionFloor(testResult, { minTests: trustedVerify.minTests })
+    : { ok: true, count: null, runner: null, reason: null };
+  const emptySuite = !collectionFloor.ok;
+
+  const verifyOk = !failingCmd && !testTampered && !missingOracle && !emptySuite;
 
   // What actually broke. Without this the verify phase reported `ok: false` and
   // nothing else — not the stage, not the exit code, not a line of output — so
@@ -568,7 +587,18 @@ export async function gate(opts = {}) {
               "The gate approves a change because verification passed. Zero stages executed is not a pass.",
             ],
           }
-        : null;
+        : emptySuite
+          ? {
+              stageId: "empty-suite",
+              command: testResult?.command || null,
+              exitCode: 0,
+              stdout: "",
+              stderr: collectionFloor.reason,
+              diagnostics: [
+                "An exit code of 0 from a runner that collected no tests is not evidence about this change.",
+              ],
+            }
+          : null;
 
   // Generate & persist Evidence Manifest
   const evidenceManifest = generateEvidenceManifest(root, {

@@ -11,13 +11,17 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.60.0 (Current Stable) ──► v0.61.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (A Guard Worth Reading)     (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.61.0 (Current Stable) ──► v0.62.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Green Against Nothing)     (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.60.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.61.0)
+
+
+### v0.61.0: Green Against Nothing
+- [x] **Collection Floor (`src/ops/test-collection.mjs`)** — A verification command that exits 0 having collected zero tests is no longer a pass. The count is read from the runner's own summary across node:test, pytest, cargo, jest, vitest, mocha and go; an unrecognised runner states no count and is not failed for it.
 
 
 ### v0.60.0: A Guard Worth Reading
