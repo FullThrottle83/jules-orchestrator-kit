@@ -1191,6 +1191,15 @@ const SPECIFIC_ASSERTION = new RegExp(
     "\\bexpect\\s*\\([\\s\\S]{0,240}?\\)\\s*\\.(?:to|not_to|to_not)\\s+(?:eq|eql|equal|be|be_within|match|include|contain_exactly|match_array|have_attributes|raise_error|start_with|end_with)\\b",
     // XCTest
     "\\bXCTAssert(?:Equal|NotEqual|EqualWithAccuracy|Identical|NotIdentical|GreaterThan|LessThan|GreaterThanOrEqual|LessThanOrEqual|ThrowsError|NoThrow)\\s*\\(",
+    // chai — a dot chain, where RSpec's is a space. `expect(x).to.equal(3)`
+    // never reached the RSpec branch, so swapping it for `.toBeDefined()`
+    // lost no *specific* assertion and the weakening check stayed quiet.
+    "\\bexpect\\s*\\([\\s\\S]{0,240}?\\)\\s*\\.to(?:\\.[a-z]+)*\\.(?:equal|equals|eql|eqls|closeTo|match|include|contain|members|throw|string|lengthOf|above|below|least|most|within)\\s*\\(",
+    // node-tap and its relatives, where the assertion hangs off whatever the
+    // sub-test callback named its argument — `ct` as often as `t`. Bounded to
+    // a short receiver so `results.match(...)` on an ordinary object is not
+    // mistaken for an assertion; a heuristic, and stated as one.
+    "\\b[a-z_$][a-z0-9_$]{0,2}\\.(?:equal|equals|same|strictSame|deepEqual|notEqual|notSame|match|hasStrict|type|throws|rejects)\\s*\\(",
   ].join("|"),
   "i"
 );
@@ -2194,6 +2203,10 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     { pattern: /\bXCTSkip(?:If|Unless|IfNot)?\s*\(/, desc: "Injected XCTest skip (XCTSkip())" },
     { pattern: /\b(?:xit|xdescribe|xcontext|xspecify)\b\s*["\x27]/i, desc: "Injected RSpec disabled example (xit)" },
     { pattern: /,\s*skip:\s*(?:true|["\x27])/i, desc: "Injected RSpec skip metadata (skip:)" },
+    // node-tap, node:test and ava pass it as a property of an options object,
+    // so the comma sits before the brace and not before the key.
+    { pattern: /\{[^}]*\bskip\s*:\s*true/i, desc: "Injected skip option ({ skip: true })" },
+    { pattern: /\{[^}]*\btodo\s*:\s*true/i, desc: "Injected todo option ({ todo: true })" },
     { pattern: /^\s*(?:skip|pending)\s*(?:["\x27(]|$)/i, desc: "Injected Minitest/RSpec skip statement" },
     // Skipping from inside the body, which is how these ecosystems actually
     // do it. Only the decorator and annotation forms were covered, so a test
@@ -2237,7 +2250,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   // indistinguishable from an untouched one. The lookahead keeps prose and
   // identifiers — `assertion`, `asserts`, `asserted` — out of the count.
   const ASSERTION_PATTERN =
-    /(?:\b(?:assert(?!ion|ing|ed\b|s\b)[a-zA-Z0-9_$]*(?:\.[a-zA-Z0-9_$]+)?|refute[a-zA-Z0-9_$]*|XCTAssert[a-zA-Z0-9_$]*|XCTFail|expect|t\.(?:assert|expect|is|equal|true|false|Errorf|Fatalf)|require\.[a-zA-Z0-9_$]+)\b|assert!|assert_eq!|assert_ne!)/i;
+    /(?:\b(?:assert(?!ion|ing|ed\b|s\b)[a-zA-Z0-9_$]*(?:\.[a-zA-Z0-9_$]+)?|refute[a-zA-Z0-9_$]*|XCTAssert[a-zA-Z0-9_$]*|XCTFail|expect|[a-z_$][a-z0-9_$]{0,2}\.(?:equal|equals|same|strictSame|deepEqual|notEqual|notSame|match|hasStrict|type|throws|rejects|ok|notOk)|t\.(?:assert|expect|is|equal|true|false|Errorf|Fatalf)|require\.[a-zA-Z0-9_$]+)\b|assert!|assert_eq!|assert_ne!)/i;
   // The loose net. Not a verdict and never a block — its only job is to
   // notice that a line was plainly an assertion in *some* dialect that
   // ASSERTION_PATTERN did not recognise. Without it, adding the seventh
@@ -2380,6 +2393,59 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     }
   }
 
+  // An assertion is a statement, not a line.
+  //
+  // Counting `+`/`-` lines missed the commonest shape in every language with
+  // multi-line calls: `self.assertEqual(` sits on an unchanged context line
+  // and only its argument lines are edited. Nothing among the changed lines
+  // matched an assertion pattern, nothing looked assertion-shaped either, so
+  // the guard reported `assertionsSeen: 0` and — because no line looked
+  // suspicious — a clean PASS. A five-element expected list rewritten to one
+  // element to match broken output sailed through five green phases.
+  //
+  // The statement machinery that already exists for pairing knows better:
+  // it assembles context lines together with changed ones. Ask it.
+  for (const [file, stats] of fileAssertions.entries()) {
+    const lang = langForTestFile(file);
+    let touched = 0;
+    let stmtSpecificRemoved = 0;
+    let stmtSpecificAdded = 0;
+    for (const hunk of stats.hunks) {
+      const oldSlice = [];
+      const newSlice = [];
+      for (const L of hunk.lines) {
+        if (L.kind !== "+") oldSlice.push(L);
+        if (L.kind !== "-") newSlice.push(L);
+      }
+      // Specific assertions are counted per side, on the reassembled
+      // statement. The weakening check was still line-based: `assert (` alone
+      // on a line names no value, so Black or Ruff splitting one assertion
+      // across three lines removed one specific assertion and added none, and
+      // a reformat was reported as CRITICAL tampering. Collapsing the joined
+      // statement is what lets the bare-comparison form be recognised at all
+      // — its pattern cannot cross a newline.
+      const sides = [
+        { stmts: assembleStatements(oldSlice, lang), kind: "-" },
+        { stmts: assembleStatements(newSlice, lang), kind: "+" },
+      ];
+      for (const { stmts, kind } of sides) {
+        for (const st of stmts) {
+          const changed = kind === "-" ? (st.removedLines?.length || 0) > 0 : (st.addedLines?.length || 0) > 0;
+          if (!changed) continue;
+          const clean = stripComments(st.text, lang);
+          if (ASSERTION_PATTERN.test(clean)) touched++;
+          if (isSpecificAssertion(collapseWhitespace(clean))) {
+            if (kind === "-") stmtSpecificRemoved++;
+            else stmtSpecificAdded++;
+          }
+        }
+      }
+    }
+    stats.statementAssertions = touched;
+    stats.stmtSpecificRemoved = stmtSpecificRemoved;
+    stats.stmtSpecificAdded = stmtSpecificAdded;
+  }
+
   // Assertions added in some *other* file of this same diff.
   //
   // Tracking is strictly per file, so moving a test from one file to another
@@ -2446,7 +2512,12 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     const alreadyReportedSpecific = stats.removed
       .slice(stats.added)
       .filter((item) => isSpecificAssertion(item.text)).length;
-    const specificLost = Math.max(0, stats.removedSpecific.length - stats.addedSpecific);
+    // Believe whichever unit saw more arrive. A statement is the honest unit,
+    // but the line count still carries cases the statement scanner cannot
+    // assemble, so the loss is only what *both* agree was lost.
+    const lineLost = Math.max(0, stats.removedSpecific.length - stats.addedSpecific);
+    const stmtLost = Math.max(0, (stats.stmtSpecificRemoved || 0) - (stats.stmtSpecificAdded || 0));
+    const specificLost = Math.min(lineLost, stmtLost);
     const weakenedCount = Math.max(0, specificLost - alreadyReportedSpecific);
 
     if (weakenedCount > 0) {
@@ -2485,38 +2556,6 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   // understood. `UNREADABLE` is the state that has no business being silent
   // — assertion-shaped lines were present and none of them parsed, which
   // means this repository speaks a dialect the guard does not.
-  // An assertion is a statement, not a line.
-  //
-  // Counting `+`/`-` lines missed the commonest shape in every language with
-  // multi-line calls: `self.assertEqual(` sits on an unchanged context line
-  // and only its argument lines are edited. Nothing among the changed lines
-  // matched an assertion pattern, nothing looked assertion-shaped either, so
-  // the guard reported `assertionsSeen: 0` and — because no line looked
-  // suspicious — a clean PASS. A five-element expected list rewritten to one
-  // element to match broken output sailed through five green phases.
-  //
-  // The statement machinery that already exists for pairing knows better:
-  // it assembles context lines together with changed ones. Ask it.
-  for (const [file, stats] of fileAssertions.entries()) {
-    const lang = langForTestFile(file);
-    let touched = 0;
-    for (const hunk of stats.hunks) {
-      const oldSlice = [];
-      const newSlice = [];
-      for (const L of hunk.lines) {
-        if (L.kind !== "+") oldSlice.push(L);
-        if (L.kind !== "-") newSlice.push(L);
-      }
-      for (const stmts of [assembleStatements(oldSlice, lang), assembleStatements(newSlice, lang)]) {
-        for (const st of stmts) {
-          const changed = (st.removedLines?.length || 0) + (st.addedLines?.length || 0) > 0;
-          if (changed && ASSERTION_PATTERN.test(stripComments(st.text, lang))) touched++;
-        }
-      }
-    }
-    stats.statementAssertions = touched;
-  }
-
   let examined = 0;
   let assertionsSeen = 0;
   const unreadable = [];
@@ -2617,24 +2656,41 @@ export function scanDiff(diffTextStr = "", options = {}) {
   // dialect warning into the latter meant it reached nobody. The guard
   // computed `UNREADABLE`, and the operator was shown an unblemished pass.
   // A boundary that is not reported is not a boundary.
+  //
+  // And it blocks, because the previous wording was the defect it described.
+  // Printing "this change was NOT checked for tampering ... it is not an
+  // approval either" and then returning APPROVED (Exit 0) is the exact shape
+  // this project exists to refuse: a verdict from a check that examined
+  // nothing, dressed as a pass. A second cold-start trial walked a tampered
+  // test and broken production code straight through on node-tap, and again
+  // on BATS. `verify.tamperGuard: "warn"` is how a repository whose dialect
+  // is genuinely unsupported opts out — deliberately, and on the record.
+  let unreadableBlocks = false;
   if (tamperingRes.status === "UNREADABLE") {
+    const mode = options.tamperGuard === "warn" || options.allowUnreadableTests === true ? "warn" : "block";
+    unreadableBlocks = mode === "block";
     const where = (tamperingRes.unreadable || []).map((u) => u.file);
     const sample = tamperingRes.unreadable?.[0]?.samples?.[0];
     findings.push({
-      severity: "MEDIUM",
+      severity: unreadableBlocks ? "CRITICAL" : "MEDIUM",
       type: "TEST_DIALECT_UNREADABLE",
       file: where[0] ?? null,
       line: null,
       description:
         `Test Tamper Guard: changed ${tamperingRes.inputsSeen} line(s) in ${tamperingRes.filesSeen} test file(s) ` +
         `and recognised no assertion among them${sample ? ` (e.g. ${JSON.stringify(sample)})` : ""}. ` +
-        `This change was NOT checked for tampering. That is not a failure — an unlisted assertion library is ` +
-        `normal — but it is not an approval either, so it is reported rather than passed silently.`,
+        `This change was NOT checked for tampering${unreadableBlocks ? ", so it cannot be approved" : ""}. ` +
+        (unreadableBlocks
+          ? `If this repository's assertion library is genuinely unsupported, say so once in .agent/config.yml ` +
+            `with verify.tamperGuard: "warn", or allow this run with --allow-unreadable-tests. Reporting the ` +
+            `dialect is more useful than either: the guard covers Node, pytest, Go, Rust, JUnit, RSpec, PHPUnit, ` +
+            `Minitest, XCTest, chai and node-tap.`
+          : `Reported only, because verify.tamperGuard is set to "warn".`),
     });
   }
 
   return {
-    ok: secretsOk && edgeRes.ok && crossPkgRes.ok && tamperingRes.ok,
+    ok: secretsOk && edgeRes.ok && crossPkgRes.ok && tamperingRes.ok && !unreadableBlocks,
     findings,
   };
 }

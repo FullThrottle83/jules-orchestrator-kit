@@ -849,6 +849,36 @@ export function resolveWorkspaceBoundary(changedFiles = [], root = process.cwd()
   };
 }
 
+/**
+ * Does this repository contain any JavaScript for a parse oracle to check?
+ *
+ * A `package.json` is not an answer. A CSS library, an icon set or a font
+ * package has one and no JavaScript at all, and `bootstrap` happily wrote a
+ * `node --test .agent/smoke.test.mjs` config into it — so the very next gate
+ * run died on the generated suite's own assertion, "No JavaScript sources
+ * found to verify". The assertion was right; it just arrived after the config
+ * had been written, which left the user deadlocked by the repair advice.
+ */
+function hasJsSources(root, dir = root, depth = 0) {
+  if (depth > 6) return false;
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (_) {
+    return false;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    if (["node_modules", "dist", "build", "coverage", "vendor", "target"].includes(entry.name)) continue;
+    if (entry.isDirectory()) {
+      if (hasJsSources(root, join(dir, entry.name), depth + 1)) return true;
+    } else if (/\.(mjs|cjs|jsx?|tsx?)$/.test(entry.name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
   const detected = detectPolyglotStack(root);
   const configPath = join(root, ".agent", "config.yml");
@@ -898,9 +928,24 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
     testCmd = "go vet ./...";
   } else if (existsSync(join(root, "tsconfig.json"))) {
     testCmd = "npx tsc --noEmit";
-  } else {
+  } else if (hasJsSources(root)) {
     const smokePath = generateSmokeTestScript(root);
     testCmd = `node --test ${smokePath}`;
+  } else {
+    // Refuse rather than write a config whose first run cannot pass. Saying
+    // "I cannot build an oracle here" is a usable answer; deadlocking the
+    // user with one that asserts its own impossibility is not.
+    return {
+      bootstrapped: false,
+      reason: "NO_ORACLE_POSSIBLE",
+      testCmd: "",
+      detail:
+        "This repository has no JavaScript sources to parse-check and no recognised " +
+        "test toolchain, so there is nothing an automatic oracle could verify. Set " +
+        "verify.test in .agent/config.yml to a command that checks this project — a " +
+        "linter, a build, a schema validation — or set verify.required: false to run " +
+        "the scope and secret phases only, deliberately.",
+    };
   }
 
   try {

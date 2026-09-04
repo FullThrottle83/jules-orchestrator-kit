@@ -383,6 +383,7 @@ async function main() {
           committed: { type: "boolean" },
           fix: { type: "boolean" },
           "allow-protected": { type: "boolean" },
+          "allow-unreadable-tests": { type: "boolean" },
           // The tamper guard has always had an override — `allowTestModifications`
           // — and it was reachable only from JavaScript. So a legitimate change
           // of spec, which necessarily rewrites what a test expects, hit a
@@ -413,6 +414,7 @@ async function main() {
         mode: selectedMode,
         fix: values.fix,
         allowProtected: values["allow-protected"],
+        allowUnreadableTests: values["allow-unreadable-tests"],
         allowTestModifications: values["allow-test-modifications"],
         allowTestChanges: values["allow-test-change"],
         jsonReport: values["json-report"],
@@ -1611,6 +1613,13 @@ async function main() {
         console.log(`   Stack detected : ${res.stack}`);
         console.log(`   Oracle TestCmd : ${res.testCmd}`);
         console.log(`   Config written : ${res.configPath}`);
+      } else if (res.reason === "NO_ORACLE_POSSIBLE") {
+        // Declining is a usable answer. Writing a config whose very first run
+        // asserts its own impossibility is not: it left the user following
+        // the gate's own repair advice into a dead end.
+        console.error(`❌ No oracle could be generated for this repository.`);
+        console.error(`   ${res.detail}`);
+        process.exit(1);
       } else {
         console.log(`ℹ️ Repository already has a verification oracle (${res.testCmd}). Use --force to overwrite.`);
       }

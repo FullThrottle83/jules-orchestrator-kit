@@ -1,5 +1,6 @@
 import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
 import { isTestPath } from "./test-paths.mjs";
+import { isPlaceholderTestScript } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd } from "./git.mjs";
@@ -214,6 +215,7 @@ export async function gate(opts = {}) {
               : parsed.verify?.min_tests !== undefined
                 ? parsed.verify.min_tests
                 : config.verify.minTests,
+          tamperGuard: parsed.verify?.tamperGuard || parsed.verify?.tamper_guard || config.verify.tamperGuard,
           scope: parsed.verify?.scope || config.verify.scope || "global",
           timeoutMs: parsed.verify?.timeoutMs || parsed.verify?.timeout_ms || config.verify.timeoutMs,
         };
@@ -328,6 +330,11 @@ export async function gate(opts = {}) {
     root,
     allowTestModifications: opts.allowTestModifications === true,
     allowTestChanges: opts.allowTestChanges,
+    // Read from the base commit like every other trusted field: a repository
+    // opts out of the tamper guard deliberately and on the record, and an
+    // uncommitted edit must not be able to do it.
+    tamperGuard: trustedVerify.tamperGuard,
+    allowUnreadableTests: opts.allowUnreadableTests === true,
   });
   // A binary file reaches the scanner as one summary line, so its contents were
   // never looked at — a NUL byte in front of a token was enough to hide it.
@@ -588,7 +595,22 @@ export async function gate(opts = {}) {
     : { ok: true, count: null, runner: null, reason: null };
   const emptySuite = !collectionFloor.ok;
 
-  const verifyOk = !failingCmd && !testTampered && !missingOracle && !emptySuite;
+  // A command that cannot fail is not an oracle, wherever it is configured.
+  //
+  // `task create` already refuses one — "Unfalsifiable Task Rejected: Task
+  // must include a non-trivial verification test/build command" — while the
+  // gate approved against `verify.test: "true"` and printed an advisory. The
+  // same kit disagreed with itself about the same string. The collection
+  // floor cannot catch this: `true` states no count, and failing on "I could
+  // not tell" would break every unlisted runner. But a command that is
+  // *recognisably* a placeholder is not an unlisted runner.
+  const placeholderOracle =
+    verificationRequired &&
+    !missingOracle &&
+    Boolean(testResult?.command) &&
+    isPlaceholderTestScript(testResult.command);
+
+  const verifyOk = !failingCmd && !testTampered && !missingOracle && !emptySuite && !placeholderOracle;
 
   // What actually broke. Without this the verify phase reported `ok: false` and
   // nothing else — not the stage, not the exit code, not a line of output — so
@@ -635,7 +657,22 @@ export async function gate(opts = {}) {
               "The gate approves a change because verification passed. Zero stages executed is not a pass.",
             ],
           }
-        : emptySuite
+        : placeholderOracle
+          ? {
+              stageId: "placeholder-oracle",
+              command: testResult?.command || null,
+              exitCode: 0,
+              stdout: "",
+              stderr:
+                `The verification command is ${JSON.stringify(testResult.command)}, which cannot fail. ` +
+                "Nothing about this change was checked, so approving it would certify nothing. " +
+                "Point verify.test at a command that runs this repository's tests, or — if this repository " +
+                "intentionally uses only the scope and secret phases — set verify.required: false, which says so.",
+              diagnostics: [
+                "`agentctl task create` already refuses a task with this command; the gate now agrees with it.",
+              ],
+            }
+          : emptySuite
           ? {
               stageId: "empty-suite",
               command: testResult?.command || null,
