@@ -1,13 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 import { checkTestTampering } from "../src/security.mjs";
 import { runCmd } from "../src/git.mjs";
 import { isPlaceholderTestScript } from "../src/stack-detector.mjs";
 import { parseCollectedTests } from "../src/ops/test-collection.mjs";
+import { loadConfig } from "../src/config.mjs";
 
 /**
  * A third cold-start trial. Everything here is a case where the shipped gate
@@ -146,18 +143,18 @@ describe("a verification command with an environment prefix runs", () => {
   });
 
   it("names the timeout and the way to raise it", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentctl-timeout-"));
-    try {
-      const script = join(dir, "slow.sh");
-      writeFileSync(script, "#!/bin/sh\nsleep 5\n");
-      chmodSync(script, 0o755);
-      const res = runCmd(`sh ${script}`, { ignoreError: true, timeout: 300 });
-      assert.equal(res.status, 124);
-      assert.match(res.stderr, /timed out after 300ms/);
-      assert.match(res.stderr, /verify\.timeout_ms/, "Node's own ETIMEDOUT message names neither the limit nor the knob");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    // An array command and no temp file on purpose. Spawning `sh` from a
+    // script written to a temp directory failed on Windows — not on the
+    // assertions, which passed, but on the teardown: the killed process still
+    // held the file, so `rmSync` threw ENOTEMPTY and turned a green check
+    // into a red suite on one matrix cell.
+    const res = runCmd([process.execPath, "-e", "setTimeout(() => {}, 5000)"], {
+      ignoreError: true,
+      timeout: 300,
+    });
+    assert.equal(res.status, 124);
+    assert.match(res.stderr, /timed out after 300ms/);
+    assert.match(res.stderr, /verify\.timeout_ms/, "Node's own ETIMEDOUT message names neither the limit nor the knob");
   });
 });
 
@@ -201,5 +198,18 @@ describe("more runners state their count out loud", () => {
     // The one-sidedness is the point: reporting zero here would hard-red every
     // correct repository whose runner is not on the list.
     assert.equal(parseCollectedTests("Everything is fine!", "").count, null);
+  });
+});
+
+describe("the documented default is the default the loader hands out", () => {
+  // The engine carried a 300000 fallback and the loader always supplied
+  // 60000, so the fallback was unreachable and the changelog described a
+  // change no repository received. This is the third time a rule has been
+  // written in one place while another place kept the old answer — the
+  // /test/ substring, the weakening denominator, and now this — so the
+  // assertion is on the value a caller actually gets, not on any one site.
+  it("verify.timeoutMs is 300000 when the config does not say", () => {
+    const cfg = loadConfig(process.cwd());
+    assert.equal(cfg.verify.timeoutMs, 300_000);
   });
 });

@@ -21,6 +21,7 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ALLOWED_HOSTS = new Set([
   "jules.googleapis.com", // the agent provider itself — the only outbound API call
   "github.com", // link text in generated PR descriptions, never fetched
+  "jules.google", // documentation link printed into the generated setup guide
   "localhost", // local dashboard and verification servers
   "127.0.0.1",
   "0.0.0.0",
@@ -38,7 +39,11 @@ function sourceFiles(dir, acc = []) {
     if (entry === "node_modules" || entry.startsWith(".")) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, acc);
-    else if (entry.endsWith(".mjs")) acc.push(full);
+    // `.js` as well as `.mjs`: `bin/init.js` is published as the `jules-init`
+    // binary and sat outside this scan entirely. The point of the guard is
+    // that a reviewer can trust the boundary without reading every commit,
+    // and a boundary with a file-extension hole does not earn that.
+    else if (entry.endsWith(".mjs") || entry.endsWith(".js")) acc.push(full);
   }
   return acc;
 }
