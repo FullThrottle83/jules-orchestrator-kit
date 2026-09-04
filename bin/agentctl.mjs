@@ -429,6 +429,9 @@ async function main() {
           if (p.violations) {
             p.violations.forEach((v) => console.log(`     - Violation: ${v.file} (Rule: ${v.rule})`));
           }
+          if (p.unverified) {
+            console.log(`     - Unverified: ${p.unverified}`);
+          }
           if (p.setup) {
             console.log(`     - Setup: accepted ${p.setup.length} gate scaffold file(s) this repository did not have yet`);
             p.setup.forEach((f) => console.log(`         ${f}`));

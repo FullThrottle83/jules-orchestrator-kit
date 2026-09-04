@@ -18,6 +18,12 @@ test("Atomic Git Checkpoint & Rollback Manager", async (t) => {
     execSync("git init -b main", { cwd: tmpDir, stdio: "ignore" });
     execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "ignore" });
     execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "ignore" });
+    // The checkpoint store lives inside the tree it snapshots, so without the
+    // ignore rule `init` normally writes, checkpoint N captures checkpoints
+    // 1..N-1 and each one is roughly three times the last. Measured here: 12 KB
+    // at the fifth, 157 MB at the fifteenth, and 18 GB left in /tmp across
+    // accumulated runs. A real repository has this line; the fixture did not.
+    writeFileSync(join(tmpDir, ".gitignore"), ".agent/state/\n");
     writeFileSync(join(tmpDir, "file1.txt"), "Initial content");
     execSync("git add .", { cwd: tmpDir, stdio: "ignore" });
     execSync('git commit -m "Initial commit"', { cwd: tmpDir, stdio: "ignore" });

@@ -148,7 +148,24 @@ export function checkCollectionFloor(testResult, opts = {}) {
   }
 
   const { count, runner } = parseCollectedTests(testResult.stdout, testResult.stderr);
-  if (count === null || count >= minTests) {
+
+  // Deliberately one-sided: only a *stated* zero fails, because failing on
+  // "I could not tell" would break every runner not on the list. But passing
+  // and saying nothing makes `echo "all tests passed"` indistinguishable from
+  // a real suite, so the absence of evidence is reported as an absence.
+  if (count === null) {
+    return {
+      ok: true,
+      count: null,
+      runner: null,
+      reason: null,
+      unverified: true,
+      note:
+        `The verification command exited 0, but no recognised test runner stated how many tests it ran, ` +
+        `so the gate cannot tell a full suite from a command that ran nothing. Verified by exit code alone.`,
+    };
+  }
+  if (count >= minTests) {
     return { ok: true, count, runner, reason: null };
   }
 

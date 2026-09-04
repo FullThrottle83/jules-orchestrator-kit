@@ -1523,8 +1523,13 @@ function stripComments(text, lang) {
         continue;
       }
 
-      if (c === "/" && c2 === "/") { copyCode(i); break; }
-      if (lang === "python" && c === "#") { copyCode(i); break; }
+      // `pending = n` is the whole fix. `copyCode(i)` copies the code up to
+      // the comment and leaves `pending` sitting at its start; the
+      // `copyCode(n)` after this loop then copied the comment straight back
+      // in, so no line comment has ever been stripped. Block comments were,
+      // which is why `/* … */` behaved and `// …` did not.
+      if (c === "/" && c2 === "/") { copyCode(i); pending = n; break; }
+      if (lang === "python" && c === "#") { copyCode(i); pending = n; break; }
       if (c === "/" && c2 === "*") {
         copyCode(i);
         state.block = 1;
@@ -1929,6 +1934,9 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
     }
 
     const pairs = [];
+    const pairedOld = new Set();
+    const pairedNew = new Set();
+    const cancelled = new Set();
     for (const [shape, olds] of oldByShape) {
       const news = newByShape.get(shape) || [];
 
@@ -1946,17 +1954,66 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
       const survivingOld = [];
       for (const o of olds) {
         const twin = survivingNew.findIndex((n) => n.canon === o.canon);
-        if (twin === -1) survivingOld.push(o);
-        else survivingNew.splice(twin, 1);
+        if (twin === -1) {
+          survivingOld.push(o);
+        } else {
+          // Present unchanged on both sides: this assertion did not change,
+          // and the argument-level pass below must not be allowed to pair it
+          // with something else and call that a rewrite.
+          cancelled.add(o);
+          cancelled.add(survivingNew[twin]);
+          survivingNew.splice(twin, 1);
+        }
       }
 
       const k = Math.min(survivingOld.length, survivingNew.length);
       for (let t = 0; t < k; t++) {
         const r = survivingOld[t];
         const a = survivingNew[t];
+        // Whatever this pass decides about a pair — reported, or deliberately
+        // let go as a reorder or a reworded message — is the decision. The
+        // argument-level pass below exists only for statements whose shapes
+        // differ so much that they never met in a bucket here; letting it
+        // re-open a case that was already judged turned a comment edit into a
+        // rewritten expectation.
+        pairedOld.add(r);
+        pairedNew.add(a);
         if (r.canon === a.canon) continue;
         if (differsOnlyInMessage(r.clean, a.clean, lang)) continue;
         pairs.push({ r: r.s, a: a.s });
+      }
+    }
+
+    // Same assertion, same subject, different expected value.
+    //
+    // Shape pairing compares the statement with its literals blanked, so it
+    // only ever matched assertions whose structure survived the edit. Shrink
+    // a five-element expected list to one element to match broken output and
+    // the two images land in different shape buckets, never pair, and the
+    // rewrite is not reported at all — measured on a real repository, where
+    // it collected five green phases.
+    //
+    // The arguments are the better witness here: when both sides call the
+    // same assertion with the same number of arguments and the *subject*
+    // argument is untouched, what changed is what the test expects of it.
+    for (const r of oldCands) {
+      if (pairedOld.has(r) || cancelled.has(r)) continue;
+      const ra = splitAssertionArgs(r.clean, lang);
+      if (!ra || ra.length < 2) continue;
+      for (const a of newCands) {
+        if (pairedNew.has(a) || cancelled.has(a)) continue;
+        const aa = splitAssertionArgs(a.clean, lang);
+        if (!aa || aa.length !== ra.length) continue;
+        const same = (i) => ra[i].replace(/\s+/g, "") === aa[i].replace(/\s+/g, "");
+        // The subject has to be the same expression, or these are two
+        // different assertions that merely resemble each other.
+        if (!same(0)) continue;
+        if (ra.every((_, i) => same(i))) continue;
+        if (differsOnlyInMessage(r.clean, a.clean, lang)) continue;
+        pairs.push({ r: r.s, a: a.s });
+        pairedOld.add(r);
+        pairedNew.add(a);
+        break;
       }
     }
 
@@ -2388,21 +2445,57 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   // understood. `UNREADABLE` is the state that has no business being silent
   // — assertion-shaped lines were present and none of them parsed, which
   // means this repository speaks a dialect the guard does not.
+  // An assertion is a statement, not a line.
+  //
+  // Counting `+`/`-` lines missed the commonest shape in every language with
+  // multi-line calls: `self.assertEqual(` sits on an unchanged context line
+  // and only its argument lines are edited. Nothing among the changed lines
+  // matched an assertion pattern, nothing looked assertion-shaped either, so
+  // the guard reported `assertionsSeen: 0` and — because no line looked
+  // suspicious — a clean PASS. A five-element expected list rewritten to one
+  // element to match broken output sailed through five green phases.
+  //
+  // The statement machinery that already exists for pairing knows better:
+  // it assembles context lines together with changed ones. Ask it.
+  for (const [file, stats] of fileAssertions.entries()) {
+    const lang = langForTestFile(file);
+    let touched = 0;
+    for (const hunk of stats.hunks) {
+      const oldSlice = [];
+      const newSlice = [];
+      for (const L of hunk.lines) {
+        if (L.kind !== "+") oldSlice.push(L);
+        if (L.kind !== "-") newSlice.push(L);
+      }
+      for (const stmts of [assembleStatements(oldSlice, lang), assembleStatements(newSlice, lang)]) {
+        for (const st of stmts) {
+          const changed = (st.removedLines?.length || 0) + (st.addedLines?.length || 0) > 0;
+          if (changed && ASSERTION_PATTERN.test(stripComments(st.text, lang))) touched++;
+        }
+      }
+    }
+    stats.statementAssertions = touched;
+  }
+
   let examined = 0;
   let assertionsSeen = 0;
   const unreadable = [];
   for (const [file, stats] of fileAssertions.entries()) {
     examined += stats.examined;
-    assertionsSeen += stats.recognised;
+    assertionsSeen += Math.max(stats.recognised, stats.statementAssertions || 0);
     if (stats.unreadable.length > 0) {
       unreadable.push({ file, count: stats.unreadable.length, samples: stats.unreadable.slice(0, 3) });
     }
   }
 
+  // Changed lines inside a test file, none of them recognisable as part of an
+  // assertion, is not the same as "checked and clean" — it is the state where
+  // this guard has nothing to say. Saying nothing and saying "approved" have
+  // to look different, which is the whole reason `status` exists.
   const status =
     reported.length > 0
       ? "FAIL"
-      : assertionsSeen === 0 && unreadable.length > 0
+      : assertionsSeen === 0 && (unreadable.length > 0 || examined > 0)
         ? "UNREADABLE"
         : examined > 0
           ? "PASS"
@@ -2478,6 +2571,26 @@ export function scanDiff(diffTextStr = "", options = {}) {
     for (const v of tamperingRes.violations) {
       findings.push({ severity: "CRITICAL", type: "TEST_TAMPERING_DETECTED", file: v.file ?? null, line: v.line ?? null, description: v.reason });
     }
+  }
+
+  // The gate calls `scanDiff`, not `assertTestIntegrity` — so wiring the
+  // dialect warning into the latter meant it reached nobody. The guard
+  // computed `UNREADABLE`, and the operator was shown an unblemished pass.
+  // A boundary that is not reported is not a boundary.
+  if (tamperingRes.status === "UNREADABLE") {
+    const where = (tamperingRes.unreadable || []).map((u) => u.file);
+    const sample = tamperingRes.unreadable?.[0]?.samples?.[0];
+    findings.push({
+      severity: "MEDIUM",
+      type: "TEST_DIALECT_UNREADABLE",
+      file: where[0] ?? null,
+      line: null,
+      description:
+        `Test Tamper Guard: changed ${tamperingRes.inputsSeen} line(s) in ${tamperingRes.filesSeen} test file(s) ` +
+        `and recognised no assertion among them${sample ? ` (e.g. ${JSON.stringify(sample)})` : ""}. ` +
+        `This change was NOT checked for tampering. That is not a failure — an unlisted assertion library is ` +
+        `normal — but it is not an approval either, so it is reported rather than passed silently.`,
+    });
   }
 
   return {
