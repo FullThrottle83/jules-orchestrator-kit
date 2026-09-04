@@ -2195,6 +2195,17 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     { pattern: /\b(?:xit|xdescribe|xcontext|xspecify)\b\s*["\x27]/i, desc: "Injected RSpec disabled example (xit)" },
     { pattern: /,\s*skip:\s*(?:true|["\x27])/i, desc: "Injected RSpec skip metadata (skip:)" },
     { pattern: /^\s*(?:skip|pending)\s*(?:["\x27(]|$)/i, desc: "Injected Minitest/RSpec skip statement" },
+    // Skipping from inside the body, which is how these ecosystems actually
+    // do it. Only the decorator and annotation forms were covered, so a test
+    // could be silenced with the standard library's own method and the guard
+    // said nothing: measured silent on six of seven in-body forms.
+    { pattern: /\bself\.skipTest\s*\(/i, desc: "Injected unittest skip (self.skipTest())" },
+    { pattern: /\braise\s+(?:unittest\.)?SkipTest\b/i, desc: "Injected unittest skip (raise SkipTest)" },
+    { pattern: /\bpytest\.skip\s*\(/i, desc: "Injected Pytest skip call (pytest.skip())" },
+    { pattern: /\bpytest\.xfail\s*\(/i, desc: "Injected Pytest expected-failure (pytest.xfail())" },
+    { pattern: /\bthis\.skip\s*\(/i, desc: "Injected Mocha skip (this.skip())" },
+    { pattern: /\b(?:it|test|describe|context)\.todo\s*\(/i, desc: "Injected todo placeholder (test.todo())" },
+    { pattern: /\bt\.Skip(?:Now|f)?\s*\(/, desc: "Injected Go test skip (t.Skip/t.Skipf/t.SkipNow)" },
   ];
 
   // `#` and `--` belong here for the same reason the dialects belong in
@@ -2369,6 +2380,26 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     }
   }
 
+  // Assertions added in some *other* file of this same diff.
+  //
+  // Tracking is strictly per file, so moving a test from one file to another
+  // — ordinary refactoring — read as deleting three assertions and was
+  // reported as CRITICAL tampering. The assertion still exists and still
+  // runs; it is in a different file. What the removal check is for is
+  // verification that *disappeared*, and this has not.
+  //
+  // Deliberately exact on the assertion text: something that changed on the
+  // way across is not a move, and is judged normally.
+  const movedIn = new Map();
+  for (const [file, stats] of fileAssertions.entries()) {
+    for (const t of stats.addedTexts || []) {
+      const key = collapseWhitespace(String(t.text ?? t)).trim();
+      if (!key) continue;
+      if (!movedIn.has(key)) movedIn.set(key, []);
+      movedIn.get(key).push(file);
+    }
+  }
+
   for (const [file, stats] of fileAssertions.entries()) {
     // An expectation that was rewritten rather than removed.
     //
@@ -2386,6 +2417,15 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     if (stats.removed.length > stats.added) {
       const unreplaced = stats.removed.slice(stats.added);
       for (const item of unreplaced) {
+        // Did this exact assertion arrive somewhere else in the same diff?
+        const key = collapseWhitespace(item.text).trim();
+        const landing = movedIn.get(key);
+        const elsewhere = landing ? landing.findIndex((f) => f !== file) : -1;
+        if (elsewhere !== -1) {
+          // Consume the landing so two removals cannot both claim one arrival.
+          landing.splice(elsewhere, 1);
+          continue;
+        }
         violations.push({
           file,
           line: item.line,

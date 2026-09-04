@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.67.0] - 2026-09-04
+*The last four from the trial, and the rule that a move is not a deletion.*
+
+### Fixed
+- **A Test Could Be Silenced With Its Own Standard Library (`src/security.mjs`)**: the decorator and annotation forms were covered — `@pytest.mark.skip`, `@Disabled`, `it.skip` — and the in-body call was not. Measured silent on six of seven: `self.skipTest()`, `pytest.skip()`, `raise unittest.SkipTest`, mocha's `this.skip()`, `test.todo()`, and Go's `t.SkipNow()` (`t.Skip(` was listed, but the pattern required the parenthesis immediately after the name). `self.skipTest()` is how unittest's own documentation writes it.
+- **Moving A Test Read As Deleting It (`src/security.mjs`)**: assertion tracking was strictly per file, so ordinary refactoring produced `CRITICAL` tampering findings for assertions that still exist and still run. An exact arrival elsewhere in the same diff now accounts for a departure — exact on purpose: an assertion that changed on the way across is a different claim and is judged normally, and two departures cannot both claim one arrival.
+- **`npm test` In An Installed Copy Crashed (`scripts/run-tests.mjs`)**: `files` ships `scripts/` and not `test/`, so it failed with a raw `ENOENT: no such file or directory, scandir '.../test'`. The suite is not missing; it was never in the tarball. It now says so, and points at `npm run guard-reach` for checking an installed copy — exiting 1, because a runner that ran nothing must not claim success even here.
+- **A Tampering Failure Was Labelled As A Secret Leak (`bin/agentctl.mjs`)**: exit 6 is shared with the secret scanner and the codes are frozen, but a bare `Phase [SECRETS] : ❌ FAIL` sent operators looking for a credential to rotate when an assertion had been deleted. The rendered label now names what actually failed. The machine contract is unchanged: the phase is still `secrets`.
+
+### Added
+- **Two-File Cases In The Policy Contract (`src/guard-policy.mjs`)**: a verdict that depends on what two files do together could not be expressed before, so the rule that a move is not a removal had no witness. Three cases: moved, deleted outright, and changed on the way across.
+
+### Credit
+This completes the cold-start trial: all twelve findings closed. Five more were found while reproducing them — a comment read as a line continuation, a message written outside the call, an argument walker that started one character early, line comments that `stripComments` had never stripped, and a test fixture that had left 18 GB in /tmp.
+
 ## [0.66.0] - 2026-09-04
 *Saying nothing and saying approved must not look the same.*
 

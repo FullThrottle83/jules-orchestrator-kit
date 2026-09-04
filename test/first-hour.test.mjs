@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -199,6 +199,60 @@ describe("the remediation the tool prints has to work", () => {
 
       const res = run(work, ["check"]);
       assert.equal(res.status, 0, `the documented opt-out must actually opt out:\n${res.stdout}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the published package explains itself", () => {
+  it("`npm test` in an installed copy says why there is no suite", { skip: win, timeout: 60_000 }, () => {
+    // It crashed with a raw `ENOENT: no such file or directory, scandir
+    // '.../test'`. The suite is not missing; `files` ships `scripts/` and not
+    // `test/`, so it was never in the tarball.
+    const dir = mkdtempSync(join(tmpdir(), "jok-pkg-"));
+    try {
+      mkdirSync(join(dir, "scripts"), { recursive: true });
+      const runner = fileURLToPath(new URL("../scripts/run-tests.mjs", import.meta.url));
+      writeFileSync(join(dir, "scripts", "run-tests.mjs"), readFileSync(runner, "utf-8"));
+      const res = spawnSync(process.execPath, [join(dir, "scripts", "run-tests.mjs")], { cwd: dir, encoding: "utf-8" });
+      assert.equal(res.status, 1, "a runner that ran nothing must not exit 0, even here");
+      assert.match(res.stderr, /not part of the published package/);
+      assert.doesNotMatch(res.stderr, /ENOENT/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a tampering failure is not labelled as a secret leak", { skip: win, timeout: 90_000 }, () => {
+    // Exit 6 is shared with the secret scanner and the codes are frozen, but
+    // a bare `Phase [SECRETS] : FAIL` sent operators looking for a credential
+    // to rotate when what happened was an assertion being deleted.
+    const dir = mkdtempSync(join(tmpdir(), "jok-label-"));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main", dir], { stdio: "pipe" });
+      const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      mkdirSync(join(dir, "test"), { recursive: true });
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      writeFileSync(join(dir, "index.mjs"), "export const add = (a, b) => a + b;\n");
+      writeFileSync(
+        join(dir, "test", "c.test.mjs"),
+        'import assert from "node:assert";\nimport { test } from "node:test";\nimport { add } from "../index.mjs";\ntest("adds", () => {\n  assert.equal(add(1, 2), 3);\n  assert.equal(add(2, 2), 4);\n});\n'
+      );
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "d", version: "1.0.0", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, ".agent", "config.yml"), 'version: 1\nverify:\n  test: "node --test"\n');
+      git(["add", "-A"]);
+      git(["commit", "-qm", "init"]);
+
+      writeFileSync(
+        join(dir, "test", "c.test.mjs"),
+        'import assert from "node:assert";\nimport { test } from "node:test";\nimport { add } from "../index.mjs";\ntest("adds", () => {\n});\n'
+      );
+      const res = run(dir, ["check", "--base", "HEAD"]);
+      assert.equal(res.status, 6);
+      assert.match(res.stdout, /test integrity — no secret found/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
