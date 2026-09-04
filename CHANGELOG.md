@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.63.0] - 2026-09-04
+*A defect that turns a check off cannot be found by the check it turns off.*
+
+### Added
+- **Activation Coverage (`scripts/guard-reach-check.mjs`, blocking in CI and in `npm run release`)**: the question no existing mechanism could ask — *can every blocking guard still be made red?* When `isTestFile` matched the substring `/test/` and went silent for the standard pytest, Rust and RSpec layouts, five independent safety mechanisms all reported green while working exactly as designed. The unit suite sampled the same distribution the implementation was written from, so its fixtures re-confirmed the dialect it already knew. The doc-sync gate compares counts and versions, and a guard that guards nothing still contributes passing tests. The nine-way CI matrix varies OS and Node version — dimensions orthogonal to the defect; nine runs of `test/foo.test.js` never explore `tests/test_calc.py`. Cold review reads code against its stated intent, and there the code and the intent agreed: the eye supplies the leading slash. And the release gate is a conjunction over those four, where a signal that silently goes absent contributes `true`.
+
+  Three steps, all in-process, 88 ms total. **Policy**: a hand-written witness table must hold. **Canaries**: eleven known-bad diffs across Node, pytest, Rust, Go and a monorepo must each still produce the finding they name — a canary that comes back clean is not a pass, it is proof that the rule stopped being reachable. **Mutants**: four hand-written mutants of the applicability predicate must each break at least one canary; a survivor means no canary ever required the guard to *activate*, so the suite would stay green if it silently stopped looking. Verified by reintroducing the original substring bug: the check named the exact paths and the exact canary that went silent, and exited 1.
+
+- **A Policy Contract Independent Of Its Implementation (`test/fixtures/guard-policy.mjs`)**: every witness is derived from what the tool advertises — the stacks `detectStack` declares, the layouts each ecosystem actually uses — and never from the regexes, path lists or registries that implement the checks. A contract generated from the implementation makes the implementation its own oracle, and an implementation that is its own oracle cannot be wrong. Adding a stack is not finished until it has a row here.
+
+### Changed
+- **`checkTestTampering` Reports What It Examined (`src/security.mjs`)**: `inputsSeen` plus a `PASS` / `FAIL` / `NOT_APPLICABLE` status. `ok: true` from a guard that looked at nothing was byte-identical to `ok: true` from a guard that looked at everything and approved it; that ambiguity is the defect class, and a verdict without a denominator is not a verdict. `NOT_APPLICABLE` is still not a failure — it is just no longer indistinguishable from a pass. The applicability predicate is injectable so the meta-check can blind it.
+
+### Credit
+Both independent analyses of how the classifier defect survived converged on this mechanism — canaries plus activation coverage, and the rule that a guard must report what it examined rather than only what it found. Neither had seen the other's work.
+
 ## [0.62.0] - 2026-09-04
 *A guard that reports "pass" without saying what it examined is reporting the wrong thing.*
 

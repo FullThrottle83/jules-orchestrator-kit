@@ -1988,12 +1988,24 @@ export function resolveAllowedTamperKinds(options = {}) {
  * @param {string} diffOrText - Unified git diff
  * @param {Object} [options]
  * @param {boolean} [options.allowTestModifications=false]
- * @returns {{ ok: boolean, violations: Array<{ file: string, type: string, line?: number, reason: string }> }}
+ * @returns {{ ok: boolean, violations: Array<object>, inputsSeen: number, status: "PASS"|"FAIL"|"NOT_APPLICABLE" }}
+ *   `status` distinguishes "checked and clean" from "nothing was checked";
+ *   `ok: true` alone cannot, and that ambiguity is the defect class this
+ *   field exists to make visible.
  */
 export function checkTestTampering(diffOrText = "", options = {}) {
-  if (!diffOrText || typeof diffOrText !== "string") return { ok: true, violations: [] };
+  if (!diffOrText || typeof diffOrText !== "string") {
+    return { ok: true, violations: [], inputsSeen: 0, status: "NOT_APPLICABLE", reason: "empty diff" };
+  }
   const allowed = resolveAllowedTamperKinds(options);
-  if (allowed.all) return { ok: true, violations: [] };
+  if (allowed.all) {
+    return { ok: true, violations: [], inputsSeen: 0, status: "NOT_APPLICABLE", reason: "all kinds allowed" };
+  }
+
+  // Which predicate decides what this guard even looks at. Injectable so the
+  // meta-check can mutate it: a canary that still passes when the predicate is
+  // replaced by `() => false` was never requiring this guard to activate.
+  const isTestPath_ = typeof options.isTestPath === "function" ? options.isTestPath : isTestPath;
 
   const violations = [];
   const lines = diffOrText.split("\n");
@@ -2002,7 +2014,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   let currentOldLineNo = null;
   let currentNewLineNo = null;
 
-  const isTestFile = isTestPath;
+  const isTestFile = isTestPath_;
 
   const SKIP_INJECTIONS = [
     { pattern: /\b(?:it|test|describe|context)\.skip\s*\(/i, desc: "Injected test skip (.skip())" },
@@ -2207,9 +2219,23 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       ? violations
       : violations.filter((v) => !allowed.kinds.has(TAMPER_KINDS.get(v.type)));
 
+  // What was examined, not only what was found.
+  //
+  // `ok: true` from a guard that looked at nothing is byte-identical to
+  // `ok: true` from a guard that looked at everything and approved it. That
+  // ambiguity is how a substring bug in the file classifier switched this
+  // entire guard off for the standard pytest, Rust and RSpec layouts while
+  // every signal stayed green. A verdict without a denominator is not a
+  // verdict, so `inputsSeen` reports the number of test files this run
+  // actually reasoned about, and `status` distinguishes "nothing to check"
+  // from "checked and clean".
+  const inputsSeen = fileAssertions.size;
+
   return {
     ok: reported.length === 0,
     violations: reported,
+    inputsSeen,
+    status: reported.length > 0 ? "FAIL" : inputsSeen > 0 ? "PASS" : "NOT_APPLICABLE",
   };
 }
 

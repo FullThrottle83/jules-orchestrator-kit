@@ -106,6 +106,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # A green suite is only evidence if the guards were switched on. This
+      # asks the question the suite cannot: can every blocking guard still be
+      # made red? Runs first, because a silent guard makes the rest moot.
+      - name: Verify every blocking guard can still be made red
+        run: npm run guard-reach
+
       - name: Run Documentation Sync Gate
         run: npm run jules:doc-sync
 
