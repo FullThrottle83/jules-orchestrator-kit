@@ -1,0 +1,12 @@
+
+🛡️ agentctl Safety Gate Audit Results (Base: HEAD, Mode: working-tree)
+-----------------------------------------------------
+  Phase [SCOPE] : ❌ FAIL
+     - Violation: uv.lock (Rule: protect)
+-----------------------------------------------------
+Overall Result: REJECTED (Exit 3)
+
+💡 Remediation Hint (Exit 3 Scope Violation):
+   • To allow protected files in this run, pass: agentctl gate --allow-protected
+   • Or remove protected/denied paths from the diff before dispatching.
+

@@ -1,0 +1,11 @@
+{
+  "command": "uv run --locked pre-commit run --all-files",
+  "cwd": "/home/user/cold-start-trial/work/itsdangerous-repeat",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 120,
+  "timed_out": false,
+  "exit_code": 1,
+  "started_utc": "2026-09-05T11:42:17Z",
+  "seconds": 0.381
+}

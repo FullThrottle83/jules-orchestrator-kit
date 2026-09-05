@@ -1,0 +1,11 @@
+{
+  "command": "ps -eo pid,cmd | grep -E \"node .*(agentctl|jules-|node --test)\" | grep -v grep | wc -l",
+  "cwd": "/home/user/cold-start-trial",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 180,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T13:23:45Z",
+  "seconds": 0.008
+}

@@ -1,0 +1,11 @@
+{
+  "command": "find .agent -type f | sort",
+  "cwd": "/home/user/cold-start-trial/work/is-5-dry-run-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 180,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T12:28:57Z",
+  "seconds": 0.004
+}

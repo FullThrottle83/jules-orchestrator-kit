@@ -1,0 +1,20 @@
+
+🛡️ agentctl Safety Gate Audit Results (Base: HEAD, Mode: working-tree)
+-----------------------------------------------------
+  Phase [SCOPE] : ✅ PASS
+  Phase [PAYLOAD] : ✅ PASS
+  Phase [SECRETS] : ✅ PASS
+  Phase [VERIFY] : ❌ FAIL
+     - Stage: empty-suite (exit 0)
+     - Command: cargo test
+     - An exit code of 0 from a runner that collected no tests is not evidence about this change.
+     - Output:
+         The verification command exited 0 without running any tests (cargo reported 0), so this change was approved against nothing. Point verify.test at a suite that covers this repository, lower the floor with verify.minTests, or — if this repository intentionally uses only the scope and secret phases — set verify.required: false.
+  Phase [EVIDENCE] : ✅ PASS
+-----------------------------------------------------
+Overall Result: REJECTED (Exit 4)
+
+💡 Remediation Hint (Exit 4 Verification Failed):
+   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.
+   • To let agentctl attempt the repair loop itself, pass: agentctl gate --fix
+

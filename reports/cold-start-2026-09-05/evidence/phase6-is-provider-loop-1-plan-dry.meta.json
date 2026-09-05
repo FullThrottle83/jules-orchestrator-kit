@@ -1,0 +1,11 @@
+{
+  "command": "agentctl plan approve cold-start-no-session --dry-run",
+  "cwd": "/home/user/cold-start-trial/work/is-6-provider-loop-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 30,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T12:30:23Z",
+  "seconds": 0.082
+}

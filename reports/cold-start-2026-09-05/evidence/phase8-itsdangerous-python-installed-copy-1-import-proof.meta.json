@@ -1,0 +1,11 @@
+{
+  "command": "python3 -c \"import itsdangerous.encoding as e; print(e.__file__); print(e.bytes_to_int(bytes([192])))\"; PYTHONPATH=src python3 -c \"import itsdangerous.encoding as e; print(e.__file__); print(e.bytes_to_int(bytes([192])))\"",
+  "cwd": "/home/user/cold-start-trial/work/itsdangerous-8-python-installed-copy-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 90,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T12:42:28Z",
+  "seconds": 0.06
+}

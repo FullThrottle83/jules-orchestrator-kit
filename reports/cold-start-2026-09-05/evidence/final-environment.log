@@ -1,0 +1,25 @@
+2026-09-05T12:47:52Z
+agentctl v0.71.0
+v22.22.3
+10.9.8
+1.22.22
+uv 0.7.8
+pip 23.0.1 from /usr/lib/python3/dist-packages/pip (python 3.11)
+Python 3.11.2
+go version go1.25.5 linux/amd64
+cargo 1.88.0 (873a06493 2025-05-10)
+rustc 1.88.0 (6b00bc388 2025-06-23)
+rustfmt 1.8.0-stable (6b00bc3880 2025-06-23)
+ruff 0.11.11
+black, 26.5.1 (compiled: yes)
+Python (CPython) 3.11.2
+git version 2.39.5
+upstream/Humphrey d07e3ff71cfbc49094edbaa518480ec7ebeef693
+upstream/github4life 29bc5f250db2e4a0135b43db4581bb6c0ff2e5c6
+upstream/is 0d9f7ec708a3dd34f83fb87c4e786d0f09b54f54
+upstream/itsdangerous 672971d66a2ef9f85151e53283113f33d642dabd
+upstream/klona e563341d88f433e74a9b4c3c0372d4ba55d2f79e
+upstream/mini_markdown 9f61074a47134575736b86bd305bc796962ff868
+upstream/p-limit 783068bb9e967fd7bea8642e1bf5a3627fe38bdf
+upstream/thiserror 5a306c7d0a8588caaaaa6a7567aeb25c1c10719b
+source checkout: dc48c457e9ef020cd71b562b6b26fb4b9a02f40b

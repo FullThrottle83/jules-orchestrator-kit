@@ -1,0 +1,19 @@
+
+🛡️ agentctl Safety Gate Audit Results (Base: master, Mode: working-tree)
+-----------------------------------------------------
+  Phase [SCOPE] : ✅ PASS
+     - Setup: accepted 5 gate scaffold file(s) this repository did not have yet
+         .agent/config.yml
+         .agent/jules-queue/README.md
+         .agent/jules.yml
+         .agent/rules/dynamic-guardrails.json
+         .agent/rules/jules-protocol.md
+       Commit them to the base branch and the full protect rules apply from then on.
+  Phase [PAYLOAD] : ✅ PASS
+  Phase [SECRETS] : ✅ PASS
+  Phase [VERIFY] : ✅ PASS
+     - Unverified: The verification command exited 0, but no recognised test runner stated how many tests it ran, so the gate cannot tell a full suite from a command that ran nothing. Verified by exit code alone.
+  Phase [EVIDENCE] : ✅ PASS
+-----------------------------------------------------
+Overall Result: APPROVED (Exit 0)
+

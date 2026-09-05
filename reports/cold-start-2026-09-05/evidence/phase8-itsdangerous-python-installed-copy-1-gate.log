@@ -1,0 +1,11 @@
+
+🛡️ agentctl Safety Gate Audit Results (Base: HEAD, Mode: working-tree)
+-----------------------------------------------------
+  Phase [SCOPE] : ✅ PASS
+  Phase [PAYLOAD] : ✅ PASS
+  Phase [SECRETS] : ✅ PASS
+  Phase [VERIFY] : ✅ PASS
+  Phase [EVIDENCE] : ✅ PASS
+-----------------------------------------------------
+Overall Result: APPROVED (Exit 0)
+

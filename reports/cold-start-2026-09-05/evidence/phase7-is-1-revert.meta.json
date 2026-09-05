@@ -1,0 +1,11 @@
+{
+  "command": "git revert --no-edit 51a1360df0e91c6632251635c8a2fe1414e6b8b1; git status --short; find .agent -type f | sort",
+  "cwd": "/home/user/cold-start-trial/work/is-repeat-undo-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 180,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T12:33:42Z",
+  "seconds": 0.011
+}

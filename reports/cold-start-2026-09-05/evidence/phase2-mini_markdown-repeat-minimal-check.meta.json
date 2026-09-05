@@ -1,0 +1,11 @@
+{
+  "command": "agentctl check --base HEAD",
+  "cwd": "/home/user/cold-start-trial/work/mini_markdown-repeat",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 120,
+  "timed_out": false,
+  "exit_code": 4,
+  "started_utc": "2026-09-05T11:47:26Z",
+  "seconds": 0.286
+}

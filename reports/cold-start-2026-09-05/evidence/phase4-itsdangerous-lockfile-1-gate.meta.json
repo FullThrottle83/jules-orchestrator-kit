@@ -1,0 +1,11 @@
+{
+  "command": "agentctl check --base HEAD",
+  "cwd": "/home/user/cold-start-trial/work/itsdangerous-4-lockfile-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 90,
+  "timed_out": false,
+  "exit_code": 3,
+  "started_utc": "2026-09-05T11:59:55Z",
+  "seconds": 0.168
+}

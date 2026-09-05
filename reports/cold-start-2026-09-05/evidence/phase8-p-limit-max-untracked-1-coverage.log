@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "score": null,
+  "scored": false,
+  "reason": "No added executable lines were measurable — V8 coverage only observes code Node itself ran, so nothing was scored.",
+  "minCoverage": 100,
+  "totalLines": 0,
+  "coveredLines": 0,
+  "missedLines": 0,
+  "missedByFile": {},
+  "summary": "Diff Coverage: null% (0/0 added executable lines covered, min: 100%)",
+  "testPass": true
+}

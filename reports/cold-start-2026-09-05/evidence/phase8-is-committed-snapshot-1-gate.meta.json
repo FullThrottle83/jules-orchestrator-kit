@@ -1,0 +1,11 @@
+{
+  "command": "agentctl check --mode committed --base d6142787267699752c9e7d79695123d3132a41b9",
+  "cwd": "/home/user/cold-start-trial/work/is-8-committed-snapshot-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 90,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T12:42:22Z",
+  "seconds": 0.552
+}

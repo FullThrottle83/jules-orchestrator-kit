@@ -1,0 +1,31 @@
+[detached HEAD 34163ac] Revert "chore: add agent config"
+ Date: Sat Sep 5 12:33:42 2026 +0000
+ 19 files changed, 530 deletions(-)
+ delete mode 100644 .agent/config.yml
+ delete mode 100644 .agent/jules-queue/README.md
+ delete mode 100644 .agent/jules.yml
+ delete mode 100644 .agent/prompts/A11y.md
+ delete mode 100644 .agent/prompts/Alchemist.md
+ delete mode 100644 .agent/prompts/Bolt.md
+ delete mode 100644 .agent/prompts/Janitor.md
+ delete mode 100644 .agent/prompts/Overseer.md
+ delete mode 100644 .agent/prompts/Scribe.md
+ delete mode 100644 .agent/prompts/Sentinel.md
+ delete mode 100644 .agent/prompts/Spectator.md
+ delete mode 100644 .agent/prompts/Task_Template.md
+ delete mode 100644 .agent/rules/dynamic-guardrails.json
+ delete mode 100644 .agent/rules/jules-protocol.md
+ delete mode 100644 .agent/workflows/jules-review.md
+ delete mode 100644 AGENTS.md
+ delete mode 100644 CONSTRAINTS.md
+ delete mode 100644 SPEC.md
+?? .agent/
+?? .cursor/
+?? .github/workflows/
+?? .gitlab-ci.agent-gate.yml
+.agent/evidence/EVD-1788611621101-8efa4c21.json
+.agent/evidence/EVD-1788611621613-a23fad30.json
+.agent/evidence/manifest.v1.json
+.agent/state/flaky.jsonl
+.agent/state/telemetry-2026-09-05.head
+.agent/state/telemetry-2026-09-05.jsonl
