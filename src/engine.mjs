@@ -1,9 +1,12 @@
-import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
+import { loadConfig } from "./config.mjs";
 import { isTestPath } from "./test-paths.mjs";
-import { isPlaceholderTestScript } from "./stack-detector.mjs";
+import { isPlaceholderTestScript, describeIncapableTestCommand } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
+import { checkSourceBinding } from "./source-binding.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd } from "./git.mjs";
+import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd, resolveBase } from "./git.mjs";
+import { resolveTrustedPolicy } from "./trusted-policy.mjs";
+import { materialiseRevision } from "./revision-snapshot.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
@@ -22,7 +25,7 @@ import { hydratePrompt, harvestFailure } from "./memory.mjs";
 import { resolveRolePrompt } from "./role-resolver.mjs";
 
 import { runAssertion } from "./assertions.mjs";
-import { buildDefaultStages } from "./profiles.mjs";
+import { buildDefaultStages, buildProfileStages } from "./profiles.mjs";
 import { resolveWorkspaceBoundary } from "./stack-detector.mjs";
 import {
   computeDirectoryHash,
@@ -151,6 +154,23 @@ export function fingerprintFailureState(failure = {}, root = process.cwd()) {
  * FAILS CLOSED ON GIT OR CONFIG ERRORS.
  */
 export async function gate(opts = {}) {
+  // The materialised snapshot is a temporary directory and `gateBody` has a
+  // dozen early returns, so cleanup is registered in one place rather than
+  // repeated at each of them. A leaked snapshot of a whole repository per gate
+  // run would fill /tmp within a day of CI.
+  const snapshotCleanup = { fn: null };
+  try {
+    return await gateBody(opts, snapshotCleanup);
+  } finally {
+    if (snapshotCleanup.fn) {
+      try {
+        snapshotCleanup.fn();
+      } catch (_) {}
+    }
+  }
+}
+
+async function gateBody(opts, snapshotCleanup) {
   const root = opts.root || process.cwd();
   const config = opts.config || loadConfig(root);
   const base = opts.base || config.baseBranch || "main";
@@ -160,6 +180,42 @@ export async function gate(opts = {}) {
   const phases = [];
 
   appendTelemetry(root, "gate_started", { base, mode });
+
+  // F08: the diff must not be able to choose the commit that judges it.
+  //
+  // `base_branch: HEAD`, committed alongside the production change and a no-op
+  // test command, made `--mode committed` compare HEAD against HEAD. The diff
+  // under review was empty by construction, so every scope and secret rule had
+  // nothing to look at, and the "trusted" config the gate then read was the
+  // agent's own new commit. Policy author and policy selector were the same
+  // untrusted change.
+  //
+  // In committed mode the base is by definition a commit the proposed one is
+  // not; a base that resolves to HEAD is not a base. This is checked before
+  // anything else is read, because everything else is read *from* the base.
+  if (mode === "committed") {
+    let resolvedBaseSha = null;
+    let headSha = null;
+    try {
+      resolvedBaseSha = resolveBase(root, base);
+      headSha = resolveBase(root, "HEAD");
+    } catch (_) {
+      resolvedBaseSha = null;
+    }
+    if (resolvedBaseSha && headSha && resolvedBaseSha === headSha) {
+      const error =
+        `In --mode committed the base must be a commit the proposed change is not, and "${base}" resolves ` +
+        `to HEAD (${headSha.slice(0, 12)}) — the very commit under review. Nothing is being compared, and ` +
+        `the policy the gate would obey would be the one this change just committed.` +
+        (opts.base
+          ? ` Pass the commit this work branched from as --base.`
+          : ` This base came from base_branch in .agent/config.yml. If that value was changed by this change, ` +
+            `the change selected its own trusted base; pass the real base branch as --base.`);
+      phases.push({ phase: "trusted_base", ok: false, error, base, resolved: headSha });
+      appendTelemetry(root, "gate_finished", { ok: false, code: 3, error: "self-selected base" });
+      return { ok: false, code: 3, phases, error };
+    }
+  }
 
   let files = [];
   let bytes = 0;
@@ -175,59 +231,19 @@ export async function gate(opts = {}) {
     return { ok: false, code: 1, phases, error: err.message };
   }
 
-  // Phase 1: Scope Guard (Fetch trusted config strictly from origin/base using single normalizeScope)
-  let trustedScope = config.scope;
-  let trustedVerify = config.verify;
-  let trustedDiffKb = 75;
+  // Phase 1: Scope Guard.
+  //
+  // Every field the gate obeys is resolved in exactly one place — see
+  // src/trusted-policy.mjs, which is the whole of constraints 1 and 3. This
+  // block used to read `tamperGuard` from the base commit and `verify.test`,
+  // `profile`, `minTests`, `required` and the stage list from wherever
+  // `loadConfig` found them, and that split is findings F06, F07 and F08.
+  const policy = await resolveTrustedPolicy({ root, base, config, callerConfig: opts.config });
 
-  const trustedConfigRaw = showFromOrigin(root, base, ".agent/config.yml") || showFromOrigin(root, base, ".agent/jules.yml");
-  if (trustedConfigRaw) {
-    try {
-      const parsed = parseYaml(trustedConfigRaw);
-      // CRITICAL B1 FIX: normalizeScope ensures BUILTIN_DENY is ALWAYS merged with user deny rules
-      trustedScope = normalizeScope(parsed);
-      if (parsed.limits?.diff_kb || parsed.limits?.diffKb) {
-        trustedDiffKb = Number(parsed.limits.diff_kb || parsed.limits.diffKb) || 75;
-      }
-      if (parsed.verify || parsed.test_cmd || parsed.build_cmd) {
-        trustedVerify = {
-          setup: parsed.verify?.setup || config.verify.setup,
-          lint: parsed.verify?.lint || parsed.lint_cmd || config.verify.lint,
-          test: parsed.verify?.test || parsed.test_cmd || config.verify.test,
-          unit: parsed.verify?.unit || config.verify.unit || parsed.verify?.test || parsed.test_cmd || config.verify.test,
-          fuzz: parsed.verify?.fuzz || parsed.fuzz_cmd || config.verify.fuzz,
-          invariant: parsed.verify?.invariant || parsed.invariant_cmd || config.verify.invariant,
-          e2e: parsed.verify?.e2e || parsed.e2e_cmd || config.verify.e2e,
-          teardown: parsed.verify?.teardown || config.verify.teardown,
-          build: parsed.verify?.build || parsed.build_cmd || config.verify.build,
-          stages: parsed.verify?.stages || config.verify.stages,
-          policy: parsed.verify?.policy || config.verify.policy,
-          // Read from the base commit like every other trusted field: an
-          // uncommitted `required: false` must not be able to switch the gate off.
-          required: parsed.verify?.required !== undefined ? parsed.verify.required !== false : config.verify.required !== false,
-          // The floor the collection check applies. Omitting it here meant
-          // `verify.minTests` was silently dropped and always defaulted to 1
-          // — while the failure message told the operator to set exactly
-          // that. A remediation hint that does nothing is worse than none.
-          minTests:
-            parsed.verify?.minTests !== undefined
-              ? parsed.verify.minTests
-              : parsed.verify?.min_tests !== undefined
-                ? parsed.verify.min_tests
-                : config.verify.minTests,
-          tamperGuard: parsed.verify?.tamperGuard || parsed.verify?.tamper_guard || config.verify.tamperGuard,
-          scope: parsed.verify?.scope || config.verify.scope || "global",
-          timeoutMs: parsed.verify?.timeoutMs || parsed.verify?.timeout_ms || config.verify.timeoutMs,
-        };
-      }
-    } catch (_) {}
-  } else {
-    // CRITICAL H-c FIX: Fall back strictly to normalizeScope({}) (built-ins only), never HEAD config
-    trustedScope = normalizeScope({});
-    if (opts.config?.limits?.diffKb || opts.config?.limits?.diff_kb) {
-      trustedDiffKb = Number(opts.config.limits.diffKb || opts.config.limits.diff_kb) || 75;
-    }
-  }
+  const trustedScope = policy.scope;
+  let trustedVerify = policy.verify;
+  const trustedDiffKb = policy.diffKb;
+  const trustedConfigRaw = policy.source === "base" ? policy.raw : null;
 
   // A symlink is judged by its own name, so `notes.md -> .agent/config.yml`
   // walked straight past a deny list that names the target. Judge both: the
@@ -262,33 +278,51 @@ export async function gate(opts = {}) {
   }
 
   // Bootstrap: the files that bring a repository under the gate are not agent
-  // edits to the gate.
+  // edits to the gate — but only when they are still the files `init` wrote.
   //
   // `init` writes `.agent/**` and then tells the user to commit it. Doing
   // exactly that produced Exit 3 on the very first run, because the base
   // branch does not have the commit yet and every scaffolded path matches
-  // BUILTIN_PROTECT or BUILTIN_DENY. The advice printed alongside it was
-  // `--allow-protected` — so a newcomer's first lesson was how to switch the
-  // scope guard off. A gate that refuses its own installation is not strict,
-  // it is broken.
+  // BUILTIN_PROTECT or BUILTIN_DENY. A gate that refuses its own installation
+  // is not strict, it is broken — so the exception exists.
   //
-  // Narrow on purpose, and only where it cannot weaken anything: the base
-  // commit must have no gate config at all — in which case `trustedScope` is
-  // already built-ins only and nothing in the added files is trusted — and
-  // every violating path must be scaffold that the base does not have. A
-  // repository already under the gate keeps the full rule, so an agent still
-  // cannot touch the policy it is governed by.
+  // F06 is what the exception cost when it stopped there. Accepting the
+  // scaffold's *presence* was read as accepting its *contents*: an agent
+  // rewrote `verify.test` to a no-op and `profile` to minimal in the same
+  // uncommitted diff, and the gate obeyed the policy the diff had just
+  // written. The agent supplied its own oracle and was approved.
+  //
+  // The rule now: accept the scaffold only when it is byte-identical to what
+  // `init` generates for this repository. `resolveTrustedPolicy` has already
+  // made that comparison — `policy.source === "verified-scaffold"` means every
+  // policy file on disk matched, and `policy.scaffold.mismatches` names the
+  // file and field when one did not.
   let acceptedScaffold = [];
+  let scaffoldRefused = null;
   if (!scopeResult.ok && !trustedConfigRaw) {
     const violations = scopeResult.violations || [];
     const isScaffold = (f) => typeof f === "string" && f.replace(/\\/g, "/").startsWith(".agent/");
-    if (
+    const allScaffold =
       violations.length > 0 &&
-      violations.every((v) => isScaffold(v.file) && showFromOrigin(root, base, v.file) === null)
-    ) {
+      violations.every((v) => isScaffold(v.file) && showFromOrigin(root, base, v.file) === null);
+
+    if (allScaffold && policy.source === "verified-scaffold") {
       acceptedScaffold = violations.map((v) => v.file);
       scopeResult.violations = [];
       scopeResult.ok = true;
+    } else if (allScaffold) {
+      // Scaffold paths, but not the scaffold `init` writes. Refuse, and say
+      // exactly which field differs — "your config is not trusted" is not
+      // something an operator can act on.
+      scaffoldRefused = policy.scaffold || { accepted: [], mismatches: [] };
+      for (const m of scaffoldRefused.mismatches || []) {
+        const existing = (scopeResult.violations || []).find((v) => v.file === m.file);
+        const reason = m.field
+          ? `untrusted setup policy: ${m.field} ${m.detail}`
+          : `untrusted setup policy: ${m.detail}`;
+        if (existing) existing.reason = reason;
+        else (scopeResult.violations ||= []).push({ file: m.file, rule: "setup", reason });
+      }
     }
   }
 
@@ -299,6 +333,7 @@ export async function gate(opts = {}) {
     // Reported, never silent: the operator has to see that the gate accepted
     // files it would otherwise have blocked, and why.
     ...(acceptedScaffold.length > 0 ? { setup: acceptedScaffold } : {}),
+    ...(scaffoldRefused ? { setupRefused: scaffoldRefused } : {}),
   });
   appendTelemetry(root, "gate_phase", { phase: "scope", ok: scopeResult.ok });
   if (progressBus && progressToken) {
@@ -392,6 +427,46 @@ export async function gate(opts = {}) {
     if (key.startsWith("NODE_TEST_") || key.startsWith("NODE_CHANNEL_")) delete testEnv[key];
   }
 
+  // F10: verify the revision that is being judged, not the working tree.
+  //
+  // In staged and committed mode the gate read the diff from the index or from
+  // a commit and then ran the verification command in the repository root. The
+  // trial staged a broken file, restored the healthy one on disk, and both
+  // modes approved — the command executed the healthy working copy while the
+  // gate attested the broken snapshot. Two different copies of the code, one
+  // verdict, and no config change or escape flag involved.
+  //
+  // The snapshot is materialised and the stages run there. If it cannot be
+  // materialised the gate refuses: an approval is a statement about a specific
+  // revision, and a revision that was not executed cannot be attested.
+  //
+  // See src/revision-snapshot.mjs for why dependency directories are linked
+  // back in — running the suite against a snapshot with no `node_modules`
+  // would fail correct work, which is the opposite mistake.
+  const snapshot = materialiseRevision({
+    root,
+    mode,
+    commit: mode === "committed" ? (() => { try { return resolveBase(root, "HEAD"); } catch (_) { return null; } })() : null,
+  });
+
+  if (!snapshot.ok) {
+    const error =
+      `The ${mode} snapshot could not be materialised, so the verification would have run against the ` +
+      `working tree instead — a different copy of the code from the one under review. ` +
+      `The gate refuses rather than attest a revision it did not execute. Cause: ${snapshot.error}`;
+    phases.push({ phase: "verify", ok: false, failure: { stageId: "snapshot", command: null, exitCode: null, stdout: "", stderr: error, diagnostics: [] } });
+    appendTelemetry(root, "gate_finished", { ok: false, code: 4, error: "snapshot unavailable" });
+    return { ok: false, code: 4, phases, error };
+  }
+
+  /** Where verification stages execute. The root only when it IS the revision. */
+  const verifyCwd = snapshot.dir || root;
+
+  // The snapshot is a temporary directory, and `gate()` has a dozen early
+  // returns below this point. Registering the cleanup against the returned
+  // promise means no exit path can leak it, including a thrown one.
+  snapshotCleanup.fn = snapshot.cleanup;
+
   let flakyVerdictResult = null;
   // Five minutes. A minute was too short for an ordinary suite — a mid-sized
   // Node repository takes longer than that on cold caches — and the timeout
@@ -412,7 +487,7 @@ export async function gate(opts = {}) {
   // whenever a shared file is touched or no sub-project command is found — a
   // narrower run that misses the breakage is worse than a slow one.
   let boundary = null;
-  if (trustedVerify.scope === "affected" && !(Array.isArray(trustedVerify.stages) && trustedVerify.stages.length > 0)) {
+  if (trustedVerify.scope === "affected" && !(Array.isArray(policy.explicitStages) && policy.explicitStages.length > 0)) {
     try {
       boundary = resolveWorkspaceBoundary(files, root);
     } catch (_) {
@@ -432,10 +507,29 @@ export async function gate(opts = {}) {
     }
   }
 
-  // Build sequential execution pipeline (Setup -> Lint -> Test/Unit -> Fuzz -> Invariant -> E2E -> Build -> Server -> Teardown)
+  // Build the sequential execution pipeline, entirely from the trusted policy.
+  //
+  // F07 lived here. `loadConfig` expanded `verify.profile` from the *working
+  // tree* config and froze the result into `config.verify.stages`, and the
+  // trusted-config block above copied that expanded list across verbatim
+  // (`stages: parsed.verify?.stages || config.verify.stages`). So an unstaged
+  // `profile: minimal` with a no-op `test:` never appeared in the staged diff,
+  // was never scope-checked — and was executed anyway, because the stage plan
+  // came from the live file. Excluding a policy file from the diff excluded it
+  // from review but not from effect.
+  //
+  // The profile is now expanded here, from the trusted document, against the
+  // trusted commands. Nothing in `config.verify.stages` is consulted.
   const stagesToRun = [];
-  if (Array.isArray(trustedVerify.stages) && trustedVerify.stages.length > 0) {
-    stagesToRun.push(...trustedVerify.stages);
+  if (Array.isArray(policy.explicitStages) && policy.explicitStages.length > 0) {
+    stagesToRun.push(...policy.explicitStages);
+  } else if (policy.profile) {
+    stagesToRun.push(
+      ...buildProfileStages(policy.profile, {
+        stack: trustedVerify.stack || config.verify?.stack,
+        verify: { ...trustedVerify, unit: trustedVerify.unit || trustedVerify.test },
+      }).stages
+    );
   } else {
     stagesToRun.push(...buildDefaultStages(trustedVerify));
   }
@@ -493,7 +587,7 @@ export async function gate(opts = {}) {
           ? { ...testEnv, JULES_SANDBOX_OFFLINE: "1" }
           : testEnv;
 
-        res = runCmd(stage.cmd, { cwd: root, ignoreError: true, env: stageEnv, timeout: stage.timeoutMs || verifyTimeout });
+        res = runCmd(stage.cmd, { cwd: verifyCwd, ignoreError: true, env: stageEnv, timeout: stage.timeoutMs || verifyTimeout });
         durationMs = Date.now() - startTime;
         stdoutRedacted = redactSecrets(res.stdout || "");
         stderrRedacted = redactSecrets(res.stderr || "");
@@ -563,7 +657,7 @@ export async function gate(opts = {}) {
   } finally {
     if (trustedVerify.teardown) {
       try {
-        runCmd(trustedVerify.teardown, { cwd: root, ignoreError: true, env: testEnv });
+        runCmd(trustedVerify.teardown, { cwd: verifyCwd, ignoreError: true, env: testEnv });
       } catch (_) {}
     }
   }
@@ -635,7 +729,30 @@ export async function gate(opts = {}) {
     Boolean(testResult?.command) &&
     isPlaceholderTestScript(testResult.command);
 
-  const verifyOk = !failingCmd && !testTampered && !missingOracle && !emptySuite && !placeholderOracle;
+  // F11: the suite ran, but against which copy of the package?
+  //
+  // A src-layout Python repository with the package also installed imports
+  // from site-packages under a bare `python3 -m pytest`, so the tests pass
+  // against the installed library while the diff edits the working source.
+  // The collection floor cannot see this — the tests really did run, and
+  // really did pass. Only the import path can. See src/source-binding.mjs;
+  // the probe reports nothing unless it can demonstrate the mismatch.
+  let sourceBinding = { ok: true, reason: null, detail: null };
+  if (verificationRequired && !missingOracle && testResult?.command) {
+    try {
+      sourceBinding = checkSourceBinding({
+        cwd: verifyCwd,
+        command: testResult.command,
+        files,
+        env: testEnv,
+      });
+    } catch (_) {
+      sourceBinding = { ok: true, reason: null, detail: null };
+    }
+  }
+  const unboundSource = !sourceBinding.ok;
+
+  const verifyOk = !failingCmd && !testTampered && !missingOracle && !emptySuite && !placeholderOracle && !unboundSource;
 
   // What actually broke. Without this the verify phase reported `ok: false` and
   // nothing else — not the stage, not the exit code, not a line of output — so
@@ -689,12 +806,24 @@ export async function gate(opts = {}) {
               exitCode: 0,
               stdout: "",
               stderr:
-                `The verification command is ${JSON.stringify(testResult.command)}, which cannot fail. ` +
+                `The verification command is ${JSON.stringify(testResult.command)}, and ` +
+                `${describeIncapableTestCommand(testResult.command) || "it cannot fail"}. ` +
                 "Nothing about this change was checked, so approving it would certify nothing. " +
                 "Point verify.test at a command that runs this repository's tests, or — if this repository " +
                 "intentionally uses only the scope and secret phases — set verify.required: false, which says so.",
               diagnostics: [
                 "`agentctl task create` already refuses a task with this command; the gate now agrees with it.",
+              ],
+            }
+          : unboundSource
+          ? {
+              stageId: "source-binding",
+              command: testResult?.command || null,
+              exitCode: 0,
+              stdout: "",
+              stderr: sourceBinding.reason,
+              diagnostics: [
+                "A passing test count is evidence about the code the tests imported, not about the code in the diff.",
               ],
             }
           : emptySuite
@@ -761,6 +890,10 @@ export async function gate(opts = {}) {
     ...(collectionFloor.count !== null && collectionFloor.count !== undefined
       ? { testsCollected: collectionFloor.count, runner: collectionFloor.runner }
       : {}),
+    // What was actually executed. An approval is a claim about one revision,
+    // so the report has to name it rather than leave the reader to assume.
+    verifiedRevision: snapshot.describe,
+    ...(snapshot.linked.length > 0 ? { linkedDependencies: snapshot.linked } : {}),
   });
   phases.push({
     phase: "evidence",

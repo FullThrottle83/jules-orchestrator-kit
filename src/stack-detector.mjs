@@ -113,11 +113,96 @@ function makefileHasTestTarget(root) {
 const EMPTY_PROGRAM =
   /^(?:\S*[/\\])?(?:node|nodejs|deno|bun|python[\d.]*|ruby|perl|php|sh|bash|zsh|dash)(?:\s+-{1,2}[\w-]+)*\s+(?:-e|-c|--eval|--execute)(?:\s*(?:""|''|``))?\s*$/;
 
+/**
+ * An interpreter handed a program whose whole body is an exit-zero or a no-op.
+ *
+ * One step along from EMPTY_PROGRAM, and the same class. `node -e
+ * "process.exit(0)"` and `sh -c :` were both reported by the trial as accepted
+ * verification: they are spelled like work, they run, and they cannot fail.
+ * The body is matched, not merely the shape, so `node -e "require('./run')"`
+ * — an interpreter doing something — is untouched.
+ */
+const TRIVIAL_PROGRAM_BODY =
+  /^(?:process\.exit\(\s*0?\s*\)|exit\(\s*0?\s*\)|sys\.exit\(\s*0?\s*\)|os\.exit\(\s*0?\s*\)|exit\s+0|true|:|pass|;|0)$/;
+
+const INTERPRETER_WITH_BODY =
+  /^(?:\S*[/\\])?(?:node|nodejs|deno|bun|python[\d.]*|ruby|perl|php|sh|bash|zsh|dash)(?:\s+-{1,2}[\w-]+)*\s+(?:-e|-c|--eval|--execute)\s+(.+)$/s;
+
+/**
+ * Commands that collect tests, or select none, and never execute one.
+ *
+ * `pytest --collect-only` reports what it *would* run and exits 0; an empty Go
+ * selection (`go test -run '^$' ./...`) prints "no tests to run" and exits 0.
+ * Neither is an unlisted runner whose dialect the collection floor has yet to
+ * learn — both are commands whose documented purpose is to not run the suite.
+ *
+ * The Go form is matched on the selector being an anchored empty alternation,
+ * which is the only way to write "select nothing"; `-run TestFoo` is a
+ * legitimate narrowing and is left alone. Narrowing to a real subset is the
+ * operator's business; narrowing to the empty set is not verification.
+ */
+const COLLECTION_ONLY = [
+  // pytest / nose collection, and the same idea under a runner wrapper.
+  /(?:^|\s)--collect-only(?:\s|$)/,
+  /(?:^|\s)--co(?:\s|$)/,
+  // jest and vitest list the tests they would run.
+  /(?:^|\s)--listTests(?:\s|$)/,
+  /(?:^|\s)--list(?:-tests)?(?:\s|$)(?=.*\b(?:vitest|jest|cargo\s+test|nextest)\b)/,
+  // `go test -run '^$'` / `-run "^$"` / `-run ^$` — the empty selection.
+  /(?:^|\s)-{1,2}run[=\s]+["']?\^?\$["']?(?:\s|$)/,
+  // pytest's equivalent: deselect everything by an impossible keyword filter.
+  /(?:^|\s)-k[=\s]+["']?(?:''|""|)["']?\s*$/,
+  // A dry run is a description of a run.
+  /(?:^|\s)--dry-run(?:\s|$)/,
+];
+
+/**
+ * Is this command recognisably incapable of executing a test?
+ *
+ * Split out from `isPlaceholderTestScript` only so the reason can be named in
+ * the gate's output; the predicate below folds it in.
+ *
+ * @param {string} cmd
+ * @returns {string|null} a short reason, or null when the command is not one
+ *   of the recognised no-ops.
+ */
+export function describeIncapableTestCommand(cmd) {
+  if (typeof cmd !== "string") return null;
+  const trimmed = cmd.trim();
+  if (!trimmed) return "the command is empty";
+
+  for (const re of COLLECTION_ONLY) {
+    if (re.test(trimmed)) {
+      return /-{1,2}run[=\s]+["']?\^?\$/.test(trimmed)
+        ? "the test selection is empty, so no test is executed"
+        : "the command collects or lists tests without executing them";
+    }
+  }
+
+  if (EMPTY_PROGRAM.test(trimmed)) return "the interpreter is handed an empty program";
+
+  const body = INTERPRETER_WITH_BODY.exec(trimmed);
+  if (body) {
+    // Strip one layer of quoting, then the trailing semicolons a shell allows.
+    let program = body[1].trim();
+    const quote = program[0];
+    if ((quote === '"' || quote === "'" || quote === "`") && program.endsWith(quote) && program.length >= 2) {
+      program = program.slice(1, -1).trim();
+    }
+    program = program.replace(/;+\s*$/, "").trim();
+    if (!program || TRIVIAL_PROGRAM_BODY.test(program)) {
+      return "the program the interpreter runs cannot fail";
+    }
+  }
+
+  return null;
+}
+
 export function isPlaceholderTestScript(cmd) {
   if (typeof cmd !== "string") return false;
   const trimmed = cmd.trim();
   if (!trimmed) return true;
-  if (EMPTY_PROGRAM.test(trimmed)) return true;
+  if (describeIncapableTestCommand(trimmed)) return true;
   // Drop the announcements; what matters is what the shell is left doing.
   const remainder = trimmed
     .split(/&&|;/)
