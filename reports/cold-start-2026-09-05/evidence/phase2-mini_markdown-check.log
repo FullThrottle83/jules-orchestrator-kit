@@ -1,0 +1,46 @@
+
+🛡️ agentctl Safety Gate Audit Results (Base: main, Mode: working-tree)
+-----------------------------------------------------
+  Phase [SCOPE] : ✅ PASS
+     - Setup: accepted 5 gate scaffold file(s) this repository did not have yet
+         .agent/config.yml
+         .agent/jules-queue/README.md
+         .agent/jules.yml
+         .agent/rules/dynamic-guardrails.json
+         .agent/rules/jules-protocol.md
+       Commit them to the base branch and the full protect rules apply from then on.
+  Phase [PAYLOAD] : ✅ PASS
+  Phase [SECRETS] : ✅ PASS
+  Phase [VERIFY] : ❌ FAIL
+     - Unverified: The verification command exited 0, but no recognised test runner stated how many tests it ran, so the gate cannot tell a full suite from a command that ran nothing. Verified by exit code alone.
+     - Stage: lint (exit 101)
+     - Command: cargo clippy -- -D warnings
+     - Output (last 20 of 1312 lines):
+             |
+             = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#len_zero
+         
+         error: this expression creates a reference which is immediately dereferenced by the compiler
+            --> src/lib.rs:561:105
+             |
+         561 | ...mailto"))), content: &source.split(":").last().unwrap()})   
+             |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `source.split(":").last().unwrap()`
+             |
+             = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrow
+         
+         error: this expression creates a reference which is immediately dereferenced by the compiler
+            --> src/lib.rs:563:101
+             |
+         563 |         return Ok(ValidURL{scheme: Some(source_scheme.unwrap_or(Scheme::Email("mailto"))), content: &source})
+             |                                                                                                     ^^^^^^^ help: change this to: `source`
+             |
+             = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrow
+         
+         error: could not compile `mini_markdown` (lib) due to 121 previous errors
+  Phase [EVIDENCE] : ✅ PASS
+-----------------------------------------------------
+Overall Result: REJECTED (Exit 4)
+
+💡 Remediation Hint (Exit 4 Verification Failed):
+   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.
+   • To let agentctl attempt the repair loop itself, pass: agentctl gate --fix
+

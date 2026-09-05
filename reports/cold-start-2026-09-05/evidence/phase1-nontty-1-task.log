@@ -1,0 +1,1 @@
+[FATAL ERROR] Unfalsifiable Task Rejected: Task must include a non-trivial verification test/build command. Configure verify.test in .agent/config.yml or pass --verify-cmd.

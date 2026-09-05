@@ -1,0 +1,22 @@
+{
+  "p-limit": {
+    "upstream_sha": "783068bb9e967fd7bea8642e1bf5a3627fe38bdf",
+    "baseline_sha": "1b9c959171857b822d063ce3effcd288ff304676",
+    "url": "https://github.com/sindresorhus/p-limit.git"
+  },
+  "itsdangerous": {
+    "upstream_sha": "672971d66a2ef9f85151e53283113f33d642dabd",
+    "baseline_sha": "81f7faaa9a31118b2ac892ae810b3bbbabb8b6a6",
+    "url": "https://github.com/pallets/itsdangerous.git"
+  },
+  "is": {
+    "upstream_sha": "0d9f7ec708a3dd34f83fb87c4e786d0f09b54f54",
+    "baseline_sha": "d6142787267699752c9e7d79695123d3132a41b9",
+    "url": "https://github.com/matryer/is.git"
+  },
+  "mini_markdown": {
+    "upstream_sha": "9f61074a47134575736b86bd305bc796962ff868",
+    "baseline_sha": "7f9d68f81fbbd542fcccb84c5129b93cbcac6ec8",
+    "url": "https://github.com/darakian/mini_markdown.git"
+  }
+}

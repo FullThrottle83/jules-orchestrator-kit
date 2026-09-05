@@ -1,0 +1,40 @@
+
+🛡️ agentctl Safety Gate Audit Results (Base: HEAD, Mode: working-tree)
+-----------------------------------------------------
+  ⚠️  OVERRIDES ACTIVE — this run is not a strict pass:
+       • verify.required: false (nothing is executed)
+-----------------------------------------------------
+  Phase [SCOPE] : ✅ PASS
+  Phase [PAYLOAD] : ✅ PASS
+  Phase [SECRETS] : ✅ PASS
+  Phase [VERIFY] : ❌ FAIL
+     - Stage: unit (exit 1)
+     - Command: go test ./...
+     - Output:
+         [02mis_test.go:39: [00m1 != 2[31m // 1 doesn't equal 2[00m
+         	[02mis_test.go:46: [00m[02mint([00m1[02m)[00m != <nil>[31m // 1 doesn't equal nil[00m
+         	[02mis_test.go:53: [00m<nil> != [02mint([00m2[02m)[00m[31m // nil doesn't equal 2[00m
+         	[02mis_test.go:67: [00m[02mint32([00m1[02m)[00m != [02mint64([00m1[02m)[00m[31m // nope[00m
+         	[02mis_test.go:76: [00mmap[value:1] != map[value:2][31m // maps[00m
+         	[02mis_test.go:84: [00m[02mbool([00mtrue[02m)[00m != [02mmap[string]interface {}([00mmap[value:2][02m)[00m[31m // maps[00m
+         	[02mis_test.go:93: [00m[one two three] != [one two three four][31m // slices[00m
+         	[02mis_test.go:102: [00m<nil> != [02mchan string([00m0xc0000805b0[02m)[00m[31m // channels[00m
+         	[02mis_test.go:111: [00m<nil> != [02m[]string([00m[one two three four][02m)[00m[31m // nil slice[00m
+         	[02mis_test.go:129: [00m<nil> != [02mmap[string]string([00mmap[][02m)[00m[31m // nil map[00m
+         	[02mis_test.go:147: [00m20% VAT != 0.2 VAT[31m // strings[00m
+         	[02mis_test.go:156: [00mfailed[31m // something went wrong[00m
+         	[02mis_test.go:174: [00merr: nope[31m // method shouldn't return error[00m
+         	[02mis_test.go:183: [00mnot true: 1 == 2
+         --- FAIL: TestLoadComment (0.00s)
+             is_test.go:252: loadComment: bad comment broken comment
+         FAIL
+         FAIL	github.com/matryer/is	0.003s
+         FAIL
+  Phase [EVIDENCE] : ✅ PASS
+-----------------------------------------------------
+Overall Result: REJECTED (Exit 4)
+
+💡 Remediation Hint (Exit 4 Verification Failed):
+   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.
+   • To let agentctl attempt the repair loop itself, pass: agentctl gate --fix
+

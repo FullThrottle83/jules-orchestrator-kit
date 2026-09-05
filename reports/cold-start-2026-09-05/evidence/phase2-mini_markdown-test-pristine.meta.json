@@ -1,0 +1,11 @@
+{
+  "command": "cargo test --verbose",
+  "cwd": "/home/user/cold-start-trial/work/mini_markdown-baseline",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 120,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T11:44:29Z",
+  "seconds": 1.099
+}

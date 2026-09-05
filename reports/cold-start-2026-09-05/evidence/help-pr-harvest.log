@@ -1,0 +1,72 @@
+
+agentctl v0.71.0 — Universal Agent Orchestrator & Safety Gatekeeper
+
+Usage: agentctl <command> [options]
+
+Commands:
+  dispatch | create     Dispatch a single task to an AI agent (--role <name>, --tier fast|complex, --check-premise)
+  check                 Run all-in-one CI security, rules, and stack verification gate
+  gate | audit          Run CI security and verification gate against current branch
+  mutate | mutation     Run zero-dependency diff mutation testing harness (--min-score, --max-mutants)
+  coverage              Run native zero-dependency V8 diff coverage check (--min, --cmd)
+  probe | stability     Run test flakiness stability probe across N repetitions (--repeat, --cmd)
+  perf | event-loop     Monitor Node.js event loop delay and Big-O lag (--max-ms, --cmd)
+  fix                   Auto-repair from piped terminal logs or error trace (npm test 2>&1 | agentctl fix)
+  rules <action>        Audit rule token budgets or compile rule sentinels (check | compile)
+  queue                 Run pending task queue (--dag, --concurrency <n>)
+  swarm                 Run parallel task swarm
+  mcp                   Start stdio Model Context Protocol (MCP) server
+  clean                 Clean stale branches, worktrees, locks, and ledgers
+  lock <action>         Manage mutex locks (acquire [--ttl <min>] [--pid <n>] | release | status)
+  doctor                Run system diagnostics and stack resolution checks
+  providers             List agent providers and whether this machine can reach them (--json)
+  provider set <name>   Switch the active provider in .agent/config.yml
+  profile               Show or set the verification profile (--list, --set <name>, --json)
+  ci init               Generate a stack-aware CI gate workflow (--target github|gitlab, --force)
+  bootstrap             Bootstrap zero-test repository with verification oracle
+  review-repair         Parse PR review comments and synthesize OODA repair tasks
+  dashboard             Start local HTTP telemetry and audit dashboard
+  init                  Scaffold .agent/ config and run onboarding wizard
+  task create           Interactively author and scope a Jules task envelope (--template <name>, --role <name>, --tier fast|complex)
+  task optimize         Linter & optimizer for Jules task prompts (--fix, --json, --web)
+  task template         List and generate task templates (--list, --json)
+  test-gen              Scaffold & run automated TDD Red-to-Green test cycle (--run)
+  mcp init              Scaffold IDE integration config (cursor | vscode | claude | all)
+  rollback              Restore git state & working tree to atomic pre-flight checkpoint
+  handover              Inspect or generate Baton Pass session handover envelopes (list | show | create | prune)
+  resume                Resume warm session with human response (--response "<text>")
+  plan approve <id>     Approve pending plan for a Jules session (:approvePlan)
+  session get <id>      Retrieve remote session status from provider API
+  patch <id>            Extract and test/apply git patch from a Jules session (--apply, --save)
+  retry <id>            Retry failed session with automated failure-trace injection (--role)
+  prune                 Batch-archive or delete stale sessions via Jules API (--age 7d, --yes)
+  pr harvest            Triage, verify CI, and auto-merge low-risk agent PRs (--auto, --tier r0,r1)
+  escalate              Dispatch or manage webhook escalation incidents (--flush, --status, --clear)
+  flaky                 Manage Wilson-quarantined tests and dispatch healing swarm (status | heal | reset)
+  status                Display queue and system status summary
+  budget                Show the 24h task budget, worker slots and their provenance (reset --yes)
+  scan                  Scan codebase for TODO/FIXME task candidates
+  hydrate [prompt]      Prepend active system learnings and baton-pass state to a prompt
+  harvest               Harvest failure traces and record/quarantine resolution rules
+  learning add          Record a system learning rule into .agent/knowledge/
+  evidence <action>     Manage cryptographic audit evidence (generate | verify | show)
+  assert                Run declarative zero-dependency verification assertion primitives
+  version               Output agentctl version
+
+Options:
+  --prompt, -p          Task prompt text — dispatch, task create and task optimize
+                        also accept it as a positional argument
+  --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)
+  --role, -r            Specify specialist agent role (overseer | bolt | sentinel | janitor)
+  --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:
+  --check-premise       Verify task goal/oracle passes locally before burning API budget
+  --dag                 Execute queue tasks via DAG dependency resolution
+  --dry-run, -d         Simulate action without making API calls or modifying git
+  --mode, -m            Gate evaluation mode (working-tree | committed | staged)
+  --repoless            Dispatch task in repoless execution mode
+  --source, -s          Specify Jules repository source name
+  --branch, -b          Specify target starting branch
+  --json, -j            Emit machine-readable JSON output
+  --json-report <path>  Write structured machine-readable JSON diagnostics report
+  --help, -h            Show command help
+

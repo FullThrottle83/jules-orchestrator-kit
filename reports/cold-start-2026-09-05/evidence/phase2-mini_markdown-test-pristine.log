@@ -1,0 +1,92 @@
+   Compiling mini_markdown v0.3.5 (/home/user/cold-start-trial/work/mini_markdown-baseline)
+     Running `rustc --crate-name mini_markdown --edition=2018 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=5fdcfa0121a99891 -C extra-filename=-88abb76c35cae4bc --out-dir /home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps -C incremental=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/incremental -L dependency=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps`
+     Running `rustc --crate-name mini_markdown --edition=2018 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=9c14ea3d399a11b5 -C extra-filename=-082b4401c7cebe39 --out-dir /home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps -C incremental=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/incremental -L dependency=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps`
+warning: unused variable: `tokens`
+   --> src/lexer.rs:269:62
+    |
+269 | pub(crate) fn lex_newlines<'a>(char_iter: &mut MiniIter<'a>, tokens: &Vec<Token>) -> Result<Token<'a>, ParseError<'a>> {
+    |                                                              ^^^^^^ help: if this is intentional, prefix it with an underscore: `_tokens`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `mini_markdown` (lib test) generated 1 warning
+warning: `mini_markdown` (lib) generated 1 warning (1 duplicate)
+     Running `rustc --crate-name tests --edition=2018 tests/tests.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=d5ace06764f5e083 -C extra-filename=-ab7688fc3bc35722 --out-dir /home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps -C incremental=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/incremental -L dependency=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps --extern mini_markdown=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps/libmini_markdown-082b4401c7cebe39.rlib`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.05s
+     Running `/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps/mini_markdown-88abb76c35cae4bc`
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running `/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps/tests-ab7688fc3bc35722`
+
+running 58 tests
+test commonmark::atx_headings::commonmark_test_63_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_62_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_64_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_65_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_67_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_66_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_69_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_68_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_70_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_71_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_72_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_73_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_74_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_75_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_76_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_77_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_79_atx_headings ... ok
+test commonmark::atx_headings::commonmark_test_78_atx_headings ... ok
+test commonmark::autolinks::commonmark_test_593_autolinks ... ok
+test commonmark::autolinks::commonmark_test_594_autolinks ... ok
+test commonmark::autolinks::commonmark_test_595_autolinks ... ok
+test commonmark::autolinks::commonmark_test_596_autolinks ... ok
+test commonmark::autolinks::commonmark_test_597_autolinks ... ok
+test commonmark::autolinks::commonmark_test_598_autolinks ... ok
+test commonmark::autolinks::commonmark_test_599_autolinks ... ok
+test commonmark::autolinks::commonmark_test_600_autolinks ... ok
+test commonmark::autolinks::commonmark_test_601_autolinks ... ok
+test commonmark::autolinks::commonmark_test_602_autolinks ... ok
+test commonmark::autolinks::commonmark_test_603_autolinks ... ok
+test commonmark::autolinks::commonmark_test_604_autolinks ... ok
+test commonmark::autolinks::commonmark_test_606_autolinks ... ok
+test commonmark::autolinks::commonmark_test_605_autolinks ... ok
+test commonmark::autolinks::commonmark_test_607_autolinks ... ok
+test commonmark::autolinks::commonmark_test_608_autolinks ... ok
+test commonmark::autolinks::commonmark_test_609_autolinks ... ok
+test commonmark::autolinks::commonmark_test_610_autolinks ... ok
+test commonmark::autolinks::commonmark_test_611_autolinks ... ok
+test commonmark::blank_lines::commonmark_test_227_blank_lines ... ok
+test commonmark::tabs::commonmark_test_10_tabs ... ok
+test commonmark::tabs::commonmark_test_11_tabs ... ok
+test commonmark::tabs::commonmark_test_1_tabs ... ok
+test commonmark::tabs::commonmark_test_2_tabs ... ok
+test commonmark::tabs::commonmark_test_3_tabs ... ok
+test commonmark::tabs::commonmark_test_4_tabs ... ok
+test commonmark::tabs::commonmark_test_5_tabs ... ok
+test commonmark::tabs::commonmark_test_6_tabs ... ok
+test commonmark::tabs::commonmark_test_7_tabs ... ok
+test commonmark::tabs::commonmark_test_8_tabs ... ok
+test iter_tests::all::consume_peek_line_test ... ok
+test iter_tests::all::consume_until_end_consumes_full_string ... ok
+test iter_tests::all::general_iter_test ... ok
+test iter_tests::all::modern_standard_arabic_test ... ok
+test iter_tests::all::next_advances_utf_correctly ... ok
+test iter_tests::all::peek_does_not_advance ... ok
+test iter_tests::all::peek_does_not_advance_utf ... ok
+test iter_tests::all::test_degenerate_newlines ... ok
+test iter_tests::all::test_mixed_chars ... ok
+test iter_tests::all::test_slashes ... ok
+
+test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests mini_markdown
+     Running `rustdoc --edition=2018 --crate-type lib --color auto --crate-name mini_markdown --test src/lib.rs --test-run-directory /home/user/cold-start-trial/work/mini_markdown-baseline -L dependency=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps -L dependency=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps --extern mini_markdown=/home/user/cold-start-trial/work/mini_markdown-baseline/target/debug/deps/libmini_markdown-082b4401c7cebe39.rlib -C embed-bitcode=no --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' --error-format human`
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

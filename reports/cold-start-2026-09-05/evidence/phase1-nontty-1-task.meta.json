@@ -1,0 +1,11 @@
+{
+  "command": "npx jules-orchestrator-kit task create -p \"Refactor the invoice module\"",
+  "cwd": "/home/user/cold-start-trial/work/quickstart-nontty-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 30,
+  "timed_out": false,
+  "exit_code": 1,
+  "started_utc": "2026-09-05T11:37:01Z",
+  "seconds": 0.332
+}

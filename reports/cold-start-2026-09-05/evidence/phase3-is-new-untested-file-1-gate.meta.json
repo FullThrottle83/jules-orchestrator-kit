@@ -1,0 +1,11 @@
+{
+  "command": "agentctl check --base HEAD",
+  "cwd": "/home/user/cold-start-trial/work/is-3-new-untested-file-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 90,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T11:54:51Z",
+  "seconds": 0.491
+}

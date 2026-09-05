@@ -1,0 +1,11 @@
+{
+  "command": "agentctl check --mode committed",
+  "cwd": "/home/user/cold-start-trial/work/is-5-committed-base-policy-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 90,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T12:26:16Z",
+  "seconds": 0.21
+}

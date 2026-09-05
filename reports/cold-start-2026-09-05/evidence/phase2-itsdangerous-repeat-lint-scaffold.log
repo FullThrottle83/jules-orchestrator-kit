@@ -1,0 +1,15 @@
+ruff (legacy alias)......................................................Passed
+ruff format..............................................................Passed
+uv-lock..................................................................Passed
+check for merge conflicts................................................Passed
+debug statements (python)................................................Passed
+fix utf-8 byte order marker..............................................Passed
+trim trailing whitespace.................................................Passed
+fix end of files.........................................................Failed
+- hook id: end-of-file-fixer
+- exit code: 1
+- files were modified by this hook
+
+Fixing AGENTS.md
+Fixing .agent/rules/jules-protocol.md
+

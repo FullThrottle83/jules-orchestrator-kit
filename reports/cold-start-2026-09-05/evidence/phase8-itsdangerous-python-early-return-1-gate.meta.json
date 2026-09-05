@@ -1,0 +1,11 @@
+{
+  "command": "agentctl check --base HEAD",
+  "cwd": "/home/user/cold-start-trial/work/itsdangerous-8-python-early-return-1",
+  "terminal": false,
+  "input_schedule": [],
+  "timeout_seconds": 90,
+  "timed_out": false,
+  "exit_code": 0,
+  "started_utc": "2026-09-05T12:44:40Z",
+  "seconds": 2.259
+}

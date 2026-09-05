@@ -1,0 +1,20 @@
+Usage: agentctl gate [flags]
+
+Description: Run CI security, rules, and stack verification gate
+Category:    Inspect
+Risk Tier:   LOW
+
+Flags:
+  --mode             Evaluation mode (working-tree | committed | staged) (-m)
+  --tier             Enforce specific tier policies (free | pro | ultra | enterprise)
+  --allow-protected  Bypass protected path checks for authorized maintainers
+  --fix              Trigger automated OODA self-repair loop on failure
+  --strict-locks     Enforce strict anti-tampering verification on test files
+  --dry-run          Simulate gate evaluation without persisting evidence (-d)
+  --json             Output structured JSON gate report (-j)
+
+Examples:
+  $ agentctl gate
+  $ agentctl gate --mode working-tree
+  $ agentctl gate --fix
+  $ agentctl gate --json

@@ -1,0 +1,12 @@
+
+🛡️ agentctl Safety Gate Audit Results (Base: d6142787267699752c9e7d79695123d3132a41b9, Mode: committed)
+-----------------------------------------------------
+  Phase [SCOPE] : ✅ PASS
+  Phase [PAYLOAD] : ✅ PASS
+  Phase [SECRETS] : ✅ PASS
+  Phase [VERIFY] : ✅ PASS
+     - Unverified: The verification command exited 0, but no recognised test runner stated how many tests it ran, so the gate cannot tell a full suite from a command that ran nothing. Verified by exit code alone.
+  Phase [EVIDENCE] : ✅ PASS
+-----------------------------------------------------
+Overall Result: APPROVED (Exit 0)
+
