@@ -73,59 +73,99 @@ Do not bump the version in `package.json`, do not edit released sections of `CHA
 
 ---
 
-## Task 1 — Hunt for silence (start here)
+## Tasks 1 and 2 — done
 
-The highest-value job, the lowest risk, and the one that plays to a strong reasoning
-model: nothing ships behaviour changes, only evidence and contract cases. Try `xhigh`
-here if you try it anywhere.
+The silence hunt and the fifth cold-start trial were both run on 2026-09-05 and landed
+as `reports/cold-start-2026-09-05/`. That trial found 22 findings, 12 of them severity 1,
+and four of the worst were independently reproduced before it was merged. The work now
+is remediation, not more hunting — see R1-R3 below, which are written from its findings.
+
+Re-run the trial brief (`docs/cold-start-trial.md`) once R1 and R2 have landed, not before.
+
+---
+
+## R1 — The gate must verify the thing under review, using a policy the diff did not write
+
+**Do this first. Nothing else in this repository matters while this is open.** Four
+reproduced severity-1 findings say the same thing from four directions: the gate reads
+its own policy out of the diff it is judging, and it verifies a revision other than the
+one it is attesting.
+
+The design constraints below are settled — implement within them rather than
+re-deciding them. Everything else is yours.
 
 ```text
-# Task: find a way to make this gate say APPROVED when it should not
+# Task: close the trusted-policy and verified-revision holes (F06, F07, F08, F09, F10, F11)
 
-Read the guard implementation — `src/security.mjs`, `src/engine.mjs`, `src/ops/test-collection.mjs`, `src/stack-detector.mjs`, `src/config.mjs` — and then try hard to defeat it.
+Read `reports/cold-start-2026-09-05/REPORT.md`, findings F06 through F11. Reproduce each one before you change anything — build the fixture, run the published CLI, and confirm you see the approval the report saw. Any finding you cannot reproduce, say so and leave alone.
 
-Your goal is a concrete, reproducible case where `agentctl check` returns `APPROVED (Exit 0)` on a change that genuinely weakens verification, or where a guard reports a pass having examined nothing. Build real fixture repositories in a scratch directory and run the real CLI against them. Do not reason about what the code would do — run it.
+The four that were independently confirmed against 0.71.0 are F06, F08, F10 and the staged half of F07. They share one root: nothing separates the policy the gate obeys from the diff the gate is judging, and nothing separates the code the gate runs from the revision it attests.
 
-Directions worth trying, as starting points rather than a checklist:
-- a verification command that exits 0 without exercising the changed code at all
-- a test suite that imports an installed copy of the package instead of the working tree
-- a workspace or monorepo where the package the diff touched has no tests
-- a test file the classifier does not recognise as a test file
-- an assertion dialect the tamper guard does not know, on a language it claims to cover
-- a diff shape that makes an assertion removal and an addition cancel out in the counting
-- anything that reaches a `PASS` status through a path where the evidence list is empty
+Three design constraints. These are decided; work inside them.
 
-For each attempt, report whether it worked. **The failed attempts are as valuable as the successes** — they say where the guard is genuinely solid, and this repository has no record of them. Do not invent a finding to fill the report.
+1. **One trusted-input resolver.** Every field the gate obeys — `verify.test` and every other stage command, `profile`, `base_branch`, `minTests`, `required`, `tamperGuard`, the protected-path lists — must be resolved in exactly one place, from a commit the diff under review cannot author. `tamperGuard` is already read from the base commit; the rest are not, and that split is the bug. A field read from the working tree in one code path and from the base in another is how this project has produced the same defect five times: write the rule once, and have every consumer call it.
 
-Deliver:
-1. `docs/silence-audit.md` — every attempt, the exact fixture and commands, what the gate printed, and whether the guard held. Group by whether it held.
-2. For each case that got through: a failing test that pins it, added to the existing suite in the style of its neighbours, plus its case in `src/guard-policy.mjs`. Add the test even if you do not fix the underlying hole — a red test naming a real hole is a better deliverable than a silent one.
-3. For each case that held: a line in the audit saying which rule caught it, so a future reader knows the coverage is real and not accidental.
+2. **Verify the selected revision.** In `--mode staged` and `--mode committed`, the verification command must run against the snapshot being judged, not the working tree. Materialise it — `git worktree add --detach` or `git checkout-index` into a temporary directory — and run there. If the snapshot cannot be materialised, the gate refuses and says why. Attesting a revision you did not execute is the failure this tool exists to refuse, and running in the repository root is not isolation.
 
-Fix a hole only where the fix is small and obviously safe. Where it is not, write the failing test and describe the fix in the PR instead — the guard is easy to make wrong in the direction of rejecting correct code, and that is nearly as bad as the hole.
+3. **First install is the hard case, and this is the answer.** On a repository whose base commit has no kit config, there is no trusted policy to read, and today the gate accepts whatever the uncommitted scaffold says — so an agent supplies its own oracle and is approved. Accept the scaffold only when it is byte-identical to what `init` generates for that repository; a scaffold modified in the same uncommitted diff is not a trusted policy and must not be obeyed. Say so in the output, and name the file and field that differ.
+
+Two related findings belong with this change because they are the same question about the same field:
+
+- **F09** — `node -e "process.exit(0)"`, `sh -c :`, pytest `--collect-only` and an empty Go test selection are accepted as verification. `isPlaceholderTestScript` already refuses `true`, `:` and an interpreter with an empty program; these are the same class one step along, and a command that is recognisably incapable of failing is not an unlisted runner.
+- **F11** — a configured `python3 -m pytest` on a src-layout repository validates the installed copy while the gate approves edits to the working source. v0.71.0 fixed what `init` *chooses*; it did not touch a command already in a config. The report is careful about that distinction, so read it before deciding whether this belongs here or is its own change.
+
+The regression tests are the deliverable as much as the fix. Each of F06-F11 gets a test that fails against today's code and passes after, and each rule you add or widen gets its case in `src/guard-policy.mjs`. Where a fix would risk rejecting correct work — constraint 2 changes what every staged and committed run executes — say what you checked to convince yourself it does not.
 ```
 
 ---
 
-## Task 2 — The fifth cold-start trial
+## R2 — The tamper guard's reach
 
-The repo already carries the brief. This runs it end-to-end and costs us nothing.
+Second priority. Independent of R1, so it can run in parallel.
 
 ```text
-# Task: run the cold start trial in docs/cold-start-trial.md
+# Task: widen the tamper guard where the trial got past it (F01, F03, F04, F05, F12)
 
-Read `docs/cold-start-trial.md` and execute it in full, exactly as written, against the **published** package rather than this checkout:
+Read `reports/cold-start-2026-09-05/REPORT.md`, findings F01, F03, F04, F05 and F12, and reproduce each before changing anything.
 
-    npm install -g jules-orchestrator-kit
-    agentctl --version
+**F04 is confirmed and its cause is known — start there.** `isDeregistration` in `src/security.mjs` requires the added name to be exactly the removed name minus its `test` prefix, so `test_x → x` is caught and `test_x → check_x`, `test_x → disabled_x` and `test_x → _test_x` all pass, along with the Go and Rust equivalents. Measured on a pytest repository against 0.71.0: only the first of those four is rejected. The rule was written narrow to avoid flagging `test_x → test_x_renamed`, which is an honest rename; the right rule keeps that case silent without requiring the new name to be a prefix strip. The report also lists build tags, `cfg(any())`, non-strict xfail and an early return before the assertions as ways to remove a test from execution — decide which of those the guard can see in a diff and say so for the ones it cannot.
 
-Work in a scratch directory. Treat this repository's source as reference material you may read when a finding needs explaining, but never gate against it and never let reading it substitute for running the CLI.
+The others, in the report's own words:
 
-The brief's rules of evidence are the binding part. In particular: every terminal block in your report must be pasted from a real run, because the quoted strings get grepped against the source afterwards and a previous trial carried five that existed nowhere. Reproduce twice from an empty directory. Suspect your own fixture first.
+- **F01** — P-Limit's root `test.js` is not classified as a test file, so a deleted assertion, a vacuous replacement and a rewritten expectation were all approved in it. Fix the classifier and check the near-misses in `TEST_PATH_CASES` still hold: a predicate that says yes to everything has no denominator either.
+- **F03** — a conditional expectation (`dec == (193 if value == 192 else value)`) blesses a broken function while both sides still contain a comparison.
+- **F05** — a Go assertion neutralised by an impossible condition (`if len(comment) < 0`), leaving the failure call in dead logic.
+- **F12** — diff coverage exits 0 having scored none of a new file. It does disclose `scored: false`, which is honest in the detail; the question is whether a guard that measured nothing should return a passing result.
 
-If a phase cannot run — no credentials, no network to a repository host, a package manager missing — say so plainly in the denominator table with the reason. A phase honestly skipped is worth more than one you claim to have run.
+Widening a guard is the direction that produces false reds, and a false red on a healthy repository is nearly as expensive as the hole it closes. For every rule you widen, add the innocent edits it must stay silent on to `INNOCENT_EDITS` in `src/guard-policy.mjs`, and assert the verdict a caller actually receives — that contract once stayed green for two releases while the gate rejected every case in it, because it checked the violation list and the blocking status was somewhere else.
+```
 
-Deliver the report as `docs/trials/trial-05.md`, in the structure the brief specifies, ending with the two-paragraph verdict a stranger would reach and the single change that would most improve their first hour. Do not change any source file in this PR — this is a measurement, and mixing it with fixes makes both harder to trust.
+---
+
+## R3 — False reds, and saying what happened
+
+Third priority, and the cheapest. Every one of these hits a newcomer.
+
+```text
+# Task: stop breaking healthy repositories, and report what was waived (F13-F22)
+
+Read `reports/cold-start-2026-09-05/REPORT.md`, findings F13 through F22, and reproduce each before changing anything.
+
+The first group makes a green repository red on first install, which teaches a new user that the gate is broken:
+- **F13** — scaffolded Markdown fails a healthy host's own pre-commit hooks.
+- **F14** — Rust init selects `cargo clippy -- -D warnings`, which the host CI does not require; a clean tree then fails with 121 lint errors. Init must not invent a stricter policy than the repository already keeps.
+- **F15** — Cargo prints zero unit tests and then 58 passing integration tests; the count parser takes the first match and rejects a healthy suite as empty.
+- **F16** — routine lockfile updates are hard-red protected-path changes. The report reads this as intentional policy rather than a bug, so decide deliberately: if it stays, the message has to say it is policy and name the flag; if it goes, say what stops an agent from smuggling a dependency swap through a lockfile.
+- **F17** — `check --help` advertises `--strict-locks`, which the parser rejects as an unknown option.
+
+The second group is about the gate saying what it actually did:
+- **F18** — the environment-variable waiver, `minTests: 0` and an optional failing stage all produce an approval with no override banner, and `--allow-protected` leaves no provenance in the JSON output. v0.71.0 added the banner for the command-line flags; these are the paths it missed.
+- **F19** — `verify.required: false` prints that nothing is executed, and then shows an executed failing command.
+- **F20** — `check --dry-run` persists evidence although its help promises otherwise, and the session and plan dry runs report synthetic results with no rehearsal marker.
+- **F21** — many subcommand help pages return the global command list instead of that subcommand's flags. The trial had to read the installed parser to find `--base`.
+- **F22** — reverting the scaffold commit leaves ignored runtime state behind, and no documentation says how to remove the kit completely.
+
+F17, F21 and F22 are documentation and argument-parsing work; F13-F16 change behaviour and need the same care as any guard change. `npm run jules:doc-sync` must pass, and if you change what a flag does, its help text and the README change in the same commit — a flag that is advertised and rejected is exactly what F17 is.
 ```
 
 ---
@@ -179,9 +219,13 @@ Three things to check specifically, because they are how a newcomer actually get
 
 ## Running them
 
-Task 1 and Task 2 are independent of each other and of everything else — run them first
-and in parallel if Arena allows it. Task 4 touches only documentation. Task 3 is the one
-that changes dispatch behaviour, so land it on its own and read the diff properly.
+**R1 first, and alone.** It changes what every staged and committed run executes, so it
+deserves a diff read properly rather than one merged on a green gate. R2 is independent
+of it and can run in parallel. R3 is cheap and independent of both.
+
+Task 3 and Task 4 are still open but no longer urgent: session steering is not worth
+much while the gate itself can be talked out of checking, and the documentation pass is
+now better specified by F17, F21 and F22 in R3 than by its own prompt.
 
 Each finishes as a pull request. Our own gate runs on it, which means the tool gets
 tested on the exact thing it exists for on every one of these.
