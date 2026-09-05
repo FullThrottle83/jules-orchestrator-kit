@@ -244,22 +244,22 @@ test("Interactive Task Create Wizard Smoke Test", async (t) => {
     assert.match(readFileSync(res.taskFile, "utf-8"), /Restore the focus trap/);
   });
 
-  await t.test("an explicit --prompt still wins over the interactive default", async () => {
+  await t.test("--prompt asks nothing, even on a TTY", async () => {
     const stdin = new PassThrough();
     stdin.isTTY = true;
     stdin.setRawMode = () => {};
     const stdout = new PassThrough();
 
-    // Passed prompts are offered as the editable default, so accepting it with
-    // a bare newline must keep the flag's value rather than blanking it.
-    const driver = drive(stdin, stdout, [
-      { expect: "Task Title", send: "\n" },
-      { expect: "Detailed Task Instructions", send: "\n" },
-      { expect: "Enable Automatic PR Creation", send: "n\n" },
-      { expect: "Require Plan Approval Gate", send: "n\n" },
-      { expect: "Dispatch in Repoless mode", send: "n\n" },
-    ]);
-
+    // The README advertises `task create -p "..."` as the way to "skip straight
+    // to review". It did not skip: interactivity was decided by `isTTY` alone,
+    // so in a real terminal the quickstart stopped at "? Task Title" and waited
+    // for a keypress that never came — then asked for the instructions it had
+    // already been given on the command line.
+    //
+    // It passed its old test because that test supplied answers. Nothing here
+    // may answer anything: the assertion is that no question is asked at all,
+    // which is the only form that would have caught the hang. A TTY stdin that
+    // is never written to blocks forever if the wizard asks.
     const res = await runTaskCreateWizard(root, {
       ...CLI_OPTIONS_NO_FLAGS,
       title: "Flagged Title",
@@ -268,8 +268,34 @@ test("Interactive Task Create Wizard Smoke Test", async (t) => {
       stdout,
     });
 
-    assert.equal(driver.remaining(), 0);
     assert.equal(res.plan.title, "Flagged Title");
     assert.equal(res.plan.prompt, "Flagged instructions");
+    const asked = stdout.read();
+    assert.equal(asked, null, `-p must ask nothing, but the wizard wrote ${JSON.stringify(String(asked))}`);
+  });
+
+  await t.test("--prompt reaches the same plan through a TTY as headlessly", async () => {
+    // The two paths disagreeing is the defect one level up: `-p` behaved one
+    // way when nobody was watching and another in front of a user. Asserted as
+    // an equality so neither can drift alone.
+    const ttyIn = new PassThrough();
+    ttyIn.isTTY = true;
+    ttyIn.setRawMode = () => {};
+    const viaTty = await runTaskCreateWizard(root, {
+      ...CLI_OPTIONS_NO_FLAGS,
+      prompt: "Refactor the invoice module",
+      stdin: ttyIn,
+      stdout: new PassThrough(),
+    });
+    const headless = await runTaskCreateWizard(root, {
+      ...CLI_OPTIONS_NO_FLAGS,
+      prompt: "Refactor the invoice module",
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+    });
+
+    assert.equal(viaTty.plan.title, headless.plan.title);
+    assert.equal(viaTty.plan.prompt, headless.plan.prompt);
+    assert.equal(viaTty.plan.autoPr, headless.plan.autoPr);
   });
 });

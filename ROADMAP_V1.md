@@ -11,14 +11,23 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.70.0 (Current Stable) ──► v0.71.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Not Finished Is Not Passed) (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
+ v0.71.0 (Current Stable) ──► v0.72.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (A Blanket Is Not A Check)   (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.70.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.71.0)
 
+
+### v0.71.0: A Blanket Is Not A Check
+- [x] **Silence Is Not A Suite (`src/ops/test-collection.mjs`, `src/wizard-init.mjs`)** — a command that claims to run tests and prints nothing ran none; a static gate that prints nothing did its job.
+- [x] **Python Verified Against The Working Tree (`src/stack-detector.mjs`)** — a `src/` layout resolved its imports to site-packages, and broken code passed 49 tests.
+- [x] **`UNREADABLE` Requires Its Evidence (`src/security.mjs`)** — adding an import to a test file was a CRITICAL block.
+- [x] **A Test Renamed Out Of Discovery Is Its Own Finding (`src/security.mjs`)** — `TEST_DEREGISTERED`, waivable like every other kind.
+- [x] **The Scaffold Passes A Repository's Own YAML Linter (`src/config.mjs`)** — 40 eslint errors on files `init` had just written.
+- [x] **A Loosened Run Says So (`bin/agentctl.mjs`)** — an override left no trace in the report at all.
+- [x] **`task create -p` Skips The Questions (`src/wizard-task.mjs`)** — the advertised quickstart blocked forever in a real terminal.
 
 ### v0.70.0: Not Finished Is Not Passed
 - [x] **An Unfinished Session Is Not COMPLETED (`src/engine.mjs`)** — terminal, blocked and timed-out are three verdicts, not one.

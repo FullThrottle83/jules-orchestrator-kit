@@ -1,12 +1,12 @@
 import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { parseYaml, TIER_PRESETS, VENDOR_TIERS, FALLBACK_TIER } from "./config.mjs";
+import { parseYaml, yamlScalar, TIER_PRESETS, VENDOR_TIERS, FALLBACK_TIER } from "./config.mjs";
 import { suggestProvider, detectAvailableProviders } from "./provider-readiness.mjs";
 import { detectDefaultBranch } from "./git.mjs";
 import { resolveWorkspaceBoundary, oracleCandidates } from "./stack-detector.mjs";
 import { PROFILE_NAMES, PROFILE_DESCRIPTIONS } from "./profiles.mjs";
 import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
-import { parseCollectedTests } from "./ops/test-collection.mjs";
+import { parseCollectedTests, producedNoOutput, looksLikeTestSuiteCommand } from "./ops/test-collection.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { KIT_VERSION } from "./version.mjs";
 
@@ -201,6 +201,19 @@ export function planInit(root = process.cwd(), options = {}) {
     ? `\nlimits:\n  concurrency: ${limits.concurrency}\n  daily_tasks: ${limits.daily_tasks}\n  stagger_ms: ${limits.stagger_ms}\n  diff_kb: ${limits.diff_kb}\n`
     : "";
 
+  // A generated comment must not begin with an ESLint directive keyword.
+  //
+  // `global`, `globals`, `exported`, `eslint`, `eslint-disable` and friends are
+  // configuration when they open a comment — in any language ESLint has a
+  // parser for, YAML included. This template began a line with "global runs
+  // the ...", which ESLint read as `/* global runs, the, ... */`: a declaration
+  // of globals named after each word of the sentence. Measured on
+  // `unjs/unimport`, that produced 18 `no-unused-vars` errors quoting
+  // individual English words back at the user, on a file `init` had written
+  // thirty seconds earlier.
+  //
+  // The word is unavoidable — `global` is the name of the setting being
+  // explained — so the sentence leads with the key instead.
   const configYaml = `# Agent Orchestrator Kit Config (v${KIT_VERSION})
 # provider: jules | claude-code | codex | gemini-flash  (agentctl providers)
 version: 1
@@ -212,16 +225,16 @@ ${limitsBlock}
 verify:
   # minimal | standard | max  — see: agentctl profile --list
   profile: ${profile}
-  # global runs the repository's own commands; affected resolves changed files
-  # to their sub-projects and runs only those suites (monorepos)
+  # scope: global runs the commands this repository declares; affected
+  # resolves changed files to their sub-projects, running only those suites
   scope: ${verifyScope}
-  test: "${verify.test}"
+  test: ${yamlScalar(verify.test)}
   # How long a verification stage may run before the gate kills it (default
   # 300000). Raise it for a suite that legitimately takes longer.
   timeout_ms: 300000
-  build: "${verify.build}"
-  lint: "${verify.lint}"
-  typecheck: "${verify.typecheck}"
+  build: ${yamlScalar(verify.build)}
+  lint: ${yamlScalar(verify.lint)}
+  typecheck: ${yamlScalar(verify.typecheck)}
 
 presets:
 ${selectedPresets.map((p) => `  - ${p}`).join("\n")}
@@ -246,11 +259,11 @@ ${selectedPresets.map((p) => `  - ${p}`).join("\n")}
 
   const julesYaml = `# Google Jules Repository Configuration (Version 2)
 version: 2
-test_cmd: "${verify.test}"
-build_cmd: "${verify.build}"
+test_cmd: ${yamlScalar(verify.test)}
+build_cmd: ${yamlScalar(verify.build)}
 forbidden_paths:
-${forbiddenPaths.map((p) => `  - "${p}"`).join("\n")}
-allow_paths: ${allowPaths.length > 0 ? "\n" + allowPaths.map((p) => `  - "${p}"`).join("\n") : "[]"}
+${forbiddenPaths.map((p) => `  - ${yamlScalar(p)}`).join("\n")}
+allow_paths: ${allowPaths.length > 0 ? "\n" + allowPaths.map((p) => `  - ${yamlScalar(p)}`).join("\n") : "[]"}
 `;
 
   return {
@@ -330,8 +343,18 @@ export function loadPresets(root = process.cwd()) {
  * cost of rejecting a candidate is trying the next one, where at gate time it
  * would be a hard red on a repository that is fine.
  */
-function probeVerdict(probeRes) {
+function probeVerdict(probeRes, cmd) {
   if (!probeRes.ok) return "failed";
+  // Writing nothing at all is `empty`, not `silent`. The distinction is the
+  // whole point: `silent` is the forgiving bucket that keeps a command the
+  // guard could not read, and `pnpm -r test` landed in it because it prints
+  // no output to be unreadable. So the candidate this verdict was introduced
+  // to reject was the one case it waved through, and every repository
+  // scaffolded on such a workspace kept it.
+  // Same rule as the gate's floor, from the same predicate: a command that
+  // claims to run a suite and printed nothing ran none. A static gate that
+  // printed nothing did what it promised, so it keeps the forgiving verdict.
+  if (looksLikeTestSuiteCommand(cmd) && producedNoOutput(probeRes.stdout, probeRes.stderr)) return "empty";
   const { count } = parseCollectedTests(probeRes.stdout, probeRes.stderr);
   if (count === null) return "silent";
   return count > 0 ? "ran" : "empty";
@@ -341,7 +364,7 @@ async function resolveRunnableOracle(root, testCmd, options = {}) {
   if (!testCmd) return testCmd;
   const probeSp = spinner(`Probing oracle: ${testCmd}`, options);
   const probeRes = await runVerificationProbe(testCmd, root);
-  const verdict = probeVerdict(probeRes);
+  const verdict = probeVerdict(probeRes, testCmd);
   if (verdict === "ran") {
     probeSp.stop(`Oracle verified successfully (${probeRes.durationMs}ms)`);
     return testCmd;
@@ -364,7 +387,7 @@ async function resolveRunnableOracle(root, testCmd, options = {}) {
   for (const cand of alternates) {
     const altSp = spinner(`Trying ${cand}`, options);
     const altRes = await runVerificationProbe(cand, root);
-    const altVerdict = probeVerdict(altRes);
+    const altVerdict = probeVerdict(altRes, cand);
     if (altVerdict === "ran") {
       altSp.stop(`${cand} runs here (${altRes.durationMs}ms) — using it instead`);
       return cand;

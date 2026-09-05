@@ -316,6 +316,36 @@ export function normalizeScope(parsed = {}) {
 }
 
 /**
+ * A YAML scalar quoted only as much as YAML requires.
+ *
+ * The scaffold wrapped every generated string in double quotes, which is valid
+ * YAML and idiomatic nowhere. On a repository that lints its own YAML that is a
+ * hard red on the kit's own files: measured on `unjs/unimport`, following the
+ * README verbatim produced 40 eslint errors — `yaml/quotes` and
+ * `yaml/plain-scalar` — across `.agent/config.yml` and `.agent/jules.yml`, so a
+ * newcomer's very first `agentctl check` failed on output `agentctl init` had
+ * just written, in a repository that was green a minute earlier. Teaching a new
+ * user that the gate is broken is the most expensive thing this tool can do.
+ *
+ * Nothing here is specific to eslint or to that repository. Emitting a plain
+ * scalar where YAML permits one, and single quotes where it does not, is simply
+ * how YAML is written; the linters that check it are agreeing with the spec.
+ *
+ * The quoting test is deliberately conservative — anything that could change
+ * meaning unquoted gets quotes. A glob beginning with a star stays quoted,
+ * because a leading `*` is an alias reference; `pnpm -r test` does not, because
+ * there is nothing in it to misread.
+ */
+const YAML_NEEDS_QUOTES =
+  /^$|^[-?:,[\]{}#&*!|>'"%@`]|^\s|\s$|:\s|\s#|:$|[\n\r\t]|^(?:true|false|yes|no|on|off|null|~)$/i;
+
+export function yamlScalar(value) {
+  const s = value === null || value === undefined ? "" : String(value);
+  if (!YAML_NEEDS_QUOTES.test(s) && !/^[+-]?(?:\d[\d_]*)(?:\.[\d_]*)?(?:[eE][+-]?\d+)?$/.test(s)) return s;
+  return `'${s.replace(/'/g, "''")}'`;
+}
+
+/**
  * Indent-stack zero-dependency YAML parser with prototype pollution protection.
  */
 export function parseYaml(src) {

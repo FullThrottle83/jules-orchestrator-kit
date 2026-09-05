@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { detectPolyglotStack, resolveWorkspaceBoundary, bootstrapZeroTestRepo, pytestCmd } from "../src/stack-detector.mjs";
+import { parseYaml } from "../src/config.mjs";
 
 test("detectPolyglotStack - detects PHP, .NET, Mobile, Systems, and Docker/Devcontainer stacks", () => {
   const tmp = mkdtempSync(join(tmpdir(), "stack-test-"));
@@ -135,7 +136,11 @@ test("bootstrapZeroTestRepo - succeeds on existing config with empty verify.test
     const updated = readFileSync(join(tmp, ".agent", "config.yml"), "utf-8");
     assert.ok(updated.includes("tier: free"));
     assert.ok(updated.includes("daily_tasks: 15"));
-    assert.ok(updated.includes('test: "node --test .agent/smoke.test.mjs"'));
+    // Plain scalar: the emitter quotes only what YAML requires, so the file it
+    // writes passes a repository's own YAML linter. Asserted through the parser
+    // too, because the value surviving matters more than its spelling.
+    assert.ok(updated.includes("test: node --test .agent/smoke.test.mjs"));
+    assert.equal(parseYaml(updated).verify.test, "node --test .agent/smoke.test.mjs");
 
     // Second bootstrap without --force must be refused with EXISTING_VERIFICATION_ORACLE
     const res2 = bootstrapZeroTestRepo(tmp);

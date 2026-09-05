@@ -459,7 +459,28 @@ export async function gate(opts = {}) {
       let assertMetrics = {};
 
       if (isAssertion) {
-        const assertRes = runAssertion(stage, root);
+        // The loosening flags have to reach here too.
+        //
+        // `scanDiff` above is given `allowTestChanges` and honours it, while
+        // the `assert:test-integrity` stage received only its own stage object
+        // and re-ran the same guard with none of them. So an override was
+        // accepted by one phase and ignored by the next: `--allow-test-change
+        // deregistration` turned the SECRETS phase green and then failed the
+        // run at the anti-tamper stage, with a flag hint the operator had
+        // already followed. One rule, two places, and the second kept the old
+        // answer — for the eighth time in this project's history, which is why
+        // the regression test asserts the verdict a caller receives rather
+        // than the behaviour of either site.
+        const assertRes = runAssertion(
+          {
+            ...stage,
+            allowTestModifications: opts.allowTestModifications === true,
+            allowTestChanges: opts.allowTestChanges,
+            tamperGuard: trustedVerify.tamperGuard,
+            allowUnreadableTests: opts.allowUnreadableTests === true,
+          },
+          root
+        );
         durationMs = assertRes.metrics?.durationMs ?? (Date.now() - startTime);
         stdoutRedacted = assertRes.stdout || "";
         stderrRedacted = assertRes.stderr || "";

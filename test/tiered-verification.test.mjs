@@ -111,10 +111,20 @@ verify:
       const step1Flag = join(tmp, "step1.done").replace(/\\/g, "/");
       const step2Flag = join(tmp, "step2.done").replace(/\\/g, "/");
 
+      // Each stage prints a count as well as writing its flag. This test is
+      // about stage ordering and evidence records, but the stages still have to
+      // be things the gate will accept: a command that exits 0 having written
+      // nothing on either stream now fails the collection floor, because that
+      // is what `pnpm -r test` looks like on a workspace with no test scripts.
+      //
+      // Spelled without a `#`, because this repository's YAML parser strips
+      // comments before it handles quotes, so a hash inside a quoted command
+      // truncates it. That is a real defect and it has its own fix; this test
+      // is not the place to depend on it.
       const yaml = `
 verify:
-  lint: node -e "require('fs').writeFileSync('${step1Flag}', 'ok')"
-  unit: node -e "require('fs').writeFileSync('${step2Flag}', 'ok')"
+  lint: node -e "require('fs').writeFileSync('${step1Flag}', 'ok'); console.log('collected 1 items')"
+  unit: node -e "require('fs').writeFileSync('${step2Flag}', 'ok'); console.log('collected 1 items')"
   policy:
     networkAccess: "forbidden"
 `;

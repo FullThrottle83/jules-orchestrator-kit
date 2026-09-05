@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { planInit, loadPresets, runInitWizard, TIER_PROFILES } from "../src/wizard-init.mjs";
+import { parseYaml } from "../src/config.mjs";
 import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,8 +16,23 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
       assert.equal(plan.tier, "pro");
       assert.equal(plan.limits.concurrency, TIER_PROFILES.pro.concurrency);
       assert.ok(plan.configYaml.includes("tier: pro"));
-      assert.ok(plan.configYaml.includes('test: "npm test"'));
-      assert.ok(plan.julesYaml.includes('test_cmd: "npm test"'));
+      // Plain scalars, not double quotes. The scaffold used to quote every
+      // generated string, which a repository that lints its own YAML rejects:
+      // following the README on `unjs/unimport` produced 40 eslint errors
+      // across the two files `init` had just written, so a newcomer's first
+      // gate run was a hard red on the kit's own output.
+      //
+      // Asserted through the parser as well as by spelling, because the point
+      // is that the value survives the round trip — a test that only checks
+      // the quoting would pass on a file that no longer means what it says.
+      assert.ok(plan.configYaml.includes("test: npm test"), "no gratuitous quotes");
+      assert.ok(plan.julesYaml.includes("test_cmd: npm test"));
+      assert.equal(parseYaml(plan.configYaml).verify.test, "npm test");
+      assert.equal(parseYaml(plan.julesYaml).test_cmd, "npm test");
+      // A glob beginning with a star still has to be quoted: bare, YAML reads
+      // the leading `*` as an alias reference.
+      assert.ok(plan.julesYaml.includes("- '**/*.pem'"), "quoted only where YAML requires it");
+      assert.ok(parseYaml(plan.julesYaml).forbidden_paths.includes("**/*.pem"));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

@@ -42,10 +42,10 @@
  * Exit codes: 0 = every guard reachable, 1 = a guard has gone silent.
  */
 
-import { checkTestTampering, checkScope } from "../src/security.mjs";
+import { checkTestTampering, checkScope, scanDiff } from "../src/security.mjs";
 import { isTestPath } from "../src/test-paths.mjs";
 import { normalizeScope } from "../src/config.mjs";
-import { parseCollectedTests } from "../src/ops/test-collection.mjs";
+import { parseCollectedTests, checkCollectionFloor } from "../src/ops/test-collection.mjs";
 import {
   TEST_PATH_CASES,
   TAMPER_CANARIES,
@@ -53,6 +53,9 @@ import {
   PREDICATE_MUTANTS,
   EMPTY_RUN_CANARIES,
   COUNTED_RUN_CANARIES,
+  SILENT_RUN_CANARIES,
+  SILENT_STATIC_GATES,
+  DEREGISTRATION_CANARIES,
   SCOPE_CANARIES,
   INNOCENT_EDITS,
   UNREADABLE_DIALECTS,
@@ -154,13 +157,53 @@ const canaryResults = new Map();
   add("canaries: assertion rules parsed an assertion", noAssertions.length === 0, noAssertions.length ? noAssertions.join(", ") : "assertionsSeen > 0 on every assertion finding");
 }
 
+{
+  const missed = DEREGISTRATION_CANARIES.filter(
+    (c) => !(checkTestTampering(canaryDiff(c)).violations || []).some((v) => v.type === "TEST_DEREGISTERED")
+  );
+  add(
+    "canaries: a test renamed out of discovery is caught",
+    missed.length === 0,
+    missed.length ? missed.map((c) => `${c.id} (${c.why})`).join("; ") : `${DEREGISTRATION_CANARIES.length} de-registrations reported`
+  );
+}
+
+{
+  // Zero bytes on both streams is the one absence that decides. Measured
+  // through the floor rather than the parser: the parser answers "no count
+  // stated", and it is the floor that has to refuse to certify against it.
+  const passed = SILENT_RUN_CANARIES.filter(
+    (c) => checkCollectionFloor({ ok: true, stdout: c.stdout, stderr: c.stderr, command: c.command }).ok !== false
+  );
+  add(
+    "policy: a command that printed nothing verified nothing",
+    passed.length === 0,
+    passed.length ? passed.map((c) => c.id).join(", ") : `${SILENT_RUN_CANARIES.length} silent runs refused`
+  );
+
+  // And the counterweight: a checker that succeeds in silence is doing its job.
+  const redded = SILENT_STATIC_GATES.filter(
+    (c) => checkCollectionFloor({ ok: true, stdout: "", stderr: "", command: c.command }).ok === false
+  );
+  add(
+    "policy: a silent static gate is not a silent suite",
+    redded.length === 0,
+    redded.length ? `${redded.map((c) => c.id).join(", ")} hard-redded` : `${SILENT_STATIC_GATES.length} static gates still pass`
+  );
+}
+
 // --- 3. The opposite failure: flagging what is innocent ---------------------
 {
   const noisy = [];
   for (const e of INNOCENT_EDITS) {
     const res = checkTestTampering(canaryDiff(e));
     const types = (res.violations || []).map((v) => v.type);
-    if (types.length > 0) noisy.push(`${e.id} → ${JSON.stringify(types)} (${e.why})`);
+    if (types.length > 0) noisy.push(`${e.id} \u2192 ${JSON.stringify(types)} (${e.why})`);
+    // The verdict, not just the violation list. `UNREADABLE` is a status, so
+    // this check stayed green for two releases while the gate rejected every
+    // edit below on a CRITICAL finding.
+    const scan = scanDiff(canaryDiff(e));
+    if (!scan.ok) noisy.push(`${e.id} \u2192 gate rejected: ${JSON.stringify((scan.findings || []).map((f) => f.type))}`);
   }
   add(
     "innocent edits stay silent",

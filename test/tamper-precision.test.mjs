@@ -97,7 +97,7 @@ describe("an override answers one finding, not six", () => {
   const mixed = diff("-assert.equal(add(1, 2), 3);", "+assert.equal(add(1, 2), -1);", '+it.skip("other", () => {});');
 
   it("names every kind it accepts", () => {
-    assert.deepEqual(TAMPER_KIND_NAMES, ["commented", "expectation", "removal", "skip", "vacuous", "weakening"]);
+    assert.deepEqual(TAMPER_KIND_NAMES, ["commented", "deregistration", "expectation", "removal", "skip", "vacuous", "weakening"]);
   });
 
   it("allowing one kind leaves the others reporting", () => {
