@@ -736,6 +736,42 @@ export const SILENT_STATIC_GATES = [
   { id: "generated parse gate", command: "node --check src/index.mjs" },
 ];
 
+/**
+ * Values that must survive a trip through the emitter and back.
+ *
+ * `yamlScalar` writes the manifests and `parseYaml` reads them, and a pair
+ * like that disagreeing about one character is this project's recurring
+ * defect with both halves in a single module. The parser opened a comment at
+ * the first `#` on a line, quoted or not, so `verify.test` containing a hash
+ * was silently truncated on the way in and the gate ran a command the user
+ * never wrote — reporting on it as if it were theirs.
+ *
+ * The corpus is the hard cases on purpose: hashes, colons, leading stars,
+ * apostrophes, the empty string, and the words YAML would otherwise read as
+ * booleans.
+ */
+export const YAML_ROUNDTRIP_CASES = [
+  "pnpm -r test",
+  "PYTHONPATH=src python3 -m pytest",
+  'pytest -k "not #slow"',
+  "has #hash",
+  "# leading hash",
+  "a: b",
+  "**/*.pem",
+  "**/.env.*",
+  ".github/**",
+  "",
+  "true",
+  "yes",
+  "1.5",
+  "it's fine",
+  "it's #1",
+  "O'Brien",
+  "agent/",
+  "  leading space",
+  "trailing space  ",
+];
+
 export const UNREADABLE_DIALECTS = [
   {
     id: "hspec",

@@ -205,7 +205,13 @@ const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function coerce(val) {
   if (!val) return "";
-  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+  if (val.startsWith("'") && val.endsWith("'") && val.length >= 2) {
+    // `''` is how a single-quoted YAML scalar escapes a quote, and it is what
+    // `yamlScalar` emits. Reading the quotes off without undoing the escape
+    // meant the emitter and the parser disagreed about the same file.
+    return val.slice(1, -1).replace(/''/g, "'");
+  }
+  if (val.startsWith('"') && val.endsWith('"') && val.length >= 2) {
     return val.slice(1, -1);
   }
   if (val === "true") return true;
@@ -346,6 +352,56 @@ export function yamlScalar(value) {
 }
 
 /**
+ * Can a quoted scalar begin at this offset?
+ *
+ * A quote character is only an opening quote where a value may start — after
+ * `key:`, after a `-` list marker, at the head of a flow collection, or at the
+ * start of the line. Anywhere else it is an ordinary apostrophe, and treating
+ * `test: it's fine` as an unterminated string would swallow the rest of it.
+ */
+function opensQuotedScalar(line, i) {
+  return /(?:^\s*|:\s+|-\s+|[[{,]\s*)$/.test(line.slice(0, i));
+}
+
+/**
+ * Strip a trailing `#` comment without cutting into a quoted scalar.
+ *
+ * `rawLine.indexOf("#")` stood here, which is not the YAML rule twice over: a
+ * `#` opens a comment only when it begins the line or follows whitespace, and
+ * never inside quotes. So any configured value containing a hash was silently
+ * truncated on the way in — `test: 'pytest -k "not #slow"'` became
+ * `test: 'pytest -k "not`, and the gate then ran a command the user never
+ * wrote. Silent truncation of a verification command is the worst shape this
+ * file can produce, because every later phase reports on whatever did run.
+ *
+ * It matters more now that `yamlScalar` exists: an emitter and a parser that
+ * disagree about the same file is this project's recurring defect with both
+ * halves in one module.
+ */
+function stripYamlComment(rawLine) {
+  let quote = null;
+  for (let i = 0; i < rawLine.length; i++) {
+    const ch = rawLine[i];
+    if (quote) {
+      if (quote === '"' && ch === "\\") {
+        i++;
+      } else if (ch === quote) {
+        // `''` is an escaped quote inside a single-quoted scalar, not the end.
+        if (quote === "'" && rawLine[i + 1] === "'") i++;
+        else quote = null;
+      }
+      continue;
+    }
+    if ((ch === '"' || ch === "'") && opensQuotedScalar(rawLine, i)) {
+      quote = ch;
+      continue;
+    }
+    if (ch === "#" && (i === 0 || /\s/.test(rawLine[i - 1]))) return rawLine.slice(0, i);
+  }
+  return rawLine;
+}
+
+/**
  * Indent-stack zero-dependency YAML parser with prototype pollution protection.
  */
 export function parseYaml(src) {
@@ -361,8 +417,7 @@ export function parseYaml(src) {
   const lines = src.split("\n");
 
   for (let rawLine of lines) {
-    const commentIdx = rawLine.indexOf("#");
-    const line = commentIdx !== -1 ? rawLine.slice(0, commentIdx) : rawLine;
+    const line = stripYamlComment(rawLine);
     const trimmed = line.trim();
     if (!trimmed) continue;
 

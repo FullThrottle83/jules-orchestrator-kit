@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseYaml, detectStack, loadConfig, normalizePath } from "../src/config.mjs";
+import { parseYaml, yamlScalar, detectStack, loadConfig, normalizePath } from "../src/config.mjs";
+import { YAML_ROUNDTRIP_CASES } from "../src/guard-policy.mjs";
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
@@ -133,5 +134,30 @@ limits:
     }
     assert.equal(cfgNull.limits.diffKb, cfgUndefined.limits.diffKb);
     assert.equal(cfgNull._root, cfgUndefined._root);
+  });
+});
+
+describe("the manifest emitter and the manifest parser agree", () => {
+  for (const value of YAML_ROUNDTRIP_CASES) {
+    it(`round-trips ${JSON.stringify(value)}`, () => {
+      // Through a key and through a list item, because the parser reaches
+      // each by a different path and only one of them used to be exercised.
+      assert.equal(parseYaml(`verify:\n  test: ${yamlScalar(value)}\n`).verify.test, value);
+      assert.deepEqual(parseYaml(`forbidden_paths:\n  - ${yamlScalar(value)}\n`).forbidden_paths, [value]);
+    });
+  }
+
+  it("a real comment is still a comment", () => {
+    assert.equal(parseYaml("k: v # trailing note").k, "v");
+    assert.equal(parseYaml("# leading note\nk: v").k, "v");
+    assert.equal(parseYaml("  # indented note\nk: v").k, "v");
+    // An apostrophe inside a comment must not open a scalar and swallow the file.
+    assert.equal(parseYaml("# the repository's own commands\nk: v").k, "v");
+  });
+
+  it("a hash that is not a comment is not treated as one", () => {
+    // YAML opens a comment at `#` only after whitespace or at line start.
+    assert.equal(parseYaml("k: http://example.com/a#b").k, "http://example.com/a#b");
+    assert.equal(parseYaml(`k: 'pytest -k "not #slow"'`).k, 'pytest -k "not #slow"');
   });
 });
