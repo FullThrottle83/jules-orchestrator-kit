@@ -454,6 +454,57 @@ export const SCOPE_CANARIES = [
  * from never showed it.
  */
 export const INNOCENT_EDITS = [
+  // Everything below this comment was a CRITICAL rejection until v0.71.0.
+  //
+  // Not through any rule that examined them: `UNREADABLE` was reached whenever
+  // a test file had changed lines and none of them parsed as an assertion, so
+  // the verdict was the same for a repository speaking an unsupported dialect
+  // and for one where the edit simply was not an assertion. Adding an import
+  // was a CRITICAL block. The finding carried no file, no line and no sample,
+  // because there was nothing to name — and it advised a pytest repository
+  // that its assertion library might be unsupported, from a list naming pytest.
+  //
+  // These are ordinary work. Every one of them has to be silent.
+  {
+    id: "add-import/pytest",
+    file: "testing/test_iniconfig.py",
+    context: "# fixtures",
+    removed: [],
+    added: ["import os"],
+    why: "adding an import to a test file is not an assertion and not tampering",
+  },
+  {
+    id: "rename-test-multiline/pytest",
+    file: "testing/test_iniconfig.py",
+    context: "# parsing",
+    removed: ["def test_parse_strips_inline_comments() -> None:"],
+    added: ["def test_parse_strips_inline_comments_from_continuations() -> None:"],
+    why: "still collected by pytest, so nothing left the run",
+  },
+  {
+    id: "docstring/pytest",
+    file: "testing/test_iniconfig.py",
+    context: "# parsing",
+    removed: ['    """Check comments."""'],
+    added: ['    """Check that inline comments are stripped."""'],
+    why: "prose about the test, not a value it asserts",
+  },
+  {
+    id: "type-annotation/pytest",
+    file: "testing/test_iniconfig.py",
+    context: "# fixtures",
+    removed: ["def make_config(data):"],
+    added: ["def make_config(data: str) -> IniConfig:"],
+    why: "a helper's signature, typed; no claim changed",
+  },
+  {
+    id: "add-fixture/go",
+    file: "calc_test.go",
+    context: "// helpers",
+    removed: [],
+    added: ["var cases = []int{1, 2, 3}"],
+    why: "test data added, nothing asserted or unasserted",
+  },
   // Renaming a test is one of the most ordinary edits there is. On the
   // one-line form the name blanked to the same shape as its replacement, the
   // two paired, and the pair was reported as a rewritten expectation.
@@ -598,6 +649,129 @@ export const INNOCENT_EDITS = [
  * will always end somewhere; what must never happen again is that the edge
  * is silent.
  */
+/**
+ * Renames that delete a test from the run without deleting a line of it.
+ *
+ * pytest collects `test_*`, Go collects `Test*`. For those runners the name is
+ * the registration, so `def test_totals` → `def totals` removes the test as
+ * completely as deleting the file, and every count in the tamper guard stays
+ * level: nothing removed, nothing weakened, nothing rewritten.
+ *
+ * These were caught only as a side effect of the blanket that rejected every
+ * unrecognised edit to a test file — which also rejected adding an import, and
+ * whose printed remedy switched the real checks off. They are their own
+ * finding now, so narrowing that blanket costs nothing.
+ */
+export const DEREGISTRATION_CANARIES = [
+  {
+    id: "pytest/underscore",
+    file: "tests/test_totals.py",
+    context: "# totals",
+    removed: ["def test_totals_round_to_cents():"],
+    added: ["def totals_round_to_cents():"],
+    why: "pytest collects by the test_ prefix, so this test no longer runs",
+  },
+  {
+    id: "pytest/camel",
+    file: "tests/test_totals.py",
+    context: "# totals",
+    removed: ["def testTotals():"],
+    added: ["def Totals():"],
+    why: "the prefix is what registers it, in either spelling",
+  },
+  {
+    id: "go/test",
+    file: "calc_test.go",
+    context: "// totals",
+    removed: ["func TestTotals(t *testing.T) {"],
+    added: ["func Totals(t *testing.T) {"],
+    why: "go test collects by the Test prefix",
+  },
+  {
+    id: "go/benchmark",
+    file: "calc_test.go",
+    context: "// totals",
+    removed: ["func BenchmarkTotals(b *testing.B) {"],
+    added: ["func Totals(b *testing.B) {"],
+    why: "the same rule for the other collected prefixes",
+  },
+];
+
+/**
+ * A verification command that exits 0 having written nothing at all.
+ *
+ * The one absence that is evidence. The floor is otherwise deliberately
+ * one-sided — an unrecognised runner states no count and passes, because
+ * hard-redding every runner not on the list would be worse than the hole it
+ * closes — but an unrecognised runner still prints something. Zero bytes on
+ * both streams is a command that ran nothing, and `pnpm -r test` on a
+ * workspace whose packages declare no test script is exactly that: it was
+ * indistinguishable from a full suite by every signal the gate had.
+ */
+export const SILENT_RUN_CANARIES = [
+  { id: "pnpm -r test", command: "pnpm -r test", stdout: "", stderr: "" },
+  { id: "npm test", command: "npm test", stdout: "", stderr: "" },
+  { id: "yarn workspaces test", command: "yarn workspaces foreach run test", stdout: "", stderr: "" },
+  { id: "pytest", command: "python3 -m pytest", stdout: "", stderr: "" },
+  { id: "go test", command: "go test ./...", stdout: "", stderr: "" },
+  { id: "whitespace is not output", command: "npm test", stdout: "  \n", stderr: "\n" },
+];
+
+/**
+ * Honest static gates that print nothing, and must keep passing.
+ *
+ * The counterweight, and the reason the rule above reads the command as well
+ * as the output. `tsc --noEmit`, `node --check`, `go vet` and `compileall`
+ * all exit 0 in silence when they succeed — that is what success looks like
+ * for a checker — and two of them are commands this kit writes itself for a
+ * repository that has no suite yet. A rule keyed on silence alone hard-redded
+ * every one of them, which is exactly the first-run rejection of correct code
+ * that the collection floor is otherwise so careful to avoid.
+ */
+export const SILENT_STATIC_GATES = [
+  { id: "tsc", command: "tsc --noEmit" },
+  { id: "node --check", command: "node --check index.js" },
+  { id: "go vet", command: "go vet ./..." },
+  { id: "compileall", command: "python3 -m compileall -q ." },
+  { id: "generated parse gate", command: "node --check src/index.mjs" },
+];
+
+/**
+ * Values that must survive a trip through the emitter and back.
+ *
+ * `yamlScalar` writes the manifests and `parseYaml` reads them, and a pair
+ * like that disagreeing about one character is this project's recurring
+ * defect with both halves in a single module. The parser opened a comment at
+ * the first `#` on a line, quoted or not, so `verify.test` containing a hash
+ * was silently truncated on the way in and the gate ran a command the user
+ * never wrote — reporting on it as if it were theirs.
+ *
+ * The corpus is the hard cases on purpose: hashes, colons, leading stars,
+ * apostrophes, the empty string, and the words YAML would otherwise read as
+ * booleans.
+ */
+export const YAML_ROUNDTRIP_CASES = [
+  "pnpm -r test",
+  "PYTHONPATH=src python3 -m pytest",
+  'pytest -k "not #slow"',
+  "has #hash",
+  "# leading hash",
+  "a: b",
+  "**/*.pem",
+  "**/.env.*",
+  ".github/**",
+  "",
+  "true",
+  "yes",
+  "1.5",
+  "it's fine",
+  "it's #1",
+  "O'Brien",
+  "agent/",
+  "  leading space",
+  "trailing space  ",
+];
+
 export const UNREADABLE_DIALECTS = [
   {
     id: "hspec",

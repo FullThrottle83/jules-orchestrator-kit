@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { whichBinary } from "./provider-readiness.mjs";
+import { yamlScalar } from "./config.mjs";
 
 /**
  * The Python interpreter to invoke, by whatever name this machine has it under.
@@ -31,11 +32,48 @@ function pythonBin(env = process.env) {
  * Falls back to the bare console script only when no interpreter can be found
  * to host the module.
  */
-export function pytestCmd(env = process.env) {
+export function pytestCmd(env = process.env, root = null) {
+  const prefix = root && isSrcLayout(root) ? "PYTHONPATH=src " : "";
   for (const name of ["python3", "python", "py"]) {
-    if (whichBinary(name, env)) return `${name} -m pytest`;
+    if (whichBinary(name, env)) return `${prefix}${name} -m pytest`;
   }
-  return "pytest";
+  return `${prefix}pytest`;
+}
+
+/**
+ * Does this repository keep its package under `src/` rather than at the root?
+ *
+ * The sibling of the bug above, and a worse one. `-m` puts the *working
+ * directory* on `sys.path` — which is the fix for a module at the root, and
+ * no help at all when the package lives in `src/`. There, `import iniconfig`
+ * finds nothing in the working directory and falls through to whatever is
+ * installed in site-packages. The suite then runs green against a *different
+ * copy of the library than the one in the diff*: measured on `pytest-dev/
+ * iniconfig`, `_parse.py` gutted to `return False`, 49 tests passed, and the
+ * gate returned APPROVED (Exit 0).
+ *
+ * That is this project's worst failure shape — a check that examined
+ * something other than the thing under review, reporting a pass — and no
+ * amount of counting collected tests can see it, because the tests really
+ * did run. Only the import path can.
+ *
+ * `PYTHONPATH=src` is the ordinary spelling and puts the working tree first
+ * whether or not the package is also installed. Leading assignments are
+ * peeled into the child's environment by `runCommand`, so this needs no shell.
+ *
+ * Keyed on `__init__.py` under `src/`, which is the marker of a Python
+ * package and not of a Rust, C or JavaScript `src/` directory.
+ */
+export function isSrcLayout(root) {
+  const src = join(root, "src");
+  if (!existsSync(src)) return false;
+  try {
+    return readdirSync(src, { withFileTypes: true }).some(
+      (e) => e.isDirectory() && existsSync(join(src, e.name, "__init__.py"))
+    );
+  } catch (_) {
+    return false;
+  }
 }
 
 /**
@@ -234,7 +272,7 @@ export function oracleCandidates(root = process.cwd(), detected = "") {
     } catch (_) {}
   }
   if (has("pytest.ini") || has("pyproject.toml") || has("setup.py") || has("tox.ini") || has("setup.cfg")) {
-    push(pytestCmd());
+    push(pytestCmd(process.env, root));
   }
   if (has("Cargo.toml")) push("cargo test");
   if (has("go.mod")) push("go test ./...");
@@ -386,7 +424,7 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
   }
   if (existsSync(join(projectRoot, "pyproject.toml")) || existsSync(join(projectRoot, "requirements.txt")) || existsSync(join(projectRoot, "setup.py"))) {
     const triggerFile = existsSync(join(projectRoot, "pyproject.toml")) ? "pyproject.toml" : existsSync(join(projectRoot, "requirements.txt")) ? "requirements.txt" : "setup.py";
-    return { ...container, stack: "python", testCmd: pytestCmd(), buildCmd: `${pythonBin()} -m compileall -q .`, triggerFile };
+    return { ...container, stack: "python", testCmd: pytestCmd(process.env, projectRoot), buildCmd: `${pythonBin()} -m compileall -q .`, triggerFile };
   }
   if (existsSync(join(projectRoot, "mix.exs"))) {
     return { ...container, stack: "mix", testCmd: "mix test", buildCmd: "mix compile", triggerFile: "mix.exs" };
@@ -470,7 +508,7 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
     }
     const pyFile = rootFiles.find((f) => f.endsWith(".py"));
     if (pyFile) {
-      return { ...container, stack: "python", testCmd: pytestCmd(), buildCmd: `${pythonBin()} -m compileall -q .`, triggerFile: pyFile };
+      return { ...container, stack: "python", testCmd: pytestCmd(process.env, projectRoot), buildCmd: `${pythonBin()} -m compileall -q .`, triggerFile: pyFile };
     }
   } catch (_) {}
 
@@ -966,19 +1004,19 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
     try {
       let rawConfig = readFileSync(configPath, "utf-8");
       if (/^\s*test:\s*.*$/m.test(rawConfig)) {
-        rawConfig = rawConfig.replace(/^\s*test:\s*.*$/m, `  test: "${testCmd}"`);
+        rawConfig = rawConfig.replace(/^\s*test:\s*.*$/m, () => `  test: ${yamlScalar(testCmd)}`);
       } else if (/^\s*verify:\s*$/m.test(rawConfig)) {
-        rawConfig = rawConfig.replace(/^\s*verify:\s*$/m, `verify:\n  test: "${testCmd}"`);
+        rawConfig = rawConfig.replace(/^\s*verify:\s*$/m, () => `verify:\n  test: ${yamlScalar(testCmd)}`);
       } else {
-        rawConfig += `\nverify:\n  test: "${testCmd}"\n`;
+        rawConfig += `\nverify:\n  test: ${yamlScalar(testCmd)}\n`;
       }
       if (detected.buildCmd && /^\s*build:\s*["']?["']?\s*$/m.test(rawConfig)) {
-        rawConfig = rawConfig.replace(/^\s*build:\s*.*$/m, `  build: "${detected.buildCmd}"`);
+        rawConfig = rawConfig.replace(/^\s*build:\s*.*$/m, () => `  build: ${yamlScalar(detected.buildCmd)}`);
       }
       writeFileSync(configPath, rawConfig, "utf-8");
     } catch (_) {}
   } else {
-    const cfg = `version: 1\nprovider: jules\ntier: free\nverify:\n  test: "${testCmd}"\n  build: "${detected.buildCmd || ""}"\nlimits:\n  diff_kb: 75\n  daily_tasks: 15\n  repair_attempts: 3\nbranch_prefix: agent/\nbase_branch: main\n`;
+    const cfg = `version: 1\nprovider: jules\ntier: free\nverify:\n  test: ${yamlScalar(testCmd)}\n  build: ${yamlScalar(detected.buildCmd || "")}\nlimits:\n  diff_kb: 75\n  daily_tasks: 15\n  repair_attempts: 3\nbranch_prefix: agent/\nbase_branch: main\n`;
     writeFileSync(configPath, cfg, "utf-8");
   }
 
@@ -987,12 +1025,12 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
     try {
       let rawJules = readFileSync(julesPath, "utf-8");
       if (/^\s*test_cmd:\s*.*$/m.test(rawJules)) {
-        rawJules = rawJules.replace(/^\s*test_cmd:\s*.*$/m, `test_cmd: "${testCmd}"`);
+        rawJules = rawJules.replace(/^\s*test_cmd:\s*.*$/m, () => `test_cmd: ${yamlScalar(testCmd)}`);
       } else {
-        rawJules += `\ntest_cmd: "${testCmd}"\n`;
+        rawJules += `\ntest_cmd: ${yamlScalar(testCmd)}\n`;
       }
       if (detected.buildCmd && /^\s*build_cmd:\s*["']?["']?\s*$/m.test(rawJules)) {
-        rawJules = rawJules.replace(/^\s*build_cmd:\s*.*$/m, `build_cmd: "${detected.buildCmd}"`);
+        rawJules = rawJules.replace(/^\s*build_cmd:\s*.*$/m, () => `build_cmd: ${yamlScalar(detected.buildCmd)}`);
       }
       writeFileSync(julesPath, rawJules, "utf-8");
     } catch (_) {}

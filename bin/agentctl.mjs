@@ -425,6 +425,31 @@ async function main() {
       } else {
         console.log(`\n🛡️ agentctl Safety Gate Audit Results (Base: ${values.base}, Mode: ${selectedMode})`);
         console.log(`-----------------------------------------------------`);
+        // A loosened run must not be able to pass for a strict one.
+        //
+        // Every escape hatch here turns a check off, and the report said so
+        // nowhere: `agentctl check --allow-test-change expectation` over a
+        // rewritten expectation printed a phase list byte-identical to a clean,
+        // unloosened APPROVED. Anyone reading the output afterwards — a
+        // reviewer, a CI log, the author a week later — could not tell that a
+        // check had been waived, which makes the waiver invisible exactly where
+        // it matters most. Printed before the phases, and on approval as well
+        // as rejection, because an approval is the case where it is load-bearing.
+        const overrides = [];
+        if (values["allow-protected"]) overrides.push("--allow-protected (protected paths permitted)");
+        if (values["allow-unreadable-tests"]) overrides.push("--allow-unreadable-tests (unreadable dialect permitted)");
+        if (values["allow-test-modifications"]) overrides.push("--allow-test-modifications (every tamper check waived)");
+        if (values["allow-test-change"]) {
+          const kinds = [].concat(values["allow-test-change"]).join(", ");
+          overrides.push(`--allow-test-change ${kinds} (tamper check waived: ${kinds})`);
+        }
+        if (config.verify?.required === false) overrides.push("verify.required: false (nothing is executed)");
+        if (config.verify?.tamperGuard === "warn") overrides.push('verify.tamperGuard: "warn" (unreadable dialects report only)');
+        if (overrides.length > 0) {
+          console.log(`  ⚠️  OVERRIDES ACTIVE — this run is not a strict pass:`);
+          for (const o of overrides) console.log(`       • ${o}`);
+          console.log(`-----------------------------------------------------`);
+        }
         for (const p of res.phases) {
           const status = p.ok ? "✅ PASS" : "❌ FAIL";
           // Test tampering shares this phase, and its exit code, with the
@@ -472,13 +497,32 @@ async function main() {
           // arrive under the same phase and the same code.
           const secretsPhase = res.phases.find((p) => p.phase === "secrets" && !p.ok);
           const findingTypes = new Set((secretsPhase?.findings || []).map((f) => f.type));
+          // `TEST_DIALECT_UNREADABLE` belongs in this set and was missing from
+          // it, so the one finding that is *most* obviously not a secret fell
+          // through to the secret hint: the report printed
+          // "Phase [SECRETS (test integrity — no secret found)] : ❌ FAIL" and
+          // then told the operator a high-entropy credential had leaked and to
+          // rotate their keys. v0.67.0 fixed the phase label and left the hint;
+          // v0.69.0 recorded the hint as already correct without measuring it.
+          // Both statements were about the same screen, and they contradicted
+          // each other on it.
           const INTEGRITY_TYPES = new Set([
             "TEST_TAMPERING_DETECTED",
+            "TEST_DIALECT_UNREADABLE",
             "EDGE_RUNTIME_VIOLATION",
             "CROSS_PACKAGE_BOUNDARY_VIOLATION",
           ]);
           const onlyIntegrityFindings =
             findingTypes.size > 0 && [...findingTypes].every((t) => INTEGRITY_TYPES.has(t));
+          // An unreadable dialect is not a weakened assertion either, and the
+          // integrity hint tells the operator to restore an assertion that no
+          // finding names. Split by what is actually present — and derived from
+          // `onlyIntegrityFindings` rather than tested independently, so a run
+          // carrying both an unreadable file and a real tampering finding gets
+          // the tampering advice instead of falling past both into the secret
+          // branch, which is how this hole was shaped the first time.
+          const onlyUnreadableDialect =
+            onlyIntegrityFindings && [...findingTypes].every((t) => t === "TEST_DIALECT_UNREADABLE");
 
           // Exit 3 is also what a strictTestLock tamper verdict returns, so the
           // code alone cannot pick the hint — a scope remediation for a rewritten
@@ -504,6 +548,16 @@ async function main() {
               if (firstError) console.log(`   • Last attempt error: ${firstError}`);
               console.log(`   • Review error fingerprints via: agentctl doctor\n`);
             }
+          } else if (onlyUnreadableDialect) {
+            console.log(`💡 Remediation Hint (Exit ${res.code} Unreadable Test Dialect — no secret was found):`);
+            console.log(`   • Nothing leaked. The guard could not recognise the assertions in a changed test`);
+            console.log(`     file, so it could not check that file for tampering — and a check that examined`);
+            console.log(`     nothing does not get to say APPROVED.`);
+            console.log(`   • Best: report the dialect so it gets covered. The guard knows Node, pytest, Go,`);
+            console.log(`     Rust, JUnit, RSpec, PHPUnit, Minitest, XCTest, chai and node-tap.`);
+            console.log(`   • Or say so on the record:  verify.tamperGuard: "warn"  in .agent/config.yml`);
+            console.log(`   • Or allow this one run:    agentctl check --allow-unreadable-tests`);
+            console.log(`   • Nothing needs rotating: this exit code is shared with the secret scanner.\n`);
           } else if (onlyIntegrityFindings) {
             console.log(`💡 Remediation Hint (Exit ${res.code} Test Integrity Violation — no secret was found):`);
             console.log(`   • The diff weakens or removes verification rather than leaking a credential.`);

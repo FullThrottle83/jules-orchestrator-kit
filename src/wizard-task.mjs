@@ -261,7 +261,21 @@ ${fullPrompt}
  * @returns {Promise<{ ok: boolean, dryRun: boolean, taskFile: string, written: boolean, plan: object }>}
  */
 export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
-  const interactive = options.interactive !== false && isTTY(options.stdin || process.stdin);
+  // `-p` is the documented way to skip the questions, so it has to skip them.
+  //
+  // README: "Pass the prompt to skip straight to review:
+  // npx jules-orchestrator-kit task create -p 'Refactor the invoice module'".
+  // Interactivity was decided by `isTTY` alone, and `-p` was consulted only by
+  // the TODO-import branch below — so in a real terminal the advertised
+  // quickstart stopped at "? Task Title" and waited for a keypress forever,
+  // then asked for the instructions it had already been handed.
+  //
+  // It looked fine under test because a non-TTY run takes the headless path and
+  // never asks. That is the same defect the flag itself has: one rule, two
+  // paths, and only the path nobody was watching kept the old answer. Making
+  // `-p` mean the headless path everywhere makes the two agree by construction.
+  const promptSupplied = typeof options.prompt === "string" && options.prompt.trim() !== "";
+  const interactive = options.interactive !== false && !promptSupplied && isTTY(options.stdin || process.stdin);
 
   let title = options.title;
   let promptText = options.prompt;

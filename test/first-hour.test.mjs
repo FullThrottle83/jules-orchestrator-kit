@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseCollectedTests } from "../src/ops/test-collection.mjs";
 import { oracleCandidates } from "../src/stack-detector.mjs";
-import { COUNTED_RUN_CANARIES, EMPTY_RUN_CANARIES } from "../src/guard-policy.mjs";
+import { COUNTED_RUN_CANARIES, EMPTY_RUN_CANARIES, SILENT_RUN_CANARIES, SILENT_STATIC_GATES } from "../src/guard-policy.mjs";
 
 /**
  * A cold-start trial on four repositories nobody here chose found four
@@ -114,6 +114,42 @@ describe("a stated count outranks a phrase that resembles one", () => {
       assert.equal(parseCollectedTests(c.output, "").count, 0);
     });
   }
+
+  for (const c of SILENT_RUN_CANARIES) {
+    it(`${c.id}: a command that printed nothing verified nothing`, async () => {
+      // The floor is one-sided everywhere else — an unrecognised runner states
+      // no count and passes, because hard-redding every runner not on the list
+      // would be worse than the hole it closes. This is the exception, and it
+      // is decidable: an unrecognised runner still prints. Zero bytes on both
+      // streams is `pnpm -r test` on a workspace whose packages declare no
+      // test script, which exited 0 and was APPROVED against nothing.
+      const { checkCollectionFloor } = await import("../src/ops/test-collection.mjs");
+      const res = checkCollectionFloor({ ok: true, stdout: c.stdout, stderr: c.stderr, command: c.command });
+      assert.equal(res.ok, false, "silence must not certify a change");
+      assert.match(res.reason, /wrote nothing at all/);
+    });
+  }
+
+  for (const g of SILENT_STATIC_GATES) {
+    it(`${g.id} succeeds in silence and must still pass`, async () => {
+      // The counterweight to the rule above, and the reason it reads the
+      // command as well as the output. A checker that prints nothing on
+      // success is doing exactly what it promised — and two of these are
+      // commands this kit writes itself for a repository with no suite yet.
+      const { checkCollectionFloor } = await import("../src/ops/test-collection.mjs");
+      const res = checkCollectionFloor({ ok: true, stdout: "", stderr: "", command: g.command });
+      assert.equal(res.ok, true, `${g.command} was hard-redded for succeeding quietly`);
+    });
+  }
+
+  it("but a runner that printed something unrecognised still passes", async () => {
+    // The line between the two. Widening the exception past literal silence
+    // would hard-red every repository whose runner is not on the list.
+    const { checkCollectionFloor } = await import("../src/ops/test-collection.mjs");
+    const res = checkCollectionFloor({ ok: true, stdout: "all green", command: "make check" });
+    assert.equal(res.ok, true);
+    assert.equal(res.unverified, true);
+  });
 
   it("TAP's numbered ok lines are not Go's package summaries", () => {
     // `^ok\s` matched both `ok 1 - performance` and `ok  example.com/lib`,

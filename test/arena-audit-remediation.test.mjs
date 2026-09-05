@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { hasEncodedSecret, scanDiff, checkTestTampering } from "../src/security.mjs";
+import { parseYaml } from "../src/config.mjs";
 import { gate } from "../src/engine.mjs";
 import { resolveBase } from "../src/git.mjs";
 import { planInit } from "../src/wizard-init.mjs";
@@ -262,9 +263,12 @@ test("Arena Audit Remediation Suite", async (t) => {
 
       const planPreserved = planInit(tmpDir, { tier: "pro", testCmd: "npm test" });
       assert.ok(
-        planPreserved.julesYaml.includes('"custom/protected/**"'),
+        parseYaml(planPreserved.julesYaml).forbidden_paths.includes("custom/protected/**"),
         "Existing forbidden_paths in jules.yml must be preserved"
       );
+      // Plain, because nothing in this path needs quoting. The star-prefixed
+      // globs that genuinely do are asserted in test/wizard-init.test.mjs.
+      assert.ok(planPreserved.julesYaml.includes("- custom/protected/**"));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

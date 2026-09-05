@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { checkTestTampering } from "../src/security.mjs";
+import { checkTestTampering, scanDiff } from "../src/security.mjs";
 import { assertTestIntegrity } from "../src/assertions.mjs";
 import { extractSpecifiers } from "../scripts/package-integrity-check.mjs";
 import {
@@ -11,6 +11,7 @@ import {
   IMPORT_EXTRACTION_CASES,
   MULTILINE_CANARIES,
   CROSS_FILE_CASES,
+  DEREGISTRATION_CANARIES,
 } from "../src/guard-policy.mjs";
 
 /**
@@ -65,8 +66,34 @@ describe("a finding about assertions must have parsed an assertion", () => {
 describe("the opposite failure: flagging what is innocent", () => {
   for (const e of INNOCENT_EDITS) {
     it(`${e.id} is silent — ${e.why}`, () => {
-      const types = (checkTestTampering(diffFor(e)).violations || []).map((v) => v.type);
+      const diff = diffFor(e);
+      const types = (checkTestTampering(diff).violations || []).map((v) => v.type);
       assert.deepEqual(types, [], `an ordinary edit was reported as tampering`);
+
+      // The verdict a caller receives, not just the violation list.
+      //
+      // This contract asserted only that no *violation* was produced, and
+      // `UNREADABLE` is a status rather than a violation — so every case above
+      // passed this test while `scanDiff` returned a CRITICAL finding and the
+      // gate rejected the change. The list was green about a red gate for two
+      // releases. Anything that ends a run has to be measured where the run
+      // ends: one assertion on the answer, rather than one per mechanism that
+      // could produce it.
+      const scan = scanDiff(diff);
+      assert.equal(scan.ok, true, `the gate rejected an ordinary edit: ${JSON.stringify((scan.findings || []).map((f) => f.type))}`);
+    });
+  }
+
+  for (const c of DEREGISTRATION_CANARIES) {
+    it(`${c.id} is caught — ${c.why}`, () => {
+      const types = (checkTestTampering(diffFor(c)).violations || []).map((v) => v.type);
+      assert.ok(
+        types.includes("TEST_DEREGISTERED"),
+        `renaming a test out of its runner's discovery convention went unreported: ${JSON.stringify(types)}`
+      );
+      // And it is a waivable kind like the others, not a wall.
+      const allowed = checkTestTampering(diffFor(c), { allowTestChanges: "deregistration" });
+      assert.equal(allowed.ok, true, "deliberately turning a test into a helper must be sayable");
     });
   }
 
@@ -163,12 +190,32 @@ describe("an assertion is a statement, not a line", () => {
     assert.notEqual(res.status, "PASS");
   });
 
-  it("changed lines in a test file with no assertion recognised is not a pass", () => {
+  it("an assertion-shaped line that did not parse is unreadable", () => {
+    // The evidence for `UNREADABLE` is `unreadable[]`: lines that look like
+    // assertions and did not parse. Here `shouldBe` is one.
+    const res = checkTestTampering(
+      diffFor({ file: "tests/CalcSpec.hs", context: "-- ctx", removed: ["    calc `shouldBe` 3"], added: ["    calc `shouldBe` 4"] })
+    );
+    assert.equal(res.assertionsSeen, 0);
+    assert.ok(res.unreadable.length > 0, "the finding must be able to name what it could not read");
+    assert.equal(res.status, "UNREADABLE", "saying nothing and saying approved must not look the same");
+  });
+
+  it("but a line that is simply not an assertion is a pass, not a dialect problem", () => {
+    // This fixture used to assert `UNREADABLE`, and it was the wrong witness
+    // for its own sentence: `const timeout = 100` is not an assertion the
+    // guard failed to read, it is not an assertion. The status expression ORed
+    // in `examined > 0`, so the two were indistinguishable — and every
+    // ordinary edit to a test file became a CRITICAL block, including adding
+    // an import. Saying "I could not read this" when nothing needed reading is
+    // its own way of reporting a check that was never performed.
     const res = checkTestTampering(
       diffFor({ file: "test/helper.test.js", removed: ["  const timeout = 100;"], added: ["  const timeout = 200;"] })
     );
     assert.equal(res.assertionsSeen, 0);
-    assert.equal(res.status, "UNREADABLE", "saying nothing and saying approved must not look the same");
+    assert.deepEqual(res.unreadable, [], "nothing here is assertion-shaped");
+    assert.equal(res.status, "PASS");
+    assert.equal(scanDiff(diffFor({ file: "test/helper.test.js", removed: ["  const timeout = 100;"], added: ["  const timeout = 200;"] })).ok, true);
   });
 });
 

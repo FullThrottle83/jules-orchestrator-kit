@@ -1875,6 +1875,51 @@ function splitTrailingMessage(clean) {
   return { head: clean.slice(0, lastComma), msg: tail };
 }
 
+/**
+ * Test declarations that a runner finds by the *name* of the function.
+ *
+ * pytest collects `def test_*`, Go collects `func Test*`, and unittest and
+ * Minitest collect `def test_*` off the case class. For those runners the
+ * name is not prose — it is the registration. Renaming `test_totals` to
+ * `totals` deletes the test from the run as completely as removing the file,
+ * and the diff shows a rename.
+ *
+ * Only these name-driven runners are listed. `it("...")`, `#[test]` and
+ * `@Test` register by call, attribute or annotation, so renaming what they
+ * declare removes nothing, and the ordinary rename rules already cover them.
+ */
+const NAME_REGISTERED_DECLS = [
+  { lang: "python", re: /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/, discovered: /^test/i },
+  { lang: "go", re: /^\s*func\s+([A-Za-z_]\w*)\s*\(/, discovered: /^(?:Test|Benchmark|Fuzz|Example)/ },
+];
+
+/**
+ * The declared name on this line, and whether the runner would collect it.
+ *
+ * @returns {{ name: string, collected: boolean }|null}
+ */
+function declaredTestName(text) {
+  for (const rule of NAME_REGISTERED_DECLS) {
+    const m = rule.re.exec(text);
+    if (m) return { name: m[1], collected: rule.discovered.test(m[1]) };
+  }
+  return null;
+}
+
+/**
+ * Is `after` the same declaration as `before` with its discovery prefix gone?
+ *
+ * Exact on the remainder, deliberately. `test_totals` → `totals` is a
+ * de-registration; `test_totals` → `test_totals_rounded` is a rename and must
+ * stay silent, which is the false red this check exists alongside rather than
+ * instead of.
+ */
+function isDeregistration(before, after) {
+  if (!before.collected || after.collected) return false;
+  const stripped = before.name.replace(/^test[_-]?/i, "").replace(/^(?:Test|Benchmark|Fuzz|Example)/, "");
+  return stripped.length > 0 && stripped === after.name;
+}
+
 // A test declaration whose first argument is the test's name. The name is
 // prose about the test, not a value the test asserts — `test("adds", ...)`
 // renamed to `test("adds positives", ...)` is the rename the diff says it is.
@@ -2211,6 +2256,7 @@ export const TAMPER_KINDS = new Map([
   ["ASSERTION_REMOVAL", "removal"],
   ["ASSERTION_WEAKENED", "weakening"],
   ["ASSERTION_EXPECTATION_CHANGED", "expectation"],
+  ["TEST_DEREGISTERED", "deregistration"],
 ]);
 
 /** Every kind name, for CLI validation and help text. */
@@ -2406,7 +2452,7 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     }
 
     if (!fileAssertions.has(currentFile)) {
-      fileAssertions.set(currentFile, { removed: [], added: 0, addedTexts: [], removedSpecific: [], addedSpecific: 0, hunks: [], examined: 0, recognised: 0, unreadable: [] });
+      fileAssertions.set(currentFile, { removed: [], added: 0, addedTexts: [], removedSpecific: [], addedSpecific: 0, hunks: [], examined: 0, recognised: 0, unreadable: [], declRemoved: [], declAdded: [] });
     }
     const fileStats = fileAssertions.get(currentFile);
     if (pendingHunk) {
@@ -2419,6 +2465,10 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       const deletedText = line.slice(1);
       if (hunk) hunk.lines.push({ kind: "-", text: deletedText, oldNo: currentOldLineNo, newNo: null });
       countExamined(fileStats, deletedText);
+      if (!isCommentLine(deletedText)) {
+        const decl = declaredTestName(deletedText);
+        if (decl) fileStats.declRemoved.push({ ...decl, line: currentOldLineNo, text: deletedText });
+      }
       if (!isCommentLine(deletedText) && ASSERTION_PATTERN.test(deletedText)) {
         fileStats.removed.push({ line: currentOldLineNo, text: deletedText });
         if (isSpecificAssertion(deletedText)) {
@@ -2430,6 +2480,10 @@ export function checkTestTampering(diffOrText = "", options = {}) {
       const addedText = line.slice(1);
       if (hunk) hunk.lines.push({ kind: "+", text: addedText, oldNo: null, newNo: currentNewLineNo });
       countExamined(fileStats, addedText);
+      if (!isCommentLine(addedText)) {
+        const decl = declaredTestName(addedText);
+        if (decl) fileStats.declAdded.push({ ...decl, line: currentNewLineNo, text: addedText });
+      }
       let isVacuous = false;
 
       // Check skip injections
@@ -2563,6 +2617,40 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     }
   }
 
+  // A test renamed out of its runner's discovery convention.
+  //
+  // pytest collects `test_*` and nothing else, so `def test_totals` becoming
+  // `def totals` deletes the test from every future run while leaving it in
+  // the file, fully written, with all its assertions intact. Every count in
+  // this guard stays level: nothing was removed, weakened or rewritten.
+  //
+  // Until now this was caught only by accident, as a side effect of the
+  // blanket that blocked every unrecognised edit to a test file — which also
+  // blocked adding an import, and whose printed remedy (`tamperGuard: "warn"`)
+  // switched off the real checks along with the blanket. Narrowing that blanket
+  // is what makes this its own finding, with its own name and its own remedy.
+  for (const [file, stats] of fileAssertions.entries()) {
+    const takenAdds = new Set();
+    for (const before of stats.declRemoved || []) {
+      if (!before.collected) continue;
+      const idx = (stats.declAdded || []).findIndex((after, i) => !takenAdds.has(i) && isDeregistration(before, after));
+      if (idx === -1) continue;
+      takenAdds.add(idx);
+      const after = stats.declAdded[idx];
+      violations.push({
+        file,
+        line: after.line ?? before.line,
+        type: "TEST_DEREGISTERED",
+        reason:
+          `Test Tamper Guard: ${JSON.stringify(before.name)} was renamed to ${JSON.stringify(after.name)} in ${file}` +
+          `${after.line ? `:${after.line}` : ""}. The runner collects tests by name, so the test still exists in ` +
+          `the file and no longer runs — the same effect as deleting it, with none of the signs. ` +
+          `If the test is genuinely obsolete, delete it; if it is being turned into a helper, say so with ` +
+          `--allow-test-change deregistration.`,
+      });
+    }
+  }
+
   for (const [file, stats] of fileAssertions.entries()) {
     // An expectation that was rewritten rather than removed.
     //
@@ -2668,10 +2756,33 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   // assertion, is not the same as "checked and clean" — it is the state where
   // this guard has nothing to say. Saying nothing and saying "approved" have
   // to look different, which is the whole reason `status` exists.
+  // `unreadable` is the evidence, and it is required.
+  //
+  // `|| examined > 0` used to stand here, and it threw away the distinction
+  // this whole apparatus exists to draw. `ASSERTION_SHAPED` and `unreadable[]`
+  // were built to separate "assertion-shaped lines were present and none of
+  // them parsed" — a dialect the guard cannot read — from "there were no
+  // assertions in these lines at all", which is most ordinary work on a test
+  // file. That clause collapsed the two, so *any* changed substantive line in
+  // a test file with no recognised assertion became a CRITICAL block:
+  // measured on `pytest-dev/iniconfig`, renaming a test function did it, and
+  // so did adding `import os`.
+  //
+  // The tell was in the finding itself: it carried `file: null`, `line: null`
+  // and no sample, because `unreadable` was empty — the guard blocked while
+  // holding no evidence of anything, and advised a pytest repository that its
+  // assertion library might be unsupported, from a list that names pytest.
+  //
+  // Nothing is weakened by requiring the evidence. A removed or rewritten
+  // assertion is a recognised assertion line, so it raises `assertionsSeen`
+  // and goes to the ordinary removal and weakening checks; it never reached
+  // this branch. What is lost is only the blanket, and a blanket that fires
+  // on `import os` teaches its way around itself: the remedy it printed was
+  // `tamperGuard: "warn"`, which switches the real guard off too.
   const status =
     reported.length > 0
       ? "FAIL"
-      : assertionsSeen === 0 && (unreadable.length > 0 || examined > 0)
+      : assertionsSeen === 0 && unreadable.length > 0
         ? "UNREADABLE"
         : examined > 0
           ? "PASS"
