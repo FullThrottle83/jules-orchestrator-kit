@@ -11,14 +11,20 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.69.0 (Current Stable) ──► v0.70.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Read, Not Just Counted)    (Multi-Agent DAG & Resource Locks)        (Enterprise Telemetry & SLA)
+ v0.70.0 (Current Stable) ──► v0.71.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Not Finished Is Not Passed) (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.69.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.70.0)
 
+
+### v0.70.0: Not Finished Is Not Passed
+- [x] **An Unfinished Session Is Not COMPLETED (`src/engine.mjs`)** — terminal, blocked and timed-out are three verdicts, not one.
+- [x] **The Retry Carries The Failure (`src/session-ops.mjs`)** — it was reading four fields the API does not return.
+- [x] **`agentctl retry` Says When The Trace Is The Fallback (`bin/agentctl.mjs`)** — a generic sentence must not look like evidence.
+- [x] **A Contract For The Poll (`test/session-poll.test.mjs`)** — 22 cases over all nine documented session states.
 
 ### v0.69.0: Read, Not Just Counted
 - [x] **Expected-Value-First Assertions (`src/security.mjs`)** — JUnit and PHPUnit document the order the guard read as prose.
