@@ -967,3 +967,132 @@ export const CROSS_FILE_CASES = [
     why: "what arrived is a different claim; only an exact arrival is a move",
   },
 ];
+
+/**
+ * Commands that a gate must not accept as verification of a change.
+ *
+ * `isPlaceholderTestScript` already refused `true`, `:` and an interpreter
+ * handed an empty program. F09 found the same class one step along: a
+ * *non-empty* program that cannot fail (`node -e "process.exit(0)"`,
+ * `sh -c :`), and commands whose documented purpose is to describe a run
+ * rather than perform one (`pytest --collect-only`, an empty Go selection).
+ * Each of these approved broken production code in the trial.
+ *
+ * The distinction the rule has to hold is not "trivial" versus "serious" but
+ * *recognisably incapable of failing* versus *unlisted runner*. The collection
+ * floor is the one-sided rule for the second case and stays that way; this
+ * list is only ever the first.
+ */
+export const INCAPABLE_ORACLES = [
+  { id: "node exit 0", command: 'node -e "process.exit(0)"', why: "F09: a program whose whole body is a zero exit" },
+  { id: "node exit 0, single quotes", command: "node -e 'process.exit(0)'", why: "quoting is not a semantic difference" },
+  { id: "node process.exit()", command: 'node -e "process.exit()"', why: "the default status is zero" },
+  { id: "sh -c :", command: "sh -c :", why: "F09: the shell no-op, spelled as a program" },
+  { id: "bash -c true", command: "bash -c true", why: "same, under another shell" },
+  { id: "python -c pass", command: "python3 -c 'pass'", why: "same, under another interpreter" },
+  { id: "pytest collect-only", command: "python3 -m pytest --collect-only", why: "F09: collection is not execution" },
+  { id: "pytest collect-only, src layout", command: "PYTHONPATH=src python3 -m pytest --collect-only", why: "leading env assignments do not change what the command does" },
+  { id: "pytest --co", command: "pytest --co -q", why: "the documented short spelling of --collect-only" },
+  { id: "go empty selection", command: 'go test -run "^$" ./...', why: "F09: a selection that matches no test" },
+  { id: "go empty selection, unquoted", command: "go test -run ^$ ./...", why: "same, as a shell without metacharacters sees it" },
+  { id: "jest listTests", command: "jest --listTests", why: "listing is not running" },
+  { id: "dry run", command: "pytest --dry-run", why: "a description of a run is not a run" },
+  { id: "empty", command: "", why: "nothing to execute" },
+  { id: "true", command: "true", why: "the original rule, which must keep holding" },
+  { id: "colon", command: ":", why: "same" },
+  { id: "echo then exit 0", command: "echo 'no tests yet' && exit 0", why: "same" },
+];
+
+/**
+ * Real verification commands, which must keep being accepted.
+ *
+ * The counterweight to `INCAPABLE_ORACLES`, and the more important half.
+ * Widening a refusal rule is only safe if it can be shown not to have caught
+ * the honest cases, and several of these are one token away from an entry
+ * above: `go test -run TestFoo` narrows to a real subset, `node -e` with a
+ * body that does work is a legitimate if unusual runner, and `pytest -k` with
+ * a real filter is how a large suite is driven.
+ */
+export const CAPABLE_ORACLES = [
+  { id: "npm test", command: "npm test" },
+  { id: "node --test", command: "node --test test/*.test.js" },
+  { id: "pytest", command: "python3 -m pytest" },
+  { id: "pytest, src layout", command: "PYTHONPATH=src python3 -m pytest" },
+  { id: "pytest with a real filter", command: 'pytest -k "not slow"' },
+  { id: "go test", command: "go test ./..." },
+  { id: "go test, narrowed to a real test", command: "go test -run TestFoo ./..." },
+  { id: "go test, race", command: "go test -race ./..." },
+  { id: "cargo test", command: "cargo test" },
+  { id: "cargo nextest", command: "cargo nextest run" },
+  { id: "node -e doing work", command: 'node -e "require(\'./run-tests.js\')"' },
+  { id: "sh -c with a real body", command: "sh -c 'npm test'" },
+  { id: "make test", command: "make test" },
+  { id: "gradle", command: "./gradlew test" },
+  { id: "tsc, an honest static gate", command: "tsc --noEmit" },
+  { id: "node --check, an honest static gate", command: "node --check src/index.mjs" },
+];
+
+/**
+ * Fields whose value the gate obeys, and which must therefore be resolved
+ * from a commit the diff under review cannot author.
+ *
+ * The list is the contract for constraint 1. `tamperGuard` was read from the
+ * base commit while every other field on it was read from the working tree,
+ * and that split produced F06, F07 and F08 — three findings, one missing
+ * rule. Adding a field the gate obeys is not finished until it has a row
+ * here and `resolveTrustedPolicy` reads it.
+ *
+ * `path` is how the field is spelled in `.agent/config.yml`; `read` pulls the
+ * resolved value out of what `resolveTrustedPolicy` returns.
+ */
+export const TRUSTED_FIELDS = [
+  { path: "verify.test", yaml: (v) => `verify:\n  test: ${v}\n`, hostile: "node -e \"process.exit(0)\"", read: (p) => p.verify.test, why: "F06/F07: the command that decides pass or fail" },
+  { path: "verify.unit", yaml: (v) => `verify:\n  unit: ${v}\n`, hostile: "true", read: (p) => p.verify.unit, why: "the same command under its other name" },
+  { path: "verify.lint", yaml: (v) => `verify:\n  lint: ${v}\n`, hostile: "true", read: (p) => p.verify.lint, why: "a stage command like any other" },
+  { path: "verify.build", yaml: (v) => `verify:\n  build: ${v}\n`, hostile: "true", read: (p) => p.verify.build, why: "a stage command like any other" },
+  { path: "verify.e2e", yaml: (v) => `verify:\n  e2e: ${v}\n`, hostile: "true", read: (p) => p.verify.e2e, why: "a stage command like any other" },
+  { path: "verify.setup", yaml: (v) => `verify:\n  setup: ${v}\n`, hostile: "true", read: (p) => p.verify.setup, why: "runs first, with the toolchain in its hands" },
+  { path: "verify.teardown", yaml: (v) => `verify:\n  teardown: ${v}\n`, hostile: "true", read: (p) => p.verify.teardown, why: "runs last, and runs regardless" },
+  { path: "verify.profile", yaml: (v) => `verify:\n  profile: ${v}\n`, hostile: "minimal", read: (p) => p.profile, why: "F06/F07: chooses which stages exist at all" },
+  { path: "verify.required", yaml: (v) => `verify:\n  required: ${v}\n`, hostile: "false", read: (p) => p.verify.required, why: "switches verification off wholesale" },
+  { path: "verify.minTests", yaml: (v) => `verify:\n  minTests: ${v}\n`, hostile: "0", read: (p) => p.verify.minTests, why: "the floor the collection check applies" },
+  { path: "verify.tamperGuard", yaml: (v) => `verify:\n  tamperGuard: ${v}\n`, hostile: "warn", read: (p) => p.verify.tamperGuard, why: "already trusted before this change; the rest had to join it" },
+  { path: "verify.scope", yaml: (v) => `verify:\n  scope: ${v}\n`, hostile: "affected", read: (p) => p.verify.scope, why: "narrows which suites run" },
+  { path: "verify.timeout_ms", yaml: (v) => `verify:\n  timeout_ms: ${v}\n`, hostile: "1", read: (p) => p.verify.timeoutMs, why: "a one-millisecond timeout kills every stage" },
+  { path: "base_branch", yaml: (v) => `base_branch: ${v}\n`, hostile: "HEAD", read: (p) => p.baseBranch, why: "F08: chooses the commit that judges the change" },
+  { path: "limits.diff_kb", yaml: (v) => `limits:\n  diff_kb: ${v}\n`, hostile: "99999", read: (p) => p.diffKb, why: "vulnerability B: raises the payload ceiling" },
+  { path: "forbidden_paths", yaml: () => "forbidden_paths: []\n", hostile: "[]", read: (p) => p.scope.deny, why: "the protected-path list the scope guard applies" },
+  { path: "scope.protect", yaml: () => "scope:\n  protect: []\n", hostile: "[]", read: (p) => p.scope.protect, why: "the same list under its other spelling" },
+];
+
+/**
+ * Evaluation modes and what each one must execute.
+ *
+ * F10: staged and committed mode read the diff from the index or a commit and
+ * then ran the verification in the repository root — the working tree. The
+ * gate attested a revision it had not run. Only working-tree mode may execute
+ * in the root, and only because there the root *is* the revision.
+ */
+export const VERIFIED_REVISIONS = [
+  { mode: "working-tree", materialised: false, why: "the working tree is the revision under review" },
+  { mode: "staged", materialised: true, why: "F10: the index is a different snapshot from the working tree" },
+  { mode: "committed", materialised: true, why: "F10: the commit is a different snapshot from the working tree" },
+];
+
+/**
+ * Import bindings a passing suite does or does not say something about.
+ *
+ * F11: a src-layout Python package that is also installed resolves to
+ * site-packages under a bare `python3 -m pytest`, so the suite exercises the
+ * installed copy while the diff edits `src/`. The negative cases matter at
+ * least as much: an editable install and an explicit `PYTHONPATH` are the two
+ * ordinary ways to bind the source correctly, and rejecting either would fail
+ * work that is right.
+ */
+export const SOURCE_BINDING_CASES = [
+  { id: "wheel install, bare pytest", install: "wheel", command: "python3 -m pytest", bound: false, why: "F11: imports the installed copy, not the edited source" },
+  { id: "wheel install, PYTHONPATH=src", install: "wheel", command: "PYTHONPATH=src python3 -m pytest", bound: true, why: "the working tree is put first explicitly" },
+  { id: "editable install, bare pytest", install: "editable", command: "python3 -m pytest", bound: true, why: "an editable install resolves to the source" },
+  { id: "no install, bare pytest", install: "none", command: "python3 -m pytest", bound: true, why: "nothing to shadow the source; an import error is the suite's to report" },
+  { id: "not a python command", install: "wheel", command: "npm test", bound: true, why: "the probe says nothing about a stack it cannot read" },
+];

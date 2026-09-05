@@ -130,10 +130,20 @@ export function planInit(root = process.cwd(), options = {}) {
   // scaffolded limits always match what the runtime will later enforce.
   const tierPresetLimits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
 
-  // Preserve existing config if present
+  // Preserve existing config if present — unless the caller asked for the
+  // scaffold this repository would get with no `.agent/**` at all.
+  //
+  // `pristine` exists for the trusted-policy resolver (src/trusted-policy.mjs).
+  // On a first install the only candidate policy is the uncommitted scaffold,
+  // and the gate accepts it only when it is byte-identical to what `init`
+  // generates. Seeding that reference from the very file being checked would
+  // make the comparison vacuous: an agent's rewritten `verify.test` would be
+  // read back as the expected value and match itself.
+  const pristine = options.pristine === true;
+
   let existingConfig = {};
   const existingConfigPath = join(root, ".agent", "config.yml");
-  if (existsSync(existingConfigPath)) {
+  if (!pristine && existsSync(existingConfigPath)) {
     try {
       existingConfig = parseYaml(readFileSync(existingConfigPath, "utf-8")) || {};
     } catch (_) {}
@@ -142,7 +152,7 @@ export function planInit(root = process.cwd(), options = {}) {
   // Preserve existing jules.yml if present
   let existingJules = {};
   const existingJulesPath = join(root, ".agent", "jules.yml");
-  if (existsSync(existingJulesPath)) {
+  if (!pristine && existsSync(existingJulesPath)) {
     try {
       existingJules = parseYaml(readFileSync(existingJulesPath, "utf-8")) || {};
     } catch (_) {}

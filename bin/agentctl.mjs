@@ -464,7 +464,13 @@ async function main() {
           const label = tamperOnly ? "SECRETS (test integrity — no secret found)" : p.phase.toUpperCase();
           console.log(`  Phase [${label}] : ${status}`);
           if (p.violations) {
-            p.violations.forEach((v) => console.log(`     - Violation: ${v.file} (Rule: ${v.rule})`));
+            p.violations.forEach((v) =>
+              console.log(
+                v.rule === "setup"
+                  ? `     - Violation: ${v.file} (Rule: setup) — ${v.reason}`
+                  : `     - Violation: ${v.file} (Rule: ${v.rule})`
+              )
+            );
           }
           if (p.unverified) {
             console.log(`     - Unverified: ${p.unverified}`);
@@ -472,7 +478,21 @@ async function main() {
           if (p.setup) {
             console.log(`     - Setup: accepted ${p.setup.length} gate scaffold file(s) this repository did not have yet`);
             p.setup.forEach((f) => console.log(`         ${f}`));
+            console.log(`       Each is byte-identical to what \`init\` generates for this repository.`);
             console.log(`       Commit them to the base branch and the full protect rules apply from then on.`);
+          }
+          // The scaffold was present but modified. Name the field, because
+          // "not trusted" is not something an operator can act on.
+          if (p.setupRefused) {
+            console.log(`     - Setup refused: the base commit has no kit config, so the only candidate policy`);
+            console.log(`       is the uncommitted scaffold — and it is not the scaffold \`init\` generates.`);
+            for (const m of p.setupRefused.mismatches || []) {
+              console.log(`         ${m.file}${m.field ? ` → ${m.field}` : ""}`);
+              console.log(`           ${m.detail}`);
+            }
+            if ((p.setupRefused.accepted || []).length > 0) {
+              console.log(`       Unmodified, and would have been accepted: ${p.setupRefused.accepted.join(", ")}`);
+            }
           }
           if (p.findings) {
             p.findings.forEach((f) => console.log(`     - [${f.severity}] ${f.type}: ${f.description}`));
@@ -600,7 +620,24 @@ async function main() {
               tracked.length === 0 &&
               untracked.every((f) => /^(\.agent\/|AGENTS\.md$|SPEC\.md$|CONSTRAINTS\.md$|DESIGN\.md$)/.test(f));
 
-            if (allNewScaffolding) {
+            const selfBase = res.phases.find((p) => p.phase === "trusted_base" && !p.ok);
+            const refused = res.phases.find((p) => p.phase === "scope")?.setupRefused;
+            if (selfBase) {
+              console.log(`💡 Remediation Hint (Exit ${res.code} — the change selected its own base):`);
+              console.log(`   • A gate approval is a comparison, and this run had nothing to compare: the base`);
+              console.log(`     and the commit under review are the same commit.`);
+              console.log(`   • Pass the commit this work branched from:  agentctl check --mode committed --base <sha>`);
+              console.log(`   • If base_branch in .agent/config.yml says HEAD, that value cannot be a base. A`);
+              console.log(`     change that sets it is choosing the policy that judges it.\n`);
+            } else if (refused) {
+              console.log(`💡 Remediation Hint (Exit ${res.code} — the setup scaffold is not trusted policy):`);
+              console.log(`   • On a repository whose base commit has no kit config there is no trusted policy,`);
+              console.log(`     so the gate accepts the scaffold only when it still says what \`init\` wrote.`);
+              console.log(`   • The field(s) above were changed by the same uncommitted diff the gate is judging.`);
+              console.log(`   • If the change is yours and intended: commit the config to the base branch first,`);
+              console.log(`     then re-run. A policy on the base is trusted; a policy in the diff is not.`);
+              console.log(`   • To restore the generated scaffold: agentctl init --yes --force\n`);
+            } else if (allNewScaffolding) {
               console.log(`💡 Remediation Hint (Exit ${res.code} — these are the files init just wrote):`);
               console.log(`   • The agent manifest and guardrails are gate-protected on purpose: an agent must`);
               console.log(`     not edit the rules it is governed by. Uncommitted, they read as exactly that.`);
