@@ -40,7 +40,15 @@ const TEST_DIR_SEGMENTS = new Set(["test", "tests", "spec", "specs", "__tests__"
  * Covers, by directory: `test/`, `tests/`, `spec/`, `specs/`, `__tests__/` at
  * any depth including the repository root. By filename: `foo.test.js`,
  * `foo.spec.ts`, `foo_test.go`, `foo_spec.rb`, `test_calc.py` (pytest),
- * `spec_helper.rb`, and Foundry's `Foo.t.sol` / `FooTest.sol`.
+ * `spec_helper.rb`, Foundry's `Foo.t.sol` / `FooTest.sol`, and the canonical
+ * Node root test file — `test.js`, `test.mjs`, `test.ts` and the rest of the
+ * `.cjs`/`.jsx`/`.tsx` family. AVA runs the root `test.js` by convention
+ * ("test files starting with `test` … at the repo root"), and so does
+ * `node --test test.js`; P-Limit's whole suite lived in one and the guard
+ * watched none of it. The bare-name rule is limited to the Node family on
+ * purpose: `test.py` is not a pytest file (pytest collects `test_*.py`),
+ * `test.go` is not a Go test (`*_test.go`), and `test.rb` is neither an RSpec
+ * (`*_spec.rb`) nor a Minitest (`test_*.rb`) file.
  *
  * @param {string} file - Repo-relative path, either separator.
  * @returns {boolean}
@@ -55,6 +63,7 @@ export function isTestPath(file) {
   }
 
   const base = segments[segments.length - 1];
+  if (ROOT_NODE_TEST_RE.test(base)) return true;
   return (
     base.includes(".test.") ||
     base.includes(".spec.") ||
@@ -66,3 +75,11 @@ export function isTestPath(file) {
     base.endsWith(".t.sol")
   );
 }
+
+/**
+ * A supported Node runner's canonical root test file: `test` exactly, with a
+ * JavaScript-family extension. `test.helpers.js` and `tests.js` must not
+ * match — a name that starts with the word and keeps going is a support
+ * module, and the plural is an ordinary source file.
+ */
+const ROOT_NODE_TEST_RE = /^test\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/;

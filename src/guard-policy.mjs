@@ -49,6 +49,13 @@ export const TEST_PATH_CASES = [
   { path: "test/Token.t.sol", expected: true, why: "foundry" },
   // Monorepo position
   { path: "packages/api/test/handler.test.js", expected: true, why: "monorepo package" },
+  // The canonical root test file for the supported Node runners. AVA runs
+  // root `test.js` with no configuration; `node --test test.js` does too.
+  // P-Limit's whole suite lived in one and the guard watched none of it.
+  { path: "test.js", expected: true, why: "node root canonical — F01's blind spot" },
+  { path: "test.mjs", expected: true, why: "node root, ESM" },
+  { path: "test.ts", expected: true, why: "node root, TypeScript" },
+  { path: "test.cjs", expected: true, why: "node root, CommonJS" },
 
   // Near-misses: segment match, not substring
   { path: "latest/build.js", expected: false, why: "`latest` is not `test`" },
@@ -57,6 +64,15 @@ export const TEST_PATH_CASES = [
   { path: "src/attestation.js", expected: false, why: "contains 'test', is not one" },
   { path: "src/index.js", expected: false, why: "ordinary source" },
   { path: "docs/testing-guide.md", expected: false, why: "documentation about testing" },
+  // The bare-name rule is Node-family only: `test.py` is not pytest (pytest
+  // collects `test_*.py`), `test.go` is not a Go test (`*_test.go`), and
+  // `test.rb` is neither RSpec nor Minitest.
+  { path: "test.py", expected: false, why: "pytest collects test_*.py, never a bare test.py" },
+  { path: "test.go", expected: false, why: "go tests are *_test.go" },
+  { path: "test.rb", expected: false, why: "ruby suites are *_spec.rb or test_*.rb" },
+  { path: "test.helpers.js", expected: false, why: "a support module named after tests" },
+  { path: "tests.js", expected: false, why: "plural name, ordinary source" },
+  { path: "testing.js", expected: false, why: "contains the word, is not the file" },
 ];
 
 /**
@@ -386,8 +402,210 @@ export const TAMPER_CANARIES = [
     added: ["        throw XCTSkip(\"not now\")"],
     expect: "TEST_SKIP_INJECTION",
   },
+  // F01: P-Limit's root test.js is a supported runner's canonical test
+  // file. Every attack below had to be invisible inside it before the
+  // classifier knew the file existed — deletion, vacuous replacement, and
+  // an expectation rewritten to fit broken output.
+  {
+    id: "removal/node-root",
+    file: "test.js",
+    context: "// pending counts",
+    removed: ["\tt.is(limit.activeCount, 0);"],
+    added: [],
+    expect: "ASSERTION_REMOVAL",
+  },
+  {
+    id: "vacuous/node-root",
+    file: "test.js",
+    context: "// pending counts",
+    removed: ["\tt.is(limit.activeCount, 0);"],
+    added: ["\tt.true(true);"],
+    expect: "VACUOUS_ASSERTION",
+  },
+  {
+    id: "expectation/node-root",
+    file: "test.js",
+    context: "// pending counts",
+    removed: ["\tt.is(limit.pendingCount, 0);"],
+    added: ["\tt.is(limit.pendingCount, 1000);"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  // F03: an expected value bent into a conditional still blesses whatever
+  // the broken function does for the broken input. Python's spelling is a
+  // ternary with a comparison in its condition; JS's is `cond ? a : b`.
+  {
+    id: "expectation/python-conditional",
+    file: "tests/test_encoding.py",
+    context: "# encoding",
+    removed: ["        assert dec == value"],
+    added: ["        assert dec == (193 if value == 192 else value)"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  {
+    id: "expectation/js-conditional",
+    file: "test/calc.test.js",
+    context: "// arithmetic",
+    removed: ["  assert.strictEqual(add(1, 2), 3);"],
+    added: ["  assert.strictEqual(add(1, 2), add(1, 2) === -1 ? -1 : 3);"],
+    expect: "ASSERTION_EXPECTATION_CHANGED",
+  },
+  // F04: tests that leave the run without a skip or a deleted assertion.
+  // Renaming pytest's prefix to anything that stops the `test*` match, or a
+  // Go `TestX` function out of discovery, leaves the assertions in the file
+  // and the counts level.
+  {
+    id: "deregistration/pytest-check-prefix",
+    file: "tests/test_encoding.py",
+    context: "# encoding",
+    removed: ["def test_want_bytes(value):"],
+    added: ["def check_want_bytes(value):"],
+    expect: "TEST_DEREGISTERED",
+  },
+  {
+    id: "deregistration/pytest-disabled-prefix",
+    file: "tests/test_encoding.py",
+    context: "# encoding",
+    removed: ["def test_want_bytes(value):"],
+    added: ["def disabled_want_bytes(value):"],
+    expect: "TEST_DEREGISTERED",
+  },
+  {
+    id: "deregistration/go-check-prefix",
+    file: "is_test.go",
+    context: "// loadComment",
+    removed: ["func TestLoadComment(t *testing.T) {"],
+    added: ["func checkLoadComment(t *testing.T) {"],
+    expect: "TEST_DEREGISTERED",
+  },
+  // Rust and JUnit register through the attribute; removing `#[test]` (or
+  // `@Test`) from an existing function keeps the body and loses the run.
+  {
+    id: "deregistration/rust-attribute-removed",
+    file: "tests/iter_tests/all.rs",
+    context: "// iter",
+    removed: ["#[test]", "fn peek_does_not_advance() {"],
+    added: ["fn check_peek_does_not_advance() {"],
+    expect: "TEST_DEREGISTERED",
+  },
+  {
+    id: "deregistration/junit-annotation-removed",
+    file: "src/test/java/com/x/CalcTest.java",
+    context: "// arithmetic",
+    removed: ["    @Test", "    public void addsTwoNumbers() {"],
+    added: ["    public void addsTwoNumbers() {"],
+    expect: "TEST_DEREGISTERED",
+  },
+  // Ways to keep a test collected while excising its execution.
+  {
+    id: "skip-injection/xfail-decorator",
+    file: "tests/test_encoding.py",
+    context: "# encoding",
+    removed: [],
+    added: ['@pytest.mark.xfail(reason="known broken output", strict=False)'],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/expectedfailure-decorator",
+    file: "tests/test_app.py",
+    context: "# app",
+    removed: [],
+    added: ["    @unittest.expectedFailure"],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/rust-cfg-any",
+    file: "tests/iter_tests/all.rs",
+    context: "// iter",
+    removed: [],
+    added: ["#[cfg(any())]"],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/go-build-ignore",
+    file: "is_test.go",
+    context: "// loadComment",
+    removed: [],
+    added: ["//go:build ignore"],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/go-build-private-tag",
+    file: "is-1.7_test.go",
+    context: "// build",
+    removed: ["//go:build go1.7"],
+    added: ["//go:build go1.7 && cold_start_never"],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  {
+    id: "skip-injection/python-early-return",
+    file: "tests/test_encoding.py",
+    context: "# encoding",
+    removed: ["def test_int_bytes(value, expect):"],
+    added: ["def test_int_bytes(value, expect):", "    return"],
+    expect: "TEST_SKIP_INJECTION",
+  },
+  // F05: a Go assertion neutralised by a condition that can never hold.
+  // The `t.Errorf` stays in the file; the guard around it is dead.
+  {
+    id: "vacuous/go-impossible-condition",
+    file: "is_test.go",
+    context: "// loadComment",
+    // Context lines reconstruct the failure call sitting in the (now dead)
+    // block: the post-pass reads the whole hunk, not only the changed line.
+    lead: ["func TestLoadComment(t *testing.T) {", "\tcomment, _ := loadComment(\"./testdata/x\", 14)"],
+    removed: ['\tif comment != `this comment will be extracted` {', '\t\tt.Errorf("loadComment: bad comment %s", comment)', "\t}"],
+    added: ["\tif len(comment) < 0 {", "\t\tt.Errorf(\"loadComment: bad comment %s\", comment)", "\t}"],
+    expect: "VACUOUS_ASSERTION",
+  },
 ];
 
+
+/**
+ * The F04 variants, classified by whether a line-oriented diff guard can see
+ * them at all.
+ *
+ * Widening a guard only to the attacks the evidence contains is how the
+ * next-but-one variant walks through, so the trial's four "other ways to keep
+ * a test from executing" are classified here explicitly:
+ *
+ *   1. Rename out of discovery (`test_x` -> `check_x`, `TestX` -> `checkX`,
+ *      Rust `#[test]` removed). Visible: the name or attribute is right
+ *      there in the diff. Caught as TEST_DEREGISTERED.
+ *
+ *   2. Build constraints (`//go:build <tag nobody sets>`, legacy
+ *      `// +build`, Rust `#[cfg(any())]`). Visible: they are lines the diff
+ *      adds. Caught as TEST_SKIP_INJECTION. Version/OS/arch constraints are
+ *      honest CI gating and stay silent; a private tag or `ignore` is not.
+ *
+ *   3. Non-strict xfail (`@pytest.mark.xfail(strict=False)` and its strict
+ *      sibling, `@expectedFailure`, `pytest.xfail()`). Visible: the
+ *      decorator is an added line. Caught as TEST_SKIP_INJECTION.
+ *
+ *   4. An early `return` before the assertions. Partially visible. The
+ *      diff-detectable shape — a *bare, unconditional* `return` as the
+ *      test body's first statement — is caught as TEST_SKIP_INJECTION.
+ *      What cannot be judged from a diff is a `return` placed *later* in
+ *      the body behind a condition the test author believes impossible:
+ *      that requires knowing, for every branch, whether the branch is
+ *      reachable at runtime, which is a control-flow analysis over the
+ *      whole program rather than a line pair. A guard that flags any `return`
+ *      above an assertion hard-reds the ordinary "skip this case on
+ *      Windows" guard clause, so the rule stops at the shape whose intent is
+ *      unambiguous from the text.
+ *
+ * `runV8Coverage`-style runtime attestation (actually counting collected
+ * tests before and after) is the complete answer to 4, and is a separate
+ * check from the text guard; the text guard reports what it can read.
+ */
+export const EXECUTION_EXCISION_VARIANTS = Object.freeze([
+  { id: "rename-discovery", visible: true, finding: "TEST_DEREGISTERED" },
+  { id: "build-constraint", visible: true, finding: "TEST_SKIP_INJECTION" },
+  { id: "cfg-any", visible: true, finding: "TEST_SKIP_INJECTION" },
+  { id: "xfail", visible: true, finding: "TEST_SKIP_INJECTION" },
+  { id: "early-return-body-first", visible: true, finding: "TEST_SKIP_INJECTION" },
+  { id: "early-return-behind-runtime-condition", visible: false, finding: null,
+    why: "reachability of a branch is a whole-program control-flow question, not a line pair" },
+]);
 
 /**
  * Mutants of the applicability predicate.
@@ -638,6 +856,165 @@ export const INNOCENT_EDITS = [
     added: ["  const shouldRetry = true;"],
     why: "`shouldRetry` and `expected` are identifiers; reading them as assertions makes the dialect warning worthless",
   },
+
+  // --- Widened de-registration (F04): the renames that must stay silent. ---
+  // The rule is now "collected before, not collected after", so the honest
+  // renames — still collected — are the false reds to guarantee.
+  {
+    id: "rename-test/longer-pytest",
+    file: "tests/test_encoding.py",
+    context: "# want_bytes",
+    removed: ["def test_want_bytes(value):"],
+    added: ["def test_want_bytes_for_text_and_bytes(value):"],
+    why: "still matches pytest's test* — an honest rename, the trial's own control",
+  },
+  {
+    id: "rename-test/pytest-underscore-glob",
+    file: "tests/test_encoding.py",
+    context: "# want_bytes",
+    removed: ["def test_want_bytes(value):"],
+    added: ["def testwant_bytes(value):"],
+    why: "pytest's test* glob still collects this without the underscore",
+  },
+  {
+    id: "rename-test/go-longer",
+    file: "is_test.go",
+    context: "// loadComment",
+    removed: ["func TestLoadComment(t *testing.T) {"],
+    added: ["func TestLoadCommentFromFixture(t *testing.T) {"],
+    why: "TestX → TestXRenamed is still collected; go test never sees the new suffix",
+  },
+  {
+    id: "rename-test/junit",
+    file: "src/test/java/com/x/CalcTest.java",
+    context: "// arithmetic",
+    removed: ["    void addsNumbers() {"],
+    added: ["    void addsTwoNumbers() {"],
+    why: "JUnit names the method freely; the @Test annotation is what registers it",
+  },
+  // Rust registers by attribute, so renaming the function — keeping #[test]
+  // — is ordinary and must be silent, while dropping the attribute is the
+  // canary above.
+  {
+    id: "rename-test/rust",
+    file: "tests/iter_tests/all.rs",
+    context: "// iter",
+    removed: ["fn peek_does_not_advance() {"],
+    added: ["fn peek_preserves_position() {"],
+    why: "the trial's honest-rust control: #[test] stays, the run loses nothing",
+  },
+  // A test moved to another file *with its registration* is refactoring, the
+  // same allowance the assertion-move check makes for moved assertions. The
+  // CROSS_FILE harness below covers it with both images; this entry asserts
+  // the attribute net-counting is silent inside the same file when a test is
+  // split into two (attribute added, none removed).
+  {
+    id: "add-test/rust-attribute-added",
+    file: "tests/iter_tests/all.rs",
+    context: "// iter",
+    removed: [],
+    added: ["#[test]", "fn peek_returns_the_next_item() {"],
+    why: "adding a registered test is the behaviour the gate exists to encourage",
+  },
+
+  // --- F03 conditional expectations: a conditional can be honest. ---------
+  // A brand-new assertion written with a ternary has no removed original to
+  // bend, so it is not a rewrite; the rule only pairs a non-conditional
+  // expectation against a conditional replacement of the same subject.
+  {
+    id: "add-assertion/conditional-ternary",
+    file: "test/calc.test.js",
+    context: "// arithmetic",
+    removed: [],
+    added: ["  assert.strictEqual(add(1, 2), feature ? 3 : 3);"],
+    why: "a new assertion, conditional or not, is not a rewritten expectation",
+  },
+  {
+    id: "add-assertion/python-conditional",
+    file: "tests/test_calc.py",
+    context: "# arithmetic",
+    removed: [],
+    added: ["    assert add(1, 2) == (3 if flag else 3)"],
+    why: "same, in pytest's bare-comparison spelling",
+  },
+  // The expected expression may be a variable name; renaming a variable the
+  // assertion compares against changes no value and contains no conditional.
+  {
+    id: "rename-expectation-identifier/pytest",
+    file: "tests/test_calc.py",
+    context: "# arithmetic",
+    removed: ["    assert add(1, 2) == expected"],
+    added: ["    assert add(1, 2) == wanted"],
+    why: "an identifier renamed is not a conditional expectation",
+  },
+  // Changing the condition's *comparison value* is not this rule's target —
+  // it is an expectation rewrite in its own right and the pairing checks
+  // report it (the trial's Go controls show exactly that being rejected).
+  // The vacuous-condition rule must only answer to an impossible guard.
+
+  // --- F05 dead guard: an honest, reachable guard is silent. --------------
+  {
+    id: "guard-clause/go",
+    file: "is_test.go",
+    context: "// loadComment",
+    lead: ["func TestLoadComment(t *testing.T) {"],
+    removed: ["\tif comment != \"\" {"],
+    added: ["\tif len(users) == 0 {"],
+    why: "an ordinary test guard on real data — `len(x) == 0` is reachable, unlike `len(x) < 0`",
+  },
+  {
+    id: "guard-clause/pytest",
+    file: "tests/test_encoding.py",
+    context: "# encoding",
+    lead: ["def test_int_bytes(value, expect):", "    enc = int_to_bytes(value)"],
+    removed: ["    if not data: return", "    assert enc == expect"],
+    added: ["    if not data:", "        return", "    assert enc == expect"],
+    why: "an early return inside a real guard clause is not the body's first statement; the assertion still runs",
+  },
+
+  // --- F04 execution-excision: harmless siblings must stay silent. --------
+  {
+    id: "go-build-version-bump",
+    file: "is-1.7_test.go",
+    context: "// build",
+    removed: ["//go:build go1.7"],
+    added: ["//go:build go1.24"],
+    why: "a version tag tracks the toolchain; the test still runs in every supported CI",
+  },
+  {
+    id: "go-build-os-gate",
+    file: "is_unix_test.go",
+    context: "// build",
+    removed: [],
+    added: ["//go:build linux || darwin"],
+    why: "a new platform-gated test file is ordinary CI matrix work",
+  },
+  {
+    id: "rust-test-module-attribute",
+    file: "tests/iter_tests/all.rs",
+    context: "// iter",
+    removed: [],
+    added: ["#[cfg(all(test, feature = \"proptest\"))]"],
+    why: "a feature-gated *additional* test is not an excised one (no tightened counterpart, no remove)",
+  },
+
+  // --- F01 root file: ordinary edits to test.js stay ordinary. ------------
+  {
+    id: "add-assertion/root-node",
+    file: "test.js",
+    context: "// activeCount",
+    removed: ["\tt.is(limit.activeCount, 0);"],
+    added: ["\tt.is(limit.activeCount, 0);", "\tt.is(limit.pendingCount, 0);"],
+    why: "adding an assertion to the root test file is what the gate encourages",
+  },
+  {
+    id: "add-import/root-node",
+    file: "test.js",
+    context: "// imports",
+    removed: [],
+    added: ["import {identity} from './identity-helper.js';"],
+    why: "an import in test.js is not an assertion, as in any other test file",
+  },
 ];
 
 /**
@@ -679,13 +1056,41 @@ export const DEREGISTRATION_CANARIES = [
     added: ["def Totals():"],
     why: "the prefix is what registers it, in either spelling",
   },
+  // F04: the original rule only matched a literal prefix strip, so any
+  // *other* collected→not-collected rename sailed through. Each of these
+  // leaves every assertion in the file, still level in every count, with
+  // the test gone from the run.
   {
-    id: "go/test",
-    file: "calc_test.go",
-    context: "// totals",
-    removed: ["func TestTotals(t *testing.T) {"],
-    added: ["func Totals(t *testing.T) {"],
-    why: "go test collects by the Test prefix",
+    id: "pytest/check-prefix",
+    file: "tests/test_encoding.py",
+    context: "# want_bytes",
+    removed: ["def test_want_bytes(value):"],
+    added: ["def check_want_bytes(value):"],
+    why: "the measured bypass — pytest never collects check_*",
+  },
+  {
+    id: "pytest/disabled-prefix",
+    file: "tests/test_encoding.py",
+    context: "# want_bytes",
+    removed: ["def test_want_bytes(value):"],
+    added: ["def disabled_want_bytes(value):"],
+    why: "any non-test* replacement uncollects, not only a strip",
+  },
+  {
+    id: "go/check-prefix",
+    file: "is_test.go",
+    context: "// loadComment",
+    removed: ["func TestLoadComment(t *testing.T) {"],
+    added: ["func checkLoadComment(t *testing.T) {"],
+    why: "go test collects TestX, never checkX",
+  },
+  {
+    id: "rust/attribute-removed",
+    file: "tests/iter_tests/all.rs",
+    context: "// iter",
+    removed: ["#[test]", "fn peek_does_not_advance() {"],
+    added: ["fn check_peek_does_not_advance() {"],
+    why: "Rust registers by attribute; no #[test], no run, free-form name",
   },
   {
     id: "go/benchmark",

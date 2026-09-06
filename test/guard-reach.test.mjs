@@ -30,13 +30,21 @@ describe("activation coverage", () => {
     // The check the whole mechanism rests on: a known-bad input must produce
     // the finding it names. If it does not, the rule has stopped being
     // reachable and no ordinary test would have noticed.
+    // Go build constraints are comments to the compiler, so their finding
+    // has no examined-code denominator; the file they sit in (filesSeen) is
+    // the denominator there.
+    const commentFinding = (id) => /^skip-injection\/go-build/.test(id);
     for (const c of TAMPER_CANARIES) {
       const res = checkTestTampering(diffFor(c));
       assert.ok(
         (res.violations || []).some((v) => v.type === c.expect),
         `canary ${c.id} came back clean — ${c.expect} is no longer reachable`
       );
-      assert.ok(res.inputsSeen > 0, `canary ${c.id} produced a finding with no denominator`);
+      if (commentFinding(c.id)) {
+        assert.ok(res.filesSeen > 0, `canary ${c.id} produced a finding with no file denominator`);
+      } else {
+        assert.ok(res.inputsSeen > 0, `canary ${c.id} produced a finding with no denominator`);
+      }
     }
   });
 

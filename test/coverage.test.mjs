@@ -154,6 +154,104 @@ test("Native V8 Diff Coverage Engine", async (t) => {
     }
   });
 
+  // F12: executable added code V8 never observed is a *missed* file, not a
+  // passing 100%-of-zero. The old contract returned `ok: true`, `scored:
+  // false`, 0/0 for a new exported function no test imported — the gate
+  // certified code nothing ran.
+  await t.test("F12: a new executable Node file the tests never ran is uncovered, not a pass", () => {
+    const root = tempRepo();
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src/arithmetic.js"),
+        "export function add(a, b) {\n  return a - b;\n}\n"
+      );
+
+      const diff = [
+        "diff --git a/src/arithmetic.js b/src/arithmetic.js",
+        "--- /dev/null",
+        "+++ b/src/arithmetic.js",
+        "@@ -0,0 +1,3 @@",
+        "+export function add(a, b) {",
+        "+  return a - b;",
+        "+}",
+      ].join("\n");
+
+      // Empty coverage map: V8 saw the test command, never the module.
+      const report = calculateDiffCoverage(new Map(), diff, { root, minCoverage: 100 });
+
+      assert.equal(report.ok, false, "a guard that measured none of the added code must not pass");
+      assert.equal(report.scored, true);
+      assert.equal(report.score, 0);
+      assert.equal(report.coveredLines, 0);
+      assert.ok(report.totalLines > 0, "the executable line was counted");
+      assert.ok((report.unobservedFiles || []).includes("src/arithmetic.js"));
+      // Both the function opener and its body line went unexecuted; the
+      // conservative count treats a declaration that opens a block as
+      // executable (V8 itself counts the function range).
+      assert.deepEqual(report.missedByFile["src/arithmetic.js"], [1, 2]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The counterweight: non-Node added code (or an empty executable diff) is
+  // not a measurement that failed — V8 cannot observe it, so it remains
+  // not-applicable and must keep passing. A gate that blocks every Python
+  // or Go diff gets switched off.
+  await t.test("F12: code V8 cannot observe stays not-applicable, not red", () => {
+    const root = tempRepo();
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src/arithmetic.py"),
+        "def add(a, b):\n    return a - b\n"
+      );
+
+      const diff = [
+        "diff --git a/src/arithmetic.py b/src/arithmetic.py",
+        "--- /dev/null",
+        "+++ b/src/arithmetic.py",
+        "@@ -0,0 +1,2 @@",
+        "+def add(a, b):",
+        "+    return a - b",
+      ].join("\n");
+
+      const report = calculateDiffCoverage(new Map(), diff, { root, minCoverage: 100 });
+      assert.equal(report.ok, true);
+      assert.equal(report.scored, false);
+      assert.equal(report.score, null);
+      assert.equal(report.totalLines, 0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // An executable diff in an *observed* Node file but without executable
+  // added lines (e.g. only a comment) is genuinely empty and N/A.
+  await t.test("F12: a comment-only Node diff is still not-applicable", () => {
+    const root = tempRepo();
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "src/math.js"), "// heading\n");
+
+      const diff = [
+        "diff --git a/src/math.js b/src/math.js",
+        "--- /dev/null",
+        "+++ b/src/math.js",
+        "@@ -0,0 +1 @@",
+        "+// heading",
+      ].join("\n");
+
+      const report = calculateDiffCoverage(new Map(), diff, { root, minCoverage: 100 });
+      assert.equal(report.ok, true);
+      assert.equal(report.scored, false);
+      assert.equal(report.totalLines, 0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   await t.test("runV8Coverage collects real V8 coverage dumps using Node native flags", () => {
     const root = tempRepo();
     try {
