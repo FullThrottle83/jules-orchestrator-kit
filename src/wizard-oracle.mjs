@@ -87,7 +87,7 @@ export function detectStackOracles(root = process.cwd()) {
     const flag = isCargoWs ? " --workspace" : "";
     candidates.testCmd = `cargo test${flag}`;
     candidates.buildCmd = `cargo build${flag}`;
-    candidates.lintCmd = `cargo clippy${flag} -- -D warnings`;
+    candidates.lintCmd = `cargo clippy${flag}`;
     candidates.typecheckCmd = `cargo check${flag}`;
   }
 

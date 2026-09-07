@@ -44,7 +44,7 @@ test("Stack Oracle & Verification Probes", async (t) => {
       const res = detectStackOracles(tmpDir);
       assert.equal(res.candidates.testCmd, "cargo test --workspace");
       assert.equal(res.candidates.buildCmd, "cargo build --workspace");
-      assert.equal(res.candidates.lintCmd, "cargo clippy --workspace -- -D warnings");
+      assert.equal(res.candidates.lintCmd, "cargo clippy --workspace");
       assert.equal(res.candidates.typecheckCmd, "cargo check --workspace");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
