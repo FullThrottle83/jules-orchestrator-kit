@@ -518,9 +518,9 @@ export function detectPackageManager(root = process.cwd(), pkg = {}) {
   return "npm";
 }
 
-import { buildProfileStages, PROFILE_NAMES, PROFILE_DESCRIPTIONS } from "./profiles.mjs";
+import { buildProfileStages, buildDefaultStages, PROFILE_NAMES, PROFILE_DESCRIPTIONS } from "./profiles.mjs";
 
-export { buildProfileStages, PROFILE_NAMES, PROFILE_DESCRIPTIONS };
+export { buildProfileStages, buildDefaultStages, PROFILE_NAMES, PROFILE_DESCRIPTIONS };
 
 import {
   detectPolyglotStack,
@@ -529,6 +529,7 @@ import {
   findSubprojectRoot,
   detectCrossPackageBoundaryViolations,
   detectCircularDependencies,
+  isPlaceholderTestScript,
 } from "./stack-detector.mjs";
 
 export {
@@ -538,7 +539,10 @@ export {
   findSubprojectRoot,
   detectCrossPackageBoundaryViolations,
   detectCircularDependencies,
+  isPlaceholderTestScript,
 };
+
+import { showFromOrigin, detectDefaultBranch } from "./git.mjs";
 
 /**
  * Autodetects verification test/build commands across 24+ polyglot tech stacks.
@@ -788,6 +792,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
       // Named so `doctor` can tell an operator that the gate they enabled is
       // running one fewer check than they think, and why.
       profileSkipped: profilePlan?.skipped ?? [],
+      minTests: parsed.verify?.minTests ?? parsed.verify?.min_tests ?? (parsed.minTests ?? parsed.min_tests ?? 1),
       timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 300_000,
     },
     evidence: {
@@ -864,4 +869,343 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
   };
 
   return config;
+}
+
+/**
+ * Verifies that a bootstrap scaffold (introduced in a repository whose base has
+ * no gate configuration yet) does not weaken verification, lower profiles,
+ * bypass tests, disable strict locks, or tamper with security invariants (F06, F08).
+ *
+ * @param {string} root - repository root
+ * @param {object} proposedConfig - parsed .agent/config.yml if present
+ * @param {object} proposedJules - parsed .agent/jules.yml if present
+ * @param {object} autoVerify - autodetected verification commands
+ * @returns {{ ok: boolean, error?: string }}
+ */
+export function checkBootstrapPolicyIntegrity(root, proposedConfig = {}, proposedJules = {}, autoVerify = {}) {
+  const pConfig = proposedConfig || {};
+  const pJules = proposedJules || {};
+
+  const testCmd = pConfig.verify?.test ?? pConfig.test_cmd ?? pJules.test_cmd ?? pJules.verify?.test;
+  if (testCmd !== undefined && testCmd !== null) {
+    const str = String(testCmd).trim();
+    if (str && isPlaceholderTestScript(str)) {
+      return {
+        ok: false,
+        error: `Bootstrap policy rejected: verify.test cannot be a placeholder command (${JSON.stringify(str)}) in uncommitted scaffold (F06).`,
+      };
+    }
+    if (!str && autoVerify.test) {
+      return {
+        ok: false,
+        error: `Bootstrap policy rejected: verify.test cannot be empty when repository has detected tests (${autoVerify.test}).`,
+      };
+    }
+  }
+
+  const profile = pConfig.verify?.profile ?? pConfig.profile ?? pJules.verify?.profile ?? pJules.profile;
+  if (profile && String(profile).toLowerCase() === "minimal") {
+    return {
+      ok: false,
+      error: 'Bootstrap policy rejected: verify.profile cannot be lowered to "minimal" in uncommitted scaffold (F06).',
+    };
+  }
+
+  const required = pConfig.verify?.required ?? pJules.verify?.required;
+  if (required === false) {
+    return {
+      ok: false,
+      error: "Bootstrap policy rejected: verify.required cannot be set to false in uncommitted scaffold.",
+    };
+  }
+
+  const strictLock =
+    pConfig.evidence?.strict_test_lock ??
+    pConfig.evidence?.strictTestLock ??
+    pJules.evidence?.strict_test_lock ??
+    pJules.evidence?.strictTestLock;
+  if (strictLock === false) {
+    return {
+      ok: false,
+      error: "Bootstrap policy rejected: evidence.strictTestLock cannot be disabled in uncommitted scaffold.",
+    };
+  }
+
+  const tamperGuard =
+    pConfig.verify?.tamper_guard ??
+    pConfig.verify?.tamperGuard ??
+    pJules.verify?.tamper_guard ??
+    pJules.verify?.tamperGuard;
+  if (tamperGuard === false) {
+    return {
+      ok: false,
+      error: "Bootstrap policy rejected: verify.tamperGuard cannot be disabled in uncommitted scaffold.",
+    };
+  }
+
+  const baseBranch = pConfig.base_branch ?? pConfig.baseBranch ?? pJules.base_branch ?? pJules.baseBranch;
+  if (baseBranch && String(baseBranch).toUpperCase() === "HEAD") {
+    return {
+      ok: false,
+      error: 'Bootstrap policy rejected: base_branch cannot be set to "HEAD" (F08).',
+    };
+  }
+
+  const stages = pConfig.verify?.stages ?? pJules.verify?.stages;
+  if (Array.isArray(stages)) {
+    if (stages.length === 0) {
+      return {
+        ok: false,
+        error: "Bootstrap policy rejected: verify.stages cannot be empty in uncommitted scaffold.",
+      };
+    }
+    const hasTestStage = stages.some(
+      (s) => (s.kind === "test" || s.kind === "unit") && s.cmd && !isPlaceholderTestScript(s.cmd)
+    );
+    if (!hasTestStage && autoVerify.test) {
+      return {
+        ok: false,
+        error: "Bootstrap policy rejected: verify.stages must include a valid test/unit command in uncommitted scaffold.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Resolves the authoritative security policy and verification plan from the
+ * trusted base commit (or pristine bootstrap baseline), guaranteeing that
+ * untrusted edits in the working tree, staged index, or branch diff under
+ * review cannot weaken verification, disable security guards, or redirect
+ * the trusted base (F06, F07, F08).
+ *
+ * @param {string} root - repository root
+ * @param {string} [baseRef] - explicit base reference (e.g. from CLI --base)
+ * @param {string} [mode="working-tree"] - "working-tree" | "staged" | "committed"
+ * @param {object} [opts={}] - additional options (e.g. allowProtected, config)
+ * @returns {{
+ *   ok: boolean,
+ *   code?: number,
+ *   error?: string,
+ *   base: string,
+ *   scope: { deny: string[], allow: string[], protect: string[] },
+ *   verify: object,
+ *   limits: object,
+ *   evidence: { strictTestLock: boolean },
+ *   isBootstrap: boolean,
+ *   rawConfig: string | null,
+ * }}
+ */
+export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode = "working-tree", opts = {}) {
+  // 1. Resolve base branch
+  let base = baseRef || opts.base;
+  if (!base) {
+    if (mode === "committed") {
+      base = detectDefaultBranch(root) || "main";
+    } else {
+      const diskConfig = opts.config || (existsSync(join(root, ".agent/config.yml")) ? loadConfig(root) : null);
+      base = diskConfig?.baseBranch || detectDefaultBranch(root) || "main";
+    }
+  }
+
+  // F08 Guard: In committed mode, base branch can never be HEAD
+  // (Comparing a commit against itself would produce an empty diff and bypass the gate)
+  if (mode === "committed" && (base === "HEAD" || base === "HEAD^0")) {
+    return {
+      ok: false,
+      code: 3,
+      error: 'Cannot evaluate committed diff against base "HEAD": comparing a revision to itself would bypass the safety gate (F08).',
+      base,
+      isBootstrap: false,
+    };
+  }
+
+  let trustedConfigRaw = null;
+  let trustedJulesRaw = null;
+  try {
+    trustedConfigRaw = showFromOrigin(root, base, ".agent/config.yml");
+    trustedJulesRaw = showFromOrigin(root, base, ".agent/jules.yml");
+  } catch (_) {
+    // If base branch cannot be resolved or show fails, let changedFiles report code 1
+  }
+
+  const autoVerify = resolveVerify(root);
+
+  if (trustedConfigRaw || trustedJulesRaw) {
+    const raw = trustedConfigRaw || trustedJulesRaw;
+    let parsed = {};
+    try {
+      if (raw) parsed = parseYaml(raw) || {};
+    } catch (_) {}
+
+    const trustedScope = normalizeScope(parsed);
+    const trustedDiffKb = Number(parsed.limits?.diff_kb || parsed.limits?.diffKb) || 75;
+
+    const rawSetup = parsed.setup_cmd ?? parsed.verify?.setup;
+    const rawTest = parsed.test_cmd ?? parsed.verify?.test;
+    const rawLint = parsed.lint_cmd ?? parsed.verify?.lint;
+    const rawFuzz = parsed.fuzz_cmd ?? parsed.verify?.fuzz;
+    const rawInvariant = parsed.invariant_cmd ?? parsed.verify?.invariant;
+    const rawE2e = parsed.e2e_cmd ?? parsed.verify?.e2e;
+    const rawTeardown = parsed.teardown_cmd ?? parsed.verify?.teardown;
+    const rawBuild = parsed.build_cmd ?? parsed.verify?.build;
+    const rawUnit = parsed.verify?.unit;
+    const verifyTimeoutMs = parsed.verify?.timeoutMs ?? parsed.verify?.timeout_ms ?? 300_000;
+
+    const mergedVerify = {
+      stack: autoVerify.stack || "unknown",
+      setup: rawSetup ?? autoVerify.setup ?? "",
+      lint: rawLint ?? autoVerify.lint ?? "",
+      test: rawTest ?? autoVerify.test,
+      unit: rawUnit ?? rawTest ?? autoVerify.unit ?? autoVerify.test,
+      fuzz: rawFuzz ?? autoVerify.fuzz ?? "",
+      invariant: rawInvariant ?? autoVerify.invariant ?? "",
+      e2e: rawE2e ?? autoVerify.e2e ?? "",
+      teardown: rawTeardown ?? autoVerify.teardown ?? "",
+      build: rawBuild ?? autoVerify.build,
+      policy: parsed.verify?.policy ?? autoVerify.policy,
+      scope: parsed.verify?.scope === "affected" ? "affected" : "global",
+      required: parsed.verify?.required !== undefined ? parsed.verify.required !== false : true,
+      minTests: parsed.verify?.minTests ?? parsed.verify?.min_tests ?? 1,
+      tamperGuard: parsed.verify?.tamperGuard ?? parsed.verify?.tamper_guard ?? true,
+      timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 300_000,
+    };
+
+    const rawProfile = parsed.verify?.profile ?? parsed.profile ?? null;
+    const explicitStages = parsed.verify?.stages ?? null;
+    const profilePlan =
+      !explicitStages && rawProfile
+        ? buildProfileStages(rawProfile, { stack: autoVerify.stack, verify: mergedVerify })
+        : null;
+
+    const stages = explicitStages ?? profilePlan?.stages ?? null;
+
+    return {
+      ok: true,
+      base,
+      scope: trustedScope,
+      verify: {
+        ...mergedVerify,
+        stages,
+        profile: profilePlan?.profile ?? (rawProfile ? String(rawProfile).toLowerCase() : null),
+        profileSkipped: profilePlan?.skipped ?? [],
+      },
+      limits: { diffKb: trustedDiffKb },
+      evidence: {
+        strictTestLock: parsed.evidence?.strict_test_lock ?? parsed.evidence?.strictTestLock ?? true,
+      },
+      isBootstrap: false,
+      rawConfig: raw,
+    };
+  }
+
+  // Bootstrap mode: base has no configuration file
+  // Inspect any proposed scaffold in this change (F06)
+  let proposedConfig = null;
+  let proposedJules = null;
+
+  try {
+    if (mode === "committed") {
+      const c = showFromOrigin(root, "HEAD", ".agent/config.yml");
+      if (c) proposedConfig = parseYaml(c);
+      const j = showFromOrigin(root, "HEAD", ".agent/jules.yml");
+      if (j) proposedJules = parseYaml(j);
+    } else {
+      const configPath = join(root, ".agent/config.yml");
+      if (existsSync(configPath)) proposedConfig = parseYaml(readFileSync(configPath, "utf-8"));
+      const julesPath = join(root, ".agent/jules.yml");
+      if (existsSync(julesPath)) proposedJules = parseYaml(readFileSync(julesPath, "utf-8"));
+    }
+  } catch (_) {}
+
+  const effectiveProposed = proposedConfig || proposedJules || opts.config || null;
+
+  if (proposedConfig || proposedJules) {
+    const integrity = checkBootstrapPolicyIntegrity(root, proposedConfig, proposedJules, autoVerify);
+    if (!integrity.ok) {
+      return {
+        ok: false,
+        code: 3,
+        error: integrity.error,
+        base,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        isBootstrap: true,
+        rawConfig: null,
+      };
+    }
+  }
+
+  const pConfig = effectiveProposed || {};
+  const rawSetup = pConfig.setup_cmd ?? pConfig.verify?.setup;
+  const rawTest = pConfig.test_cmd ?? pConfig.verify?.test;
+  const rawLint = pConfig.lint_cmd ?? pConfig.verify?.lint;
+  const rawFuzz = pConfig.fuzz_cmd ?? pConfig.verify?.fuzz;
+  const rawInvariant = pConfig.invariant_cmd ?? pConfig.verify?.invariant;
+  const rawE2e = pConfig.e2e_cmd ?? pConfig.verify?.e2e;
+  const rawTeardown = pConfig.teardown_cmd ?? pConfig.verify?.teardown;
+  const rawBuild = pConfig.build_cmd ?? pConfig.verify?.build;
+  const rawUnit = pConfig.verify?.unit;
+  const verifyTimeoutMs = pConfig.verify?.timeoutMs ?? pConfig.verify?.timeout_ms ?? 300_000;
+
+  const mergedBootstrapVerify = {
+    stack: autoVerify.stack || "unknown",
+    setup: rawSetup ?? autoVerify.setup ?? "",
+    lint: rawLint ?? autoVerify.lint ?? "",
+    test: rawTest ?? autoVerify.test,
+    unit: rawUnit ?? rawTest ?? autoVerify.unit ?? autoVerify.test,
+    fuzz: rawFuzz ?? autoVerify.fuzz ?? "",
+    invariant: rawInvariant ?? autoVerify.invariant ?? "",
+    e2e: rawE2e ?? autoVerify.e2e ?? "",
+    teardown: rawTeardown ?? autoVerify.teardown ?? "",
+    build: rawBuild ?? autoVerify.build,
+    policy: pConfig.verify?.policy ?? autoVerify.policy,
+    scope: pConfig.verify?.scope === "affected" ? "affected" : "global",
+    required: pConfig.verify?.required !== undefined ? pConfig.verify.required !== false : true,
+    minTests: pConfig.verify?.minTests ?? pConfig.verify?.min_tests ?? 1,
+    tamperGuard: pConfig.verify?.tamperGuard ?? pConfig.verify?.tamper_guard ?? true,
+    timeoutMs: Number.isFinite(Number(verifyTimeoutMs)) ? Number(verifyTimeoutMs) : 300_000,
+  };
+
+  const rawProfile = pConfig.verify?.profile ?? pConfig.profile ?? null;
+  const explicitStages = pConfig.verify?.stages ?? null;
+  const profilePlan =
+    !explicitStages && rawProfile
+      ? buildProfileStages(rawProfile, { stack: autoVerify.stack, verify: mergedBootstrapVerify })
+      : null;
+
+  const stages = explicitStages ?? profilePlan?.stages ?? null;
+  const trustedScope = normalizeScope(pConfig);
+  const trustedLimits = {
+    diffKb: Number(pConfig.limits?.diff_kb || pConfig.limits?.diffKb) || 75,
+  };
+  const trustedEvidence = {
+    strictTestLock: pConfig.evidence?.strict_test_lock ?? pConfig.evidence?.strictTestLock ?? true,
+  };
+
+  return {
+    ok: true,
+    base,
+    scope: trustedScope,
+    verify: {
+      ...mergedBootstrapVerify,
+      stages,
+      profile: profilePlan?.profile ?? (rawProfile ? String(rawProfile).toLowerCase() : null),
+      profileSkipped: profilePlan?.skipped ?? [],
+    },
+    limits: trustedLimits,
+    evidence: trustedEvidence,
+    isBootstrap: true,
+    rawConfig: null,
+  };
 }

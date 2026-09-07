@@ -130,22 +130,26 @@ export function planInit(root = process.cwd(), options = {}) {
   // scaffolded limits always match what the runtime will later enforce.
   const tierPresetLimits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
 
-  // Preserve existing config if present
+  // Preserve existing config if present (ignored when pristine requested)
   let existingConfig = {};
-  const existingConfigPath = join(root, ".agent", "config.yml");
-  if (existsSync(existingConfigPath)) {
-    try {
-      existingConfig = parseYaml(readFileSync(existingConfigPath, "utf-8")) || {};
-    } catch (_) {}
+  if (!options.pristine) {
+    const existingConfigPath = join(root, ".agent", "config.yml");
+    if (existsSync(existingConfigPath)) {
+      try {
+        existingConfig = parseYaml(readFileSync(existingConfigPath, "utf-8")) || {};
+      } catch (_) {}
+    }
   }
 
-  // Preserve existing jules.yml if present
+  // Preserve existing jules.yml if present (ignored when pristine requested)
   let existingJules = {};
-  const existingJulesPath = join(root, ".agent", "jules.yml");
-  if (existsSync(existingJulesPath)) {
-    try {
-      existingJules = parseYaml(readFileSync(existingJulesPath, "utf-8")) || {};
-    } catch (_) {}
+  if (!options.pristine) {
+    const existingJulesPath = join(root, ".agent", "jules.yml");
+    if (existsSync(existingJulesPath)) {
+      try {
+        existingJules = parseYaml(readFileSync(existingJulesPath, "utf-8")) || {};
+      } catch (_) {}
+    }
   }
 
   const customLimits = options.limits || existingConfig.limits;

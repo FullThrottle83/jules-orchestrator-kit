@@ -1,6 +1,7 @@
 import { execFileSync, execSync } from "node:child_process";
-import { readFileSync, existsSync, statSync, lstatSync, readlinkSync } from "node:fs";
+import { readFileSync, existsSync, statSync, lstatSync, readlinkSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join, delimiter } from "node:path";
+import { tmpdir } from "node:os";
 import { normalizePath, canonicalizePath } from "./config.mjs";
 
 
@@ -674,6 +675,108 @@ export function worktreeRemove(root = process.cwd(), targetDir = "") {
 
 export function worktreePrune(root = process.cwd()) {
   return git(["worktree", "prune"], { cwd: root });
+}
+
+/**
+ * Materialize the revision under review into an isolated execution directory (F10).
+ *
+ * In working-tree mode, verification executes against the live tree (`root`).
+ * In staged or committed mode, the verification command must execute against the
+ * snapshot being judged, rather than the working copy — attesting a revision
+ * you did not execute is the failure this tool exists to refuse.
+ *
+ * @param {string} root - repository root
+ * @param {string} mode - "working-tree" | "staged" | "committed"
+ * @param {string} [targetRef="HEAD"] - commit reference for committed mode
+ * @returns {{ cwd: string, cleanup: () => void, mode: string }}
+ */
+export function materializeSnapshot(root = process.cwd(), mode = "working-tree", targetRef = "HEAD") {
+  if (mode === "working-tree" || mode === "working") {
+    return {
+      cwd: root,
+      cleanup: () => {},
+      mode,
+    };
+  }
+
+  const prefix = `jules-${mode}-snapshot-`;
+  const tmpDir = mkdtempSync(join(tmpdir(), prefix));
+  let worktreeAdded = false;
+
+  try {
+    if (mode === "staged" || mode === "index") {
+      execFileSync("git", ["-c", "core.quotePath=false", "checkout-index", "--all", `--prefix=${tmpDir}/`], {
+        cwd: root,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } else {
+      // committed mode
+      try {
+        execFileSync("git", ["worktree", "add", "--detach", tmpDir, targetRef || "HEAD"], {
+          cwd: root,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        worktreeAdded = true;
+      } catch (_) {
+        // Fallback: git archive piped to tar when worktree cannot be created (e.g. read-only .git)
+        try {
+          const tar = execFileSync("git", ["archive", targetRef || "HEAD"], {
+            cwd: root,
+            maxBuffer: 50 * 1024 * 1024,
+          });
+          execFileSync("tar", ["-x", "-C", tmpDir], { input: tar, stdio: ["pipe", "ignore", "pipe"] });
+        } catch (tarErr) {
+          throw new Error(`Failed to extract snapshot for ${targetRef || "HEAD"}: ${tarErr.message}`);
+        }
+      }
+    }
+
+    // Preserve local runtime dependencies in snapshot so offline/sandboxed verification can run:
+    const ignoredDeps = ["node_modules", ".venv", "venv", "target", ".pytest_cache"];
+    for (const dep of ignoredDeps) {
+      const srcDep = join(root, dep);
+      const dstDep = join(tmpDir, dep);
+      if (existsSync(srcDep) && !existsSync(dstDep)) {
+        try {
+          symlinkSync(srcDep, dstDep, "junction");
+        } catch (_) {}
+      }
+    }
+
+    const cleanup = () => {
+      if (worktreeAdded) {
+        try {
+          execFileSync("git", ["worktree", "remove", "--force", tmpDir], {
+            cwd: root,
+            stdio: ["ignore", "ignore", "ignore"],
+          });
+        } catch (_) {}
+      }
+      try {
+        rmSync(tmpDir, { recursive: true, force: true });
+      } catch (_) {}
+    };
+
+    return {
+      cwd: tmpDir,
+      cleanup,
+      mode,
+    };
+  } catch (err) {
+    if (worktreeAdded) {
+      try {
+        execFileSync("git", ["worktree", "remove", "--force", tmpDir], {
+          cwd: root,
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+      } catch (_) {}
+    }
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch (_) {}
+    throw new GateError(`Failed to materialize ${mode} snapshot for verification: ${err.message}`, { code: 1 });
+  }
 }
 
 /**
