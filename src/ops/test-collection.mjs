@@ -33,8 +33,7 @@ const COUNT_PATTERNS = [
   // pytest — "collected 12 items", "12 passed", "no tests ran in 0.01s"
   { name: "pytest", re: /^\s*collected\s+(\d+)\s+items?/m },
   { name: "pytest", re: /=+\s*(\d+)\s+passed/m },
-  // cargo — "running 7 tests"
-  { name: "cargo", re: /^\s*running\s+(\d+)\s+tests?\s*$/m },
+  // Cargo multi-target output is aggregated above COUNT_PATTERNS (F15)
   // jest / vitest — "Tests:       12 passed, 12 total"
   { name: "jest", re: /^\s*Tests:\s+.*?(\d+)\s+total\s*$/m },
   // mocha — "12 passing"
@@ -88,10 +87,13 @@ const EXPLICIT_ZERO = [
   { name: "gradle", re: /^>\s*Task\s+:\S*test\S*\s+NO-SOURCE\s*$/mi },
   { name: "ctest", re: /\bNo tests were found\b/i },
   { name: "flutter", re: /\bNo tests ran\.?/i },
+  { name: "go", re: /\[no tests to run\]/ },
 ];
 
 /** Go prints this per package that has no test files at all. */
 const GO_NO_TEST_FILES = /\[no test files\]/;
+/** Go prints this when test files exist but test selection (-run) matched nothing. */
+const GO_NO_TESTS_TO_RUN = /\[no tests to run\]/;
 /**
  * Any sign that a Go package did run tests.
  *
@@ -165,6 +167,24 @@ export function parseCollectedTests(stdout = "", stderr = "") {
   const text = `${stdout || ""}\n${stderr || ""}`;
   if (!text.trim()) return { count: null, runner: null };
 
+  // Pytest --collect-only states "collected N items" and "N tests collected",
+  // but executed 0 tests. A run that executed tests reports passed/failed/skipped.
+  if (
+    /=+\s*\d+\s+tests? collected\b/i.test(text) &&
+    !/=+\s*.*?(?:\d+\s+(?:passed|failed|skipped))\b/i.test(text)
+  ) {
+    return { count: 0, runner: "pytest" };
+  }
+
+  // Cargo states "running N tests" per target (lib, bin, integration tests, doc tests).
+  // A multi-target run with 0 unit tests and 58 integration tests must aggregate all
+  // targets rather than stopping at the first target-local zero (F15).
+  const cargoMatches = [...text.matchAll(/^\s*running\s+(\d+)\s+tests?\s*$/gm)];
+  if (cargoMatches.length > 0) {
+    const totalCargoTests = cargoMatches.reduce((sum, m) => sum + Number(m[1]), 0);
+    return { count: totalCargoTests, runner: "cargo" };
+  }
+
   // A stated count wins over a phrase that merely resembles one.
   //
   // `EXPLICIT_ZERO` used to be consulted first, so any output containing the
@@ -183,7 +203,13 @@ export function parseCollectedTests(stdout = "", stderr = "") {
 
   // Go states absence per package rather than as a count, so it needs its own
   // pass before the generic patterns.
-  if (GO_NO_TEST_FILES.test(text) || GO_RAN_SOMETHING.test(text)) {
+  if (GO_NO_TEST_FILES.test(text) || GO_NO_TESTS_TO_RUN.test(text) || GO_RAN_SOMETHING.test(text)) {
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const pkgLines = lines.filter((l) => /^(?:ok|FAIL|\?)\s+/.test(l));
+    const allEmpty =
+      pkgLines.length > 0 &&
+      pkgLines.every((l) => GO_NO_TEST_FILES.test(l) || GO_NO_TESTS_TO_RUN.test(l));
+    if (allEmpty) return { count: 0, runner: "go" };
     // Only a run where *no* package did anything is a zero: a monorepo where
     // one package has no tests and three do is a normal, healthy repository.
     if (!GO_RAN_SOMETHING.test(text)) return { count: 0, runner: "go" };

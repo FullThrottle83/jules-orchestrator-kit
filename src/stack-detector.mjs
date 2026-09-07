@@ -118,6 +118,27 @@ export function isPlaceholderTestScript(cmd) {
   const trimmed = cmd.trim();
   if (!trimmed) return true;
   if (EMPTY_PROGRAM.test(trimmed)) return true;
+
+  // Node/Deno/Bun process.exit(0)
+  if (/^(?:\S*[/\\])?(?:node|nodejs|deno|bun)\b.*?(?:-e|--eval)\s+["'`]\s*(?:(?:void\s+0|0)?\s*;?\s*process\.exit\s*\(\s*0?\s*\)\s*;?)*\s*["'`]\s*$/.test(trimmed)) {
+    return true;
+  }
+
+  // Python exit(0) / pass
+  if (/^(?:\S*[/\\])?python[\d.]*\b.*?-c\s+["'`]\s*(?:(?:import\s+sys\s*;?\s*)?(?:sys\.)?exit\s*\(\s*0?\s*\)|pass)?\s*;?\s*["'`]\s*$/.test(trimmed)) {
+    return true;
+  }
+
+  // Shell running no-op / exit 0
+  if (/^(?:\S*[/\\])?(?:sh|bash|zsh|dash)\b.*?-c\s+["'`]?\s*(?::|true|exit\s+0)?\s*;?\s*["'`]?\s*$/.test(trimmed)) {
+    return true;
+  }
+
+  // Pytest collection only without test execution
+  if (/\bpytest\b.*?(?:--collect-only\b)/.test(trimmed)) {
+    return true;
+  }
+
   // Drop the announcements; what matters is what the shell is left doing.
   const remainder = trimmed
     .split(/&&|;/)

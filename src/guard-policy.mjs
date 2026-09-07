@@ -628,11 +628,13 @@ export const PREDICATE_MUTANTS = [
 /** Runner outputs that state zero collected tests, per ecosystem. */
 export const EMPTY_RUN_CANARIES = [
   { id: "pytest", output: "collected 0 items\n\nno tests ran in 0.01s" },
+  { id: "pytest-collect-only", output: "collected 0 items\n\n======================== no tests ran in 0.00s =========================" },
   { id: "jest", output: "No tests found, exiting with code 0" },
   { id: "vitest", output: "No test files found, exiting with code 0" },
   { id: "cargo", output: "running 0 tests\ntest result: ok. 0 passed" },
   { id: "mocha", output: "  0 passing (1ms)" },
   { id: "go", output: "?   example.com/app\t[no test files]" },
+  { id: "go-no-tests-to-run", output: "ok  \texample.com/app\t0.001s [no tests to run]" },
   { id: "surefire", output: "Tests run: 0, Failures: 0, Errors: 0, Skipped: 0" },
   { id: "gradle", output: "> Task :test NO-SOURCE" },
   { id: "phpunit", output: "No tests executed!" },

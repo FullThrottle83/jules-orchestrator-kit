@@ -1,9 +1,9 @@
-import { loadConfig, parseYaml, normalizeScope } from "./config.mjs";
+import { loadConfig, resolveTrustedPolicy } from "./config.mjs";
 import { isTestPath } from "./test-paths.mjs";
-import { isPlaceholderTestScript } from "./stack-detector.mjs";
+import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd } from "./git.mjs";
+import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd, materializeSnapshot } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
@@ -152,12 +152,29 @@ export function fingerprintFailureState(failure = {}, root = process.cwd()) {
  */
 export async function gate(opts = {}) {
   const root = opts.root || process.cwd();
-  const config = opts.config || loadConfig(root);
-  const base = opts.base || config.baseBranch || "main";
   const mode = opts.mode || (opts.workingTree ? "working-tree" : (process.env.JULES_GATE_MODE || "working-tree"));
+  const config = opts.config || (mode === "working-tree" ? loadConfig(root) : null);
   const progressBus = opts.progressBus;
   const progressToken = opts.progressToken;
   const phases = [];
+
+  const policy = resolveTrustedPolicy(root, opts.base, mode, { ...opts, config });
+  if (!policy.ok) {
+    phases.push({
+      phase: "scope",
+      ok: false,
+      error: policy.error,
+      violations: [{ file: ".agent/config.yml", rule: "BUILTIN_PROTECT", reason: policy.error }],
+    });
+    appendTelemetry(root, "gate_finished", { ok: false, code: policy.code || 3, error: policy.error });
+    return { ok: false, code: policy.code || 3, phases, error: policy.error, base: policy.base };
+  }
+
+  const base = policy.base;
+  const trustedScope = policy.scope;
+  let trustedVerify = policy.verify;
+  const trustedDiffKb = policy.limits?.diffKb || 75;
+  const trustedEvidence = policy.evidence || { strictTestLock: true };
 
   appendTelemetry(root, "gate_started", { base, mode });
 
@@ -172,73 +189,15 @@ export async function gate(opts = {}) {
   } catch (err) {
     phases.push({ phase: "git_resolution", ok: false, error: err.message });
     appendTelemetry(root, "gate_finished", { ok: false, code: 1, error: err.message });
-    return { ok: false, code: 1, phases, error: err.message };
+    return { ok: false, code: 1, phases, error: err.message, base };
   }
 
-  // Phase 1: Scope Guard (Fetch trusted config strictly from origin/base using single normalizeScope)
-  let trustedScope = config.scope;
-  let trustedVerify = config.verify;
-  let trustedDiffKb = 75;
-
-  const trustedConfigRaw = showFromOrigin(root, base, ".agent/config.yml") || showFromOrigin(root, base, ".agent/jules.yml");
-  if (trustedConfigRaw) {
-    try {
-      const parsed = parseYaml(trustedConfigRaw);
-      // CRITICAL B1 FIX: normalizeScope ensures BUILTIN_DENY is ALWAYS merged with user deny rules
-      trustedScope = normalizeScope(parsed);
-      if (parsed.limits?.diff_kb || parsed.limits?.diffKb) {
-        trustedDiffKb = Number(parsed.limits.diff_kb || parsed.limits.diffKb) || 75;
-      }
-      if (parsed.verify || parsed.test_cmd || parsed.build_cmd) {
-        trustedVerify = {
-          setup: parsed.verify?.setup || config.verify.setup,
-          lint: parsed.verify?.lint || parsed.lint_cmd || config.verify.lint,
-          test: parsed.verify?.test || parsed.test_cmd || config.verify.test,
-          unit: parsed.verify?.unit || config.verify.unit || parsed.verify?.test || parsed.test_cmd || config.verify.test,
-          fuzz: parsed.verify?.fuzz || parsed.fuzz_cmd || config.verify.fuzz,
-          invariant: parsed.verify?.invariant || parsed.invariant_cmd || config.verify.invariant,
-          e2e: parsed.verify?.e2e || parsed.e2e_cmd || config.verify.e2e,
-          teardown: parsed.verify?.teardown || config.verify.teardown,
-          build: parsed.verify?.build || parsed.build_cmd || config.verify.build,
-          stages: parsed.verify?.stages || config.verify.stages,
-          policy: parsed.verify?.policy || config.verify.policy,
-          // Read from the base commit like every other trusted field: an
-          // uncommitted `required: false` must not be able to switch the gate off.
-          required: parsed.verify?.required !== undefined ? parsed.verify.required !== false : config.verify.required !== false,
-          // The floor the collection check applies. Omitting it here meant
-          // `verify.minTests` was silently dropped and always defaulted to 1
-          // — while the failure message told the operator to set exactly
-          // that. A remediation hint that does nothing is worse than none.
-          minTests:
-            parsed.verify?.minTests !== undefined
-              ? parsed.verify.minTests
-              : parsed.verify?.min_tests !== undefined
-                ? parsed.verify.min_tests
-                : config.verify.minTests,
-          tamperGuard: parsed.verify?.tamperGuard || parsed.verify?.tamper_guard || config.verify.tamperGuard,
-          scope: parsed.verify?.scope || config.verify.scope || "global",
-          timeoutMs: parsed.verify?.timeoutMs || parsed.verify?.timeout_ms || config.verify.timeoutMs,
-        };
-      }
-    } catch (_) {}
-  } else {
-    // CRITICAL H-c FIX: Fall back strictly to normalizeScope({}) (built-ins only), never HEAD config
-    trustedScope = normalizeScope({});
-    if (opts.config?.limits?.diffKb || opts.config?.limits?.diff_kb) {
-      trustedDiffKb = Number(opts.config.limits.diffKb || opts.config.limits.diff_kb) || 75;
-    }
-  }
-
-  // A symlink is judged by its own name, so `notes.md -> .agent/config.yml`
-  // walked straight past a deny list that names the target. Judge both: the
-  // link because it is what the diff adds, and the path it resolves to because
-  // that is what it grants reach to.
+  // Phase 1: Scope Guard
   let symlinks = [];
   try {
     symlinks = symlinkChanges(root, base, mode);
   } catch (_) {
-    // Scope must still be enforced on the ordinary file list if git cannot
-    // describe the links.
+    // Scope must still be enforced on the ordinary file list if git cannot describe the links.
   }
   const scopeCandidates = [...files];
   const symlinkTargetOf = new Map();
@@ -249,7 +208,12 @@ export async function gate(opts = {}) {
   }
 
   const scopeResult = checkScope(scopeCandidates, trustedScope, {
-    allowProtected: opts.allowProtected || process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true",
+    allowProtected:
+      opts.allowProtected ||
+      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true" ||
+      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1" ||
+      process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "true" ||
+      process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1",
   });
   // Report the violation against the link the change actually introduced, not
   // against a path the diff never names — the operator has to be able to find it.
@@ -263,23 +227,8 @@ export async function gate(opts = {}) {
 
   // Bootstrap: the files that bring a repository under the gate are not agent
   // edits to the gate.
-  //
-  // `init` writes `.agent/**` and then tells the user to commit it. Doing
-  // exactly that produced Exit 3 on the very first run, because the base
-  // branch does not have the commit yet and every scaffolded path matches
-  // BUILTIN_PROTECT or BUILTIN_DENY. The advice printed alongside it was
-  // `--allow-protected` — so a newcomer's first lesson was how to switch the
-  // scope guard off. A gate that refuses its own installation is not strict,
-  // it is broken.
-  //
-  // Narrow on purpose, and only where it cannot weaken anything: the base
-  // commit must have no gate config at all — in which case `trustedScope` is
-  // already built-ins only and nothing in the added files is trusted — and
-  // every violating path must be scaffold that the base does not have. A
-  // repository already under the gate keeps the full rule, so an agent still
-  // cannot touch the policy it is governed by.
   let acceptedScaffold = [];
-  if (!scopeResult.ok && !trustedConfigRaw) {
+  if (!scopeResult.ok && policy.isBootstrap) {
     const violations = scopeResult.violations || [];
     const isScaffold = (f) => typeof f === "string" && f.replace(/\\/g, "/").startsWith(".agent/");
     if (
@@ -307,7 +256,7 @@ export async function gate(opts = {}) {
 
   if (!scopeResult.ok) {
     appendTelemetry(root, "gate_finished", { ok: false, code: 3 });
-    return { ok: false, code: 3, phases };
+    return { ok: false, code: 3, phases, base };
   }
 
   // Phase 2: Diff Payload Governor
@@ -359,12 +308,18 @@ export async function gate(opts = {}) {
     return { ok: false, code: 6, phases };
   }
 
-  // Pre-verification: compute test directory integrity hash
-  const preTestHashResult = computeDirectoryHash(root, { testOnly: true });
-  const preTestHash = preTestHashResult.treeHash;
-  const executionRecords = [];
-
   // Phase 4: Automated Test & Build Verification (Uses trusted verify commands only)
+  let snapshot = { cwd: root, cleanup: () => {}, mode };
+  try {
+    if (mode === "staged" || mode === "committed") {
+      snapshot = materializeSnapshot(root, mode, base);
+    }
+  } catch (snapErr) {
+    phases.push({ phase: "verify", ok: false, error: snapErr.message });
+    appendTelemetry(root, "gate_finished", { ok: false, code: snapErr.code || 1, error: snapErr.message });
+    return { ok: false, code: snapErr.code || 1, phases, error: snapErr.message, base };
+  }
+
   let testResult = { ok: true, status: 0 };
   let buildResult = { ok: true, status: 0 };
   let serverResult = { ok: true, status: 0 };
@@ -400,21 +355,10 @@ export async function gate(opts = {}) {
   const verifyTimeout = trustedVerify.timeoutMs || 300_000;
 
   // Monorepo scoping: run the suites the change can actually break.
-  //
-  // `resolveWorkspaceBoundary()` shipped, was drawn in the architecture
-  // diagrams and documented as a headline feature — and was called by nothing.
-  // Every change in a monorepo ran the root suite, so a one-package edit was
-  // gated on every other package's tests. It resolves the changed files to
-  // their sub-projects and composes the per-project commands.
-  //
-  // It stays opt-in (`verify.scope: affected`) because narrowing what runs is
-  // only safe when someone asked for it, and it yields to the global command
-  // whenever a shared file is touched or no sub-project command is found — a
-  // narrower run that misses the breakage is worse than a slow one.
   let boundary = null;
   if (trustedVerify.scope === "affected" && !(Array.isArray(trustedVerify.stages) && trustedVerify.stages.length > 0)) {
     try {
-      boundary = resolveWorkspaceBoundary(files, root);
+      boundary = resolveWorkspaceBoundary(files, snapshot.cwd);
     } catch (_) {
       boundary = null;
     }
@@ -440,6 +384,13 @@ export async function gate(opts = {}) {
     stagesToRun.push(...buildDefaultStages(trustedVerify));
   }
 
+  // Pre-verification: compute test directory integrity hash on snapshot under test
+  const preTestHashResult = computeDirectoryHash(snapshot.cwd, { testOnly: true });
+  let preTestHash = preTestHashResult.treeHash;
+  let postTestHash = preTestHash;
+  const executionRecords = [];
+  let testTampered = false;
+
   try {
     for (const stage of stagesToRun) {
       const isAssertion = Boolean(
@@ -459,18 +410,6 @@ export async function gate(opts = {}) {
       let assertMetrics = {};
 
       if (isAssertion) {
-        // The loosening flags have to reach here too.
-        //
-        // `scanDiff` above is given `allowTestChanges` and honours it, while
-        // the `assert:test-integrity` stage received only its own stage object
-        // and re-ran the same guard with none of them. So an override was
-        // accepted by one phase and ignored by the next: `--allow-test-change
-        // deregistration` turned the SECRETS phase green and then failed the
-        // run at the anti-tamper stage, with a flag hint the operator had
-        // already followed. One rule, two places, and the second kept the old
-        // answer — for the eighth time in this project's history, which is why
-        // the regression test asserts the verdict a caller receives rather
-        // than the behaviour of either site.
         const assertRes = runAssertion(
           {
             ...stage,
@@ -479,7 +418,7 @@ export async function gate(opts = {}) {
             tamperGuard: trustedVerify.tamperGuard,
             allowUnreadableTests: opts.allowUnreadableTests === true,
           },
-          root
+          snapshot.cwd
         );
         durationMs = assertRes.metrics?.durationMs ?? (Date.now() - startTime);
         stdoutRedacted = assertRes.stdout || "";
@@ -491,9 +430,16 @@ export async function gate(opts = {}) {
       } else {
         const stageEnv = stage.networkAccess === "forbidden" || trustedVerify.policy?.offline
           ? { ...testEnv, JULES_SANDBOX_OFFLINE: "1" }
-          : testEnv;
+          : { ...testEnv };
 
-        res = runCmd(stage.cmd, { cwd: root, ignoreError: true, env: stageEnv, timeout: stage.timeoutMs || verifyTimeout });
+        // F11: Prepend src/ to PYTHONPATH for Python src-layout repositories
+        if (isSrcLayout(snapshot.cwd)) {
+          const currentPypath = stageEnv.PYTHONPATH || "";
+          const srcDir = join(snapshot.cwd, "src");
+          stageEnv.PYTHONPATH = currentPypath ? `${srcDir}:${currentPypath}` : srcDir;
+        }
+
+        res = runCmd(stage.cmd, { cwd: snapshot.cwd, ignoreError: true, env: stageEnv, timeout: stage.timeoutMs || verifyTimeout });
         durationMs = Date.now() - startTime;
         stdoutRedacted = redactSecrets(res.stdout || "");
         stderrRedacted = redactSecrets(res.stderr || "");
@@ -514,7 +460,7 @@ export async function gate(opts = {}) {
 
       if (stage.kind === "test" || stage.kind === "unit") {
         testResult = { ok: stageOk, status: res.status, stdout: stdoutRedacted, stderr: stderrRedacted, command: stage.cmd };
-        const fingerprint = !stageOk ? fingerprintFailureState(testResult, root) : null;
+        const fingerprint = !stageOk ? fingerprintFailureState(testResult, snapshot.cwd) : null;
         if (stage.cmd) recordVerifyRun(root, stage.cmd, stageOk, fingerprint, durationMs);
         if (!stageOk && stage.cmd) {
           const runs = readVerifyRuns(root, stage.cmd);
@@ -538,7 +484,7 @@ export async function gate(opts = {}) {
             });
             appendTelemetry(root, "gate_phase", { phase: "verify", ok: false, quarantined: true });
             appendTelemetry(root, "gate_finished", { ok: false, code: 8 });
-            return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult };
+            return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult, base };
           }
         }
       } else if (stage.kind === "build") {
@@ -560,30 +506,30 @@ export async function gate(opts = {}) {
         break;
       }
     }
+
+    if (!failingCmd && trustedVerify.server && trustedVerify.server.command) {
+      serverResult = await probeDevServer(trustedVerify.server, snapshot.cwd);
+      if (!serverResult.ok) {
+        failingCmd = serverResult;
+      }
+    }
+
+    // Post-verification test integrity check (No Test Weakening Invariant)
+    const postTestHashResult = computeDirectoryHash(snapshot.cwd, { testOnly: true });
+    postTestHash = postTestHashResult.treeHash;
+    if (trustedEvidence.strictTestLock && !opts.allowTestModifications && preTestHashResult.fileCount > 0) {
+      const changedTestFile = files.find((f) => isTestPath(f));
+      if (changedTestFile && preTestHash !== postTestHash) {
+        testTampered = true;
+      }
+    }
   } finally {
     if (trustedVerify.teardown) {
       try {
-        runCmd(trustedVerify.teardown, { cwd: root, ignoreError: true, env: testEnv });
+        runCmd(trustedVerify.teardown, { cwd: snapshot.cwd, ignoreError: true, env: testEnv });
       } catch (_) {}
     }
-  }
-
-  if (!failingCmd && trustedVerify.server && trustedVerify.server.command) {
-    serverResult = await probeDevServer(trustedVerify.server, root);
-    if (!serverResult.ok) {
-      failingCmd = serverResult;
-    }
-  }
-
-  // Post-verification test integrity check (No Test Weakening Invariant)
-  const postTestHashResult = computeDirectoryHash(root, { testOnly: true });
-  const postTestHash = postTestHashResult.treeHash;
-  let testTampered = false;
-  if (config.evidence?.strictTestLock && !opts.allowTestModifications && preTestHashResult.fileCount > 0) {
-    const changedTestFile = files.find((f) => isTestPath(f));
-    if (changedTestFile && preTestHash !== postTestHash) {
-      testTampered = true;
-    }
+    snapshot.cleanup();
   }
 
   // A gate that ran no verification at all must not report APPROVED.
@@ -717,9 +663,9 @@ export async function gate(opts = {}) {
     executionRecords,
     secretScanOk: secretResult.ok,
     diffKb: Math.round(bytes / 1024),
-    maxDiffKb: config.limits.diffKb || 75,
+    maxDiffKb: trustedDiffKb,
     protectedScopeOk: scopeResult.ok,
-    repository: config.provider || "jules",
+    repository: policy.provider || config?.provider || "jules",
     failedStage: failingCmd?.stageId || failingCmd?.phase || null,
     diagnostics: failingCmd?.diagnostics?.length ? failingCmd.diagnostics : (failingCmd?.stderr ? [failingCmd.stderr] : []),
     metrics: failingCmd?.metrics || {},
@@ -730,9 +676,18 @@ export async function gate(opts = {}) {
     evidenceManifest.testIntegrity.tamperDetected = true;
   }
   let evidencePath = null;
-  try {
-    evidencePath = writeEvidenceManifest(root, evidenceManifest);
-  } catch (_) {}
+  const shouldPersistEvidence =
+    !opts.dryRun &&
+    !opts["dry-run"] &&
+    process.env.JULES_DRY_RUN !== "1" &&
+    process.env.AGENT_DRY_RUN !== "1" &&
+    trustedEvidence.enabled !== false &&
+    config?.evidence?.enabled !== false;
+  if (shouldPersistEvidence) {
+    try {
+      evidencePath = writeEvidenceManifest(root, evidenceManifest);
+    } catch (_) {}
+  }
 
   // Export structured JSON report if requested
   const jsonReportPath = opts.jsonReport || opts.jsonReportPath || process.env.JULES_JSON_REPORT || null;
