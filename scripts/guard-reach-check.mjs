@@ -75,9 +75,14 @@ function canaryDiff(c) {
   const lines = [`--- a/${c.file}`, `+++ b/${c.file}`, "@@ -1,20 +1,20 @@", ` ${ctx}`];
   // Unchanged lines the change sits inside. An assertion whose keyword is on
   // one of these is the shape the line-level denominator could not see.
-  for (const l of c.lead || []) lines.push(` ${l}`);
-  for (const l of c.removed) lines.push(`-${l}`);
-  for (const l of c.added) lines.push(`+${l}`);
+  // Entries may contain newlines (a multi-line fixture); each physical line
+  // carries its own diff prefix, exactly as git emits it.
+  const each = (arr, prefix) => {
+    for (const l of arr) for (const part of String(l).split("\n")) lines.push(`${prefix}${part}`);
+  };
+  each(c.lead || [], " ");
+  each(c.removed, "-");
+  each(c.added, "+");
   lines.push(` ${ctx}`);
   return lines.join("\n");
 }
@@ -138,17 +143,35 @@ const canaryResults = new Map();
   const silent = [];
   const noDenominator = [];
   const noAssertions = [];
+  // Findings whose own evidence is a comment line: Go build constraints are
+  // comments to the compiler, so a constraint-only diff contributes no
+  // *examined* code lines — the finding's denominator is the file it sits in,
+  // and `filesSeen` carries that. Requiring `inputsSeen` here would ask the
+  // counter to count comments, which is exactly what it must skip.
+  const COMMENT_LINE_FINDING = /^skip-injection\/go-build/;
   for (const c of [...TAMPER_CANARIES, ...MULTILINE_CANARIES]) {
     const res = checkTestTampering(canaryDiff(c));
     const hit = (res.violations || []).some((v) => v.type === c.expect);
     canaryResults.set(c.id, hit);
     if (!hit) silent.push(`${c.id} expected ${c.expect}, got ${JSON.stringify((res.violations || []).map((v) => v.type))}`);
     // A finding with no denominator is the shape this script exists to reject.
-    if (hit && !(res.inputsSeen > 0)) noDenominator.push(c.id);
+    if (hit && !(res.inputsSeen > 0) && !COMMENT_LINE_FINDING.test(c.id)) noDenominator.push(c.id);
+    if (hit && COMMENT_LINE_FINDING.test(c.id) && !(res.filesSeen > 0)) noDenominator.push(c.id);
     // Counting lines was not enough: a JUnit diff reported one input examined
     // and a clean PASS while every assertion in it went unrecognised. A rule
     // about assertions has to say how many assertions it actually read.
-    if (hit && c.expect !== "TEST_SKIP_INJECTION" && !(res.assertionsSeen > 0)) {
+    //
+    // A finding about test *execution* rather than assertion content —
+    // skips, xfail/cfg/build-constraint exclusion, de-registration by rename
+    // or attribute removal — may legitimately be the only change in the
+    // diff, with no assertion line on either side. Asserting an
+    // `assertionsSeen` there is a denominator the finding does not have; the
+    // assertions a dead-tagged test holds are in context, not in the edit.
+    const assertionFinding =
+      c.expect !== "TEST_SKIP_INJECTION" &&
+      c.expect !== "TEST_DEREGISTERED" &&
+      !/^(skip-injection|deregistration)\//.test(c.id);
+    if (hit && assertionFinding && !(res.assertionsSeen > 0)) {
       noAssertions.push(`${c.id} (${res.assertionsSeen} assertions parsed)`);
     }
   }

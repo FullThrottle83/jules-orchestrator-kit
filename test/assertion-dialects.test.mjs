@@ -53,7 +53,17 @@ describe("every canary in the policy contract still fires", () => {
 });
 
 describe("a finding about assertions must have parsed an assertion", () => {
-  for (const c of TAMPER_CANARIES.filter((c) => c.expect !== "TEST_SKIP_INJECTION")) {
+  // A finding about test *execution* — skips, xfail/cfg/build-tag exclusion,
+  // de-registration by name or attribute — may legitimately be the only
+  // change in the diff, with the test's assertions left untouched in
+  // context. `assertionsSeen` is the denominator for findings that *change*
+  // assertions; the skip/deregistration findings carry their own denominator
+  // (filesSeen / inputsSeen), asserted in the reach script.
+  const executionFinding = (c) =>
+    c.expect === "TEST_SKIP_INJECTION" ||
+    c.expect === "TEST_DEREGISTERED" ||
+    /^(skip-injection|deregistration)\//.test(c.id);
+  for (const c of TAMPER_CANARIES.filter((c) => !executionFinding(c))) {
     it(`${c.id} counts what it read`, () => {
       // `inputsSeen` counted files, so a JUnit diff reported one input
       // examined and a clean PASS while not one assertion in it parsed.

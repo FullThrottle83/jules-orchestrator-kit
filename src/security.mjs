@@ -1199,7 +1199,11 @@ const SPECIFIC_ASSERTION = new RegExp(
     // sub-test callback named its argument — `ct` as often as `t`. Bounded to
     // a short receiver so `results.match(...)` on an ordinary object is not
     // mistaken for an assertion; a heuristic, and stated as one.
-    "\\b[a-z_$][a-z0-9_$]{0,2}\\.(?:equal|equals|same|strictSame|deepEqual|notEqual|notSame|match|hasStrict|type|throws|rejects)\\s*\\(",
+    // `is`/`not` are AVA's value assertions (`t.is(actual, expected)`),
+    // measurable on P-Limit's root `test.js`: without them the guard watched a
+    // suite whose every check was `t.is(...)` and counted no assertions at
+    // all.
+    "\\b[a-z_$][a-z0-9_$]{0,2}\\.(?:equal|equals|same|strictSame|deepEqual|notEqual|notSame|match|hasStrict|type|throws|rejects|is|not|like)\\s*\\(",
   ].join("|"),
   "i"
 );
@@ -1240,11 +1244,84 @@ const blankLiterals = (str) =>
       /(?<![\w$])(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|-?\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?)/g,
       "\u0000N"
     )
+    // A JS conditional expectation `cond ? a : b` whose branches carry
+    // literals is an expected value, whatever it evaluates to. Without this,
+    // `expect(x).toBe(3)` becoming `expect(x).toBe(x === 2 ? 3 : -1)` — the
+    // JavaScript spelling of F03's Python ternary — landed in a different
+    // shape bucket and never paired. Only a conditional holding a collapsed
+    // literal collapses (so the `?` of an optional chain or a ternary over
+    // bare variables is left untouched), and Python's `x if c else y` cannot
+    // match this JS punctuation.
+    .replace(/\?[^?\n;:]*[\u0000][SN][^?\n;:]*:[^?\n;:]*[\u0000][SN][^?\n;:]*/g, "\u0000C")
     .replace(/\b(?:true|false|null|undefined|None|True|False|nil)\b/g, "\u0000B")
     // Whitespace is dropped, not collapsed: the shape is compared for
     // equality only, and a reformatted statement must normalize to the same
     // shape as the original — ` <N> );` and ` <N>);` are the same assertion.
     .replace(/\s+/g, "");
+
+/**
+ * Split a *bare-comparison* assertion into the compared subject and the
+ * expected expression: `assert dec == value`, `assert!(x == y)` (Rust) and
+ * `assert add(1, 2) == 3` — the forms SPECIFIC_ASSERTION names that carry no
+ * call argument list, so splitAssertionArgs cannot see their operands.
+ *
+ * The split happens at the first top-level equality comparison, which is
+ * the assertion's own operator in every supported form; comparisons nested
+ * deeper (the one inside a conditional expectation) belong to the expected
+ * expression and are returned as part of `rhs`.
+ *
+ * @returns {{lhs: string, rhs: string} | null}
+ */
+function splitBareComparison(clean, lang) {
+  const trySplit = (body) => {
+    // First equality comparison after the body starts; comparisons nested in
+    // the expected expression (e.g. inside a conditional) are further right
+    // and therefore part of the rhs.
+    const m = /(?:^|[^=!<>])==(?!=)/.exec(body);
+    if (!m) return null;
+    const at = m.index + m[0].length - 2; // index of the first `=`
+    return { lhs: body.slice(0, at).trim(), rhs: body.slice(at + m[0].length - 1).trim() };
+  };
+
+  // Python/Elixir: `assert <subj> == <expect>`.
+  let m = /\bassert\s+([\s\S]+)$/.exec(clean);
+  if (m) {
+    const parts = trySplit(m[1]);
+    if (parts) return parts;
+  }
+
+  // Rust: `assert!(<subj> == <expect>)`.
+  m = /\bassert!\s*\(\s*([\s\S]*?)\s*\)\s*;?\s*$/.exec(clean);
+  if (m) {
+    const parts = trySplit(m[1]);
+    if (parts) return parts;
+  }
+
+  // JS/Java-style call form handed in here as well (shape pairing covers
+  // most; this only needs to expose the subject for a conditional rhs).
+  const cm = lang === "js" || lang === "java" ? /\bexpect\s*\(([^)]*)\)\s*\.[\s\S]*?\(\s*([\s\S]*?)\s*\)\s*;?\s*$/.exec(clean) : null;
+  if (cm) {
+    return { lhs: cm[1].trim(), rhs: cm[2].trim() };
+  }
+
+  return null;
+}
+
+/**
+ * True when an expected expression is conditional rather than a single value:
+ * Python's `x if cond else y` (including a comparison inside, which is the
+ * F03 spelling — `(193 if value == 192 else value)`) or a JS/Java
+ * `cond ? x : y` ternary. Conditional expectations keep the suite green for
+ * both the old and the broken output, which is exactly the point of replacing
+ * a value with one.
+ */
+function containsConditional(expr) {
+  if (/\bif\b[^?:\n]*\belse\b/.test(expr)) return true;
+  // A question mark that is a ternary, not optional chaining (`?.`) or
+  // nullish (`??`).
+  if (/[)\]\w"']\s*\?(?![.?])[^?:\n]*:/.test(expr)) return true;
+  return false;
+}
 
 // The test languages the gate runs over. The scanner below is written for
 // these four and nothing else; an unrecognised extension falls back to `js`,
@@ -1907,17 +1984,26 @@ function declaredTestName(text) {
 }
 
 /**
- * Is `after` the same declaration as `before` with its discovery prefix gone?
+ * Did a collected test become a declaration the runner no longer collects?
  *
- * Exact on the remainder, deliberately. `test_totals` → `totals` is a
- * de-registration; `test_totals` → `test_totals_rounded` is a rename and must
- * stay silent, which is the false red this check exists alongside rather than
- * instead of.
+ * The name *is* the registration for pytest (`test*`) and Go (`Test*` with
+ * an uppercase letter or underscore after), so the signal is purely whether
+ * the runner would still find it: `test_want_bytes` → `check_want_bytes`,
+ * `TestLoadComment` → `checkLoadComment`, `test_x` → `disabled_x` all remove
+ * the test from the run while leaving every assertion in place.
+ *
+ * The earlier rule required the new name to be the old one with its prefix
+ * literally stripped, so `test_x` → `x` was caught and every other prefix
+ * swap sailed through. It was written narrow to avoid flagging
+ * `test_x` → `test_x_renamed` — an honest rename — but that case never needs
+ * the strip rule: the new name is *still collected*, so the collected check
+ * already keeps it silent, along with pytest's `test*` glob collecting
+ * `testx`, Go's `TestX` → `TestXRenamed`, and case-class `test_x` →
+ * `test_y`. Pairing is still required (a pure deletion is an assertion
+ * removal, not a rename), and names identical on both sides never pair.
  */
 function isDeregistration(before, after) {
-  if (!before.collected || after.collected) return false;
-  const stripped = before.name.replace(/^test[_-]?/i, "").replace(/^(?:Test|Benchmark|Fuzz|Example)/, "");
-  return stripped.length > 0 && stripped === after.name;
+  return Boolean(before.collected && !after.collected && before.name !== after.name);
 }
 
 // A test declaration whose first argument is the test's name. The name is
@@ -2168,6 +2254,42 @@ function detectExpectationRewrites(file, hunks, stats, violations) {
       }
     }
 
+    // A bare-comparison assertion whose expectation became a conditional
+    // value. `assert dec == value` rewritten as
+    // `assert dec == (193 if value == 192 else value)` keeps a comparison on
+    // both sides of the new `==`, so both statements still parse as
+    // assertions, but the expected value is now a conditional that bends to
+    // broken output — F03, measured approving a deliberately broken function.
+    // The call-argument passes above cannot see this spelling: a Python/Rust
+    // bare comparison has no argument list, and the conditional introduces a
+    // second comparison so the two images never share a shape bucket.
+    //
+    // The subject (the left operand of the assertion) must survive, and the
+    // new right-hand side has to be a *conditional expression* —
+    // Python's `a if c else b` or a JS/Java `c ? a : b` — so an honest
+    // assertion whose expected value is a ternary from the start is only
+    // reported when it replaces a non-conditional expectation of the same
+    // subject, and an identifier renamed in the expectation (no conditional)
+    // is not reported here either.
+    for (const r of oldCands) {
+      if (pairedOld.has(r) || cancelled.has(r)) continue;
+      const oldParts = splitBareComparison(r.clean, lang);
+      if (!oldParts) continue;
+      for (const a of newCands) {
+        if (pairedNew.has(a) || cancelled.has(a)) continue;
+        const newParts = splitBareComparison(a.clean, lang);
+        if (!newParts) continue;
+        if (oldParts.lhs.replace(/\s+/g, "") !== newParts.lhs.replace(/\s+/g, "")) continue;
+        if (oldParts.rhs.replace(/\s+/g, "") === newParts.rhs.replace(/\s+/g, "")) continue;
+        if (!containsConditional(newParts.rhs)) continue;
+        if (isNonExpectationDifference(r.clean, a.clean, lang)) continue;
+        pairs.push({ r: r.s, a: a.s });
+        pairedOld.add(r);
+        pairedNew.add(a);
+        break;
+      }
+    }
+
     // Zero-context hunk: each image is a single fragment and the assertion
     // keyword may sit outside the hunk entirely. The fragment pair is taken
     // only when both sides normalize to the same shape *and* that shape
@@ -2261,6 +2383,79 @@ export const TAMPER_KINDS = new Map([
 
 /** Every kind name, for CLI validation and help text. */
 export const TAMPER_KIND_NAMES = Object.freeze([...new Set(TAMPER_KINDS.values())].sort());
+
+/**
+ * Conditions a compiler or the language's own rules make impossible.
+ *
+ * A Go `len(...)` is never negative, so `if len(comment) < 0` is false on
+ * every input; a C unsigned/size comparison against 0 is the same shape in
+ * the dialects scanned under the JS lexer. These are the cases where the
+ * condition governing a failure call can be proven dead from the diff line
+ * alone — anything fuzzier (a flag constant flipped elsewhere, an unreachable
+ * branch behind real state) is not guessable and is deliberately left alone.
+ */
+const DEAD_GUARD_CONDITION =
+  /\bif\b[^;{}]*\b(?:len|len\s+of|count|size|length|num\w*|total)\s*\([^)]*\)\s*(?:<\s*0|<\s*-0\b)|<=\s*-1\b/i;
+
+/**
+ * The calls a test uses to say "this failed": the assertion's actual teeth.
+ * When one of these sits inside a dead condition, the assertion survives in
+ * name only.
+ */
+const FAILURE_CALL =
+  /\b(?:t\.(?:Errorf|Fatalf|Fatal|Error)\s*\(|require\.(?:Fail|FailNow|Error|Errorf|Equal|NotEqual|Len|Contains|NoError)\s*\(|assert\.(?:fail|fail!|equal|deepEqual|strictEqual)\b|assert_eq!\s*\(|assert!\s*\(|pytest\.fail\s*\(|self\.fail(?:ure)?\s*\(|fail(?:ure)?\s*\(|throw\s+new\s+(?:AssertionError|Error)\b|raise\s+AssertionError\b)/i;
+
+/**
+ * Go build-constraint terms. `//go:build ignore` never matches a release
+ * build; conjoining a private tag (`go1.7 && cold_start_never`) gates a file
+ * unless CI sets the tag. Version (`go1.x`), OS and arch terms are legitimate
+ * CI gating and stay silent.
+ */
+const GO_BUILD_TAG_LINE = /^\s*\/\/go:build\s+(.+?)\s*$/;
+const GO_LEGACY_TAG_LINE = /^\s*\/\/\s*\+build\s+(.+?)\s*$/;
+const goBuildTerms = (line) => {
+  const m = GO_BUILD_TAG_LINE.exec(line) || GO_LEGACY_TAG_LINE.exec(line);
+  if (!m) return null;
+  // `&&`/`||` separate constraint expressions; spaces/commas separate terms.
+  // Negated terms (`!tag`) are normal platform guards; strip the leading `!`.
+  return m[1]
+    .split(/\s*&&\s*|\s*\|\|\s*|[\s,]+/)
+    .filter(Boolean)
+    .map((t) => t.replace(/^!/, ""));
+};
+const goKnownBuildTerm = (term) =>
+  /^go1\.\d+/.test(term) ||
+  /^(?:linux|darwin|windows|freebsd|openbsd|netbsd|dragonfly|solaris|aix|js|wasip1|plan9|ios|android)$/.test(term) ||
+  /^(?:amd64|386|arm|arm64|ppc64|ppc64le|mips|mipsle|mips64|mips64le|riscv64|s390x|wasm|loong64)$/.test(term) ||
+  term === "ignore";
+
+/**
+ * A bare, unconditional `return` (optionally returning a constant) — never a
+ * `return value`, never attached to an `if` on the same line.
+ */
+/**
+ * A bare, unconditional `return` (optionally returning a constant) — never a
+ * `return value`, never attached to an `if` on the same line.
+ *
+ * The boundary of what this check can see: the body-first bare `return` is
+ * caught; a `return` behind a condition the test author believes cannot hold
+ * is not. Judging the latter requires knowing whether the branch is
+ * reachable at runtime — a whole-program control-flow question no line pair
+ * answers — and flagging any `return` above an assertion would hard-red the
+ * ordinary `if (process.platform === "win32") return;` guard clause. The rule
+ * stops at the shape whose intent is unambiguous from the text. Runtime
+ * attestation (counting tests collected before and after) is the complete
+ * answer, and a separate check from the text guard.
+ */
+const BARE_EARLY_RETURN = /^\s*return\s*(?:(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|true|false|None|nil|null|undefined|0|-?\d+)\s*)?;?\s*$/;
+
+/**
+ * A line that opens a test body: a pytest/unittest `def test*` signature, a
+ * Go `func Test*` / Rust `fn` immediately preceded by a test attribute (best
+ * effort at line scope), or a JS test registration whose callback opens.
+ */
+const TEST_BODY_OPEN =
+  /(?:^|\s)(?:def\s+test\w*\s*\([^)]*\)\s*(?:->[^:]+)?\s*:|func\s+(?:Test|Benchmark|Fuzz|Example)\w*\s*\([^)]*\)\s*\{|fn\s+\w+\s*\([^)]*\)\s*\{|\b(?:it|test|describe|context)\s*(?:\.[a-zA-Z]+)?\s*\(\s*["'`][^"'`]*["'`]\s*,?\s*(?:async\s*)?(?:function)?\s*\w*\s*=>?\s*\{?)$/i;
 
 /**
  * Which tamper checks this run is allowed to stay quiet about.
@@ -2359,9 +2554,18 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     { pattern: /\braise\s+(?:unittest\.)?SkipTest\b/i, desc: "Injected unittest skip (raise SkipTest)" },
     { pattern: /\bpytest\.skip\s*\(/i, desc: "Injected Pytest skip call (pytest.skip())" },
     { pattern: /\bpytest\.xfail\s*\(/i, desc: "Injected Pytest expected-failure (pytest.xfail())" },
+    // The decorator form the call above does not cover. `strict=False` (the
+    // default) lets a *broken* test pass as xpass-with-no-failure; strict only
+    // fails on an unexpected pass, so either spelling blesses a failing suite.
+    { pattern: /@pytest\.mark\.xfail\b/i, desc: "Injected Pytest expected-failure mark (@pytest.mark.xfail)" },
+    { pattern: /@(?:unittest\.)?expectedFailure\b/i, desc: "Injected unittest expected-failure decorator (@expectedFailure)" },
     { pattern: /\bthis\.skip\s*\(/i, desc: "Injected Mocha skip (this.skip())" },
     { pattern: /\b(?:it|test|describe|context)\.todo\s*\(/i, desc: "Injected todo placeholder (test.todo())" },
     { pattern: /\bt\.Skip(?:Now|f)?\s*\(/, desc: "Injected Go test skip (t.Skip/t.Skipf/t.SkipNow)" },
+    // `#[cfg(any())]` is false under every target — the idiomatic Rust way to
+    // compile a test out without a skip or a rename. A body the cfg can never
+    // be true for is a body the runner never executes.
+    { pattern: /#\s*\[\s*cfg\s*\(\s*any\s*\(\s*\)\s*\)\s*\]/, desc: "Injected impossible cfg attribute (#[cfg(any())]) — the test never compiles" },
   ];
 
   // `#` and `--` belong here for the same reason the dialects belong in
@@ -2384,6 +2588,11 @@ export function checkTestTampering(diffOrText = "", options = {}) {
     { pattern: /\b(?:assertEquals|assertSame|XCTAssertEqual)\s*\(\s*([^,]+?)\s*,\s*\1\s*[,)]/i, desc: "Vacuous identity assertion (assertEquals(X, X))" },
     { pattern: /\bassert_equal\s*\(?\s*([^,]+?)\s*,\s*\1\s*\)?\s*$/i, desc: "Vacuous identity assertion (assert_equal X, X)" },
     { pattern: /\bexpect\s*\(\s*true\s*\)\s*\.to\s+be(?:\s+true)?\b/i, desc: "Vacuous truth expectation (expect(true).to be true)" },
+    // AVA and node:test: `t.true(true)` / `t.assert(true)` assert a constant
+    // the test itself supplied. The trial replaced `t.is(limit.activeCount,
+    // 0)` with `t.true(true)` in a file the guard did not even classify.
+    { pattern: /\b[a-z_$][a-z0-9_$]{0,2}\.(?:true|truthy|assert|ok)\s*\(\s*true\s*\)/i, desc: "Vacuous truth assertion (t.true(true))" },
+    { pattern: /\b[a-z_$][a-z0-9_$]{0,2}\.(?:false|falsy|notOk)\s*\(\s*false\s*\)/i, desc: "Vacuous falsity assertion (t.false(false))" },
   ];
 
   // Broad on purpose: this is the denominator, not the verdict. A word
@@ -2407,7 +2616,11 @@ export function checkTestTampering(diffOrText = "", options = {}) {
   // CommonJS test file `require("./calc")` is an import, not a claim.
   const ASSERTION_SHAPED =
     /\b(?:assert(?!ion|ing|ed\b|s\b)|expect(?!ed\b|ation)|refute)[a-zA-Z0-9_$]*\b|`\s*should[a-zA-Z0-9_$]*\s*`|\b(?:should|must|verify|ensure|confirm)[a-zA-Z0-9_$]*\s*[(!]|\.\s*(?:should|to|to_not|not_to|must)\b|\bBOOST_[A-Z_]+\s*\(|\b[A-Z]+_(?:EQ|NE|TRUE|FALSE|THAT)\s*\(/;
-  const isCommentLine = (str) => /^\s*(?:\/\/|\/\*|\*|#|--|;)/.test(str);
+  // `#` starts a line comment in Python/Ruby — but in Rust it opens an
+  // attribute (`#[test]`, `#![...]`), which is code the runner keys off:
+  // reading it as a comment is how `#[test]` removal used to slip past both
+  // the declaration scan and the attribute check.
+  const isCommentLine = (str) => /^\s*(?:\/\/|\/\*|\*|#(?![![])|--|;)/.test(str);
 
   /** Book-keeping only: what this run looked at, before deciding anything. */
   const countExamined = (stats, text) => {
@@ -2510,6 +2723,10 @@ export function checkTestTampering(diffOrText = "", options = {}) {
           });
         }
       }
+
+      // Go build constraints (ignore / private-tag tightening) are assessed
+      // as a hunk post-pass below, because their witness — the removed
+      // constraint line — is not present while this added line is scanned.
 
       // Check commented-out assertions
       let isCommented = false;
@@ -2619,16 +2836,17 @@ export function checkTestTampering(diffOrText = "", options = {}) {
 
   // A test renamed out of its runner's discovery convention.
   //
-  // pytest collects `test_*` and nothing else, so `def test_totals` becoming
-  // `def totals` deletes the test from every future run while leaving it in
-  // the file, fully written, with all its assertions intact. Every count in
-  // this guard stays level: nothing was removed, weakened or rewritten.
+  // pytest collects `test*` and nothing else, so `def test_totals` becoming
+  // `def check_totals` deletes the test from every future run while leaving it
+  // in the file, fully written, with all its assertions intact. Every count in
+  // this guard stays level: nothing removed, weakened or rewritten.
   //
-  // Until now this was caught only by accident, as a side effect of the
-  // blanket that blocked every unrecognised edit to a test file — which also
-  // blocked adding an import, and whose printed remedy (`tamperGuard: "warn"`)
-  // switched off the real checks along with the blanket. Narrowing that blanket
-  // is what makes this its own finding, with its own name and its own remedy.
+  // The earlier rule required the new name to be the old one with its prefix
+  // literally stripped (`test_x` -> `x` caught; `test_x` -> `check_x` not).
+  // The collected check is what actually matters, and it already keeps the
+  // honest renames silent — `test_x` -> `test_x_renamed`, pytest's `test*`
+  // glob still collecting `testx`, Go's `TestX` -> `TestXRenamed` — so the
+  // narrow strip is gone.
   for (const [file, stats] of fileAssertions.entries()) {
     const takenAdds = new Set();
     for (const before of stats.declRemoved || []) {
@@ -2648,6 +2866,227 @@ export function checkTestTampering(diffOrText = "", options = {}) {
           `If the test is genuinely obsolete, delete it; if it is being turned into a helper, say so with ` +
           `--allow-test-change deregistration.`,
       });
+    }
+  }
+
+  // Runners that register by attribute/annotation rather than by name: Rust's
+  // `#[test]` (the name above the function is free-form, so the name pair
+  // above cannot see this family) and JUnit's `@Test`. Removing the attribute
+  // from an existing function keeps the body and loses the test — the same
+  // uncollect with no line deleted.
+  const TEST_ATTR_PATTERNS = [
+    { lang: "rust", re: /^\s*#\s*\[\s*(?:test|tokio::test|async_std::test)\s*\]/ },
+    // JUnit/TestNG annotations live in files the scanner lexes as `js`
+    // (the C-like family), so the lang here is the scanner's lang, not the
+    // source language's name.
+    { lang: "js", re: /^\s*@(?:org\.junit\.)?(?:jupiter\.api\.)?Test\b/ },
+  ];
+  const attrRegistration = (text, file) => {
+    const lang = langForTestFile(file);
+    return TEST_ATTR_PATTERNS.some((rule) => rule.lang === lang && rule.re.test(text));
+  };
+
+  // Function signature text of the declaration the attribute at `start`
+  // governs. Attributes sit immediately above `fn x()` / `void x()`, so the
+  // next declaration line in the hunk carries the signature; scanning
+  // backwards covers an attribute written on a context line position.
+  const FN_SIG_RE = /\b(?:fn|func|def)\s+[A-Za-z_]\w*\s*\(|\b(?:void|[A-Za-z_][\w.<>\[\]]*)\s+[A-Za-z_]\w*\s*\([^;]*\)\s*(?:\{|$|throws\b)/;
+  const adjacentSignature = (hunkLines, start) => {
+    for (let k = start + 1; k < hunkLines.length; k++) {
+      const t = hunkLines[k].text || "";
+      if (FN_SIG_RE.test(t)) return collapseWhitespace(t).trim();
+    }
+    for (let k = start - 1; k >= 0; k--) {
+      const t = hunkLines[k].text || "";
+      if (FN_SIG_RE.test(t)) return collapseWhitespace(t).trim();
+    }
+    return null;
+  };
+
+  // Attribute arrivals across the whole diff: a registration lost in one
+  // file is forgiven when the same signature gained one in another — a move
+  // between test files is ordinary refactoring, the same allowance the
+  // assertion-removal check makes for moved assertions.
+  const attrArrivals = new Map(); // signature -> [files]
+  for (const [file, stats] of fileAssertions.entries()) {
+    for (const hunk of stats.hunks) {
+      for (let i = 0; i < hunk.lines.length; i++) {
+        const L = hunk.lines[i];
+        if (L.kind !== "+" || !attrRegistration(L.text, file)) continue;
+        const sig = adjacentSignature(hunk.lines, i);
+        if (!sig) continue;
+        if (!attrArrivals.has(sig)) attrArrivals.set(sig, []);
+        attrArrivals.get(sig).push(file);
+      }
+    }
+  }
+
+  for (const [file, stats] of fileAssertions.entries()) {
+    for (const hunk of stats.hunks) {
+      const removedAttrs = [];
+      let addedInHunk = 0;
+      for (let i = 0; i < hunk.lines.length; i++) {
+        const L = hunk.lines[i];
+        if (L.kind === "-" && !isCommentLine(L.text) && attrRegistration(L.text, file)) {
+          removedAttrs.push({ line: L.oldNo, text: L.text, sig: adjacentSignature(hunk.lines, i) });
+        }
+        if (L.kind === "+" && attrRegistration(L.text, file)) addedInHunk++;
+      }
+      // Net loss within the hunk; same-file additions cancel one for one
+      // (a test renamed or re-attributed counts even).
+      let deficit = removedAttrs.length - addedInHunk;
+      for (const attr of removedAttrs) {
+        if (deficit <= 0) break;
+        const landed = attr.sig ? attrArrivals.get(attr.sig) : null;
+        if (landed) {
+          const elsewhere = landed.findIndex((f) => f !== file);
+          if (elsewhere !== -1) {
+            landed.splice(elsewhere, 1);
+            continue;
+          }
+        }
+        deficit--;
+        violations.push({
+          file,
+          line: attr.line,
+          type: "TEST_DEREGISTERED",
+          reason:
+            `Test Tamper Guard: a test-registration attribute was removed from an existing function in ${file}` +
+            `${attr.line ? `:${attr.line}` : ""} (${collapseWhitespace(attr.text).trim()}). ` +
+            `The runner only executes functions carrying that attribute, so the test still exists in the file ` +
+            `and no longer runs — the same effect as deleting it, with none of the signs. If the test is ` +
+            `genuinely obsolete, delete it; if it is becoming a helper, say so with ` +
+            `--allow-test-change deregistration.`,
+        });
+      }
+    }
+  }
+
+  // A failure call parked behind a condition that cannot hold. Keeping the
+  // `t.Errorf` while swapping its guard for `if len(s) < 0` (a Go string or
+  // slice length is never negative) preserves every line of the old
+  // assertion in code that can never run — F05, measured approving the
+  // neutralised test. This is a hunk post-pass rather than an added-line
+  // rule because the failure call it protects is untouched code: it sits on
+  // a context line, which the line-by-line scan has not walked over yet.
+  //
+  // Only conditions that are impossible on their face are looked at
+  // (`len(...) < 0`, an unsigned/size count `<= -1`); anything fuzzier — a
+  // flag flipped elsewhere, a branch behind real state — is not guessable
+  // from a diff and is deliberately left alone. The failure call has to be
+  // reachable inside the condition's block, or an impossible condition in
+  // ordinary test setup would be misread as one.
+  for (const [file, stats] of fileAssertions.entries()) {
+    for (const hunk of stats.hunks) {
+      for (let i = 0; i < hunk.lines.length; i++) {
+        const L = hunk.lines[i];
+        if (L.kind !== "+" || !DEAD_GUARD_CONDITION.test(L.text)) continue;
+        const guardLineNo = L.newNo;
+        const guardText = L.text;
+                let depth = (guardText.match(/\{/g) || []).length - (guardText.match(/\}/g) || []).length;
+        let found = depth > 0 && FAILURE_CALL.test(guardText.slice(guardText.indexOf("{")));
+        for (let k = i + 1; k < hunk.lines.length && depth > 0; k++) {
+          const t = hunk.lines[k].text || "";
+          const opens = (t.match(/\{/g) || []).length;
+          const closes = (t.match(/\}/g) || []).length;
+          if (depth > 0 && FAILURE_CALL.test(t)) { found = true; break; }
+          depth += opens - closes;
+        }
+        if (found) {
+          violations.push({
+            file,
+            line: guardLineNo,
+            type: "VACUOUS_ASSERTION",
+            reason:
+              `Test Tamper Guard: the failure call in ${file}${guardLineNo ? `:${guardLineNo}` : ""} ` +
+              `is guarded by a condition that can never be true ("${collapseWhitespace(guardText).trim()}"), so the ` +
+              `assertion cannot fail. Keeping the failure call in dead logic is not preservation of verification.`,
+          });
+        }
+      }
+    }
+  }
+
+  // Go build constraints that exclude a test file from the ordinary run.
+  // `//go:build ignore` never matches a release build; conjoining a private
+  // tag onto an existing constraint (`go1.7` -> `go1.7 && my_tag`) excludes
+  // the file unless a CI job sets that tag. Version, OS and arch terms are
+  // legitimate gating, so only an impossible ignore or a new private term
+  // counts.
+  for (const [file, stats] of fileAssertions.entries()) {
+    if (langForTestFile(file) !== "go") continue;
+    for (const hunk of stats.hunks) {
+      for (let i = 0; i < hunk.lines.length; i++) {
+        const L = hunk.lines[i];
+        if (L.kind !== "+") continue;
+        const terms = goBuildTerms(L.text);
+        if (!terms) continue;
+        if (terms.every((t) => t === "ignore") || terms.includes("ignore")) {
+          violations.push({
+            file,
+            line: L.newNo,
+            type: "TEST_SKIP_INJECTION",
+            reason:
+              `Test Tamper Guard: Go build constraint ${JSON.stringify(collapseWhitespace(L.text).trim())} in ${file}` +
+              `${L.newNo ? `:${L.newNo}` : ""} excludes this test file from the ordinary 'go test' run — the ignore tag never ` +
+              `matches a release build. Use --allow-test-change skip if the file is built by a deliberately separate command.`,
+          });
+          continue;
+        }
+        const oldTerms = new Set();
+        for (const O of hunk.lines) {
+          if (O.kind !== "-") continue;
+          const t = goBuildTerms(O.text);
+          if (t) for (const term of t) oldTerms.add(term);
+        }
+        const privateTag = terms.find((t) => !goKnownBuildTerm(t) && !oldTerms.has(t));
+        if (privateTag) {
+          violations.push({
+            file,
+            line: L.newNo,
+            type: "TEST_SKIP_INJECTION",
+            reason:
+              `Test Tamper Guard: Go build constraint tightened with the private tag ${JSON.stringify(privateTag)} in ` +
+              `${file}${L.newNo ? `:${L.newNo}` : ""} — a tag no ordinary 'go test' run sets excludes this test file from the ` +
+              `suite. Version/OS/arch gating stays silent; a tag nobody passes is a skip. Use --allow-test-change skip ` +
+              `if the tag is gated in CI on purpose.`,
+          });
+        }
+      }
+    }
+  }
+
+  // An unconditional early return as the test body's first statement. A test
+  // that returns before its assertions keeps the suite green while
+  // verifying nothing — the trial made a broken function pass this way.
+  // Unlike the skip above this spelling has no marker, so the declaration
+  // has to be visible as the nearest non-blank line above the return:
+  // `return` as a genuine guard clause (after a real condition or check)
+  // never sits with a test signature as its predecessor, and a `return`
+  // inside the body an honest refactor edited is past body-open already.
+  for (const [file, stats] of fileAssertions.entries()) {
+    for (const hunk of stats.hunks) {
+      for (let i = 0; i < hunk.lines.length; i++) {
+        const L = hunk.lines[i];
+        if (L.kind !== "+" || !BARE_EARLY_RETURN.test(L.text)) continue;
+        for (let k = i - 1; k >= 0; k--) {
+          const t = (hunk.lines[k].text || "").trim();
+          if (!t) continue;
+          if (TEST_BODY_OPEN.test(hunk.lines[k].text || "")) {
+            violations.push({
+              file,
+              line: L.newNo,
+              type: "TEST_SKIP_INJECTION",
+              reason:
+                `Test Tamper Guard: an unconditional early return opens the test body in ` +
+                `${file}${L.newNo ? `:${L.newNo}` : ""}, so none of the assertions after it run while the test still ` +
+                `passes. A suite cannot verify what control flow never reaches. Use --allow-test-change skip if this ` +
+                `test is deliberately dormant.`,
+            });
+          }
+          break;
+        }
+      }
     }
   }
 

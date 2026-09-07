@@ -32,6 +32,42 @@ export function isExcludedFromCoverage(filePath = "") {
 }
 
 /**
+ * Extensions V8 could have observed. Coverage outside this family is not a
+ * measurement that returned nothing — it is no measurement at all, and a
+ * hard red there is how the gate gets switched off.
+ */
+const V8_OBSERVABLE_EXT = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"]);
+
+const isV8Observable = (file) => {
+  const dot = file.lastIndexOf(".");
+  return dot !== -1 && V8_OBSERVABLE_EXT.has(file.slice(dot).toLowerCase());
+};
+
+/**
+ * Lines of source text that are executable on their own — the denominator a
+ * line coverage measure would count. V8's own mapper only emits entries for
+ * lines its function ranges *observed*; a file Node never imported has no
+ * functions at all, so every executable line in it was previously invisible
+ * and a 0/0 diff was reported as a passing 100% (F12). The heuristic stays
+ * deliberately conservative: comments, blank lines, and pure declarations
+ * (imports, exports of names alone) do not count.
+ */
+export function executableLineNumbers(sourceContent = "") {
+  const lines = sourceContent.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+    if (trimmed.startsWith("import ")) continue;
+    if (/^(?:export\s+)?(?:default\s+)?(?:class|function|const|let|var)\s+[A-Za-z_$][\w$]*\s*$/.test(trimmed)) continue;
+    if (trimmed === "{" || trimmed === "}" || trimmed === "};") continue;
+    out.push(i + 1);
+  }
+  return out;
+}
+
+/**
  * Maps V8 function range offsets to 1-indexed line hit counts.
  * @param {string} sourceContent - Full text of source file
  * @param {Array<object>} v8Functions - Functions array from V8 coverage JSON
@@ -267,6 +303,11 @@ export function calculateDiffCoverage(coverageByFile, diffStr = "", options = {}
   let totalLines = 0;
   let coveredLines = 0;
   const missedByFile = {};
+  // Files V8 can measure, but for which the test run produced no coverage
+  // data at all — code Node never imported. Distinct from files V8 cannot
+  // observe (Python, Go, …): those are genuinely not measurable here, and
+  // scoring them zero blocks stacks the gate never claimed to cover.
+  const unobservedExecutableFiles = [];
 
   for (const [file, addedLines] of addedLinesMap.entries()) {
     const absPath = resolve(root, file);
@@ -279,11 +320,20 @@ export function calculateDiffCoverage(coverageByFile, diffStr = "", options = {}
       continue;
     }
 
+    const v8Observable = isV8Observable(file);
     const v8Functions = coverageByFile.get(file) || [];
     const lineHits = mapV8RangesToLines(sourceContent, v8Functions);
 
+    // The executable denominator *from the source itself*, independent of
+    // whether V8 happened to map the file. A file that added executable
+    // lines but never appeared in V8's report ran nothing of what was added.
+    const executableSet = new Set(executableLineNumbers(sourceContent));
+    const neverObserved = v8Observable && v8Functions.length === 0 && addedLines.some((n) => executableSet.has(n));
+    if (neverObserved) unobservedExecutableFiles.push(file);
+
     const missed = [];
     for (const lineNo of addedLines) {
+      const isExecutable = executableSet.has(lineNo);
       if (lineHits.has(lineNo)) {
         totalLines++;
         const count = lineHits.get(lineNo);
@@ -292,6 +342,13 @@ export function calculateDiffCoverage(coverageByFile, diffStr = "", options = {}
         } else {
           missed.push(lineNo);
         }
+      } else if (neverObserved && isExecutable) {
+        // V8 could have seen this line, mapped nothing in the file, and the
+        // line is executable: it was not covered. Counting it is what turns
+        // "0/0 scored" for an unimported module into a real miss — the gate
+        // returning exit 0 on code no test ran is F12.
+        totalLines++;
+        missed.push(lineNo);
       }
     }
 
@@ -302,30 +359,45 @@ export function calculateDiffCoverage(coverageByFile, diffStr = "", options = {}
 
   // 100% of nothing is not 100%.
   //
-  // The denominator counts only the added lines V8 actually mapped, and V8
-  // maps nothing outside Node. So a Python diff adding three executable lines
-  // measured zero of them and was reported as `score: 100` — the best possible
-  // number, produced by a measurement that never happened, on 20-odd of the 25
-  // stacks this kit claims to support. `mutation.mjs` had the identical bug and
-  // was fixed in v0.57.0; this is the same shape one module over.
+  // Two very different ways the denominator can be zero:
   //
-  // `ok` stays true because nothing failed to be covered, and a gate that
-  // blocks every non-Node diff gets switched off. What changes is the claim:
-  // `scored: false` and a reason, instead of a number nobody measured.
+  //   1. There were no executable added lines to measure, or the diff is in
+  //      code V8 cannot observe (Python, Go, …). The measurement is simply
+  //      not applicable here; `ok` stays true because nothing failed to be
+  //      covered — a gate that blocks every non-Node diff gets switched off.
+  //      What changes is the claim: `scored: false` and a reason.
+  //   2. There were executable lines in code V8 *can* observe, and the test
+  //      run mapped none of them — the file was never imported. A passing
+  //      result on that is the same failure as a line counted uncovered:
+  //      the suite certified code it never ran (F12). That is scored zero,
+  //      not scored nothing.
+  //
+  // `mutation.mjs` had the original "100% of 0/0" bug in the first family
+  // and was fixed in v0.57.0; this is the second family, one module over.
+  const measuredNothingExecutable = unobservedExecutableFiles.length > 0 && totalLines === 0;
   const scored = totalLines > 0;
   const score = scored ? Math.round((coveredLines / totalLines) * 10000) / 100 : null;
-  const ok = scored ? score >= minCoverage : true;
+  // N/A only when V8 could not have measured the added code (no executable
+  // lines at all, or a stack V8 does not observe). Executable Node code the
+  // test run never reached is a failure, not an N/A.
+  const notApplicable = !scored && !measuredNothingExecutable;
+  const ok = notApplicable ? true : score >= minCoverage;
 
   return {
     ok,
-    score,
+    score: notApplicable ? null : score,
     scored,
-    ...(scored ? {} : { reason: "No added executable lines were measurable — V8 coverage only observes code Node itself ran, so nothing was scored." }),
+    ...(notApplicable
+      ? { reason: "No added executable lines were measurable — V8 coverage only observes code Node itself ran, so nothing was scored." }
+      : {
+          reason: `Added executable code was never executed by the test run (unobserved: ${unobservedExecutableFiles.join(", ")}) — V8 coverage saw no execution of it, so it counts as uncovered.`,
+          unobservedFiles: unobservedExecutableFiles,
+        }),
     minCoverage,
     totalLines,
     coveredLines,
     missedLines: totalLines - coveredLines,
     missedByFile,
-    summary: `Diff Coverage: ${score}% (${coveredLines}/${totalLines} added executable lines covered, min: ${minCoverage}%)`,
+    summary: `Diff Coverage: ${notApplicable ? "null" : score}% (${coveredLines}/${totalLines} added executable lines covered, min: ${minCoverage}%)`,
   };
 }
