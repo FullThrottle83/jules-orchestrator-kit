@@ -40,6 +40,7 @@ describe("a run that did something is never read as zero", () => {
     ["node:test, tap", "# tests 42\n# pass 42", 42],
     ["pytest", "collected 12 items\n\n12 passed in 0.3s", 12],
     ["cargo", "running 7 tests\ntest result: ok. 7 passed", 7],
+    ["cargo multi-target (F15)", "running 0 tests\ntest result: ok. 0 passed\n\nrunning 58 tests\ntest result: ok. 58 passed", 58],
     ["jest", "Tests:       3 passed, 3 total", 3],
     ["mocha", "  12 passing (30ms)", 12],
     ["go, verbose", "--- PASS: TestAdd (0.00s)\n--- PASS: TestSub (0.00s)\nok  \texample.com/lib\t0.004s", 2],

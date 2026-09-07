@@ -211,6 +211,23 @@ async function main() {
     process.exit(0);
   }
 
+  if (command === "help") {
+    const target = args[1];
+    if (!target || target === "--help" || target === "-h") {
+      printHelp();
+      process.exit(0);
+    }
+    const { getCommandDescriptor, formatCommandHelp } = await import("../src/ops/command-registry.mjs");
+    const subSub = args[2] && !args[2].startsWith("-") ? `${target} ${args[2]}` : target;
+    const desc = getCommandDescriptor(subSub) || getCommandDescriptor(target);
+    if (desc) {
+      console.log(formatCommandHelp(desc));
+      process.exit(0);
+    }
+    console.log(`\nUsage: agentctl ${args.slice(1).join(" ")} [options]\n\nFor general help, run: agentctl --help\n`);
+    process.exit(0);
+  }
+
   // Bare `agentctl` answers "what do I do next" rather than dumping thirty
   // commands. The help text is a reference for people who already know the
   // tool; a newcomer cannot tell which entry is step one, and guessing wrong
@@ -248,7 +265,7 @@ async function main() {
       console.log(formatCommandHelp(desc));
       process.exit(0);
     }
-    printHelp();
+    console.log(`\nUsage: agentctl ${command}${subArgs[0] && !subArgs[0].startsWith("-") ? " " + subArgs[0] : ""} [options]\n\nFor general help, run: agentctl --help\n`);
     process.exit(0);
   }
 
@@ -376,7 +393,7 @@ async function main() {
       const { values } = parseArgs({
         args: args.slice(1),
         options: {
-          base: { type: "string", short: "b", default: config.baseBranch || "main" },
+          base: { type: "string", short: "b" },
           mode: { type: "string", short: "m", default: "working-tree" },
           "working-tree": { type: "boolean" },
           staged: { type: "boolean" },
@@ -384,6 +401,7 @@ async function main() {
           fix: { type: "boolean" },
           "allow-protected": { type: "boolean" },
           "allow-unreadable-tests": { type: "boolean" },
+          "strict-locks": { type: "boolean" },
           // The tamper guard has always had an override — `allowTestModifications`
           // — and it was reachable only from JavaScript. So a legitimate change
           // of spec, which necessarily rewrites what a test expects, hit a
@@ -417,13 +435,38 @@ async function main() {
         allowUnreadableTests: values["allow-unreadable-tests"],
         allowTestModifications: values["allow-test-modifications"],
         allowTestChanges: values["allow-test-change"],
+        strictLocks: values["strict-locks"],
+        dryRun: values["dry-run"],
         jsonReport: values["json-report"],
       });
 
+      const overrides = [];
+      const julesCmdAllow = process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true" || process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1";
+      const agentCmdAllow = process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "true" || process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1";
+      if (values["allow-protected"] || julesCmdAllow || agentCmdAllow) {
+        const via = values["allow-protected"] ? "--allow-protected" : (julesCmdAllow ? "JULES_ALLOW_COMMAND_FILE_CHANGES" : "AGENT_ALLOW_COMMAND_FILE_CHANGES");
+        overrides.push(`${via} (protected paths permitted)`);
+      }
+      if (values["allow-unreadable-tests"]) overrides.push("--allow-unreadable-tests (unreadable dialect permitted)");
+      if (values["allow-test-modifications"]) overrides.push("--allow-test-modifications (every tamper check waived)");
+      if (values["allow-test-change"]) {
+        const kinds = [].concat(values["allow-test-change"]).join(", ");
+        overrides.push(`--allow-test-change ${kinds} (tamper check waived: ${kinds})`);
+      }
+      if (config?.verify?.required === false) overrides.push("verify.required: false (verification failures and empty test suites permitted)");
+      if (config?.verify?.minTests === 0 || config?.verify?.min_tests === 0 || config?.minTests === 0 || config?.min_tests === 0) overrides.push("verify.minTests: 0 (test collection floor disabled)");
+      if (config?.verify?.tamperGuard === "warn") overrides.push('verify.tamperGuard: "warn" (unreadable dialects report only)');
+      const optionalFails = (res.phases?.find((p) => p.phase === "verify")?.executionRecords || []).filter((r) => r.required === false && !r.ok);
+      for (const r of optionalFails) {
+        overrides.push(`stage.${r.id || r.name}: required: false (failing optional stage permitted)`);
+      }
+
       if (values.json) {
+        res.overrides = overrides;
         console.log(JSON.stringify(res, null, 2));
       } else {
-        console.log(`\n🛡️ agentctl Safety Gate Audit Results (Base: ${values.base}, Mode: ${selectedMode})`);
+        const reportedBase = res.base || values.base || "main";
+        console.log(`\n🛡️ agentctl Safety Gate Audit Results (Base: ${reportedBase}, Mode: ${selectedMode})`);
         console.log(`-----------------------------------------------------`);
         // A loosened run must not be able to pass for a strict one.
         //
@@ -435,16 +478,6 @@ async function main() {
         // check had been waived, which makes the waiver invisible exactly where
         // it matters most. Printed before the phases, and on approval as well
         // as rejection, because an approval is the case where it is load-bearing.
-        const overrides = [];
-        if (values["allow-protected"]) overrides.push("--allow-protected (protected paths permitted)");
-        if (values["allow-unreadable-tests"]) overrides.push("--allow-unreadable-tests (unreadable dialect permitted)");
-        if (values["allow-test-modifications"]) overrides.push("--allow-test-modifications (every tamper check waived)");
-        if (values["allow-test-change"]) {
-          const kinds = [].concat(values["allow-test-change"]).join(", ");
-          overrides.push(`--allow-test-change ${kinds} (tamper check waived: ${kinds})`);
-        }
-        if (config.verify?.required === false) overrides.push("verify.required: false (nothing is executed)");
-        if (config.verify?.tamperGuard === "warn") overrides.push('verify.tamperGuard: "warn" (unreadable dialects report only)');
         if (overrides.length > 0) {
           console.log(`  ⚠️  OVERRIDES ACTIVE — this run is not a strict pass:`);
           for (const o of overrides) console.log(`       • ${o}`);
@@ -607,9 +640,15 @@ async function main() {
               console.log(`   • Commit them once and the gate goes green:`);
               console.log(`       git add ${untracked.join(" ")} && git commit -m "chore: add agent config"\n`);
             } else {
+              const hasLockfileViolation = scopeFiles.some((f) => /(?:^|\/)(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|go\.sum|uv\.lock|poetry\.lock|Pipfile\.lock|composer\.lock)$/.test(f));
               console.log(`💡 Remediation Hint (Exit ${res.code} Scope Violation):`);
-              console.log(`   • To allow protected files in this run, pass: agentctl gate --allow-protected`);
-              console.log(`   • Or remove protected/denied paths from the diff before dispatching.\n`);
+              if (hasLockfileViolation) {
+                console.log(`   • Lockfiles are protected against supply-chain tampering. Routine dependency`);
+                console.log(`     updates are permitted using the maintainer waiver: agentctl gate --allow-protected\n`);
+              } else {
+                console.log(`   • To allow protected files in this run, pass: agentctl gate --allow-protected`);
+                console.log(`   • Or remove protected/denied paths from the diff before dispatching.\n`);
+              }
             }
           } else if (failedPhase === "git_resolution") {
             console.log(`💡 Remediation Hint (Exit ${res.code} Base Branch Unresolvable):`);
@@ -2252,7 +2291,7 @@ async function main() {
           if (values.json) {
             console.log(JSON.stringify(res, null, 2));
           } else {
-            console.log(`\n✅ Plan Approved Successfully!`);
+            console.log(values["dry-run"] ? `\n[DRY-RUN] Plan Approved Successfully (Simulation)!` : `\n✅ Plan Approved Successfully!`);
             console.log(`   Session ID : ${res.id}`);
             console.log(`   Status     : ${res.status}\n`);
           }
@@ -2289,7 +2328,7 @@ async function main() {
         if (values.json) {
           console.log(JSON.stringify(res, null, 2));
         } else {
-          console.log(`\n✅ Plan Approved Successfully!`);
+          console.log(values["dry-run"] ? `\n[DRY-RUN] Plan Approved Successfully (Simulation)!` : `\n✅ Plan Approved Successfully!`);
           console.log(`   Session ID : ${res.id}`);
           console.log(`   Status     : ${res.status}\n`);
         }
@@ -2325,7 +2364,7 @@ async function main() {
           if (values.json) {
             console.log(JSON.stringify(res, null, 2));
           } else {
-            console.log(`\n📋 Remote Session Status:`);
+            console.log(values["dry-run"] ? `\n📋 [DRY-RUN] Remote Session Status (Simulation):` : `\n📋 Remote Session Status:`);
             console.log(`   Session ID : ${res.id}`);
             console.log(`   Status     : ${res.status}\n`);
           }

@@ -124,4 +124,3 @@ HARD CONSTRAINTS:
 - BEFORE opening the PR: Run `git fetch origin <base> && git rebase origin/<base>`, then re-verify. If the rebase leaves an empty diff, the work already landed — do NOT submit.
 - Remove any scratch files you created for debugging before submitting. Do not delete files that are part of the project.
 ```
-
