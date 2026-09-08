@@ -25,5 +25,6 @@ export function resolveWizardInteractivity(input = {}) {
   // to edit rather than as a complete invocation.
   if (input.interactive === true) return true;
   if (input.nonInteractive || input.yes || input.fullySpecified) return false;
+  if (input.isTTY === false || input.ci) return false;
   return undefined;
 }

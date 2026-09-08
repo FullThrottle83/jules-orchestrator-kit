@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync, execFileSync } from "node:child_process";
 import { runStabilityProbe } from "../src/stability.mjs";
 import { assertTestStability } from "../src/assertions.mjs";
+import { listQuarantinedTests, readVerifyRuns } from "../src/flaky-ledger.mjs";
 
 const CLI = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
 
@@ -117,6 +118,93 @@ test("flaky probe", () => {
       assert.equal(parsed.ok, true);
       assert.equal(parsed.passes, 3);
       assert.equal(parsed.passRate, 1.0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("runStabilityProbe records per-run outcomes into flaky ledger by default", () => {
+    const root = tempRepo();
+    try {
+      writeFileSync(
+        join(root, "check.test.mjs"),
+        'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("ok", () => { const sum = 1 + 2; assert.equal(sum, 3); });\n'
+      );
+
+      const probe = runStabilityProbe("node --test check.test.mjs", { root, repeat: 3 });
+      assert.equal(probe.ok, true);
+      const runs = readVerifyRuns(root, "node --test check.test.mjs");
+      assert.equal(runs.length, 3);
+      assert.ok(runs.every((r) => r.pass === true));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl probe connects oscillating tests to flaky quarantine ledger and listQuarantinedTests", () => {
+    const root = tempRepo();
+    try {
+      writeFileSync(
+        join(root, "flaky.test.mjs"),
+        `import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+
+test("flaky test", () => {
+  const file = ".osc_counter";
+  let count = existsSync(file) ? parseInt(readFileSync(file, "utf-8"), 10) : 0;
+  count++;
+  writeFileSync(file, String(count), "utf-8");
+  assert.equal(count % 2 === 1, true, "Oscillating failure on even count");
+});
+`
+      );
+
+      const proc = spawnSync(
+        process.execPath,
+        [CLI, "probe", "--cmd", "node --test flaky.test.mjs", "--repeat", "6", "--json"],
+        { cwd: root, encoding: "utf-8" }
+      );
+
+      assert.equal(proc.status, 1);
+      const quarantined = listQuarantinedTests(root);
+      assert.equal(quarantined.length, 1);
+      assert.equal(quarantined[0].testCmd, "node --test flaky.test.mjs");
+      assert.equal(quarantined[0].verdict, "QUARANTINED");
+      assert.ok(quarantined[0].oscillation >= 0.4);
+
+      // Verify CLI flaky status outputs the quarantine
+      const statusProc = spawnSync(
+        process.execPath,
+        [CLI, "flaky", "status", "--json"],
+        { cwd: root, encoding: "utf-8" }
+      );
+      assert.equal(statusProc.status, 0);
+      const statusParsed = JSON.parse(statusProc.stdout);
+      assert.equal(statusParsed.count, 1);
+      assert.equal(statusParsed.quarantined[0].testCmd, "node --test flaky.test.mjs");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl probe --no-record skips writing to flaky ledger", () => {
+    const root = tempRepo();
+    try {
+      writeFileSync(
+        join(root, "check.test.mjs"),
+        'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("deterministic", () => { const msg = "hello".toUpperCase(); assert.equal(msg, "HELLO"); });\n'
+      );
+
+      const proc = spawnSync(
+        process.execPath,
+        [CLI, "probe", "--cmd", "node --test check.test.mjs", "--repeat", "3", "--no-record", "--json"],
+        { cwd: root, encoding: "utf-8" }
+      );
+
+      assert.equal(proc.status, 0);
+      const runs = readVerifyRuns(root);
+      assert.equal(runs.length, 0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

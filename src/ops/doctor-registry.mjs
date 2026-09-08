@@ -121,7 +121,11 @@ export async function runDoctorChecks(options = {}) {
   // runtime.git
   let gitPassed = false;
   try {
-    const gitOut = execFileSync("git", ["--version"], { encoding: "utf-8", timeout: 5000 });
+    const gitOut = execFileSync("git", ["--version"], {
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     gitPassed = true;
     addResult({
       id: "runtime.git",
@@ -167,18 +171,46 @@ export async function runDoctorChecks(options = {}) {
     let isRepo = false;
     let headSha = "";
     try {
-      headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf-8" }).trim();
-      isRepo = true;
-      addResult({
-        id: "repo.root",
-        category: "Repository",
-        title: "Repository Root Verification",
-        status: "pass",
-        severity: "info",
-        summary: `Valid repository at ${root} (HEAD: ${headSha.slice(0, 8)})`,
-        evidence: [{ label: "headSha", value: headSha, sensitive: false }],
-      });
-    } catch {
+      const insideWorkTree = execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+        cwd: root,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (insideWorkTree === "true") {
+        isRepo = true;
+        try {
+          headSha = execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD"], {
+            cwd: root,
+            encoding: "utf-8",
+            stdio: ["ignore", "pipe", "ignore"],
+          }).trim();
+        } catch (_) {}
+
+        if (headSha) {
+          addResult({
+            id: "repo.root",
+            category: "Repository",
+            title: "Repository Root Verification",
+            status: "pass",
+            severity: "info",
+            summary: `Valid repository at ${root} (HEAD: ${headSha.slice(0, 8)})`,
+            evidence: [{ label: "headSha", value: headSha, sensitive: false }],
+          });
+        } else {
+          addResult({
+            id: "repo.root",
+            category: "Repository",
+            title: "Repository Root Verification",
+            status: "pass",
+            severity: "info",
+            summary: `Valid repository at ${root} (unborn HEAD, 0 commits)`,
+            evidence: [{ label: "headSha", value: "", sensitive: false }],
+          });
+        }
+      }
+    } catch (_) {}
+
+    if (!isRepo) {
       addResult({
         id: "repo.root",
         category: "Repository",
@@ -191,7 +223,11 @@ export async function runDoctorChecks(options = {}) {
 
     if (isRepo) {
       try {
-        const statusOut = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf-8" }).trim();
+        const statusOut = execFileSync("git", ["status", "--porcelain"], {
+          cwd: root,
+          encoding: "utf-8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
         const modifiedCount = statusOut ? statusOut.split("\n").length : 0;
         if (modifiedCount === 0) {
           addResult({
@@ -514,7 +550,11 @@ export async function runDoctorChecks(options = {}) {
   if (existsSync(envFile)) {
     let tracked = false;
     try {
-      const res = spawnSync("git", ["ls-files", "--error-unmatch", ".env"], { cwd: root, encoding: "utf-8" });
+      const res = spawnSync("git", ["ls-files", "--error-unmatch", ".env"], {
+        cwd: root,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
       tracked = res.status === 0;
     } catch (_) {}
 

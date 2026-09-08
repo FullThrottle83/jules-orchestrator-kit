@@ -15,6 +15,9 @@ import {
   worktreePrune,
   parseGitHubRepo,
   resolveGitRemoteOrigin,
+  getHeadCommit,
+  getHeadParent,
+  parseRawDiff,
   GateError,
   NET_GUARD_FLAG,
   NET_GUARD_PRELOAD_URL,
@@ -281,5 +284,61 @@ test("src/git.mjs Unit Tests", async (t) => {
     // With remote
     runCmd(["git", "remote", "add", "origin", "git@github.com:test-owner/test-repo.git"], { cwd: tmpRoot });
     assert.equal(resolveGitRemoteOrigin(tmpRoot), "test-owner/test-repo");
+  });
+
+  await t.test("getHeadCommit and getHeadParent resolve accurately", () => {
+    runCmd(["git", "init", "-b", "main"], { cwd: tmpRoot });
+    assert.equal(getHeadCommit(tmpRoot), null);
+    assert.equal(getHeadParent(tmpRoot), null);
+
+    writeFileSync(join(tmpRoot, "file1.txt"), "hello");
+    runCmd(["git", "add", "."], { cwd: tmpRoot });
+    runCmd(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "first"], { cwd: tmpRoot });
+
+    const c1 = getHeadCommit(tmpRoot);
+    assert.ok(typeof c1 === "string" && c1.length === 40);
+    assert.equal(getHeadParent(tmpRoot), null);
+
+    writeFileSync(join(tmpRoot, "file2.txt"), "world");
+    runCmd(["git", "add", "."], { cwd: tmpRoot });
+    runCmd(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "second"], { cwd: tmpRoot });
+
+    const c2 = getHeadCommit(tmpRoot);
+    const p2 = getHeadParent(tmpRoot);
+    assert.ok(typeof c2 === "string" && c2.length === 40);
+    assert.equal(p2, c1);
+  });
+
+  await t.test("committed mode evaluates HEAD changes when checked out on base branch (P0)", () => {
+    runCmd(["git", "init", "-b", "main"], { cwd: tmpRoot });
+
+    // Root commit only: diff evaluates root commit against empty tree
+    writeFileSync(join(tmpRoot, "init.txt"), "initial content\n");
+    runCmd(["git", "add", "."], { cwd: tmpRoot });
+    runCmd(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "root"], { cwd: tmpRoot });
+
+    assert.deepEqual(changedFiles(tmpRoot, "main", "committed"), ["init.txt"]);
+    assert.match(diffText(tmpRoot, "main", "committed"), /\+initial content/);
+    const rawRoot = parseRawDiff(tmpRoot, "main", "committed");
+    assert.equal(rawRoot.length, 1);
+    assert.equal(rawRoot[0].file, "init.txt");
+
+    // Second commit on main: diff evaluates HEAD~1...HEAD
+    writeFileSync(join(tmpRoot, "second.txt"), "second commit content\n");
+    runCmd(["git", "add", "."], { cwd: tmpRoot });
+    runCmd(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "second"], { cwd: tmpRoot });
+
+    assert.deepEqual(changedFiles(tmpRoot, "main", "committed"), ["second.txt"]);
+    assert.match(diffText(tmpRoot, "main", "committed"), /\+second commit content/);
+    const rawSecond = parseRawDiff(tmpRoot, "main", "committed");
+    assert.equal(rawSecond.length, 1);
+    assert.equal(rawSecond[0].file, "second.txt");
+
+    // explicit HEAD base still diffs against HEAD (0 changes)
+    assert.deepEqual(changedFiles(tmpRoot, "HEAD", "committed"), []);
+
+    // showFromOrigin returns file from resolved base ref
+    assert.equal(showFromOrigin(tmpRoot, "main", "init.txt"), "initial content\n");
+    assert.equal(showFromOrigin(tmpRoot, "main", "second.txt"), "second commit content\n");
   });
 });

@@ -97,6 +97,21 @@ test("Guided Task Authoring Subsystem", async (t) => {
     }
   });
 
+  await t.test("planTaskCreate accepts file URIs and stack traces without false-positive secret block", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-task-trace-"));
+    try {
+      const plan = planTaskCreate(tmpDir, {
+        title: "Fix Calculator Test",
+        prompt: "Fix test failure at (file:///tmp/jules-breadth-eval/test/calculator.test.js:6:10)",
+        verifyCmd: "npm test",
+      });
+      assert.equal(plan.title, "Fix Calculator Test");
+      assert.ok(plan.fullPrompt.includes("calculator.test.js"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   await t.test("planTaskCreate rejects trivial verification oracles", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "jules-task-trivial-"));
     try {

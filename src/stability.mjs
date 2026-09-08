@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { resolveVerify } from "./config.mjs";
-import { computeOscillation } from "./flaky-ledger.mjs";
+import { computeOscillation, recordVerifyRun } from "./flaky-ledger.mjs";
 
 /**
  * Executes a test command repeatedly to probe for race conditions, non-deterministic timers, or test flakiness.
@@ -11,6 +11,7 @@ import { computeOscillation } from "./flaky-ledger.mjs";
  * @param {number} [options.repeat=5] - Number of consecutive iterations to execute
  * @param {number} [options.minPassRate=1.0] - Required minimum pass rate (0.0 - 1.0)
  * @param {number} [options.timeoutMs=30000] - Timeout per iteration in milliseconds
+ * @param {boolean} [options.record=true] - Whether to record run outcomes to .agent/state/flaky.jsonl
  * @returns {object} { ok, repeat, passes, failures, passRate, oscillation, runs, durationMs, summary }
  */
 export function runStabilityProbe(testCmd, options = {}) {
@@ -19,6 +20,7 @@ export function runStabilityProbe(testCmd, options = {}) {
   const repeat = typeof options.repeat === "number" && options.repeat > 0 ? options.repeat : 5;
   const minPassRate = typeof options.minPassRate === "number" ? options.minPassRate : 1.0;
   const timeoutMs = options.timeoutMs || 30000;
+  const shouldRecord = options.record !== false;
 
   const runs = [];
   let passes = 0;
@@ -57,6 +59,11 @@ export function runStabilityProbe(testCmd, options = {}) {
     }
 
     const duration = Date.now() - runStart;
+    if (shouldRecord) {
+      const fingerprint = !pass && stderr ? stderr.trim().slice(0, 200) : null;
+      recordVerifyRun(root, cmd, pass, fingerprint, duration);
+    }
+
     runs.push({
       iteration: i,
       pass,

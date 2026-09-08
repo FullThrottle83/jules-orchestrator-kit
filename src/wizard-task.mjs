@@ -164,8 +164,19 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
   if (!secretScan.ok) {
     secretScan.findings.forEach((f) => secretFindings.push({ id: f.type || f.id || "SECRET_LEAK", ...f }));
   }
-  const hasHighEntropyToken = rawPrompt.split(/\s+/).some((token) => token.length >= 20 && shannonEntropy(token) > 4.3);
-  const isShortHighEntropy = rawPrompt.length <= 120 && shannonEntropy(rawPrompt) > 4.5;
+  const isPathOrUrlToken = (str) => {
+    const clean = str.replace(/^[(\[{<`"']+|[)\]}>`"',;:]+$/g, "");
+    if (/^(https?|file|ftp|vscode|git|ssh|node):/i.test(clean)) return true;
+    if (/^[a-zA-Z]:[/\\]/.test(clean)) return true;
+    if (/^[./~\\]/.test(clean)) return true;
+    if (/[/\\][a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+(:\d+(:\d+)?)?$/.test(clean)) return true;
+    return false;
+  };
+  const hasHighEntropyToken = rawPrompt
+    .split(/\s+/)
+    .some((token) => !isPathOrUrlToken(token) && token.length >= 20 && shannonEntropy(token) > 4.3);
+  const isShortHighEntropy =
+    rawPrompt.length <= 120 && !isPathOrUrlToken(rawPrompt.trim()) && shannonEntropy(rawPrompt) > 4.5;
   if ((hasHighEntropyToken || isShortHighEntropy) && !inputObj.allowHighEntropy) {
     secretFindings.push({ id: "HIGH_ENTROPY_PROMPT", line: 1 });
   }

@@ -100,4 +100,73 @@ test("CLI Stdin Stream Pipeline (agentctl fix)", async (t) => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  await t.test("agentctl fix --task handles stack traces with file:// URIs without false-positive secret block", () => {
+    const root = tempRepo();
+    try {
+      const stackTrace = [
+        "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:",
+        "+ actual - expected",
+        "",
+        "+ 5",
+        "- 4",
+        "    at TestContext.<anonymous> (file:///tmp/jules-breadth-eval/test/calculator.test.js:6:10)",
+        "    at Test.runInAsyncScope (node:async_hooks:206:9)",
+      ].join("\n");
+
+      const proc = spawnSync(
+        process.execPath,
+        [CLI, "fix", "--task", "--json"],
+        {
+          cwd: root,
+          input: stackTrace,
+          encoding: "utf-8",
+        }
+      );
+
+      assert.equal(proc.status, 0);
+      const parsed = JSON.parse(proc.stdout);
+      assert.ok(parsed.taskId);
+      assert.ok(parsed.prompt.includes("calculator.test.js"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl fix --task reads streamed stdin pipe asynchronously without EAGAIN", async () => {
+    const root = tempRepo();
+    try {
+      const { spawn } = await import("node:child_process");
+      const child = spawn(
+        process.execPath,
+        [CLI, "fix", "--task", "--json"],
+        {
+          cwd: root,
+          stdio: ["pipe", "pipe", "pipe"],
+        }
+      );
+
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+
+      // Stream data in chunks to simulate active writer
+      child.stdin.write("AssertionError: value mismatch\n");
+      await new Promise((r) => setTimeout(r, 10));
+      child.stdin.write("    at verify (src/index.mjs:10:5)\n");
+      child.stdin.end();
+
+      const exitCode = await new Promise((resolve) => {
+        child.on("close", resolve);
+      });
+
+      assert.equal(exitCode, 0, `stderr: ${stderr}`);
+      const parsed = JSON.parse(stdout);
+      assert.ok(parsed.taskId);
+      assert.ok(parsed.prompt.includes("value mismatch"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

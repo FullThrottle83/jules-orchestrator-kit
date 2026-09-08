@@ -48,7 +48,7 @@ agentctl v${VERSION} — Universal Agent Orchestrator & Safety Gatekeeper
 Usage: agentctl <command> [options]
 
 Commands:
-  dispatch | create     Dispatch a single task to an AI agent (--role <name>, --tier fast|complex, --check-premise)
+  dispatch              Dispatch a single task to an AI agent (--role <name>, --tier fast|complex, --check-premise)
   check                 Run all-in-one CI security, rules, and stack verification gate
   gate | audit          Run CI security and verification gate against current branch
   mutate | mutation     Run zero-dependency diff mutation testing harness (--min-score, --max-mutants)
@@ -275,8 +275,7 @@ async function main() {
   const config = loadConfig(root);
 
   switch (command) {
-    case "dispatch":
-    case "create": {
+    case "dispatch": {
       const { values, positionals } = parseArgs({
         args: args.slice(1),
         options: {
@@ -821,6 +820,10 @@ async function main() {
           min: { type: "string", short: "m" },
           "min-pass-rate": { type: "string" },
           cmd: { type: "string", short: "c" },
+          "test-cmd": { type: "string", short: "t" },
+          "verify-cmd": { type: "string" },
+          record: { type: "boolean" },
+          "no-record": { type: "boolean" },
           json: { type: "boolean", short: "j" },
         },
         allowPositionals: true,
@@ -829,8 +832,10 @@ async function main() {
       const root = resolveRoot();
       const repeat = values.repeat ? parseInt(values.repeat, 10) : (values.iterations ? parseInt(values.iterations, 10) : 5);
       const minPassRate = values.min ? parseFloat(values.min) : (values["min-pass-rate"] ? parseFloat(values["min-pass-rate"]) : 1.0);
+      const targetCmd = values["test-cmd"] || values["verify-cmd"] || values.cmd;
+      const record = values["no-record"] ? false : values.record !== false;
 
-      const report = runStabilityProbe(values.cmd, { root, repeat, minPassRate });
+      const report = runStabilityProbe(targetCmd, { root, repeat, minPassRate, record });
 
       if (values.json) {
         console.log(JSON.stringify(report, null, 2));
@@ -847,6 +852,11 @@ async function main() {
           for (const r of report.runs.filter((run) => !run.pass)) {
             console.log(`  - Iteration #${r.iteration}: Exit Code ${r.exitCode} (${r.durationMs}ms)`);
           }
+        }
+
+        if (record && !report.ok) {
+          console.log(`\n  Recorded probe results to .agent/state/flaky.jsonl.`);
+          console.log(`  Check status or trigger auto-healing: agentctl flaky status | agentctl flaky heal`);
         }
 
         console.log(`------------------------------------------------------------------`);
@@ -923,7 +933,8 @@ async function main() {
       } else if (positionals.slice(1).length > 0) {
         errorInput = positionals.slice(1).join(" ");
       } else if (!process.stdin.isTTY) {
-        errorInput = readFileSync(0, "utf-8");
+        const { text } = await import("node:stream/consumers");
+        errorInput = await text(process.stdin);
       }
 
       if (!errorInput.trim()) {
@@ -939,6 +950,7 @@ async function main() {
           prompt: `Fix the following test/build failure:\n\n${cleanTrace.slice(0, 4000)}`,
           title: "Automated Failure Repair",
           verifyCmd: values.cmd || "npm test",
+          allowHighEntropy: true,
         });
 
         if (values.json) {
@@ -1424,6 +1436,10 @@ async function main() {
         // dies, exactly as an in-process acquire does.
         const flagIdx = args.findIndex((a, i) => i >= 2 && a.startsWith("--"));
         const positional = flagIdx === -1 ? args.slice(2) : args.slice(2, flagIdx);
+        if (positional.length < 3) {
+          console.error("Usage: agentctl lock acquire <agent> <task_id> <file_path...> [--ttl <minutes>] [--pid <pid>]");
+          process.exit(1);
+        }
         const { values } = parseArgs({
           args: flagIdx === -1 ? [] : args.slice(flagIdx),
           options: {
@@ -1432,8 +1448,8 @@ async function main() {
           },
           allowPositionals: false,
         });
-        const agent = positional[0] || "agent";
-        const taskId = positional[1] || "task-1";
+        const agent = positional[0];
+        const taskId = positional[1];
         const filePaths = positional.slice(2);
         const ttlMinutes = Number(values.ttl);
         const ownerPid = Number(values.pid);
@@ -1456,7 +1472,11 @@ async function main() {
           process.exit(1);
         }
       } else if (action === "release") {
-        const taskId = args[2] || "task-1";
+        const taskId = args[2];
+        if (!taskId) {
+          console.error("Usage: agentctl lock release <task_id>");
+          process.exit(1);
+        }
         const ok = releaseLock(taskId, root);
         if (ok) {
           console.log(`✅ Released lock for ${taskId}`);
@@ -1466,7 +1486,17 @@ async function main() {
         }
       } else {
         const locks = lockStatus(root);
-        console.log(`Active Locks (${locks.length}):`, locks);
+        if (locks.length === 0) {
+          console.log("Active Locks: 0 (no held locks)");
+        } else {
+          console.log(`Active Locks (${locks.length}):`);
+          for (const l of locks) {
+            const files = Array.isArray(l.files) ? l.files.join(", ") : (l.files || "");
+            const expires = l.expiresAt ? `expires ${l.expiresAt}` : (l.ownerPid ? `pid ${l.ownerPid}` : "active");
+            console.log(`  • taskId: ${l.taskId || l.id} [${l.agent || "unknown"}] (${expires})`);
+            if (files) console.log(`    Paths: ${files}`);
+          }
+        }
       }
       process.exit(0);
       break;
@@ -1774,7 +1804,27 @@ async function main() {
         allowPositionals: true,
       });
 
-      const isInteractive = values.interactive !== false && !values["non-interactive"] && !values["no-interactive"] && !values.yes;
+      if (values.tier) {
+        const validTiers = ["free", "pro", "ultra", "enterprise"];
+        const lowerTier = values.tier.toLowerCase();
+        if (!validTiers.includes(lowerTier)) {
+          if (["minimal", "standard", "max"].includes(lowerTier)) {
+            console.error(`❌ Invalid tier "${values.tier}". Valid tiers: ${validTiers.join(", ")}. Did you mean '--profile ${values.tier}'?`);
+          } else {
+            console.error(`❌ Invalid tier "${values.tier}". Valid tiers: ${validTiers.join(", ")}.`);
+          }
+          process.exit(1);
+        }
+      }
+
+      const isInteractive =
+        values.interactive === true ||
+        (values.interactive !== false &&
+          Boolean(process.stdin.isTTY) &&
+          !process.env.CI &&
+          !values["non-interactive"] &&
+          !values["no-interactive"] &&
+          !values.yes);
 
       const { runInitWizard } = await import("../src/wizard-init.mjs");
       const res = await runInitWizard(root, {
@@ -1879,6 +1929,8 @@ async function main() {
           interactive: values.interactive,
           nonInteractive: values["non-interactive"] || values["no-interactive"],
           yes: values.yes,
+          ci: Boolean(process.env.CI),
+          isTTY: Boolean(process.stdin.isTTY),
           // A title and a prompt together state the whole task; there is
           // nothing left for the wizard to ask.
           fullySpecified: Boolean(values.title && resolvePromptInput(values, positionals)),

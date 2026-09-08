@@ -1001,12 +1001,8 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
   // 1. Resolve base branch
   let base = baseRef || opts.base;
   if (!base) {
-    if (mode === "committed") {
-      base = detectDefaultBranch(root) || "main";
-    } else {
-      const diskConfig = opts.config || (existsSync(join(root, ".agent/config.yml")) ? loadConfig(root) : null);
-      base = diskConfig?.baseBranch || detectDefaultBranch(root) || "main";
-    }
+    const diskConfig = opts.config || (existsSync(join(root, ".agent/config.yml")) ? loadConfig(root) : null);
+    base = diskConfig?.baseBranch || detectDefaultBranch(root) || "main";
   }
 
   // F08 Guard: In committed mode, base branch can never be HEAD

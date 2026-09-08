@@ -125,6 +125,14 @@ export function planInit(root = process.cwd(), options = {}) {
   // a 100-task budget and 8 concurrent workers it does not have. The same
   // reasoning makes FALLBACK_TIER conservative in loadConfig(); the wizard has
   // to agree with it or the manifest guards a ceiling the runtime does not.
+  const validTiers = Object.keys(TIER_PRESETS);
+  if (options.tier && !validTiers.includes(String(options.tier).toLowerCase())) {
+    const rawTier = String(options.tier).toLowerCase();
+    if (["minimal", "standard", "max"].includes(rawTier)) {
+      throw new Error(`Invalid tier "${options.tier}". Valid tiers: ${validTiers.join(", ")}. Did you mean '--profile ${options.tier}'?`);
+    }
+    throw new Error(`Invalid tier "${options.tier}". Valid tiers: ${validTiers.join(", ")}.`);
+  }
   const tierName = options.tier || FALLBACK_TIER;
   // An unrecognised name resolves the same way loadConfig() resolves it, so the
   // scaffolded limits always match what the runtime will later enforce.

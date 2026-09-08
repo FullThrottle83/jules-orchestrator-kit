@@ -392,8 +392,40 @@ export function resolveBase(root = process.cwd(), baseRef = "main") {
   );
 }
 
+export function getHeadCommit(root = process.cwd()) {
+  try {
+    const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], {
+      cwd: root,
+      encoding: "utf-8",
+      shell: false,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return res && res.trim() ? res.trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+export function getHeadParent(root = process.cwd()) {
+  try {
+    const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"], {
+      cwd: root,
+      encoding: "utf-8",
+      shell: false,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return res && res.trim() ? res.trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export function changedFiles(root = process.cwd(), base = "main", mode = "committed") {
   const resolvedRef = resolveBase(root, base);
+  const headCommit = getHeadCommit(root);
+  const isHeadRef = typeof base === "string" && (base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
+  const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
+
   if (mode === "working-tree" || mode === "working") {
     const committedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
     const uncommittedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", "HEAD"], { cwd: root, raw: true, ignoreError: true }) || "";
@@ -409,6 +441,16 @@ export function changedFiles(root = process.cwd(), base = "main", mode = "commit
     const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", "--cached", resolvedRef], { cwd: root, raw: true });
     return raw.split("\0").map(normalizePath).filter(Boolean);
   } else {
+    if (isBaseAtHead) {
+      const headParent = getHeadParent(root);
+      if (headParent) {
+        const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${headParent}...HEAD`], { cwd: root, raw: true });
+        return raw.split("\0").map(normalizePath).filter(Boolean);
+      } else {
+        const raw = git(["-c", "core.quotePath=false", "diff-tree", "--root", "--no-commit-id", "-r", "-z", "--name-only", headCommit], { cwd: root, raw: true });
+        return raw.split("\0").map(normalizePath).filter(Boolean);
+      }
+    }
     const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
     return raw.split("\0").map(normalizePath).filter(Boolean);
   }
@@ -416,6 +458,10 @@ export function changedFiles(root = process.cwd(), base = "main", mode = "commit
 
 export function diffText(root = process.cwd(), base = "main", mode = "committed") {
   const resolvedRef = resolveBase(root, base);
+  const headCommit = getHeadCommit(root);
+  const isHeadRef = typeof base === "string" && (base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
+  const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
+
   if (mode === "working-tree" || mode === "working") {
     const committed = git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
     const uncommitted = git(["diff", "HEAD"], { cwd: root, raw: true, ignoreError: true }) || "";
@@ -465,6 +511,15 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
   } else if (mode === "staged" || mode === "index") {
     return git(["diff", "--cached", resolvedRef], { cwd: root, raw: true });
   }
+
+  if (isBaseAtHead) {
+    const headParent = getHeadParent(root);
+    if (headParent) {
+      return git(["diff", `${headParent}...HEAD`], { cwd: root, raw: true });
+    } else {
+      return git(["diff-tree", "-p", "--no-commit-id", "--root", headCommit], { cwd: root, raw: true });
+    }
+  }
   return git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
 }
 
@@ -486,38 +541,72 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
  * @param {string} mode
  * @returns {Array<{ file: string, bytes: number }>}
  */
+function parseRawDiffOutput(raw, out) {
+  // `--raw -z` emits ":<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>\0".
+  const fields = raw.split("\0").filter(Boolean);
+  for (let i = 0; i < fields.length; i++) {
+    const meta = fields[i];
+    if (!meta.startsWith(":")) continue;
+    const parts = meta.slice(1).split(/\s+/);
+    const file = fields[i + 1];
+    i += 1;
+    if (!file) continue;
+    out.push({
+      file,
+      srcMode: parts[0] || "",
+      dstMode: parts[1] || "",
+      srcSha: parts[2] || "",
+      dstSha: parts[3] || "",
+      status: (parts[4] || "").charAt(0),
+    });
+  }
+}
+
 export function parseRawDiff(root = process.cwd(), base = "main", mode = "committed") {
   const resolvedRef = resolveBase(root, base);
-  const ranges =
-    mode === "working-tree" || mode === "working"
-      ? [[`${resolvedRef}...HEAD`], ["HEAD"]]
-      : [[`${resolvedRef}...HEAD`]];
+  const headCommit = getHeadCommit(root);
+  const isHeadRef = typeof base === "string" && (base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
+  const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
 
   const out = [];
-  for (const range of ranges) {
+  if (mode === "working-tree" || mode === "working") {
+    for (const range of [[`${resolvedRef}...HEAD`], ["HEAD"]]) {
+      let raw = "";
+      try {
+        raw = git(["diff", "--raw", "--no-renames", "-z", ...range], { cwd: root, raw: true, ignoreError: true }) || "";
+      } catch (_) {
+        continue;
+      }
+      parseRawDiffOutput(raw, out);
+    }
+  } else if (mode === "staged" || mode === "index") {
     let raw = "";
     try {
-      raw = git(["diff", "--raw", "--no-renames", "-z", ...range], { cwd: root, raw: true, ignoreError: true }) || "";
-    } catch (_) {
-      continue;
-    }
-    // `--raw -z` emits ":<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>\0".
-    const fields = raw.split("\0").filter(Boolean);
-    for (let i = 0; i < fields.length; i++) {
-      const meta = fields[i];
-      if (!meta.startsWith(":")) continue;
-      const parts = meta.slice(1).split(/\s+/);
-      const file = fields[i + 1];
-      i += 1;
-      if (!file) continue;
-      out.push({
-        file,
-        srcMode: parts[0] || "",
-        dstMode: parts[1] || "",
-        srcSha: parts[2] || "",
-        dstSha: parts[3] || "",
-        status: (parts[4] || "").charAt(0),
-      });
+      raw = git(["diff", "--raw", "--no-renames", "-z", "--cached", resolvedRef], { cwd: root, raw: true, ignoreError: true }) || "";
+    } catch (_) {}
+    parseRawDiffOutput(raw, out);
+  } else {
+    if (isBaseAtHead) {
+      const headParent = getHeadParent(root);
+      if (headParent) {
+        let raw = "";
+        try {
+          raw = git(["diff", "--raw", "--no-renames", "-z", `${headParent}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
+        } catch (_) {}
+        parseRawDiffOutput(raw, out);
+      } else {
+        let raw = "";
+        try {
+          raw = git(["diff-tree", "--root", "--no-commit-id", "-r", "--raw", "--no-renames", "-z", headCommit], { cwd: root, raw: true, ignoreError: true }) || "";
+        } catch (_) {}
+        parseRawDiffOutput(raw, out);
+      }
+    } else {
+      let raw = "";
+      try {
+        raw = git(["diff", "--raw", "--no-renames", "-z", `${resolvedRef}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
+      } catch (_) {}
+      parseRawDiffOutput(raw, out);
     }
   }
   return out;
@@ -896,7 +985,12 @@ export function detectDefaultBranch(root = process.cwd()) {
   }
 
   for (const candidate of ["main", "master"]) {
-    if (ask(["rev-parse", "--verify", "--quiet", `refs/heads/${candidate}`])) return candidate;
+    if (
+      ask(["rev-parse", "--verify", "--quiet", `refs/heads/${candidate}`]) ||
+      ask(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${candidate}`])
+    ) {
+      return candidate;
+    }
   }
 
   const current = ask(["branch", "--show-current"]);

@@ -148,7 +148,7 @@ export const COMMAND_REGISTRY = [
     risk: "moderate",
     interactive: "authoring-auto",
     requiresRepository: true,
-    shortcuts: ["tc", "create"],
+    shortcuts: ["tc"],
     examples: [
       'agentctl task create --title "Fix webhook" --prompt "Add retry handling" --verify-cmd "npm test"',
       "agentctl task create --interactive",
@@ -162,6 +162,7 @@ export const COMMAND_REGISTRY = [
       { name: "template", type: "string", description: "Task template preset ID" },
       { name: "depends-on", type: "string", description: "Comma-separated task dependency IDs" },
       { name: "verify-cmd", type: "string", description: "Verification command override (-v)" },
+      { name: "verify", type: "string", description: "Alias for --verify-cmd" },
       { name: "auto-pr", type: "boolean", description: "Automatically create GitHub PR upon completion" },
       { name: "require-plan-approval", type: "boolean", description: "Require approval of agent plan before execution" },
       { name: "repoless", type: "boolean", description: "Execute in repoless sandbox mode" },
@@ -433,6 +434,7 @@ export const COMMAND_REGISTRY = [
       "agentctl gate --json",
     ],
     flags: [
+      { name: "base", type: "string", description: "Base comparison branch (default: main or config base_branch) (-b)" },
       { name: "mode", type: "string", description: "Evaluation mode (working-tree | committed | staged) (-m)" },
       { name: "tier", type: "string", description: "Enforce specific tier policies (free | pro | ultra | enterprise)" },
       { name: "allow-protected", type: "boolean", description: "Bypass protected path checks for authorized maintainers" },
@@ -463,6 +465,8 @@ export const COMMAND_REGISTRY = [
       { name: "cmd", type: "string", description: "Test command to probe" },
       { name: "test-cmd", type: "string", description: "Alias for cmd" },
       { name: "verify-cmd", type: "string", description: "Alias for cmd" },
+      { name: "record", type: "boolean", description: "Persist results to flaky quarantine ledger (default: true)" },
+      { name: "no-record", type: "boolean", description: "Skip recording to flaky quarantine ledger" },
       { name: "dry-run", type: "boolean", description: "Preview probe plan without execution (-d)" },
       { name: "json", type: "boolean", description: "Output structured JSON probe telemetry (-j)" },
     ],
@@ -501,7 +505,7 @@ export const COMMAND_REGISTRY = [
     risk: "moderate",
     interactive: "never",
     requiresRepository: true,
-    shortcuts: ["create"],
+    shortcuts: [],
     examples: [
       'agentctl dispatch --prompt "Add retry handling to src/webhook.js"',
       'agentctl dispatch -p "Fix type errors" --role bolt --tier fast',
