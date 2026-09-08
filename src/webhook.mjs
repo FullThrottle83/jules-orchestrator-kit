@@ -465,7 +465,7 @@ export async function dispatchEscalation(incident = {}, config = {}) {
 
 /**
  * Verify GitHub webhook HMAC SHA-256 signature against request payload.
- * @param {Buffer|string} payload - Raw request body
+ * @param {Uint8Array|string} payload - Raw request body
  * @param {string} signatureHeader - Value of X-Hub-Signature-256 header
  * @param {string} secret - Configured webhook secret
  * @returns {boolean} True if signature matches
@@ -493,7 +493,7 @@ export function verifySignature(payload, signatureHeader, secret) {
 
 /**
  * Parse incoming webhook body buffer into a JS object.
- * @param {Buffer|Uint8Array|string} bodyBuf 
+ * @param {Uint8Array|string} bodyBuf
  * @param {string} contentType 
  * @returns {object} Parsed JSON payload
  */
@@ -620,7 +620,14 @@ export function createWebhookServer({ port = 8787, secret = process.env.JULES_WE
 
     req.on("end", () => {
       if (totalSize > MAX_BODY) return;
-      const bodyBuf = Buffer.concat(chunks);
+
+      const bodyBuf = new Uint8Array(totalSize);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bodyBuf.set(chunk, offset);
+        offset += chunk.length;
+      }
+
       const sigHeader = req.headers["x-hub-signature-256"];
       const eventType = req.headers["x-github-event"];
       const contentType = req.headers["content-type"] || "application/json";
