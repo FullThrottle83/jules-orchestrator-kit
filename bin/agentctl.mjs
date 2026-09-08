@@ -1854,6 +1854,7 @@ async function main() {
             template: { type: "string" },
             depends: { type: "string" },
             "depends-on": { type: "string" },
+            verify: { type: "string" },
             "verify-cmd": { type: "string", short: "v" },
             "auto-pr": { type: "boolean" },
             "require-plan-approval": { type: "boolean" },
@@ -1886,7 +1887,7 @@ async function main() {
           tier: values.tier,
           template: values.template,
           dependsOn: values["depends-on"] || values.depends,
-          verifyCmd: values["verify-cmd"],
+          verifyCmd: values["verify-cmd"] || values.verify,
           autoPr: values["auto-pr"],
           requirePlanApproval: values["require-plan-approval"],
           repoless: values.repoless,
@@ -1916,6 +1917,7 @@ async function main() {
           options: {
             list: { type: "boolean", short: "l" },
             json: { type: "boolean", short: "j" },
+            verify: { type: "string" },
             "verify-cmd": { type: "string", short: "v" },
             "dry-run": { type: "boolean", short: "d" },
           },
@@ -1949,7 +1951,7 @@ async function main() {
           process.exit(1);
         }
 
-        const envelope = synthesizeWebEnvelope(templateName, {}, { verifyCmd: values["verify-cmd"] });
+        const envelope = synthesizeWebEnvelope(templateName, {}, { verifyCmd: values["verify-cmd"] || values.verify });
         if (values.json) {
           console.log(JSON.stringify({ ok: true, ...envelope }, null, 2));
         } else {
@@ -1971,6 +1973,7 @@ async function main() {
             dir: { type: "string", short: "d" },
             web: { type: "boolean", short: "w" },
             json: { type: "boolean", short: "j" },
+            verify: { type: "string" },
             "verify-cmd": { type: "string", short: "v" },
             "dry-run": { type: "boolean" },
           },
@@ -1982,7 +1985,7 @@ async function main() {
         const promptText = resolvePromptInput(values, positionals);
 
         if (values.fix) {
-          const opt = optimizeTaskPrompt(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"], web: values.web });
+          const opt = optimizeTaskPrompt(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"] || values.verify, web: values.web });
           if (values.json) {
             console.log(JSON.stringify(opt, null, 2));
           } else {
@@ -1991,7 +1994,7 @@ async function main() {
           process.exit(0);
         }
 
-        const analysis = scorePromptFalsifiability(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"] });
+        const analysis = scorePromptFalsifiability(promptText, { rootDir: targetDir, verifyCmd: values["verify-cmd"] || values.verify });
         if (values.json) {
           console.log(JSON.stringify(analysis, null, 2));
         } else {

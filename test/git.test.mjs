@@ -55,6 +55,12 @@ test("src/git.mjs Unit Tests", async (t) => {
     assert.equal(resArray.stdout, "hello from node");
     assert.equal(resArray.stderr, "");
 
+    // Command emitting to stderr while exiting 0 (e.g. bun test output)
+    const resStderr = runCmd([process.execPath, "-e", "console.log('out'); console.error('err')"], { cwd: tmpRoot });
+    assert.equal(resStderr.status, 0);
+    assert.equal(resStderr.stdout, "out");
+    assert.equal(resStderr.stderr, "err");
+
     // String command without shell
     const resStr = runCmd(`"${process.execPath}" -e "console.log(123)"`, { cwd: tmpRoot });
     assert.equal(resStr.status, 0);

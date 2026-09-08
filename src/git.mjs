@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, statSync, lstatSync, readlinkSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { tmpdir } from "node:os";
@@ -216,16 +216,17 @@ export function runCmd(command, opts = {}) {
   }
 
   try {
-    const stdout = useShell
-      ? execSync(shellCmd, {
+    const ret = useShell
+      ? spawnSync(shellCmd, {
           cwd,
           encoding: "utf-8",
+          shell: true,
           stdio: ["ignore", "pipe", "pipe"],
           env: childEnv,
           timeout,
           maxBuffer,
         })
-      : execFileSync(winSpawn ? winSpawn.file : binary, winSpawn ? winSpawn.args : args, {
+      : spawnSync(winSpawn ? winSpawn.file : binary, winSpawn ? winSpawn.args : args, {
           cwd,
           encoding: "utf-8",
           shell: winShim,
@@ -236,20 +237,14 @@ export function runCmd(command, opts = {}) {
           maxBuffer,
         });
 
-    return { status: 0, stdout: String(stdout || "").trim(), stderr: "" };
-  } catch (err) {
-    const isTimeout = err.code === "ETIMEDOUT" || (err.signal === "SIGTERM" && err.killed);
-    const isNobufs = err.code === "ENOBUFS" || (err.message && err.message.includes("maxBuffer"));
+    const isTimeout = Boolean(ret.error && (ret.error.code === "ETIMEDOUT" || (ret.signal === "SIGTERM" && ret.error.killed)));
+    const isNobufs = Boolean(ret.error && (ret.error.code === "ENOBUFS" || (ret.error.message && ret.error.message.includes("maxBuffer"))));
 
-    const status = err.status || (isTimeout ? 124 : 1);
-    let stdout = (err.stdout || "").toString().trim();
-    let stderr = (err.stderr || err.message || "").toString().trim();
+    const status = typeof ret.status === "number" ? ret.status : (isTimeout ? 124 : 1);
+    let stdout = (ret.stdout || "").toString().trim();
+    let stderr = (ret.stderr || (ret.error && ret.error.message) || "").toString().trim();
 
     if (isTimeout) {
-      // Node's own message for this is `spawnSync sh ETIMEDOUT`, which already
-      // contains the token the old guard tested for — so the explanation was
-      // skipped exactly when it was needed, and the user was left with five
-      // words that name neither the limit nor the way to raise it.
       stderr =
         `Command execution timed out after ${timeout}ms (ETIMEDOUT). ` +
         `The command was killed, not failed: raise verify.timeout_ms in ` +
@@ -260,17 +255,31 @@ export function runCmd(command, opts = {}) {
       stderr = `Command output buffer exceeded limit of ${maxBuffer} bytes (ENOBUFS)${stderr ? "\n" + stderr : ""}`;
     }
 
-    if (opts.ignoreError) {
-      return { status, stdout, stderr };
+    if (ret.error || status !== 0) {
+      if (opts.ignoreError) {
+        return { status, stdout, stderr };
+      }
+
+      if (isTimeout) {
+        throw new GateError(`Command execution timed out (ETIMEDOUT): ${useShell ? shellCmd : binary}`, { code: status });
+      }
+      if (isNobufs) {
+        throw new GateError(`Command output buffer exceeded limit (ENOBUFS): ${useShell ? shellCmd : binary}`, { code: status });
+      }
+
+      const err = ret.error || new Error(`Command failed with status ${status}: ${useShell ? shellCmd : binary}`);
+      err.status = status;
+      err.code = status;
+      err.stdout = stdout;
+      err.stderr = stderr;
+      throw err;
     }
 
-    if (isTimeout) {
-      throw new GateError(`Command execution timed out (ETIMEDOUT): ${useShell ? shellCmd : binary}`, { code: status });
+    return { status: 0, stdout, stderr };
+  } catch (err) {
+    if (opts.ignoreError && !(err instanceof GateError)) {
+      return { status: err.status || 1, stdout: (err.stdout || "").toString().trim(), stderr: (err.stderr || err.message || "").toString().trim() };
     }
-    if (isNobufs) {
-      throw new GateError(`Command output buffer exceeded limit (ENOBUFS): ${useShell ? shellCmd : binary}`, { code: status });
-    }
-
     throw err;
   }
 }

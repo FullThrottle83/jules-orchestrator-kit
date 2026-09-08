@@ -184,7 +184,31 @@ test("detectPolyglotStack - package manager lockfiles and missing scripts.test",
     res = detectPolyglotStack(tmp);
     assert.equal(res.stack, "bun");
     assert.equal(res.testCmd, "bun test");
+    assert.equal(res.buildCmd, "bun run build");
     rmSync(join(tmp, "bun.lock"));
+    rmSync(join(tmp, "package.json"));
+
+    // 5. Pure Bun project (bunfig.toml without package.json) -> buildCmd is empty
+    writeFileSync(join(tmp, "bunfig.toml"), "");
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "bun");
+    assert.equal(res.testCmd, "bun test");
+    assert.equal(res.buildCmd, "");
+    rmSync(join(tmp, "bunfig.toml"));
+
+    // 6. Pure Deno project (deno.json without tasks.build) -> buildCmd is empty
+    writeFileSync(join(tmp, "deno.json"), JSON.stringify({ tasks: { test: "deno test" } }));
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "deno");
+    assert.equal(res.testCmd, "deno test");
+    assert.equal(res.buildCmd, "");
+
+    // 7. Deno project with tasks.build -> buildCmd is "deno task build"
+    writeFileSync(join(tmp, "deno.json"), JSON.stringify({ tasks: { build: "deno compile main.ts" } }));
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "deno");
+    assert.equal(res.buildCmd, "deno task build");
+    rmSync(join(tmp, "deno.json"));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

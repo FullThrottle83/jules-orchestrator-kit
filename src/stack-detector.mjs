@@ -475,11 +475,27 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
       : existsSync(join(projectRoot, "bun.lockb"))
       ? "bun.lockb"
       : "bun.lock";
-    return { ...container, stack: "bun", setupCmd, testCmd: "bun test", buildCmd: "bun run build", triggerFile };
+    let buildCmd = "";
+    if (existsSync(join(projectRoot, "package.json"))) {
+      try {
+        const pkg = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
+        if (pkg && typeof pkg === "object" && pkg.scripts && pkg.scripts.build) {
+          buildCmd = "bun run build";
+        }
+      } catch (_) {}
+    }
+    return { ...container, stack: "bun", setupCmd, testCmd: "bun test", buildCmd, triggerFile };
   }
   if (existsSync(join(projectRoot, "deno.json")) || existsSync(join(projectRoot, "deno.jsonc"))) {
     const triggerFile = existsSync(join(projectRoot, "deno.json")) ? "deno.json" : "deno.jsonc";
-    return { ...container, stack: "deno", setupCmd, testCmd: "deno test", buildCmd: "deno task build", triggerFile };
+    let buildCmd = "";
+    try {
+      const denoConfig = JSON.parse(readFileSync(join(projectRoot, triggerFile), "utf-8"));
+      if (denoConfig && typeof denoConfig === "object" && denoConfig.tasks && denoConfig.tasks.build) {
+        buildCmd = "deno task build";
+      }
+    } catch (_) {}
+    return { ...container, stack: "deno", setupCmd, testCmd: "deno test", buildCmd, triggerFile };
   }
   if (existsSync(join(projectRoot, "package.json"))) {
     const hasPnpm = existsSync(join(projectRoot, "pnpm-lock.yaml"));

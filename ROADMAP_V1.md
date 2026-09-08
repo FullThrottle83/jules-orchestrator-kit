@@ -11,13 +11,18 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.72.1 (Current Stable) ──► v0.73.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Staged Diff & Dead Guards)  (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
+ v0.72.2 (Current Stable) ──► v0.73.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Child Streams & Bun/Deno)   (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.72.1)
+## ✅ Shipped Milestones (v0.20.0 – v0.72.2)
+
+### v0.72.2: Child Process Stream Fidelity & Polyglot Build Detection
+- [x] **Child Process Stream Fidelity (`src/git.mjs`)** — `runCmd()` invokes native `spawnSync`, preserving both `stdout` and `stderr` streams on exit 0 so test runners emitting summaries to stderr (`bun test`) are fully recognized by `parseCollectedTests`.
+- [x] **Conditional Polyglot Build Resolution (`src/stack-detector.mjs`)** — Bun and Deno projects without declared build scripts default to `buildCmd: ""`, preventing `agentctl gate` false reds during pure script verification.
+- [x] **CLI Flag Parity (`bin/agentctl.mjs`)** — `--verify` supported alongside `--verify-cmd` across `agentctl task create`, `task template`, and `task optimize`.
 
 ### v0.72.1: Staged Mode Diff Fidelity & Indentation-Aware Tamper Defense
 - [x] **Staged Mode Diff Fidelity (`src/git.mjs`)** — `diffText` in staged mode queries `git diff --cached <base>`, ensuring staged additions on feature branches are visible to secret and tamper scanners.

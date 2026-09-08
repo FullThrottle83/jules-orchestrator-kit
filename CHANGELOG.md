@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.72.2] - 2026-09-08
+*A test suite that writes to stderr did not write silence.*
+
+Fixes stream preservation in child process execution, stack-detection build defaults, and CLI flag parity uncovered during Bun + TypeScript trial execution:
+- **Child Process Stream Fidelity & Stderr Preservation (`src/git.mjs`)**: `runCmd()` used `execSync`/`execFileSync` which hardcoded `stderr: ""` on zero exit status. Test runners that print progress and summary statistics to `stderr` (notably `bun test`) had their results silenced, causing `parseCollectedTests` to report unverified test counts. `runCmd()` now invokes `spawnSync` natively, capturing both `stdout` and `stderr` streams regardless of exit status.
+- **Conditional Build Command Resolution (`src/stack-detector.mjs`)**: Bun and Deno detectors previously assigned `buildCmd: "bun run build"` and `buildCmd: "deno task build"` unconditionally upon discovering `bunfig.toml` or `deno.json`. In pure zero-dependency projects lacking a `build` script/task, `agentctl gate` failed in the build stage. `detectPolyglotStack()` now checks `package.json` (or `deno.json`) for explicit build scripts before populating `buildCmd`.
+- **CLI Ergonomics & Alias Parity (`bin/agentctl.mjs`)**: Added `--verify` as a first-class alias for `--verify-cmd` across `agentctl task create`, `task template`, and `task optimize`.
+
 ## [0.72.1] - 2026-09-08
 *A diff cannot judge what it cannot see.*
 
