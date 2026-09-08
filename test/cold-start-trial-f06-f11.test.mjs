@@ -244,3 +244,55 @@ describe("F11 — Python src-layout detection", () => {
     }
   });
 });
+
+describe("Staged mode diff & anti-tamper gate integration", () => {
+  it("detects staged test tampering in git index when on a feature branch", async () => {
+    const { dir, git } = setupGitRepo();
+    try {
+      // Base on main with passing tests
+      mkdirSync(join(dir, "tests"), { recursive: true });
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      writeFileSync(
+        join(dir, ".agent", "config.yml"),
+        "version: 1\nverify:\n  test: 'node --test tests/*.test.js'\n"
+      );
+      writeFileSync(
+        join(dir, "tests", "calc.test.js"),
+        "import { test } from 'node:test';\nimport assert from 'node:assert';\ntest('math', () => {\n  assert.equal(1, 1);\n});\n"
+      );
+      git(["add", "."]);
+      git(["commit", "-qm", "feat: initial passing suite"]);
+
+      // Create feature branch
+      git(["checkout", "-b", "feature/staged-test"]);
+
+      // Legitimate commit on branch
+      writeFileSync(
+        join(dir, "feature.js"),
+        "export const f = 1;\n"
+      );
+      git(["add", "feature.js"]);
+      git(["commit", "-qm", "feat: add feature file"]);
+
+      // Stage an adversarial vacuous assertion change in git index
+      writeFileSync(
+        join(dir, "tests", "calc.test.js"),
+        "import { test } from 'node:test';\nimport assert from 'node:assert';\ntest('math', () => {\n  if (false) {\n    assert.equal(1, 1);\n  }\n});\n"
+      );
+      git(["add", "tests/calc.test.js"]);
+
+      const res = await gate({ root: dir, base: "main", mode: "staged" });
+      assert.equal(res.ok, false, "gate must reject staged tampering");
+      assert.equal(res.code, 6, "must reject with Exit 6 (Secrets / Anti-Tamper)");
+      const secretPhase = res.phases.find((p) => p.phase === "secrets");
+      assert.ok(
+        secretPhase.findings.some(
+          (f) => f.type === "TEST_TAMPERING_DETECTED" && f.description.includes("condition that can never be true")
+        ),
+        "must report dead condition finding"
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -453,6 +453,8 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
       } catch (_) {}
     }
     return [committed, uncommitted, untrackedDiff].filter(Boolean).join("\n");
+  } else if (mode === "staged" || mode === "index") {
+    return git(["diff", "--cached", resolvedRef], { cwd: root, raw: true });
   }
   return git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
 }

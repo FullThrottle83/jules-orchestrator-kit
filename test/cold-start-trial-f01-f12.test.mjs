@@ -228,6 +228,39 @@ describe("F05 — an impossible condition cannot neutralise an assertion", () =>
     );
   });
 
+  it("blocks Python indentation-based dead conditions (if False:)", () => {
+    assert.ok(
+      blocks(
+        "tests/test_limiter.py",
+        ['        self.assertFalse(limiter.is_allowed("10.0.0.1"))'],
+        ["        if False:", '            self.assertFalse(limiter.is_allowed("10.0.0.1"))'],
+        { context: "    def test_cidr():" }
+      )
+    );
+  });
+
+  it("blocks Python single-line dead condition (if False: assert...)", () => {
+    assert.ok(
+      blocks(
+        "tests/test_limiter.py",
+        ['        self.assertFalse(limiter.is_allowed("10.0.0.1"))'],
+        ['        if False: self.assertFalse(limiter.is_allowed("10.0.0.1"))'],
+        { context: "    def test_cidr():" }
+      )
+    );
+  });
+
+  it("blocks JavaScript/TypeScript if (false) dead assertion block", () => {
+    assert.ok(
+      blocks(
+        "test/limiter.test.js",
+        ['    expect(limiter.isAllowed("10.0.0.1")).toBe(false);'],
+        ["    if (false) {", '        expect(limiter.isAllowed("10.0.0.1")).toBe(false);', "    }"],
+        { context: "it('filters', () => {" }
+      )
+    );
+  });
+
   it("stays silent for a reachable guard (len(x) == 0) and an honest retarget", () => {
     assert.ok(
       silent(

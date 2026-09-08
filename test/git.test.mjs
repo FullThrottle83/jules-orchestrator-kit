@@ -215,6 +215,10 @@ test("src/git.mjs Unit Tests", async (t) => {
     const stagedChanged = changedFiles(tmpRoot, "main", "staged");
     assert.ok(stagedChanged.includes("feature.txt"));
     assert.ok(stagedChanged.includes("staged.txt"));
+
+    const stagedDiff = diffText(tmpRoot, "main", "staged");
+    assert.ok(stagedDiff.includes("staged content"), "staged diffText must include cached index additions");
+    assert.ok(stagedDiff.includes("feature content"), "staged diffText must include branch commits against base");
   });
 
   await t.test("worktreeRemove and worktreePrune helpers", () => {

@@ -11,14 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.72.0 (Current Stable) ──► v0.73.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Cold-Start Hardened Kernel) (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
+ v0.72.1 (Current Stable) ──► v0.73.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Staged Diff & Dead Guards)  (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.72.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.72.1)
 
+### v0.72.1: Staged Mode Diff Fidelity & Indentation-Aware Tamper Defense
+- [x] **Staged Mode Diff Fidelity (`src/git.mjs`)** — `diffText` in staged mode queries `git diff --cached <base>`, ensuring staged additions on feature branches are visible to secret and tamper scanners.
+- [x] **Universal Dead Guard Detection (`src/security.mjs`)** — extended `DEAD_GUARD_CONDITION` to recognize literal falsities (`if False:`, `if (false)`, `if 0:`).
+- [x] **Indentation-Aware Block Traversal (`src/security.mjs`)** — detects dead-guard assertions and failure calls in indentation-based languages (Python) without requiring `{}` braces.
+- [x] **Comprehensive Guard Call Detection (`src/security.mjs`)** — `VACUOUS_ASSERTION` now covers both failure calls and test assertions.
 
 ### v0.72.0: Cold-Start Hardened Kernel & Tamper Defense
 - [x] **Canonical Root Test Guard (F01)** — `test.js` at repository root is inside the tamper guard.

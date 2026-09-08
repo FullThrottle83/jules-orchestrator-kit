@@ -208,7 +208,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
 * **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **1399 unit tests across 195 suites**, green on every supported platform.
+* **Verified Test Suite:** Tested with **1403 unit tests across 196 suites**, green on every supported platform.
 
 <br/>
 
@@ -448,6 +448,7 @@ const result = await fast.dispatch({ prompt: "Fix a typo." }, { root: process.cw
 
 | Feature | Module / Command | Architectural Description | Status |
 | :--- | :--- | :--- | :---: |
+| **Staged Diff Fidelity & Indentation Dead Guards** | `src/git.mjs`, `src/security.mjs` | Query cached index in staged mode (`git diff --cached <base>`), detect literal falsity dead guards (`if False:`, `if (false)`, `if 0:`), and support indentation-aware block traversal for Python test suites. | **v0.72.1** *(Shipped)* |
 | **Cold-Start Hardened Kernel & Tamper Defense** | `src/config.mjs`, `src/engine.mjs`, `src/git.mjs`, `src/security.mjs` | Full remediation of 22 cold-start audit findings (F01–F22): authoritative base policy resolution, ephemeral snapshot worktree isolation, canonical root test tamper guard, conditional assertion defense, multi-target Cargo test aggregation, Python src-layout injection, and complete repository uninstall documentation. | **v0.72.0** *(Shipped)* |
 | **Silence Is Not A Suite & Scaffolding Linter Fixes** | `src/ops/test-collection.mjs`, `src/wizard-init.mjs`, `src/config.mjs` | Reject zero-output test suite commands, quote-aware YAML parser with scalar emission, test de-registration detection (`TEST_DEREGISTERED`), and active waiver telemetry banner. | **v0.71.0** *(Shipped)* |
 | **Diagnostics That Reach the Operator** | `src/security.mjs`, `src/engine.mjs`, `bin/agentctl.mjs` | Secret findings name the file and line, a failed verify stage reports its command, exit code and output, and `queue`/`swarm` name each failed task and exit `1` rather than reporting success for a run that dispatched nothing. | **v0.41.1** *(Shipped)* |

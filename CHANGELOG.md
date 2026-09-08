@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.72.1] - 2026-09-08
+*A diff cannot judge what it cannot see.*
+
+Fixes staged-mode diff extraction and cross-language dead-guard detection uncovered during polyglot trial execution on Python/Make repositories:
+- **Staged Mode Diff Fidelity (`src/git.mjs`)**: `diffText(root, base, "staged")` failed to query the git index, falling through to `git diff <base>...HEAD`. Consequently, staged modifications (`git add`) on feature branches were omitted from the diff passed to the secret scanner and anti-tamper guard. `diffText` now queries `git diff --cached <base>` in staged mode, ensuring cached index additions are fully inspected.
+- **Indentation-Aware Dead Guard Tamper Detection (`src/security.mjs`)**: Extended `DEAD_GUARD_CONDITION` to recognize literal boolean and zero falsities (`if False:`, `if (false)`, `if 0:`). Replaced brace-only block tracking with indentation-aware block traversal, enabling Python, YAML, and brace-less test suites to detect assertions and failure calls shielded inside dead logic.
+- **Assertion Coverage in Dead Conditions (`src/security.mjs`)**: `VACUOUS_ASSERTION` now detects both failure calls (`FAILURE_CALL`) and test assertions (`ASSERTION_PATTERN`) inside dead blocks.
+
 ## [0.72.0] - 2026-09-08
 *A guard is not a policy if the diff under review can rewrite the rules.*
 

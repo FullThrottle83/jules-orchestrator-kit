@@ -2395,7 +2395,7 @@ export const TAMPER_KIND_NAMES = Object.freeze([...new Set(TAMPER_KINDS.values()
  * branch behind real state) is not guessable and is deliberately left alone.
  */
 const DEAD_GUARD_CONDITION =
-  /\bif\b[^;{}]*\b(?:len|len\s+of|count|size|length|num\w*|total)\s*\([^)]*\)\s*(?:<\s*0|<\s*-0\b)|<=\s*-1\b/i;
+  /\bif\b[^;{}]*\b(?:len|len\s+of|count|size|length|num\w*|total)\s*\([^)]*\)\s*(?:<\s*0|<\s*-0\b|<=\s*-1\b)|\bif\s+(?:False|false|0)\s*(?::|\{|$|\b)|\bif\s*\(\s*(?:False|false|0)\s*\)/;
 
 /**
  * The calls a test uses to say "this failed": the assertion's actual teeth.
@@ -2983,24 +2983,49 @@ export function checkTestTampering(diffOrText = "", options = {}) {
         if (L.kind !== "+" || !DEAD_GUARD_CONDITION.test(L.text)) continue;
         const guardLineNo = L.newNo;
         const guardText = L.text;
-                let depth = (guardText.match(/\{/g) || []).length - (guardText.match(/\}/g) || []).length;
-        let found = depth > 0 && FAILURE_CALL.test(guardText.slice(guardText.indexOf("{")));
-        for (let k = i + 1; k < hunk.lines.length && depth > 0; k++) {
-          const t = hunk.lines[k].text || "";
-          const opens = (t.match(/\{/g) || []).length;
-          const closes = (t.match(/\}/g) || []).length;
-          if (depth > 0 && FAILURE_CALL.test(t)) { found = true; break; }
-          depth += opens - closes;
+        const isFailureOrAssertion = (text) => FAILURE_CALL.test(text) || ASSERTION_PATTERN.test(text);
+        let found = false;
+
+        if (guardText.includes("{")) {
+          let depth = (guardText.match(/\{/g) || []).length - (guardText.match(/\}/g) || []).length;
+          if (depth > 0 && isFailureOrAssertion(guardText.slice(guardText.indexOf("{")))) {
+            found = true;
+          }
+          for (let k = i + 1; k < hunk.lines.length && depth > 0; k++) {
+            const t = hunk.lines[k].text || "";
+            const opens = (t.match(/\{/g) || []).length;
+            const closes = (t.match(/\}/g) || []).length;
+            if (depth > 0 && isFailureOrAssertion(t)) { found = true; break; }
+            depth += opens - closes;
+          }
+        } else {
+          // Indentation-based block (Python, etc.) or single-line guard without braces
+          const colonIdx = guardText.indexOf(":");
+          const parenIdx = guardText.lastIndexOf(")");
+          const afterGuard = colonIdx !== -1 ? guardText.slice(colonIdx + 1) : (parenIdx !== -1 ? guardText.slice(parenIdx + 1) : "");
+          if (afterGuard && isFailureOrAssertion(afterGuard)) {
+            found = true;
+          } else {
+            const guardIndent = (guardText.match(/^\s*/)?.[0] || "").length;
+            for (let k = i + 1; k < hunk.lines.length; k++) {
+              const t = hunk.lines[k].text || "";
+              if (!t.trim() || isCommentLine(t)) continue;
+              const lineIndent = (t.match(/^\s*/)?.[0] || "").length;
+              if (lineIndent <= guardIndent) break;
+              if (isFailureOrAssertion(t)) { found = true; break; }
+            }
+          }
         }
+
         if (found) {
           violations.push({
             file,
             line: guardLineNo,
             type: "VACUOUS_ASSERTION",
             reason:
-              `Test Tamper Guard: the failure call in ${file}${guardLineNo ? `:${guardLineNo}` : ""} ` +
+              `Test Tamper Guard: the assertion or failure call in ${file}${guardLineNo ? `:${guardLineNo}` : ""} ` +
               `is guarded by a condition that can never be true ("${collapseWhitespace(guardText).trim()}"), so the ` +
-              `assertion cannot fail. Keeping the failure call in dead logic is not preservation of verification.`,
+              `assertion cannot fail. Keeping the assertion in dead logic is not preservation of verification.`,
           });
         }
       }
