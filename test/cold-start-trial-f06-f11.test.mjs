@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -17,6 +17,7 @@ function setupGitRepo(initialBranch = "main") {
   git(["init", "-q", "-b", initialBranch]);
   git(["config", "user.email", "test@example.com"]);
   git(["config", "user.name", "Test User"]);
+  git(["config", "core.autocrlf", "false"]);
   return { dir, git };
 }
 
@@ -185,7 +186,7 @@ describe("F10 — Materialize snapshot isolation", () => {
 
       const snapshot = materializeSnapshot(dir, "staged", "HEAD");
       try {
-        const snapContent = execFileSync("cat", [join(snapshot.cwd, "app.js")], { encoding: "utf-8" });
+        const snapContent = readFileSync(join(snapshot.cwd, "app.js"), "utf-8").replace(/\r\n/g, "\n");
         assert.equal(snapContent, "const v = 2;\n", "must match staged index, not dirty working tree");
         assert.equal(existsSync(join(snapshot.cwd, "dirty-untracked.js")), false, "untracked files must not leak");
       } finally {
@@ -209,7 +210,7 @@ describe("F10 — Materialize snapshot isolation", () => {
 
       const snapshot = materializeSnapshot(dir, "committed", "HEAD~1");
       try {
-        const content = execFileSync("cat", [join(snapshot.cwd, "file.txt")], { encoding: "utf-8" });
+        const content = readFileSync(join(snapshot.cwd, "file.txt"), "utf-8").replace(/\r\n/g, "\n");
         assert.equal(content, "rev1\n");
       } finally {
         snapshot.cleanup();
