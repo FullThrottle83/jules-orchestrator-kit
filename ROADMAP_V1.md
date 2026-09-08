@@ -221,8 +221,8 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ### v0.73.0: Distributed File Leases & Preemptive DAG Scheduling
 - [ ] **Atomic Filesystem Lease & Heartbeat Protocol (`src/engine.mjs`, `src/flaky-ledger.mjs`)** — Directory-mutex file leasing with heartbeat timestamps, stale-lock detection via PID liveness inspection, and tombstone rotation without third-party daemons or Redis.
 - [ ] **Preemptive Task Cancellation & Interface Fingerprints (`src/dag-engine.mjs`)** — Automatically aborts and yields downstream swarm tasks when upstream exported symbol interfaces diverge from their cryptographic SHA-256 fingerprints.
-- [ ] **POSIX/Win32 Process Group Guillotine (`src/engine.mjs`)** — Tree teardown via `process.kill(-pid, 'SIGKILL')` on POSIX and `taskkill /T /F /PID` on Windows to eliminate orphaned dev-servers and background watchers.
-- [ ] **Unicode Trojan Source & Homoglyph Fencing (`src/security.mjs`)** — Deterministic token scanner using V8 Unicode Property Escapes (`\p{Script=...}`) and NFKC normalization to block invisible Bidi overrides (CVE-2021-42574) and mixed-script homoglyphs.
+- [ ] **POSIX/Win32 Process Group Guillotine (`src/git.mjs:runCmd`, `src/engine.mjs`)** — Tree teardown via `process.kill(-pid, 'SIGKILL')` on POSIX and `taskkill /T /F /PID` on Windows in `runCmd` to eliminate orphaned test runners, dev-servers and background watchers on timeout (`ETIMEDOUT`).
+- [ ] **Unicode Trojan Source & Homoglyph Fencing (`src/security.mjs`)** — Deterministic token scanner using V8 Unicode Property Escapes (`\p{Script=...}`) and NFKC normalization to block invisible Bidi overrides (CVE-2021-42574, isolates partially patched in PR #21) and mixed-script homoglyphs.
 
 ---
 
