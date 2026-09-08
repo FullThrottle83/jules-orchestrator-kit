@@ -529,7 +529,7 @@ export function checkCrossPackageImports(diffOrText = "", root = process.cwd(), 
 
 // Zero-width and bidi-control characters. Inserting one mid-token defeats a
 // regex without changing how the value renders, copies, or authenticates.
-const INVISIBLE_CHARS = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\uFEFF]/g;
+const INVISIBLE_CHARS = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
 
 // Unicode lookalikes that NFKD does NOT decompose. Full-width and other
 // compatibility forms are handled by String#normalize("NFKD") below; these are
@@ -552,6 +552,8 @@ const CONFUSABLE_TO_ASCII = new Map([
   ["ſ", "s"], // U+017F LATIN SMALL LETTER LONG S
   ["K", "K"], // U+212A KELVIN SIGN
 ]);
+
+const CONFUSABLE_REGEX = new RegExp([...CONFUSABLE_TO_ASCII.keys()].join("|"), "g");
 
 /**
  * Reduces the confusable spellings a credential can hide behind to plain
@@ -578,9 +580,7 @@ function normalizeSecretText(str) {
     out = out.normalize("NFKD");
   } catch (_) {}
   out = out.replace(/[\u0300-\u036f]/g, "");
-  for (const [from, to] of CONFUSABLE_TO_ASCII) {
-    out = out.split(from).join(to);
-  }
+  out = out.replace(CONFUSABLE_REGEX, (m) => CONFUSABLE_TO_ASCII.get(m));
   return out;
 }
 

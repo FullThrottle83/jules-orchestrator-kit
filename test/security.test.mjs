@@ -326,6 +326,24 @@ describe("a secret finding names where the secret is", () => {
     assert.doesNotMatch(res.findings[0].description, /\(/);
   });
 
+  it("handles Trojan Source Bidi isolates properly", () => {
+    // Ensure Bidi isolates (\u2066-\u2069) are stripped and the underlying secret is caught.
+    const bidiStr = "\u2066AKIA\u2067IOSFO\u2068DNN7E\u2069XAMPLE";
+    const res = scanDiff(`+const hidden = "${bidiStr}";`);
+    assert.equal(res.ok, false);
+    assert.equal(res.findings[0].severity, "CRITICAL");
+    assert.equal(res.findings[0].type, "HIGH_CONFIDENCE_SECRET");
+  });
+
+  it("handles homoglyphs via NFKD mapping correctly", () => {
+    // Ensure Cyrillic/Greek homoglyphs translate back to ASCII and a secret is caught.
+    const homoStr = "ghp_рΑАΒЕ" + "a".repeat(31);
+    const res = scanDiff(`+const confusable = "${homoStr}";`);
+    assert.equal(res.findings[0].file, null);
+    assert.equal(res.findings[0].line, null);
+    assert.doesNotMatch(res.findings[0].description, /\(/);
+  });
+
   it("gives each file its own decode budget", () => {
     // The budget used to be spent across the whole diff, so a lockfile early in
     // a patch could exhaust it and leave every later file undecoded.
