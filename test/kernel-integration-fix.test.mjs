@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync, rmSync, existsSync, utimesSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, existsSync, utimesSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reapStaleMutexDirs, reapOrphanedIntents, journalIntent } from "../src/journal.mjs";
 import { getStateDir, getLockDir, getProcessStartTime, checkDailyBudget, reserveBudgetAtomic, appendLedger } from "../src/state.mjs";
 import { NET_GUARD_PRELOAD_URL, NET_GUARD_FLAG } from "../src/git.mjs";
 
 test("Integration Safety & Lock/Reaper Edge Cases (Kernel Integration Fixes)", async (t) => {
-  const tmpRoot = join(process.cwd(), `.test-kernel-fix-${Date.now()}`);
+  const tmpRoot = mkdtempSync(join(tmpdir(), "kernel-fix-"));
 
   t.after(() => {
     try {
