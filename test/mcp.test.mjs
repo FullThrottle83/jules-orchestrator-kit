@@ -247,9 +247,9 @@ test("Model Context Protocol (MCP) Server", async (t) => {
         jsonrpc: "2.0",
         id: 302,
         method: "tools/call",
-        params: { name: "jules_list_sessions", arguments: {} },
+        params: { name: "jules_list_sessions", arguments: { dryRun: true } },
       },
-      { config: { provider: "jules" } }
+      { config: { provider: "jules" }, dryRun: true }
     );
     assert.equal(resList.jsonrpc, "2.0");
     assert.equal(resList.id, 302);

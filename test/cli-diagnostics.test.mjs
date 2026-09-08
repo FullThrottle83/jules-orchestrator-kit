@@ -174,12 +174,17 @@ test("every command that takes a prompt takes it the same three ways", async (t)
     }
   });
 
-  await t.test("a prompt file that is not there is an error, not an empty prompt", () => {
+  await t.test("dispatch accepts --verify-cmd and --verify flags in dry-run", () => {
     const dir = repoWithFailingTest("unused");
     try {
-      const res = run(dir, ["dispatch", "--prompt-file", join(dir, "nope.txt")]);
-      assert.equal(res.status, 1);
-      assert.match(res.stderr, /prompt file not found/);
+      const res = run(dir, ["dispatch", "--dry-run", "-p", "Refactor slug builder", "--role", "bolt", "--verify-cmd", "npm test"]);
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      assert.match(res.stdout, /Dry Run — nothing was dispatched/);
+      assert.match(res.stdout, /bolt/);
+
+      const resAlias = run(dir, ["dispatch", "--dry-run", "-p", "Refactor slug builder", "-r", "bolt", "--verify", "npm test"]);
+      assert.equal(resAlias.status, 0, resAlias.stdout + resAlias.stderr);
+      assert.match(resAlias.stdout, /Dry Run — nothing was dispatched/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

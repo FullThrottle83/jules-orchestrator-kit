@@ -293,6 +293,8 @@ async function main() {
           "check-premise": { type: "boolean" },
           idempotent: { type: "boolean" },
           author: { type: "string" },
+          "verify-cmd": { type: "string", short: "v" },
+          verify: { type: "string" },
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
         },
@@ -333,6 +335,7 @@ async function main() {
         requirePlanApproval: values["require-plan-approval"],
         checkPremise: values["check-premise"] || values.idempotent,
         author: values.author,
+        verifyCmd: values["verify-cmd"] || values.verify,
       };
 
       try {

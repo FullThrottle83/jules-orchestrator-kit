@@ -563,9 +563,11 @@ export async function handleMcpRequest(request, opts = {}) {
         };
       }
 
+      const isDryRun = Boolean(args.dryRun ?? opts?.dryRun ?? opts?.config?.dryRun);
+
       if (toolName === "jules_list_sessions") {
         const provider = createProvider(config.provider || "jules", config);
-        const res = await provider.listSessions({ root, pageSize: args.pageSize, pageToken: args.pageToken });
+        const res = await provider.listSessions({ root, pageSize: args.pageSize, pageToken: args.pageToken, dryRun: isDryRun });
         return {
           jsonrpc: "2.0",
           id,
@@ -584,7 +586,7 @@ export async function handleMcpRequest(request, opts = {}) {
           };
         }
         const provider = createProvider(config.provider || "jules", config);
-        const res = await provider.listActivities(args.sessionId, { root, pageSize: args.pageSize, pageToken: args.pageToken });
+        const res = await provider.listActivities(args.sessionId, { root, pageSize: args.pageSize, pageToken: args.pageToken, dryRun: isDryRun });
         return {
           jsonrpc: "2.0",
           id,
@@ -621,7 +623,7 @@ export async function handleMcpRequest(request, opts = {}) {
           };
         }
         const provider = createProvider(config.provider || "jules", config);
-        const res = await provider.archiveSession(args.sessionId, { root });
+        const res = await provider.archiveSession(args.sessionId, { root, dryRun: isDryRun });
         return {
           jsonrpc: "2.0",
           id,
@@ -640,7 +642,7 @@ export async function handleMcpRequest(request, opts = {}) {
           };
         }
         const provider = createProvider(config.provider || "jules", config);
-        const res = await provider.deleteSession(args.sessionId, { root });
+        const res = await provider.deleteSession(args.sessionId, { root, dryRun: isDryRun });
         return {
           jsonrpc: "2.0",
           id,
