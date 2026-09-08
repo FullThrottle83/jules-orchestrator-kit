@@ -92,6 +92,12 @@ test("detectEdgeRuntime - detects wrangler configs and edge packages", () => {
     assert.equal(res.edgePlatform, "cloudflare");
     rmSync(join(tmp, "wrangler.toml"));
 
+    writeFileSync(join(tmp, "wrangler.jsonc"), '{\n  // Cloudflare worker config\n  "name": "worker"\n}');
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.isEdgeRuntime, true);
+    assert.equal(res.edgePlatform, "cloudflare");
+    rmSync(join(tmp, "wrangler.jsonc"));
+
     writeFileSync(join(tmp, "package.json"), '{"devDependencies": {"@vercel/edge": "^1.0.0"}}');
     res = detectPolyglotStack(tmp);
     assert.equal(res.isEdgeRuntime, true);

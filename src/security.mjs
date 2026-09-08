@@ -3,7 +3,7 @@ import { isTestPath } from "./test-paths.mjs";
 import { dirname, join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import { canonicalizePath, isWindowsAbsolutePath } from "./config.mjs";
-import { detectCrossPackageBoundaryViolations } from "./stack-detector.mjs";
+import { detectCrossPackageBoundaryViolations, detectEdgeRuntime } from "./stack-detector.mjs";
 
 export const HIGH_CONFIDENCE_PATTERNS = [
   /\bghp_[A-Za-z0-9_]{36,255}\b/g,
@@ -448,7 +448,8 @@ export function checkEdgeRuntimeImports(diffOrText = "", options = {}) {
 
   const isEdgeExplicit = options.isEdgeRuntime === true;
   const hasEdgeExport = /export\s+const\s+runtime\s*=\s*['"]edge['"]/i.test(diffOrText);
-  const isEdgeContext = isEdgeExplicit || hasEdgeExport;
+  const isEdgeDetected = options.root ? detectEdgeRuntime(options.root).isEdgeRuntime : false;
+  const isEdgeContext = isEdgeExplicit || hasEdgeExport || isEdgeDetected;
 
   if (!isEdgeContext) {
     return { ok: true, violations: [] };

@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   shannonEntropy,
   redactSecrets,
@@ -139,6 +142,27 @@ describe("src/security.mjs", () => {
     assert.equal(res.findings.length, 1);
     assert.equal(res.findings[0].type, "EDGE_RUNTIME_VIOLATION");
     assert.ok(res.findings[0].description.includes("node:fs"));
+  });
+
+  it("checkEdgeRuntimeImports auto-detects Edge runtime from repository root config (wrangler.jsonc)", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "edge-root-test-"));
+    try {
+      writeFileSync(join(tmp, "wrangler.jsonc"), '{\n  "name": "edge-svc"\n}');
+      const rawDiff = `
+--- a/src/worker.js
++++ b/src/worker.js
+@@ -1,2 +1,3 @@
++import { execSync } from "node:child_process";
+ export default {};
+`;
+      const res = scanDiff(rawDiff, { root: tmp });
+      assert.equal(res.ok, false, "Should automatically detect Edge runtime from wrangler.jsonc root");
+      assert.equal(res.findings.length, 1);
+      assert.equal(res.findings[0].type, "EDGE_RUNTIME_VIOLATION");
+      assert.ok(res.findings[0].description.includes("node:child_process"));
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 

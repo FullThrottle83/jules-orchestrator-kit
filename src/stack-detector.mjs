@@ -221,7 +221,10 @@ test("every source file parses", () => {
 }
 
 export function detectEdgeRuntime(projectRoot = process.cwd()) {
-  const isCloudflare = existsSync(join(projectRoot, "wrangler.toml")) || existsSync(join(projectRoot, "wrangler.json"));
+  const isCloudflare =
+    existsSync(join(projectRoot, "wrangler.toml")) ||
+    existsSync(join(projectRoot, "wrangler.json")) ||
+    existsSync(join(projectRoot, "wrangler.jsonc"));
   const isDeno = existsSync(join(projectRoot, "deno.json")) || existsSync(join(projectRoot, "deno.jsonc"));
   const isNetlify = existsSync(join(projectRoot, "netlify.toml"));
 

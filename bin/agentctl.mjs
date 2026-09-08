@@ -1498,7 +1498,9 @@ async function main() {
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Config File      : ${config._file || "None (Using defaults)"}`);
-      console.log(`  Detected Stack   : ${detectStack(root).stack}`);
+      const stackInfo = detectStack(root);
+      const edgeSuffix = stackInfo.isEdgeRuntime ? ` (Edge: ${stackInfo.edgePlatform || "generic"})` : "";
+      console.log(`  Detected Stack   : ${stackInfo.stack}${edgeSuffix}`);
       console.log(`  Test Command     : ${config.verify.test || "(None)"}`);
       console.log(`  Build Command    : ${config.verify.build || "(None)"}`);
       console.log(`  Daily Budget     : ${formatBudgetLine(budgetStatus(config, root))}`);
