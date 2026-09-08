@@ -39,6 +39,14 @@ test("detectPolyglotStack - detects PHP, .NET, Mobile, Systems, and Docker/Devco
     assert.equal(res.testCmd, "ctest --test-dir build --output-on-failure");
     rmSync(join(tmp, "CMakeLists.txt"));
 
+    // 4b. Django / Python
+    writeFileSync(join(tmp, "manage.py"), "#!/usr/bin/env python");
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "django");
+    assert.match(res.testCmd, /manage\.py test --keepdb$/);
+    assert.match(res.buildCmd, /manage\.py check$/);
+    rmSync(join(tmp, "manage.py"));
+
     // 5. Container & Devcontainer detection
     mkdirSync(join(tmp, ".devcontainer"), { recursive: true });
     writeFileSync(join(tmp, ".devcontainer", "devcontainer.json"), "{}");

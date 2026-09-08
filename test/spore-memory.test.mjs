@@ -293,7 +293,11 @@ describe("Learning ledger: evidence before rules", () => {
       assert.equal(db.length, 1);
       assert.equal(db[0].confirmed, true);
       assert.ok(db[0].signature);
+      assert.equal(db[0].signature, learningSignature("GENERAL", "legacy quirk"));
       assert.match(hydratePrompt(dir, "unrelated"), /legacy fix/);
+
+      const memSource = readFileSync(new URL("../src/memory.mjs", import.meta.url));
+      assert.equal(memSource.includes(0), false, "src/memory.mjs must not contain raw NUL bytes");
     });
   });
 });

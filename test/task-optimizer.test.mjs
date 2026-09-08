@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   levenshteinDistance,
   extractPathTokens,
@@ -112,4 +115,38 @@ test("optimize_jules_prompt MCP tool handles prompt optimization requests with w
   assert.ok(content.analysis);
   assert.ok(content.analysis.score >= 70);
   assert.ok(content.analysis.webIntent.isWeb);
+});
+
+test("optimizeTaskPrompt dynamically derives guardrail footer from repository scope", () => {
+  const opt = optimizeTaskPrompt("Refactor parser logic in src/parser.rs", {
+    rootDir: process.cwd(),
+    verifyCmd: "cargo test",
+    config: {
+      scope: {
+        protect: ["Cargo.toml", "Cargo.lock"],
+      },
+      limits: { diffKb: 60 },
+    },
+  });
+
+  assert.ok(opt.optimizedPrompt.includes("Standard Guardrails"));
+  assert.ok(opt.optimizedPrompt.includes("Cargo.toml, Cargo.lock"));
+  assert.ok(!opt.optimizedPrompt.includes("package.json, lockfiles"));
+  assert.ok(opt.optimizedPrompt.includes("under 60 KB"));
+  assert.ok(opt.optimizedPrompt.includes("`cargo test`"));
+});
+
+test("optimizeTaskPrompt does not fabricate npm test when oracle is absent", () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "jules-test-no-oracle-"));
+  try {
+    const opt = optimizeTaskPrompt("Investigate performance regression", {
+      rootDir: tmpDir,
+      explorationBudget: true,
+    });
+
+    assert.ok(!opt.optimizedPrompt.includes("`npm test`"));
+    assert.ok(opt.optimizedPrompt.includes("Missing test oracle"));
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 });

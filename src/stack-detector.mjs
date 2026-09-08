@@ -444,7 +444,7 @@ export function detectPolyglotStack(projectRoot = process.cwd()) {
 
   // 5. Python / Django / Elixir / Ruby / Java
   if (existsSync(join(projectRoot, "manage.py"))) {
-    return { ...container, stack: "django", testCmd: "python manage.py test --keepdb", buildCmd: "python manage.py check", triggerFile: "manage.py" };
+    return { ...container, stack: "django", testCmd: `${pythonBin()} manage.py test --keepdb`, buildCmd: `${pythonBin()} manage.py check`, triggerFile: "manage.py" };
   }
   if (existsSync(join(projectRoot, "pyproject.toml")) || existsSync(join(projectRoot, "requirements.txt")) || existsSync(join(projectRoot, "setup.py"))) {
     const triggerFile = existsSync(join(projectRoot, "pyproject.toml")) ? "pyproject.toml" : existsSync(join(projectRoot, "requirements.txt")) ? "requirements.txt" : "setup.py";

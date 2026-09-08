@@ -4,6 +4,7 @@ import { checkScope } from "./security.mjs";
 import { detectStackOracles } from "./wizard-oracle.mjs";
 import { loadConfig } from "./config.mjs";
 import { sanitizePromptVocabulary } from "./prompt-guard.mjs";
+import { buildGuardrailFooter } from "./wizard-task.mjs";
 
 /**
  * Calculates Levenshtein distance between two strings.
@@ -350,7 +351,7 @@ export function optimizeTaskPrompt(promptText, options = {}) {
   const isWeb = Boolean(options.web || (analysis.webIntent && analysis.webIntent.isWeb));
   const includeExplorationBudget = options.explorationBudget !== false;
   const includeCriticGuidance = options.criticGuidance !== false;
-  const verifyCmd = analysis.oracle.command || options.verifyCmd || "npm test";
+  const verifyCmd = analysis.oracle.command || options.verifyCmd || null;
 
   // Construct structured Markdown envelope
   const lines = [];
@@ -364,11 +365,19 @@ export function optimizeTaskPrompt(promptText, options = {}) {
     lines.push("   - Read target source files, definitions, and dependent call sites.");
     lines.push("   - Formulate diagnostic hypothesis and verify exact symbol signatures before making edits.");
     lines.push("2. **PHASE 2: ORACLE FORMULATION**");
-    lines.push(`   - Execute baseline verification: \`${verifyCmd}\`.`);
+    if (verifyCmd) {
+      lines.push(`   - Execute baseline verification: \`${verifyCmd}\`.`);
+    } else {
+      lines.push("   - Execute baseline verification: (None specified - define verification command).");
+    }
     lines.push("   - Identify specific test assertions, benchmarks, or status codes to satisfy.");
     lines.push("3. **PHASE 3: SURGICAL IMPLEMENTATION & VERIFICATION**");
     lines.push("   - Apply minimal, zero-bloat code modifications.");
-    lines.push(`   - Execute \`${verifyCmd}\` and verify 100% clean exit code 0.`);
+    if (verifyCmd) {
+      lines.push(`   - Execute \`${verifyCmd}\` and verify 100% clean exit code 0.`);
+    } else {
+      lines.push("   - Execute automated verification suite and verify 100% clean exit code 0.");
+    }
     lines.push("");
   }
 
@@ -376,6 +385,8 @@ export function optimizeTaskPrompt(promptText, options = {}) {
   lines.push(`- **Goal**: ${promptBody}`);
   if (analysis.oracle.command) {
     lines.push(`- **Verification Command**: \`${analysis.oracle.command}\` (Must pass cleanly with exit code 0)`);
+  } else {
+    lines.push("- **Verification Command**: (None) - WARNING: Missing test oracle.");
   }
   lines.push("- **Falsifiability Criteria**: Zero deleted tests, zero weakened assertions, zero lint errors.");
   lines.push("");
@@ -401,10 +412,26 @@ export function optimizeTaskPrompt(promptText, options = {}) {
     lines.push("");
   }
 
+  const root = options.rootDir || process.cwd();
+  let cfg = options.config;
+  if (!cfg) {
+    try {
+      cfg = loadConfig(root);
+    } catch (_) {
+      cfg = {};
+    }
+  }
+
   lines.push("## Standard Guardrails");
-  lines.push("- Do NOT modify package.json, lockfiles, or .github/ infrastructure files.");
-  lines.push("- Diff Payload Governor: Keep total diff payload under 75 KB (\`git diff | wc -c\`).");
-  lines.push(`- Verify before finishing: Execute \`${verifyCmd}\` and confirm zero errors.`);
+  const rawFooter = buildGuardrailFooter(cfg, {
+    baseBranch: options.baseBranch,
+    diffKb: options.diffKb,
+  }).trim();
+  const cleanedFooter = rawFooter.replace(/^---\s*\n?HARD CONSTRAINTS:\s*\n?/, "").trim();
+  lines.push(cleanedFooter);
+  if (verifyCmd) {
+    lines.push(`- Verify before finishing: Execute \`${verifyCmd}\` and confirm zero errors.`);
+  }
 
   const optimizedPrompt = lines.join("\n");
 

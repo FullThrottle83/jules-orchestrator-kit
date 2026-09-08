@@ -106,4 +106,16 @@ test("Stack Oracle & Verification Probes", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("detects Django stack without assigning go vet as typecheckCmd", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-oracle-django-"));
+    try {
+      writeFileSync(join(tmpDir, "manage.py"), "#!/usr/bin/env python\n");
+      const res = detectStackOracles(tmpDir);
+      assert.equal(res.stack, "django");
+      assert.notEqual(res.candidates.typecheckCmd, "go vet ./...");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { detectStack, parseYaml } from "./config.mjs";
 import { runCmd } from "./git.mjs";
+import { pytestCmd } from "./stack-detector.mjs";
 
 /**
  * Check if a command-line binary is available on the system PATH.
@@ -92,7 +93,7 @@ export function detectStackOracles(root = process.cwd()) {
   }
 
   // Check Go module
-  if (stack.includes("go") || existsSync(join(root, "go.mod"))) {
+  if (stack === "go" || existsSync(join(root, "go.mod"))) {
     candidates.testCmd = candidates.testCmd || "go test ./...";
     candidates.buildCmd = candidates.buildCmd || "go build ./...";
     if (hasBinary("golangci-lint")) {
@@ -102,8 +103,8 @@ export function detectStackOracles(root = process.cwd()) {
   }
 
   // Check Python
-  if (stack.includes("pytest") || existsSync(join(root, "pyproject.toml")) || existsSync(join(root, "requirements.txt"))) {
-    candidates.testCmd = candidates.testCmd || "pytest";
+  if (stack === "python" || stack === "django" || existsSync(join(root, "pyproject.toml")) || existsSync(join(root, "requirements.txt"))) {
+    candidates.testCmd = candidates.testCmd || pytestCmd(process.env, root);
     candidates.buildCmd = candidates.buildCmd || "";
     if (hasBinary("flake8")) {
       candidates.lintCmd = candidates.lintCmd || "flake8 .";
