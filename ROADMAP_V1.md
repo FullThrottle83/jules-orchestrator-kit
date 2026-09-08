@@ -11,14 +11,30 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.71.0 (Current Stable) ──► v0.72.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (A Blanket Is Not A Check)   (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
+ v0.72.0 (Current Stable) ──► v0.73.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Cold-Start Hardened Kernel) (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.71.0)
+## ✅ Shipped Milestones (v0.20.0 – v0.72.0)
 
+
+### v0.72.0: Cold-Start Hardened Kernel & Tamper Defense
+- [x] **Canonical Root Test Guard (F01)** — `test.js` at repository root is inside the tamper guard.
+- [x] **Conditional Expectation Guard (F03)** — ternary and conditional assertions cannot mask broken logic.
+- [x] **De-registration & Skip Detection (F04)** — removed `#[test]`, build tags, xfail decorators, and body-first early returns are caught.
+- [x] **Reachable Preconditions (F05)** — impossible guard conditions (`len < 0`) cannot neutralise assertions.
+- [x] **Uncommitted Scaffold Integrity (F06)** — rejects uncommitted scaffolds that disable verification or lower profiles.
+- [x] **Trusted Base Policy Resolution (F07)** — authoritative verification stages resolved from base commit (`git show <base>:.agent/config.yml`), never trusting uncommitted edits under review.
+- [x] **Committed Base Branch Integrity (F08)** — rejects `--base HEAD` in committed mode.
+- [x] **Empty Test Collection Canaries (F09)** — empty collections (Go `[no tests to run]`, pytest `--collect-only`, no-op scripts) recognized as 0 tests.
+- [x] **Snapshot Worktree Isolation (F10)** — isolates staged index and committed revisions in ephemeral worktrees with symlinked dependencies.
+- [x] **Python src-layout Invariant (F11)** — automatically injects `PYTHONPATH=src` for package layouts.
+- [x] **Zero-Coverage Added Module Detection (F12)** — untracked/unexecuted new files fail coverage.
+- [x] **Clean Scaffold & Oracle Tuning (F13–F15)** — markdown newline hygiene, cargo clippy without `-D warnings`, and multi-target Cargo aggregation.
+- [x] **Supply Chain Diagnostics & Waiver Telemetry (F16–F20)** — lockfile tamper hints, `--strict-locks` flag, waiver auditing, and dry-run evidence suppression.
+- [x] **Targeted Help & Complete Uninstall (F21–F22)** — targeted subcommand help routing and documented full removal procedure.
 
 ### v0.71.0: A Blanket Is Not A Check
 - [x] **Silence Is Not A Suite (`src/ops/test-collection.mjs`, `src/wizard-init.mjs`)** — a command that claims to run tests and prints nothing ran none; a static gate that prints nothing did its job.
@@ -190,9 +206,9 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ---
 
-## 🎯 Target Milestones (v0.60.0 & v1.0.0)
+## 🎯 Target Milestones (v0.73.0 & v1.0.0)
 
-### v0.60.0: Distributed File Leases & Preemptive DAG Scheduling
+### v0.73.0: Distributed File Leases & Preemptive DAG Scheduling
 - [ ] **Atomic Filesystem Lease & Heartbeat Protocol (`src/engine.mjs`, `src/flaky-ledger.mjs`)** — Directory-mutex file leasing with heartbeat timestamps, stale-lock detection via PID liveness inspection, and tombstone rotation without third-party daemons or Redis.
 - [ ] **Preemptive Task Cancellation & Interface Fingerprints (`src/dag-engine.mjs`)** — Automatically aborts and yields downstream swarm tasks when upstream exported symbol interfaces diverge from their cryptographic SHA-256 fingerprints.
 - [ ] **POSIX/Win32 Process Group Guillotine (`src/engine.mjs`)** — Tree teardown via `process.kill(-pid, 'SIGKILL')` on POSIX and `taskkill /T /F /PID` on Windows to eliminate orphaned dev-servers and background watchers.

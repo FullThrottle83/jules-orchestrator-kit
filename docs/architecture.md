@@ -101,6 +101,7 @@ sequenceDiagram
 
     CI->>Gate: gate({ base, mode, fix })
     Gate->>Tree: resolveBase() + changedFiles()
+    Gate->>Gate: resolveTrustedPolicy() — authoritative verify & policy from base commit
 
     Gate->>Gate: Phase 1 — checkScope() vs scope.deny / allow / protect
     alt scope violation
@@ -112,12 +113,13 @@ sequenceDiagram
         Gate-->>CI: Exit 5
     end
 
-    Gate->>Gate: Phase 3 — scanDiff() on added lines
-    alt secret / edge-import / cross-package violation
+    Gate->>Gate: Phase 3 — scanDiff() on added lines (tamper & secret checks)
+    alt secret / edge-import / cross-package / test tampering
         Gate-->>CI: Exit 6
     end
 
-    Gate->>Sandbox: Phase 4 — staged verify (setup, lint, unit, fuzz, invariant, e2e, build)
+    Gate->>Sandbox: Phase 4 — materializeSnapshot() (detached worktree with symlinked deps)
+    Gate->>Sandbox: staged verify (setup, lint, unit, fuzz, invariant, e2e, build)
     Sandbox-->>Gate: exit codes + stdout / stderr
     alt flaky quarantine (Wilson oscillation >= 0.40)
         Gate-->>CI: Exit 8 — repair suppressed by design

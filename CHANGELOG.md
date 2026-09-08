@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.72.0] - 2026-09-08
+*A guard is not a policy if the diff under review can rewrite the rules.*
+
+A fifth cold-start audit, against published v0.71.0 on four polyglot repositories (`p-limit`, `itsdangerous`, `is`, `mini_markdown`). Twenty-two findings across three tiers:
+- Tier 1 (Security & Isolation): uncommitted scaffold tampering, untrusted working-tree configs in staged/committed evaluation, and unisolated snapshot leaks.
+- Tier 2 (Tamper Guard Hardening): root test file canonicalization, conditional assertion bypasses, de-registration detection, impossible preconditions, and uncovered new modules.
+- Tier 3 (False Reds Elimination & CLI Polish): EOF markdown blank lines, cargo clippy warning defaults, multi-target Cargo aggregation, lockfile supply chain remediation diagnostics, `--strict-locks` CLI parsing, truthful waiver telemetry, dry-run evidence suppression, focused subcommand help routing, and documented repository uninstall.
+
+### Fixed
+- **Authoritative Base Policy Resolution (`src/config.mjs`, `src/engine.mjs`)**: Staged and committed gate modes evaluated `.agent/config.yml` from the dirty working copy on disk rather than the base commit under review. An agent diff could raise `diffKb` above 75 KB or replace verification commands with no-ops. `resolveTrustedPolicy()` now extracts authoritative verification stages and security policy from `git show <base>:.agent/config.yml` (or `.agent/jules.yml`), rejecting untrusted disk edits and committed `base: HEAD` self-comparisons (F06, F07, F08).
+- **Uncommitted Scaffold Integrity (`src/config.mjs`)**: `checkBootstrapPolicyIntegrity()` inspects uncommitted scaffolds in bootstrap mode, refusing configurations that replace verification with no-ops (`process.exit(0)`, `sh -c :`), lower verification profiles to `minimal`, or disable `strictTestLock` / `tamperGuard` prior to the initial commit (F06).
+- **Snapshot Materialization & Ephemeral Sandbox Isolation (`src/git.mjs`, `src/engine.mjs`)**: Phase 4 verification ran directly in the dirty repository tree, allowing uncommitted edits outside the evaluated diff to leak into verification runs. `materializeSnapshot()` now extracts the staged index (`git checkout-index`) or committed revision into temporary detached worktrees with symlinked dependency trees (`node_modules`, `.venv`), ensuring hermetic execution (F10).
+- **Python src-layout Invariant (`src/stack-detector.mjs`, `src/engine.mjs`)**: Packages structured under `src/` without root packaging could resolve imports to stale site-packages or fail discovery. `isSrcLayout()` now detects `src/<pkg>/` topologies and automatically prepends `src/` to `PYTHONPATH` during verification (F11).
+- **Empty Test Collection Canaries (`src/ops/test-collection.mjs`, `src/guard-policy.mjs`)**: Go's `ok ... [no tests to run]` and pytest's `--collect-only` exited 0 while verifying nothing. Both are now classified as `count: 0` empty collections, activating empty-run canaries (F09).
+- **Cargo Multi-Target Aggregation (`src/ops/test-collection.mjs`)**: Multi-target Cargo suites (lib unit tests + integration tests) print `running N tests` per target. `parseCollectedTests` now aggregates all target summaries via `matchAll`, preventing a 0-test unit target from hiding 58 passing integration tests (F15).
+- **Cargo Clippy Oracle Defaults (`src/wizard-oracle.mjs`)**: Removed forced `-D warnings` from default `cargo clippy` candidates, preventing green external repositories with benign compiler warnings from failing verification gates (F14).
+- **Truthful Waiver & Override Telemetry (`bin/agentctl.mjs`)**: Added active waiver auditing for `JULES_ALLOW_COMMAND_FILE_CHANGES`, `minTests: 0`, and non-required stage failures, and corrected `verify.required: false` explanation from `(nothing is executed)` to `(verification failures and empty test suites permitted)` (F18, F19).
+- **Dry-Run Evidence Suppression (`src/engine.mjs`, `bin/agentctl.mjs`)**: Suppressed `.agent/evidence/` disk writes when `--dry-run` or `JULES_DRY_RUN=1` is active, and added visible `[DRY-RUN]` markers to `agentctl plan approve` and `agentctl session get` (F20).
+- **Subcommand Help Routing (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Registered descriptors for `pr harvest`, `session get`, and `plan approve`, and routed `agentctl help <subcommand>` to focused subcommand usage rather than dumping all 50 commands (F21).
+- **Markdown EOF Hygiene (`JULES_RULES_TEMPLATE.md`, `.agent/rules/jules-protocol.md`)**: Stripped trailing double newlines (F13).
+
+### Added
+- **Canonical Root Test Guard (`src/test-paths.mjs`, `src/security.mjs`)**: Root test files like `test.js` are now classified as canonical test files under `BUILTIN_PROTECT` and anti-tamper auditing (F01).
+- **Conditional Assertion Guard (`src/security.mjs`)**: Ternary and conditional wrapper expressions cannot mask broken logic by rewriting assertions into conditional skips (F03).
+- **De-registration & Skip Detection (`src/security.mjs`)**: Detects removed `#[test]` attributes in Rust, Go build tags, xfail decorators in Python, and body-first early returns (F04).
+- **Reachable Preconditions Guard (`src/security.mjs`)**: Catches impossible preconditions like `if len(x) < 0:` placed before assertions (F05).
+- **Zero-Coverage Added Module Detection (`src/coverage.mjs`)**: Brand-new code modules that receive zero test execution fail coverage thresholds rather than being ignored (F12).
+- **Complete Uninstall & Undo-Init Documentation (`README.md`)**: Added full removal documentation and clean commands (`git rm -rf --ignore-unmatch ... && rm -rf .agent .agentctl`) preserving pre-existing user files (F22).
+- **Cold-Start Trial Regression Suites**: Added 52 new regression tests across `test/cold-start-trial-f01-f12.test.mjs`, `test/cold-start-trial-f06-f11.test.mjs`, and `test/cold-start-trial-f13-f22.test.mjs`.
+
 ## [0.71.0] - 2026-09-05
 *A blanket is not a check, and silence is not a suite.*
 
