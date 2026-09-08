@@ -197,7 +197,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Scrubbing:** Evaluates Deny-before-Allow rules against canonicalized paths. Detects high-entropy strings and base64-encoded credentials (e.g. Kubernetes manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, backed by syntax-check fallback recovery.
 * **Terminal UI & Diagnostics (`agentctl doctor`):** Interactive terminal dashboard, VFS lock management, and automated system diagnostics.
-* **Mechanically Verified:** Comprehensive test suite of **1406 unit tests across 196 suites**, with 59 activation-coverage canaries and 100% pass rate.
+* **Mechanically Verified:** Comprehensive test suite of **1409 unit tests across 196 suites**, with 59 activation-coverage canaries and 100% pass rate.
 
 <br/>
 
@@ -441,22 +441,14 @@ const result = await fast.dispatch({ prompt: "Fix a typo." }, { root: process.cw
 | **Staged Diff Fidelity & Indentation Dead Guards** | `src/git.mjs`, `src/security.mjs` | Query cached index in staged mode (`git diff --cached <base>`), detect literal falsity dead guards (`if False:`, `if (false)`, `if 0:`), and support indentation-aware block traversal for Python test suites. | **v0.72.1** *(Shipped)* |
 | **Cold-Start Hardened Kernel & Tamper Defense** | `src/config.mjs`, `src/engine.mjs`, `src/git.mjs`, `src/security.mjs` | Full remediation of 22 cold-start audit findings (F01–F22): authoritative base policy resolution, ephemeral snapshot worktree isolation, canonical root test tamper guard, conditional assertion defense, multi-target Cargo test aggregation, Python src-layout injection, and complete repository uninstall documentation. | **v0.72.0** *(Shipped)* |
 | **Silence Is Not A Suite & Scaffolding Linter Fixes** | `src/ops/test-collection.mjs`, `src/wizard-init.mjs`, `src/config.mjs` | Reject zero-output test suite commands, quote-aware YAML parser with scalar emission, test de-registration detection (`TEST_DEREGISTERED`), and active waiver telemetry banner. | **v0.71.0** *(Shipped)* |
-| **Diagnostics That Reach the Operator** | `src/security.mjs`, `src/engine.mjs`, `bin/agentctl.mjs` | Secret findings name the file and line, a failed verify stage reports its command, exit code and output, and `queue`/`swarm` name each failed task and exit `1` rather than reporting success for a run that dispatched nothing. | **v0.41.1** *(Shipped)* |
-| **One Scaffolding Path & First-Install Fixes** | `src/scaffold.mjs`, `src/security.mjs` | `agentctl init` and `jules-init` scaffold from one source and write the runtime `.gitignore` entries, so the kit's own bookkeeping no longer reaches its own gate; a lockfile bump no longer fails closed as a secret leak. | **v0.41.1** *(Shipped)* |
-| **Queue Runner Fidelity** | `src/dag-engine.mjs`, `src/engine.mjs` | Queue selection is by task shape rather than file extension, so manifests and READMEs are skipped instead of dispatched, and `--dry-run` leaves the queue untouched. | **v0.38.2** *(Shipped)* |
-| **Release Gate Enforcement & Wizard Smoke Test** | `.github/workflows/jules-audit.yml`, `scripts/release.mjs`, `test/wizard-smoke.test.mjs` | Doc-sync gate runs in CI rather than by hand, releases block on a green CI matrix for `HEAD`, per-test deadlines turn a hang into a failure, and the real `init` wizard is driven end to end over a fake TTY. | **v0.38.1** *(Shipped)* |
-| **Multi-OS CI Matrix & TUI Hardening** | `scripts/run-tests.mjs`, `src/state.mjs`, `src/git.mjs` | Automated 9-job CI matrix across Linux, macOS, and Windows on Node 20/22/24 with raw-mode TUI resilience and native Windows command quoting. | **v0.38.0** *(Shipped)* |
-| **Base64 Secret Detection & Budget Fix** | `src/security.mjs`, `src/budget.mjs` | Secret scanner decodes base64 before matching structured patterns (K8s secrets), and `budget reset` preserves confirmed provider sessions. | **v0.37.0** *(Shipped)* |
-| **Universal AI Crawler Policy & llms.txt** | `src/web-templates.mjs` (`web-ai-access`) | Cross-surface consistency for crawler directives (`robots.txt`, meta tags, `X-Robots-Tag`) and `llms.txt` local route integrity. | **v0.36.0** *(Shipped)* |
-| **Silence Governor & Flaky Test Swarm** | `src/webhook.mjs`, `src/flaky-ledger.mjs` | Notification alert throttling with interruption budgeting, and automated anti-flakiness swarm coordinator. | **v0.35.0** *(Shipped)* |
-| **Rolling 24h Quota & Plan Concurrency** | `src/state.mjs`, `src/config.mjs` | Rolling 24-hour quota accounting matching vendor reset windows and true concurrency limits (3/15/60). | **v0.34.0** *(Shipped)* |
-| **Cost Router & Guided First Run** | `src/router.mjs`, `src/ops/next-step.mjs` | Heuristic task classifier routing trivial tasks to fast models, and guided single-command first run workflow. | **v0.33.0** *(Shipped)* |
-| **DAG Task Queue & Specialist Roles** | `src/dag-engine.mjs`, `src/evidence.mjs` | Kahn's-algorithm dependency queue execution (`queue --dag`), specialist role prompts (`overseer`, `bolt`, `sentinel`, `janitor`), and SHA-256 evidence manifests. | **v0.32.5** *(Shipped)* |
-| **Warm Session Resumption & PR Bundler** | `src/provider.mjs`, `src/engine.mjs` | Multi-turn warm session context streaming via `POST /v1alpha/sessions/{id}:sendMessage` & evidence PR descriptions. | **v0.31.0** *(Shipped)* |
-| **TDD Harness & Prompt Falsifiability Linter** | `agentctl test-gen`, `agentctl task optimize` | Automated RED-state test generator, `scope.deny` test locking, and prompt testability linter with fuzzy path resolution. | **v0.31.0** *(Shipped)* |
-| **Atomic Git Checkpoint & Rollback** | `agentctl rollback` (`src/ops/checkpoint.mjs`) | Pre-flight git HEAD/stash snapshotting, atomic rollback restoration, and 10-session pruning rotation. | **v0.31.0** *(Shipped)* |
-| **Terminal UI Engine** | `src/tui.mjs`, `src/key-decoder.mjs` | Zero-dependency terminal capabilities detector, sequence key decoder, and interactive prompt widgets. | **v0.30.0** *(Shipped)* |
-| **PR Review Auto-Remediation Loop** | `agentctl review-repair` (`src/review-repair.mjs`) | Ingests GitHub PR review comments (`CHANGES_REQUESTED`), extracts line/file context, and dispatches automated repair turns. | **v0.27.0** *(Shipped)* |
+| **Terminal State Classification & Error Diagnostics** | `src/engine.mjs`, `src/session-ops.mjs` | Triple-verdict session resolution (terminal, blocked, timed-out), diagnostic extraction for failed session retries (`AssertionError`, tracebacks), and 22-case session polling contract. | **v0.70.0** *(Shipped)* |
+| **Expected-Value Scanning & Safe Scaffolding** | `src/security.mjs`, `src/wizard-init.mjs` | Multi-language expected-value first assertions (JUnit/PHPUnit), prefix-aware test rename verification, and rejection of empty/trivial verification oracles. | **v0.69.0** *(Shipped)* |
+| **Dialect Hardening & Scope Protection** | `src/security.mjs`, `src/config.mjs`, `scripts/guard-reach-check.mjs` | Unreadable test dialects fail closed, lockfiles and toolchain pins guarded against silent tampering, and 59-canary activation coverage gate in CI. | **v0.63.0** *(Shipped)* |
+| **Process-Group Reaping & Subprocess Lifecycles** | `scripts/run-tests.mjs`, `src/git.mjs` | Tree-wide process group cleanup on interruption and zero-output test collection guards. | **v0.60.0** *(Shipped)* |
+
+<br/>
+
+> For the complete history of all shipped milestones (v0.20.0 – v0.72.2), see [ROADMAP_V1.md](ROADMAP_V1.md).
 
 </details>
 

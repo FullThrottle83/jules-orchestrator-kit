@@ -317,6 +317,21 @@ export function checkDocSync(root = process.cwd(), opts = {}) {
     }
   }
 
+  // 6. SECURITY.md — supported version table must name the current version series.
+  const security = readIfExists(join(root, "SECURITY.md"));
+  if (security === null) {
+    add("SECURITY present", false, "SECURITY.md not found");
+  } else {
+    const sem = version.split(".");
+    const expectedSeries = `v${sem[0]}.${sem[1]}.x`;
+    const secMatch = security.match(/\|\s*`v(\d+\.\d+)\.x`\s*\(Latest\)\s*\|/);
+    add(
+      "SECURITY supported version",
+      secMatch ? `v${secMatch[1]}.x` === expectedSeries : false,
+      secMatch ? `found v${secMatch[1]}.x, expected ${expectedSeries}` : "no `vX.Y.x (Latest)` marker found"
+    );
+  }
+
   return { ok: checks.every((c) => c.ok), version, checks };
 }
 
