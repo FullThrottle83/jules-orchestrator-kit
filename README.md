@@ -49,32 +49,28 @@
 <a id="quickstart"></a>
 ## Quickstart
 
-Get running in any repository in 3 commands. `init` asks seven questions and
-fills in a sensible answer for each; `--yes` accepts all of them, detects the
-stack, and probes the test command it picked before writing it down.
+Configure any repository in three steps. `init` inspects project manifests, detects the stack, probes the test runner, and scaffolds repository guardrails:
 
 ```bash
-# 1. Scaffold config, AGENTS.md, role prompts and guardrails
-#    (auto-detects Python, Rust, Go, Node, PHP, etc.)
-#    Drop --yes to choose provider, plan, profile and workflows yourself.
+# 1. Scaffold configuration, AGENTS.md, role prompts, and guardrails
+#    Auto-detects Python, Rust, Go, Bun, Deno, Node, PHP, .NET, etc.
+#    Omit --yes to select provider, plan tier, and verification profile interactively.
 npx jules-orchestrator-kit init --yes
 ```
 
 ```bash
-# 2. Commit what init wrote — .agent/config.yml is protected by BUILTIN_PROTECT,
-#    so leaving it uncommitted makes the first gate reject your tree
+# 2. Commit the scaffolded configuration
+#    .agent/config.yml is protected by scope guards; committing establishes the trusted base policy.
 git add .agent AGENTS.md SPEC.md CONSTRAINTS.md .gitignore && git commit -m "chore: add agent config"
 ```
 
 ```bash
-# 3. Author a scoped, verified task envelope with guardrails & secret scrubbing
-#    Interactive by default. Pass the prompt to skip straight to review:
-npx jules-orchestrator-kit task create -p "Refactor the invoice module"
+# 3. Author a scoped, verified task envelope
+#    Interactive by default. Pass --prompt and --verify to define requirements directly:
+npx jules-orchestrator-kit task create -p "Refactor invoice calculation" --verify "npm test"
 ```
 
-`init` reads the repository, not a template: it detects the stack, picks a
-provider this machine can actually reach, and generates a CI workflow for the
-toolchain the project uses. Nothing about your setup is assumed.
+`init` derives configuration directly from repository manifests, connects reachable agent providers, and generates CI workflows matching the project toolchain.
 
 ```bash
 # Which agents can this machine dispatch to, and what is missing for the rest?
@@ -87,14 +83,12 @@ npx jules-orchestrator-kit profile --set max
 ```
 
 > [!TIP]
-> **Not sure what to run next?**  
-> `agentctl` with no arguments reads the repository state and prints the single
-> next step — missing git repo, missing API key, empty queue, tasks ready to
-> dispatch — instead of a wall of commands.
+> **Context-Aware Next Step:**  
+> Running `agentctl` without arguments inspects the local repository state (git status, active API keys, queued tasks) and prints the immediate next action.
 
 > [!TIP]
-> **Prefer a global CLI?**  
-> Install globally to access `agentctl` directly:
+> **Global Installation:**  
+> Install globally for direct command access:
 > ```bash
 > npm install -g jules-orchestrator-kit
 > agentctl init && agentctl task create && agentctl queue
@@ -109,35 +103,30 @@ npx jules-orchestrator-kit profile --set max
 <a id="any-repository"></a>
 ## Using It In Any Repository
 
-Four things differ between projects, and the kit resolves each one from the
-repository rather than from a template.
+The kit derives configuration directly from repository manifests across five core dimensions:
 
-| What differs | How it is resolved | Inspect / override |
+| Dimension | Resolution Mechanism | Inspect / Override |
 | :--- | :--- | :--- |
-| **Which suites to run** | A monorepo change resolves to the sub-projects it touches (`verify.scope: affected`), widening back to the root command as soon as it reaches a shared file. Off by default, on for repositories `init` detects as monorepos. | `agentctl check --json` · `verify.scope` in `.agent/config.yml` |
-| **The stack** | `detectStack()` recognises 24+ ecosystems (Cargo, Go, Python/Django, Maven/Gradle, .NET, PHP/Laravel, Ruby, Elixir, Swift, Flutter/Dart, CMake, Bun, Deno, Node + Turbo/pnpm/Nx workspaces) and derives the setup, lint, test and build commands from the manifest it finds. | `agentctl doctor` · `verify:` in `.agent/config.yml` |
-| **The agent** | `provider:` selects Google Jules (hosted REST), the Claude Code CLI, the Codex CLI or the Gemini CLI. Readiness means a credential for the hosted one and a binary on `PATH` for the local ones — never both. | `agentctl providers` · `agentctl init --provider <name>` |
-| **How hard to verify** | `verify.profile` expands at load time into a stage pipeline that skips gates the runtime cannot support, and says which and why. | `agentctl profile` · `agentctl profile --set max` |
-| **Where CI runs** | A workflow is *generated* for the detected stack — the project's toolchain plus Node for the CLI — not copied from this repository. | `agentctl ci init [--target github\|gitlab]` |
+| **Monorepo Scope** | Monorepo diffs resolve to affected sub-projects (`verify.scope: affected`), widening to root commands when shared files change. Activated automatically when monorepo manifests are detected. | `agentctl check --json`<br/>`verify.scope` in `.agent/config.yml` |
+| **Stack & Tooling** | `detectPolyglotStack()` inspects 26+ ecosystems (Cargo, Go, Python, Bun, Deno, Maven, Gradle, .NET, PHP, Ruby, Elixir, Swift, Flutter, CMake, Make, Turbo/pnpm/Nx) and extracts native test and build commands. | `agentctl doctor`<br/>`verify:` in `.agent/config.yml` |
+| **Agent Provider** | Supports Google Jules (hosted REST), Claude Code CLI, OpenAI Codex CLI, and Gemini CLI. Validates environment credentials for hosted APIs and `PATH` binaries for local agents. | `agentctl providers`<br/>`agentctl init --provider <name>` |
+| **Verification Depth** | `verify.profile` (`minimal`, `standard`, `max`) expands dynamically into stack-compatible verification stages, reporting explicit skip reasons for unsupported platform checks. | `agentctl profile`<br/>`agentctl profile --set max` |
+| **CI Generation** | Generates tailored CI workflows containing the project's native runtime and toolchain rather than copying a fixed template. | `agentctl ci init [--target github\|gitlab]` |
 
-### Verification profiles
+### Verification Profiles
 
-| Profile | Runs | Use when |
+| Profile | Stages | Recommended Use |
 | :--- | :--- | :--- |
-| `minimal` | setup → tests | The suite is slow, the stack is unfamiliar, or it is day one. |
-| `standard` | setup → lint → tests → build → anti-tamper on the diff | The everyday gate. Scaffolded by default. |
-| `max` | everything above → mutation scoring → V8 diff coverage *(Node runtimes only)* → 3-pass flakiness probe | The change is consequential, or an agent has been getting green too easily. |
+| `minimal` | Setup → Tests | Large/slow test suites or initial project onboarding. |
+| `standard` | Setup → Lint → Tests → Build → Diff Anti-Tamper | Default gate for routine pull requests. |
+| `max` | All stages above → AST Mutation Scoring → V8 Diff Coverage *(Node)* → 3-Pass Flakiness Probe | High-risk refactors or critical infrastructure changes. |
 
-Nothing in a profile is Node-specific by assumption. Gates a runtime cannot
-support are skipped with a stated reason rather than failing the diff — a Cargo
-repository on `max` runs mutation and stability probing and is never asked for
-`NODE_V8_COVERAGE`.
+Verification profiles evaluate gates dynamically per runtime. Unsupported platform checks (such as V8 coverage on Cargo or Go projects) are bypassed with explicit diagnostic logs rather than failing the gate.
 
-### No provider? Still useful
+### Standalone Local Verification
 
-Every gate below runs locally with no API key, no CLI and no network:
-`agentctl check`, `mutate`, `coverage`, `probe`, `assert`, `evidence`, `rules`,
-`doctor`. The provider is only needed to *dispatch* work, not to verify it.
+All security, integrity, and test gates execute locally without external network access or API keys:
+`agentctl check`, `agentctl gate`, `agentctl mutate`, `agentctl coverage`, `agentctl probe`, `agentctl evidence`, `agentctl doctor`. Agent providers are required only for dispatching autonomous tasks.
 
 <br/>
 
@@ -195,20 +184,20 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 
 ## Core Capabilities
 
-* **Provider-Agnostic:** Dispatches to Google Jules (hosted REST), the Claude Code CLI, the OpenAI Codex CLI or the Gemini CLI. `agentctl providers` probes each one — a credential for the hosted provider, a binary on `PATH` for the local ones — and every verification gate works with no provider configured at all.
-* **Vendor-Neutral Configuration:** Every `JULES_*` environment variable also answers to an `AGENT_*` spelling (`AGENT_API_KEY`, `AGENT_REPO`, `AGENT_SWARM_CONCURRENCY`). The legacy name always wins where both are set, so adding an alias cannot change a working setup.
-* **One-Word Verification Depth:** `verify.profile: minimal | standard | max` expands at load time into a stack-aware pipeline — `max` adds mutation scoring, flakiness probing and, where the runtime emits it, V8 diff coverage. A Cargo repository is never asked for `NODE_V8_COVERAGE`.
-* **Generated, Not Copied, CI:** `agentctl ci init` writes a GitHub Actions or GitLab job carrying the toolchain the detected stack needs (`setup-python`, `setup-go`, `setup-java`, …) plus Node for the CLI itself.
-* **Zero Runtime Dependencies:** Built exclusively on Node.js 20+ built-in modules (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:tty`, `node:test`).
+* **Multi-Provider Dispatch:** Dispatches to Google Jules (hosted REST API), Claude Code CLI, OpenAI Codex CLI, and Gemini CLI. `agentctl providers` inspects environment credentials and binary availability across providers.
+* **Vendor-Neutral Configuration:** Supports both `JULES_*` and `AGENT_*` environment variables (`AGENT_API_KEY`, `AGENT_REPO`, `AGENT_SWARM_CONCURRENCY`), with legacy `JULES_*` variables taking precedence.
+* **Dynamic Verification Profiles:** Configured via `verify.profile: minimal | standard | max`. Automatically schedules linting, unit testing, build stages, AST mutation testing, and stability probing suited to the project toolchain.
+* **Stack-Native Generated CI:** `agentctl ci init` generates GitHub Actions and GitLab CI configurations containing the project's exact toolchain (`setup-python`, `setup-go`, `setup-bun`, etc.) alongside Node.js for CLI execution.
+* **Zero Runtime Dependencies:** Implemented strictly using native Node.js 20+ standard modules (`node:fs`, `node:child_process`, `node:crypto`, `node:path`, `node:http`, `node:readline`, `node:test`).
 * **Cross-Platform Parity:** Verified 100% green across Linux, macOS (Darwin), and Windows on Node 20, 22, and 24.
-* **Autonomous Self-Healing Loop:** Captures test stderr/stdout, fingerprints error traces, and feeds structured context back into automated repair turns (up to 3 attempts) before human escalation.
-* **Fail-Closed Verification:** A change that ran no verification command at all is rejected, not approved — "nothing to run" is not a pass. Repositories using only the scope and secret phases opt out explicitly with `verify.required: false`.
-* **Anti-Tamper That Reads Semantics:** Counting assertions cannot see a value check swapped for a truthiness check. The guard tracks assertions that name an expected value, so weakening a test is a violation even when the line count is unchanged.
-* **Binary-Aware Scanning:** Files git renders as `Binary files ... differ` are read directly for structured credentials, and their real size is charged against the diff ceiling, so a leading NUL byte cannot hide a token and a committed blob cannot walk past the payload governor.
-* **Fail-Closed Security & Secret Redaction:** Evaluates explicit Deny rules before Allow rules against canonicalized, case-folded paths. Redacts high-entropy keys and base64-encoded credentials (such as Kubernetes `Secret` manifests).
-* **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, with a `node --check` syntax-verification gate that transparently escalates a FAST-tier result to the primary provider if it left broken JS on disk.
-* **Terminal UI & Diagnostic Matrix (`agentctl doctor`):** Interactive terminal dashboard, task sidecar manager, and automated transactional self-repair.
-* **Verified Test Suite:** Tested with **1403 unit tests across 196 suites**, green on every supported platform.
+* **Autonomous OODA Repair Loop:** Captures test stdout/stderr traces, fingerprints failure patterns, and executes automated repair cycles (up to 3 turns) before requesting human intervention.
+* **Fail-Closed Verification:** Rejects diffs that execute zero verification commands unless explicitly waived with `verify.required: false`.
+* **Semantic Anti-Tamper Guard:** Detects test tampering across languages: weakened assertions, removed assertions, vacuous tautologies (`expect(true).toBe(true)`), and assertions nested inside dead conditions (`if False:`, `if (false)`, `if 0:`).
+* **Binary & Symlink Payload Inspection:** Inspects binary diffs and symlink targets directly, charging real byte sizes against the diff ceiling to prevent payload governor bypasses.
+* **Fail-Closed Security & Secret Scrubbing:** Evaluates Deny-before-Allow rules against canonicalized paths. Detects high-entropy strings and base64-encoded credentials (e.g. Kubernetes manifests).
+* **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, backed by syntax-check fallback recovery.
+* **Terminal UI & Diagnostics (`agentctl doctor`):** Interactive terminal dashboard, VFS lock management, and automated system diagnostics.
+* **Mechanically Verified:** Comprehensive test suite of **1403 unit tests across 196 suites**, with 59 activation-coverage canaries and 100% pass rate.
 
 <br/>
 
@@ -479,7 +468,7 @@ const result = await fast.dispatch({ prompt: "Fix a typo." }, { root: process.cw
 
 ## 🧹 Complete Uninstall / Removing the Kit (Undo Init)
 
-If you need to completely remove `jules-orchestrator-kit` from a repository after running `agentctl init`, follow the procedure below. Note that `agentctl clean` is an operational maintenance command (cleaning ephemeral locks, temporary worktrees, and evidence caches), not an uninstaller.
+To completely remove `jules-orchestrator-kit` from a repository after running `agentctl init`, follow the procedure below. Note that `agentctl clean` performs operational maintenance (clearing ephemeral locks, temporary worktrees, and evidence caches), not an uninstaller.
 
 ### 1. Generated Assets & Manifest
 
@@ -554,6 +543,6 @@ npm uninstall -g jules-orchestrator-kit
 <br/>
 
 <div align="center">
-  <p><b>jules-orchestrator-kit</b> • Built with zero external dependencies for Google Jules and autonomous agent workflows.</p>
+  <p><b>jules-orchestrator-kit</b> • Zero runtime dependencies • MIT License • Universal safety and verification for autonomous coding agents.</p>
 </div>
 
