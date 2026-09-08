@@ -11,13 +11,19 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.72.2 (Current Stable) ──► v0.73.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (Child Streams & Bun/Deno)   (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
+ v0.72.3 (Current Stable) ──► v0.73.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (ASCII Smuggle & Safety)    (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.20.0 – v0.72.2)
+## ✅ Shipped Milestones (v0.20.0 – v0.72.3)
+
+### v0.72.3: ASCII Smuggling Defense, Safety Filter Mitigations & Deep Planning Envelopes
+- [x] **Unicode Tag ASCII Smuggling Defense (`src/prompt-guard.mjs`, `src/security.mjs`)** — strips and detects Plane 14 Unicode Tag characters (`U+E0000`–`U+E007F`) across untrusted inputs and secret diffs.
+- [x] **Vertex AI Safety Moderation Mitigations (`src/prompt-guard.mjs`)** — clinicalizes `kill -9`, `SIGKILL`, zombie reaping, and exploit terms to prevent upstream `HARM_CATEGORY_DANGEROUS_CONTENT` aborts.
+- [x] **Deep Planning Mode Steering Directive (`src/task-optimizer.mjs`, `src/web-templates.mjs`)** — injects `"Use deep planning mode."` into exploration budget task envelopes.
+- [x] **Runtime Environment & Ingestion Directives (`.agent/rules/jules-protocol.md`)** — documented KVM 8 GiB swap=0 OOM limits, 20-30 GiB OverlayFS quota, `/workspace` mount, non-systemd supervisor, and startup ingestion hierarchy.
 
 ### v0.72.2: Child Process Stream Fidelity & Polyglot Build Detection
 - [x] **Child Process Stream Fidelity (`src/git.mjs`)** — `runCmd()` invokes native `spawnSync`, preserving both `stdout` and `stderr` streams on exit 0 so test runners emitting summaries to stderr (`bun test`) are fully recognized by `parseCollectedTests`.

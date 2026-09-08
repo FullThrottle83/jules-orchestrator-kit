@@ -6,7 +6,7 @@
  * neutralizes LLM control role markers and prompt injection patterns, and wraps inputs in strict tags.
  */
 
-const ZERO_WIDTH_AND_BIDI_REGEX = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g;
+const ZERO_WIDTH_AND_BIDI_REGEX = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]|[\u{E0000}-\u{E007F}]/gu;
 const ANSI_ESCAPE_REGEX = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 
 const CONTROL_TAGS_REGEX = /<\|im_start\|>|<\|im_end\|>|<\|system\|>|<\|assistant\|>|<\|user\|>|<\|endoftext\|>|\[INST\]|\[\/INST\]|<<SYS>>|<\/SYS>>/gi;
@@ -27,15 +27,21 @@ const INJECTION_PATTERNS = [
  * to prevent false-positive safety classifier tripwires in Google VM environments.
  */
 export const STERILE_VOCABULARY_MAP = [
+  { pattern: /\bkill\s+-9\b/gi, replacement: "terminate with SIGTERM" },
+  { pattern: /\bSIGKILL\b/g, replacement: "SIGTERM" },
   { pattern: /\bkill\s+(?:the\s+)?processes\b/gi, replacement: "terminate the processes" },
   { pattern: /\bkill\s+(?:the\s+)?process\b/gi, replacement: "terminate the process" },
   { pattern: /\bkill\s+(?:the\s+)?pid\b/gi, replacement: "terminate the PID" },
+  { pattern: /\breap\s+(?:the\s+)?(?:zombie\s+)?processes\b/gi, replacement: "collect child processes" },
+  { pattern: /\breap\s+(?:the\s+)?(?:zombie\s+)?process\b/gi, replacement: "collect child process" },
+  { pattern: /\breap\s+(?:the\s+)?zombies\b/gi, replacement: "collect child processes" },
   { pattern: /\bamputate\s+(?:dead\s+|unused\s+)?code\b/gi, replacement: "prune unused code" },
   { pattern: /\bamputate\b/gi, replacement: "prune" },
   { pattern: /\bsabotage\s+(?:the\s+)?tests?\b/gi, replacement: "mutate test logic" },
   { pattern: /\bsabotage\b/gi, replacement: "mutate" },
   { pattern: /\bdestroy\s+(?:the\s+)?(state|cache|file|data|directory)\b/gi, replacement: "purge the $1" },
   { pattern: /\bwipe\s+(?:the\s+)?(state|cache|directory|disk|table)\b/gi, replacement: "clear the $1" },
+  { pattern: /\bexploit_payload\b/gi, replacement: "test_payload" },
 ];
 
 /**

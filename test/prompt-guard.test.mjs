@@ -33,15 +33,16 @@ test("Prompt Guard & Input Sanitization Boundary", async (t) => {
     assert.match(envelope, /<<<UNTRUSTED-DATA-BEGIN source="issue_body">/);
   });
 
-  await t.test("b) Bidi/hidden unicode controls and ANSI terminal sequences are stripped", () => {
-    // String containing zero-width space (\u200B), bidi override (\u202A), BOM (\uFEFF), and ANSI escape sequence (\x1b[31m)
-    const sneakyInput = "Title\u200B with\u202A secret\uFEFF text \x1b[31m[RED]\x1b[0m";
+  await t.test("b) Bidi/hidden unicode controls, Unicode tag characters (ASCII smuggling), and ANSI terminal sequences are stripped", () => {
+    // String containing zero-width space (\u200B), bidi override (\u202A), BOM (\uFEFF), Unicode tag characters (\u{E0001}\u{E0020}), and ANSI escape sequence (\x1b[31m)
+    const sneakyInput = "Title\u200B with\u202A secret\uFEFF text\u{E0001}\u{E0020} \x1b[31m[RED]\x1b[0m";
     const sanitized = sanitizeUntrustedData(sneakyInput, "pr_title");
 
     // Hidden unicode & ANSI sequences must be stripped
     assert.doesNotMatch(sanitized, /\u200B/);
     assert.doesNotMatch(sanitized, /\u202A/);
     assert.doesNotMatch(sanitized, /\uFEFF/);
+    assert.doesNotMatch(sanitized, /[\u{E0000}-\u{E007F}]/u);
     assert.doesNotMatch(sanitized, /\x1b\[31m/);
     assert.match(sanitized, /Title with secret text \[RED\]/);
   });
@@ -92,6 +93,13 @@ test("Prompt Guard & Input Sanitization Boundary", async (t) => {
     assert.equal(
       sanitized,
       "Please terminate the process 8080, prune unused code in src/legacy, and mutate test logic to verify failure."
+    );
+
+    const rawSignals = "Use kill -9 or SIGKILL to reap zombie processes and test exploit_payload.";
+    const sanitizedSignals = sanitizePromptVocabulary(rawSignals);
+    assert.equal(
+      sanitizedSignals,
+      "Use terminate with SIGTERM or SIGTERM to collect child processes and test test_payload."
     );
 
     const envelope = buildAgentEnvelope(

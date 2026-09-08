@@ -116,6 +116,7 @@ test("synthesizeWebEnvelope generates structured envelope with exploration budge
   assert.equal(env.verifyCmd, "npm run test:e2e");
   assert.ok(env.fullEnvelope.includes("# [Performance] Core Web Vitals & Lighthouse Budget Guard"));
   assert.ok(env.fullEnvelope.includes("Google Labs Exploration Budget Protocol (3-Phase Discovery)"));
+  assert.ok(env.fullEnvelope.includes("Use deep planning mode"));
   assert.ok(env.fullEnvelope.includes("PHASE 1: DISCOVERY & SYMBOL TRACING"));
   assert.ok(env.fullEnvelope.includes("Internal Critic Agent Focus Areas"));
   assert.ok(env.fullEnvelope.includes("/checkout"));

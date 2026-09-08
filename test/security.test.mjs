@@ -253,6 +253,12 @@ describe("secrets hidden behind a base64 encoding", () => {
     const split = `+const k = "${enc.slice(0, 8)}​${enc.slice(8)}";`;
     assert.equal(scanDiff(split).ok, false);
   });
+
+  it("still finds a key encoded behind unicode tag characters (ASCII smuggling)", () => {
+    const enc = b64(AWS);
+    const split = `+const k = "${enc.slice(0, 8)}\u{E0001}\u{E0020}${enc.slice(8)}";`;
+    assert.equal(scanDiff(split).ok, false);
+  });
 });
 
 describe("a secret finding names where the secret is", () => {

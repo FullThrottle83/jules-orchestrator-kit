@@ -527,9 +527,9 @@ export function checkCrossPackageImports(diffOrText = "", root = process.cwd(), 
   };
 }
 
-// Zero-width and bidi-control characters. Inserting one mid-token defeats a
-// regex without changing how the value renders, copies, or authenticates.
-const INVISIBLE_CHARS = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+// Zero-width, bidi-control characters, and Unicode tag plane (U+E0000..U+E007F).
+// Inserting one mid-token defeats a regex without changing how the value renders, copies, or authenticates.
+const INVISIBLE_CHARS = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|[\u{E0000}-\u{E007F}]/gu;
 
 // Unicode lookalikes that NFKD does NOT decompose. Full-width and other
 // compatibility forms are handled by String#normalize("NFKD") below; these are

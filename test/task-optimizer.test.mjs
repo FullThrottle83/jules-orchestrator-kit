@@ -84,6 +84,7 @@ test("optimizeTaskPrompt synthesizes structured task envelope with exploration b
 
   assert.ok(opt.optimizedPrompt.includes("# TASK: Fix JWT secret parsing"));
   assert.ok(opt.optimizedPrompt.includes("Google Labs Exploration Budget Protocol (3-Phase Discovery)"));
+  assert.ok(opt.optimizedPrompt.includes("Use deep planning mode"));
   assert.ok(opt.optimizedPrompt.includes("Internal Critic Agent Focus"));
   assert.ok(opt.optimizedPrompt.includes("`npm test`"));
   assert.ok(opt.optimizedPrompt.includes("Standard Guardrails"));
