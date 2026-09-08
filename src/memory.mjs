@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
+import { filterDiffByPaths } from "./git.mjs";
 
 /**
  * The learning ledger, and why it needs the same discipline as the rest.
@@ -343,7 +344,10 @@ export function harvestFailure(root = process.cwd(), opts = {}) {
   // Guard: Diff Limit check (75 KiB limit)
   const MAX_DIFF_BYTES = 75 * 1024;
   if (Buffer.byteLength(diffText, "utf8") > MAX_DIFF_BYTES) {
-    return { status: "REJECTED", reason: "DIFF_PAYLOAD_LIMIT: Diff payload exceeds 75 KiB limit." };
+    const pruned = filterDiffByPaths(diffText);
+    if (Buffer.byteLength(pruned.diff, "utf8") > MAX_DIFF_BYTES) {
+      return { status: "REJECTED", reason: "DIFF_PAYLOAD_LIMIT: Diff payload exceeds 75 KiB limit." };
+    }
   }
 
   // Extract error trace line

@@ -107,7 +107,7 @@ export const MCP_TOOLS = [
       properties: {
         title: { type: "string", description: "Short descriptive title for the task" },
         prompt: { type: "string", description: "Detailed task instructions and prompt" },
-        role: { type: "string", description: "Specialist agent role (overseer | bolt | sentinel | janitor)" },
+        role: { type: "string", description: "Specialist agent role (overseer | bolt | sentinel | janitor | bulwark | typist)" },
         tier: { type: "string", description: "Force the Cost Router tier when router.enabled (fast | complex); omit to let the heuristic classifier decide" },
       },
       required: ["prompt"],

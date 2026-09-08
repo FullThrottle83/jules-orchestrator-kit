@@ -1008,3 +1008,107 @@ export function resolveGitRemoteOrigin(root = process.cwd()) {
   }
 }
 
+/**
+ * Default globs for generated, bundled, and lockfile paths that exhaust the diff budget.
+ */
+export const DEFAULT_GENERATED_GLOBS = [
+  "dist/**",
+  "**/dist/**",
+  "**/*.map",
+  "**/*-lock.yaml",
+  "**/*-lock.json",
+  "**/package-lock.json",
+  "**/pnpm-lock.yaml",
+  "**/yarn.lock",
+  "**/Cargo.lock",
+  "**/generated/**",
+];
+
+const REGEXP_SPECIAL = ".+?^${}()|[]\\";
+
+/**
+ * Convert a glob with * and ** into an anchored RegExp.
+ * @param {string} glob
+ * @returns {RegExp}
+ */
+export function globToRegExp(glob = "") {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        if (glob[i + 2] === "/") {
+          re += "(?:.*/)?";
+          i += 2;
+        } else {
+          re += ".*";
+          i += 1;
+        }
+      } else {
+        re += "[^/]*";
+      }
+    } else if (REGEXP_SPECIAL.includes(c)) {
+      re += "\\" + c;
+    } else {
+      re += c;
+    }
+  }
+  return new RegExp("^" + re + "$");
+}
+
+/**
+ * Filter out per-file sections whose target path matches any ignore glob from a unified git diff.
+ * Returns the filtered diff text and the array of excluded file paths.
+ * If filtering would remove all file sections, the original diff is preserved.
+ *
+ * @param {string} diff - Unified git diff
+ * @param {string[]} [ignoreGlobs=DEFAULT_GENERATED_GLOBS] - List of glob patterns
+ * @returns {{ diff: string, excludedPaths: string[] }}
+ */
+export function filterDiffByPaths(diff = "", ignoreGlobs = DEFAULT_GENERATED_GLOBS) {
+  if (!diff || typeof diff !== "string" || !ignoreGlobs || ignoreGlobs.length === 0) {
+    return { diff: diff || "", excludedPaths: [] };
+  }
+
+  const matchers = ignoreGlobs.map(globToRegExp);
+  const sections = diff.split(/(?=^diff --git )/m);
+  const kept = [];
+  const excludedPaths = [];
+  let fileSectionsCount = 0;
+
+  for (const section of sections) {
+    if (!section.startsWith("diff --git ")) {
+      if (section.length > 0) kept.push(section);
+      continue;
+    }
+
+    fileSectionsCount++;
+    const match = section.match(/^diff --git a\/.*? b\/(.+)$/m);
+    let path = match ? match[1].trim() : undefined;
+    if (path) {
+      path = path.replace(/^["']|["']$/g, "");
+    }
+
+    if (path && matchers.some((re) => re.test(path))) {
+      excludedPaths.push(path);
+      continue;
+    }
+    kept.push(section);
+  }
+
+  if (fileSectionsCount > 0 && excludedPaths.length === fileSectionsCount) {
+    return { diff, excludedPaths: [] };
+  }
+
+  return { diff: kept.join(""), excludedPaths };
+}
+
+/**
+ * Compute byte length of diff after pruning generated files and lockfiles.
+ */
+export function prunedDiffBytes(root = process.cwd(), base = "main", mode = "committed", ignoreGlobs = DEFAULT_GENERATED_GLOBS) {
+  const text = diffText(root, base, mode);
+  const filtered = filterDiffByPaths(text, ignoreGlobs);
+  return Buffer.byteLength(filtered.diff, "utf-8");
+}
+

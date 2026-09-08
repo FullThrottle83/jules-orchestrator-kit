@@ -18,7 +18,7 @@ test("Role prompts are stack-neutral", async (t) => {
     // a broken promise rather than an undocumented feature. Names are matched
     // case-insensitively by resolveRolePrompt, so the on-disk filename can be
     // Title-Case without affecting dispatch.
-    const required = ["overseer", "bolt", "sentinel", "janitor", "a11y", "scribe", "spectator", "alchemist"];
+    const required = ["overseer", "bolt", "sentinel", "janitor", "a11y", "scribe", "spectator", "alchemist", "bulwark", "typist"];
     const present = readdirSync(SHIPPED_PROMPTS)
       .filter((f) => f.endsWith(".md"))
       .map((f) => f.replace(/\.md$/i, "").toLowerCase());

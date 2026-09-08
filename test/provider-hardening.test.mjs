@@ -502,6 +502,53 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
       server.close();
     }
   });
+
+  await t.test("o) TokenPool balances tokens by lowest quota utilization", () => {
+    // primary token: default limit 100
+    // secondary token: default limit 15
+    const pool = new TokenPool(["key-primary", "key-secondary"]);
+    pool.recordUsage("key-primary"); // 1/100 = 0.01
+    pool.recordUsage("key-secondary"); // 1/15 = 0.067
+
+    // Key-primary has lower utilization (0.01 < 0.067), so it should be chosen next
+    assert.equal(pool.getNextToken(), "key-primary");
+
+    const inv = pool.getInventory();
+    assert.equal(inv[0].limit, 100);
+    assert.equal(inv[1].limit, 15);
+    assert.equal(inv[0].usage, 1);
+    assert.equal(inv[1].usage, 1);
+  });
+
+  await t.test("p) TokenPool.fromEnv supports JULES_MAIN_TOKEN and JULES_SECONDARY_TOKENS", () => {
+    const prevMain = process.env.JULES_MAIN_TOKEN;
+    const prevSec = process.env.JULES_SECONDARY_TOKENS;
+    const prevPrimary = process.env.JULES_API_KEY;
+    const prevKeys = process.env.JULES_API_KEYS;
+
+    try {
+      delete process.env.JULES_API_KEY;
+      delete process.env.JULES_API_KEYS;
+      delete process.env.JULES_API_KEY_SECONDARY;
+      process.env.JULES_MAIN_TOKEN = "main-token-123456";
+      process.env.JULES_SECONDARY_TOKENS = "sec-token-1,sec-token-2";
+
+      const pool = TokenPool.fromEnv();
+      assert.equal(pool.size, 3);
+      assert.equal(pool.tokens[0], "main-token-123456");
+      assert.equal(pool.tokens[1], "sec-token-1");
+      assert.equal(pool.tokens[2], "sec-token-2");
+    } finally {
+      if (prevMain !== undefined) process.env.JULES_MAIN_TOKEN = prevMain;
+      else delete process.env.JULES_MAIN_TOKEN;
+      if (prevSec !== undefined) process.env.JULES_SECONDARY_TOKENS = prevSec;
+      else delete process.env.JULES_SECONDARY_TOKENS;
+      if (prevPrimary !== undefined) process.env.JULES_API_KEY = prevPrimary;
+      else delete process.env.JULES_API_KEY;
+      if (prevKeys !== undefined) process.env.JULES_API_KEYS = prevKeys;
+      else delete process.env.JULES_API_KEYS;
+    }
+  });
 });
 
 

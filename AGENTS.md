@@ -79,8 +79,8 @@ To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhe
 ### Multi-Agent Coordination, Verification Gates & Web Envelopes
 
 - **Task Envelope Premise Validator**: Validates paths, scope, and base freshness (`agentctl task create`).
-- **Task Envelopes & Templates**: Pre-calibrated, stack-agnostic templates (`agentctl task template --list`): Web (CWV/WCAG/SEO/Playwright/i18n/AI-access), Hardening (dead-code, mutation, CI falsify, isolation, error-paths, security), Universal (`agent-dep-audit`, `agent-doc-drift`, `agent-config-audit`, `agent-api-contract`), Deep Think (`debug`, `feature`, `optimize`, `harden`).
-- **Specialist Roles**: Eight personas in `.agent/prompts/` selected via `agentctl dispatch --role <name>`: `overseer`, `bolt`, `sentinel`, `janitor`, `a11y`, `scribe`, `spectator`, `alchemist`.
+- **Task Envelopes & Templates**: Stack-agnostic templates (`agentctl task template --list`): Web (CWV/WCAG/SEO/Playwright/i18n/AI-access), Hardening (dead-code, mutation, CI falsify, isolation, error-paths, security), Universal (`agent-dep-audit`, `agent-doc-drift`, `agent-config-audit`, `agent-api-contract`), Deep Think (`debug`, `feature`, `optimize`, `harden`).
+- **Specialist Roles**: Ten personas in `.agent/prompts/` selected via `agentctl dispatch --role <name>`: `overseer`, `bolt`, `sentinel`, `janitor`, `a11y`, `scribe`, `spectator`, `alchemist`, `bulwark`, `typist`.
 - **Stale-Base Gate Predicate**: Rejects PRs whose merge-base is > 25 commits behind `origin/main`.
 - **Asset Integrity Gate**: Inspects assets (`.woff2`, `.png`, `.jpg`) to ensure error pages never land silently.
 - **Edge-Runtime Import Guard**: Blocks unsupported native Node imports (`node:fs`, `node:child_process`) in Edge environments.

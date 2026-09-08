@@ -185,19 +185,36 @@ const NAMED_PRESETS = {
  * Multi-token manager with round-robin rotation, 429 quarantine/cooldown, and failover.
  */
 export class TokenPool {
-  constructor(tokens = []) {
+  constructor(tokens = [], options = {}) {
     this.tokens = Array.from(new Set(tokens.filter(Boolean)));
     this.currentIndex = 0;
     this.cooldowns = new Map(); // token -> cooldownExpiryTimestamp
     this.usage24h = new Map(); // token -> count
+    this.limits = new Map(Object.entries(options.limits || {}));
+  }
+
+  getLimit(token, index) {
+    if (this.limits.has(token)) return this.limits.get(token);
+    return index === 0 ? 100 : 15;
   }
 
   static fromEnv(config = {}) {
-    const rawList = (process.env.JULES_API_KEYS || process.env.JULES_API_KEY_SECONDARY || "")
+    const rawList = (
+      process.env.JULES_API_KEYS ||
+      process.env.JULES_API_KEY_SECONDARY ||
+      process.env.JULES_SECONDARY_TOKENS ||
+      process.env.AGENT_SECONDARY_TOKENS ||
+      ""
+    )
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    const primary = (process.env.JULES_API_KEY || "").trim();
+    const primary = (
+      process.env.JULES_API_KEY ||
+      process.env.JULES_MAIN_TOKEN ||
+      process.env.AGENT_MAIN_TOKEN ||
+      ""
+    ).trim();
     const configKeys = Array.isArray(config.julesApiKeys) ? config.julesApiKeys : [];
     const combined = Array.from(new Set([primary, ...rawList, ...configKeys].filter(Boolean)));
     return new TokenPool(combined);
@@ -211,15 +228,38 @@ export class TokenPool {
     if (this.tokens.length === 0) return "";
     const now = Date.now();
 
-    // Find first non-cooldown token starting from currentIndex
+    // Collect available (non-cooldown) candidates
+    const available = [];
     for (let i = 0; i < this.tokens.length; i++) {
       const idx = (this.currentIndex + i) % this.tokens.length;
       const token = this.tokens[idx];
       const cooldownUntil = this.cooldowns.get(token) || 0;
       if (now >= cooldownUntil) {
-        this.currentIndex = (idx + 1) % this.tokens.length;
-        return token;
+        const usage = this.usage24h.get(token) || 0;
+        const limit = this.getLimit(token, idx);
+        const utilization = limit > 0 ? usage / limit : 1;
+        available.push({ token, idx, usage, limit, utilization });
       }
+    }
+
+    if (available.length > 0) {
+      // If any usage has been recorded, pick the one with lowest utilization
+      const hasUsage = available.some((a) => a.usage > 0);
+      if (hasUsage) {
+        let best = available[0];
+        for (const candidate of available) {
+          if (candidate.utilization < best.utilization) {
+            best = candidate;
+          }
+        }
+        this.currentIndex = (best.idx + 1) % this.tokens.length;
+        return best.token;
+      }
+
+      // If no usage recorded yet, preserve exact round-robin behavior
+      const chosen = available[0];
+      this.currentIndex = (chosen.idx + 1) % this.tokens.length;
+      return chosen.token;
     }
 
     // If all are in cooldown, pick the one that expires earliest
@@ -253,6 +293,8 @@ export class TokenPool {
       const cooldownUntil = this.cooldowns.get(token) || 0;
       const inCooldown = now < cooldownUntil;
       const maskedToken = token.length <= 8 ? "****" : `${token.slice(0, 4)}...${token.slice(-4)}`;
+      const limit = this.getLimit(token, index);
+      const usage = this.usage24h.get(token) || 0;
       return {
         id: `key-${index + 1}`,
         index,
@@ -260,7 +302,9 @@ export class TokenPool {
         maskedToken,
         inCooldown,
         cooldownRemainingMs: inCooldown ? cooldownUntil - now : 0,
-        usage: this.usage24h.get(token) || 0,
+        usage,
+        limit,
+        utilization: limit > 0 ? usage / limit : 1,
       };
     });
   }

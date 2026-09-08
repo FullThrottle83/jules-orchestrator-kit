@@ -101,7 +101,7 @@ Options:
   --prompt, -p          Task prompt text — dispatch, task create and task optimize
                         also accept it as a positional argument
   --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)
-  --role, -r            Specify specialist agent role (overseer | bolt | sentinel | janitor)
+  --role, -r            Specify specialist agent role (overseer | bolt | sentinel | janitor | bulwark | typist)
   --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:
   --check-premise       Verify task goal/oracle passes locally before burning API budget
   --dag                 Execute queue tasks via DAG dependency resolution
