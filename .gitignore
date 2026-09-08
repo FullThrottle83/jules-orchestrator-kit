@@ -14,4 +14,9 @@ node_modules/
 .agent/evidence/
 .test-kernel-fix-*/
 
-
+# Maintainer & Operator Private Overlay
+.maintainer/
+.operator/
+CLAUDE.md
+.claude/
+.antigravity/
