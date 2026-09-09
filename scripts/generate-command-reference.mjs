@@ -25,8 +25,9 @@ const TARGET = join(ROOT, "docs", "COMMAND_REFERENCE.md");
 const rendered = formatRegistryMarkdown().replace(/\s+$/, "") + "\n";
 
 if (process.argv.includes("--check")) {
-  const onDisk = existsSync(TARGET) ? readFileSync(TARGET, "utf-8") : null;
-  if (onDisk === rendered) {
+  const onDisk = existsSync(TARGET) ? readFileSync(TARGET, "utf-8").replace(/\r\n/g, "\n") : null;
+  const expected = rendered.replace(/\r\n/g, "\n");
+  if (onDisk === expected) {
     console.log("✅ docs/COMMAND_REFERENCE.md is in sync with the command registry.");
     process.exit(0);
   }

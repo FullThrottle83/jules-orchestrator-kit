@@ -1360,8 +1360,8 @@ describe("P06: CLI case labels and registry descriptors stay in sync", () => {
 
   it("docs/COMMAND_REFERENCE.md matches the rendered registry", () => {
     const root = fileURLToPath(new URL("..", import.meta.url));
-    const onDisk = readFileSync(join(root, "docs", "COMMAND_REFERENCE.md"), "utf-8");
-    const rendered = `${formatRegistryMarkdown()}`.replace(/\s+$/, "") + "\n";
+    const onDisk = readFileSync(join(root, "docs", "COMMAND_REFERENCE.md"), "utf-8").replace(/\r\n/g, "\n");
+    const rendered = `${formatRegistryMarkdown()}`.replace(/\s+$/, "").replace(/\r\n/g, "\n") + "\n";
     assert.equal(onDisk, rendered, "stale reference — run: node scripts/generate-command-reference.mjs");
   });
 });

@@ -352,10 +352,12 @@ export function checkDocSync(root = process.cwd(), opts = {}) {
     if (rendered === null) {
       add("COMMAND_REFERENCE in sync", false, "could not render registry (import failed)");
     } else {
+      const diskNorm = referenceOnDisk.replace(/\r\n/g, "\n");
+      const renderedNorm = rendered.replace(/\r\n/g, "\n");
       add(
         "COMMAND_REFERENCE in sync",
-        referenceOnDisk === rendered,
-        referenceOnDisk === rendered
+        diskNorm === renderedNorm,
+        diskNorm === renderedNorm
           ? "matches src/ops/command-registry.mjs"
           : "stale — run: node scripts/generate-command-reference.mjs"
       );
