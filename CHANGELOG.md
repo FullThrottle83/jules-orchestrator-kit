@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Session List CLI & Remote Enumeration (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Added `agentctl session list` (and `agentctl sessions`) with support for `--limit`, `--remote`, `--dry-run`, and `--json`, enabling inspection of recent and active Jules sessions across remote API endpoints and local ledgers.
+- **Unattended Dispatch Flag (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Added `--auto-approve-plans` and `--auto-approve` flags to `agentctl dispatch`, allowing autonomous runs to disable manual plan approval requirements (`requirePlanApproval: false`).
+- **MCP Session Lifecycle Tools & Resources (`src/mcp.mjs`)**: Added `jules_approve_plan`, `jules_send_message`, and `jules_wait_for_session` tools (20 total MCP tools) alongside `jules://status`, `jules://sources`, and `jules://sessions` MCP resources.
+- **Debugger Specialist Role & Precondition Verification Protocol (`.agent/prompts/Debugger.md`, `.agent/prompts/E2E.md`)**: Added dedicated `debugger` role for failure localization and root-cause analysis without modifying test assertions, and codified "Verify before you block" precondition checking for end-to-end tests.
+
+### Changed
+- **Engineering Role Professionalization & Aliases (`src/role-resolver.mjs`, `.agent/prompts/`)**: Replaced fantasy/RPG nomenclature across all 11 specialist roles (`Bulwark` $\rightarrow$ `resilience`, `Alchemist` $\rightarrow$ `database`, `Janitor` $\rightarrow$ `hygiene`, `Sentinel` $\rightarrow$ `security`, `Bolt` $\rightarrow$ `performance`, `Spectator` $\rightarrow$ `e2e`, `Overseer` $\rightarrow$ `auditor`, `Typist` $\rightarrow$ `types`, `Scribe` $\rightarrow$ `docs`, `Hunter` $\rightarrow$ `debugger`, `a11y` $\rightarrow$ `a11y`). Stripped emojis and colloquial prose, while maintaining complete backward compatibility via `ROLE_ALIASES` for CLI flags, dispatches, and configs.
+
 ## [0.72.3] - 2026-09-08
 *A directive not understood is silence; a tag not stripped is a backdoor.*
 

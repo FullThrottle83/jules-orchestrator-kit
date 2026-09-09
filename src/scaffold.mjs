@@ -250,7 +250,7 @@ export function scaffoldRepoAssets(root = process.cwd(), options = {}) {
   }
 
   if (copyDir(join(KIT_ROOT, ".agent/prompts"), join(agentDir, "prompts"), force) > 0) {
-    created.push(".agent/prompts/ (Overseer, Bolt, Sentinel, Janitor, A11y, Scribe, Spectator, Alchemist)");
+    created.push(".agent/prompts/ (Auditor, Performance, Security, Hygiene, Resilience, Types, Debugger, E2E, Database, Docs, A11y)");
   }
   if (copyDir(join(KIT_ROOT, ".agent/rules"), join(agentDir, "rules"), force) > 0) {
     created.push(".agent/rules/");

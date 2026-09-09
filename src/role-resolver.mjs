@@ -20,6 +20,69 @@ import { loadConfig } from "./config.mjs";
 export const ROLE_PROMPT_TOKENS = ["VERIFY_TEST", "VERIFY_LINT", "VERIFY_BUILD", "DIFF_KB", "BASE_BRANCH"];
 
 /**
+ * Standard engineering roles and their legacy/convenience aliases.
+ * Provides full backward-compatibility for prior command flags (--role bolt, etc.).
+ */
+export const ROLE_ALIASES = Object.freeze({
+  // Legacy RPG/fantasy names mapped to canonical engineering roles
+  overseer: "auditor",
+  bolt: "performance",
+  sentinel: "security",
+  janitor: "hygiene",
+  spectator: "e2e",
+  scribe: "docs",
+  alchemist: "database",
+  bulwark: "resilience",
+  typist: "types",
+  hunter: "debugger",
+
+  // Reverse mapping for repos that still hold legacy filenames on disk
+  auditor: "overseer",
+  performance: "bolt",
+  security: "sentinel",
+  hygiene: "janitor",
+  e2e: "spectator",
+  docs: "scribe",
+  database: "alchemist",
+  resilience: "bulwark",
+  types: "typist",
+  debugger: "hunter",
+
+  // Common operator shortcuts
+  perf: "performance",
+  sec: "security",
+  db: "database",
+  cleanup: "hygiene",
+  accessibility: "a11y",
+  documentation: "docs",
+  visual: "e2e",
+  playwright: "e2e",
+  schema: "database",
+  migration: "database",
+  reliability: "resilience",
+  typecheck: "types",
+  "type-safety": "types",
+  debug: "debugger",
+  "defect-fix": "debugger",
+  lead: "auditor",
+  coordinator: "auditor",
+});
+
+export const CANONICAL_ROLES = Object.freeze([
+  "auditor",
+  "performance",
+  "security",
+  "hygiene",
+  "a11y",
+  "docs",
+  "e2e",
+  "database",
+  "resilience",
+  "types",
+  "debugger",
+]);
+
+/**
  * Substitutes `{{TOKEN}}` placeholders in a role prompt from resolved config.
  *
  * @param {string} content
@@ -51,14 +114,30 @@ export function hydrateRolePrompt(content = "", config = {}) {
 export function resolveRolePrompt(root = process.cwd(), roleName = "", opts = {}) {
   if (!roleName || typeof roleName !== "string") return null;
   const cleanName = roleName.trim().toLowerCase();
+  const aliasTarget = ROLE_ALIASES[cleanName];
+  const candidates = [];
+  if (aliasTarget && CANONICAL_ROLES.includes(aliasTarget)) {
+    candidates.push(aliasTarget);
+  }
+  if (!candidates.includes(cleanName)) {
+    candidates.push(cleanName);
+  }
+  if (aliasTarget && !candidates.includes(aliasTarget)) {
+    candidates.push(aliasTarget);
+  }
+
   const promptsDir = join(root, ".agent", "prompts");
   if (!existsSync(promptsDir)) return null;
 
   try {
     const files = readdirSync(promptsDir);
-    const matched = files.find(
-      (f) => f.toLowerCase() === `${cleanName}.md` || f.toLowerCase() === cleanName
-    );
+    let matched = null;
+    for (const cand of candidates) {
+      matched = files.find(
+        (f) => f.toLowerCase() === `${cand}.md` || f.toLowerCase() === cand
+      );
+      if (matched) break;
+    }
     if (matched) {
       const fullPath = join(promptsDir, matched);
       const raw = readFileSync(fullPath, "utf-8").trim();

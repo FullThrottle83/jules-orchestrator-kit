@@ -197,7 +197,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Scrubbing:** Evaluates Deny-before-Allow rules against canonicalized paths. Detects high-entropy strings and base64-encoded credentials (e.g. Kubernetes manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, backed by syntax-check fallback recovery.
 * **Terminal UI & Diagnostics (`agentctl doctor`):** Interactive terminal dashboard, VFS lock management, and automated system diagnostics.
-* **Mechanically Verified:** Comprehensive test suite of **1426 unit tests across 196 suites**, with 59 activation-coverage canaries and 100% pass rate.
+* **Mechanically Verified:** Comprehensive test suite of **1429 unit tests across 196 suites**, with 59 activation-coverage canaries and 100% pass rate.
 
 <br/>
 

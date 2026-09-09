@@ -18,6 +18,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.id, 2);
     assert.equal(res.result.protocolVersion, "2024-11-05");
     assert.deepEqual(res.result.serverInfo, MCP_SERVER_INFO);
+    assert.deepEqual(res.result.capabilities, { tools: {}, resources: {} });
   });
 
   await t.test("lists available tools via tools/list", async () => {
@@ -25,7 +26,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 3);
     assert.equal(Array.isArray(res.result.tools), true);
-    assert.equal(res.result.tools.length, 17);
+    assert.equal(res.result.tools.length, 20);
     assert.deepEqual(res.result.tools, MCP_TOOLS);
     const names = res.result.tools.map((t) => t.name);
     assert.deepEqual(names, [
@@ -46,6 +47,9 @@ test("Model Context Protocol (MCP) Server", async (t) => {
       "jules_apply_patch",
       "jules_list_sources",
       "jules_prune_sessions",
+      "jules_approve_plan",
+      "jules_send_message",
+      "jules_wait_for_session",
     ]);
   });
 
@@ -253,5 +257,102 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     );
     assert.equal(resList.jsonrpc, "2.0");
     assert.equal(resList.id, 302);
+
+    // jules_approve_plan missing sessionId
+    const resApproveMissing = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 303,
+      method: "tools/call",
+      params: { name: "jules_approve_plan", arguments: {} },
+    });
+    assert.equal(resApproveMissing.error.code, -32602);
+
+    // jules_approve_plan dry-run
+    const resApprove = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 304,
+      method: "tools/call",
+      params: { name: "jules_approve_plan", arguments: { sessionId: "session-123" } },
+    }, { dryRun: true });
+    assert.equal(resApprove.jsonrpc, "2.0");
+    assert.equal(resApprove.id, 304);
+
+    // jules_send_message missing params
+    const resSendMissing = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 305,
+      method: "tools/call",
+      params: { name: "jules_send_message", arguments: { sessionId: "session-123" } },
+    });
+    assert.equal(resSendMissing.error.code, -32602);
+
+    // jules_send_message dry-run
+    const resSend = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 306,
+      method: "tools/call",
+      params: { name: "jules_send_message", arguments: { sessionId: "session-123", prompt: "Hello" } },
+    }, { dryRun: true });
+    assert.equal(resSend.jsonrpc, "2.0");
+    assert.equal(resSend.id, 306);
+
+    // jules_wait_for_session dry-run
+    const resWait = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 307,
+      method: "tools/call",
+      params: { name: "jules_wait_for_session", arguments: { sessionId: "session-123" } },
+    }, { dryRun: true });
+    assert.equal(resWait.jsonrpc, "2.0");
+    assert.equal(resWait.id, 307);
+    const parsedWait = JSON.parse(resWait.result.content[0].text);
+    assert.equal(parsedWait.ok, true);
+    assert.equal(parsedWait.finalState, "COMPLETED");
+  });
+
+  await t.test("handles MCP resources/list and resources/read", async () => {
+    const listRes = await handleMcpRequest({ jsonrpc: "2.0", id: 401, method: "resources/list" });
+    assert.equal(listRes.jsonrpc, "2.0");
+    assert.equal(listRes.id, 401);
+    assert.equal(listRes.result.resources.length, 3);
+    const uris = listRes.result.resources.map((r) => r.uri);
+    assert.deepEqual(uris, ["jules://status", "jules://sources", "jules://sessions"]);
+
+    // read jules://status
+    const statusRes = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 402,
+      method: "resources/read",
+      params: { uri: "jules://status" },
+    });
+    assert.equal(statusRes.jsonrpc, "2.0");
+    assert.equal(statusRes.id, 402);
+    assert.equal(statusRes.result.contents[0].uri, "jules://status");
+    const parsedStatus = JSON.parse(statusRes.result.contents[0].text);
+    assert.ok(parsedStatus.version);
+    assert.ok(parsedStatus.budget);
+
+    // read jules://sources dry-run
+    const sourcesRes = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 403,
+        method: "resources/read",
+        params: { uri: "jules://sources" },
+      },
+      { dryRun: true }
+    );
+    assert.equal(sourcesRes.jsonrpc, "2.0");
+    assert.equal(sourcesRes.id, 403);
+    assert.equal(sourcesRes.result.contents[0].uri, "jules://sources");
+
+    // read unknown resource
+    const unknownRes = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 404,
+      method: "resources/read",
+      params: { uri: "jules://unknown" },
+    });
+    assert.equal(unknownRes.error.code, -32602);
   });
 });

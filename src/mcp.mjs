@@ -107,7 +107,7 @@ export const MCP_TOOLS = [
       properties: {
         title: { type: "string", description: "Short descriptive title for the task" },
         prompt: { type: "string", description: "Detailed task instructions and prompt" },
-        role: { type: "string", description: "Specialist agent role (overseer | bolt | sentinel | janitor | bulwark | typist)" },
+        role: { type: "string", description: "Specialist agent role (auditor | performance | security | hygiene | resilience | types | debugger | e2e | database | docs | a11y)" },
         tier: { type: "string", description: "Force the Cost Router tier when router.enabled (fast | complex); omit to let the heuristic classifier decide" },
       },
       required: ["prompt"],
@@ -310,6 +310,47 @@ export const MCP_TOOLS = [
       },
     },
   },
+  {
+    name: "jules_approve_plan",
+    description: "Approve a proposed execution plan for a Jules session awaiting plan approval.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Jules session ID to approve plan for" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "jules_send_message",
+    description: "Send feedback, steering instructions, or reply message to an active Jules session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Jules session ID" },
+        prompt: { type: "string", description: "Instruction or feedback message" },
+      },
+      required: ["sessionId", "prompt"],
+    },
+  },
+  {
+    name: "jules_wait_for_session",
+    description: "Poll a Jules session until it reaches a terminal or action-required state (COMPLETED, FAILED, AWAITING_PLAN_APPROVAL).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Jules session ID" },
+        timeoutSeconds: { type: "number", description: "Maximum wait time in seconds (default 300, max 1800)" },
+        pollIntervalSeconds: { type: "number", description: "Interval between polls in seconds (default 10, min 2)" },
+        targetStates: {
+          type: "array",
+          items: { type: "string" },
+          description: "States that stop polling (defaults to COMPLETED, FAILED, AWAITING_PLAN_APPROVAL)",
+        },
+      },
+      required: ["sessionId"],
+    },
+  },
 ];
 
 export async function handleMcpRequest(request, opts = {}) {
@@ -327,7 +368,7 @@ export async function handleMcpRequest(request, opts = {}) {
       id,
       result: {
         protocolVersion: "2024-11-05",
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, resources: {} },
         serverInfo: MCP_SERVER_INFO,
       },
     };
@@ -335,6 +376,113 @@ export async function handleMcpRequest(request, opts = {}) {
 
   if (method === "notifications/initialized") {
     return null;
+  }
+
+  if (method === "resources/list") {
+    return {
+      jsonrpc: "2.0",
+      id,
+      result: {
+        resources: [
+          {
+            uri: "jules://status",
+            name: "Orchestrator Status",
+            description: "Daily task budget, active locks, provider readiness, and verification profile",
+            mimeType: "application/json",
+          },
+          {
+            uri: "jules://sources",
+            name: "Connected Sources",
+            description: "Connected GitHub repository sources available to the Jules account",
+            mimeType: "application/json",
+          },
+          {
+            uri: "jules://sessions",
+            name: "Recent Sessions",
+            description: "Recent Jules coding sessions snapshot",
+            mimeType: "application/json",
+          },
+        ],
+      },
+    };
+  }
+
+  if (method === "resources/read") {
+    const uri = params?.uri;
+    const isDryRun = Boolean(params?.dryRun ?? opts?.dryRun ?? opts?.config?.dryRun);
+
+    if (uri === "jules://status") {
+      const stackInfo = detectStack(root);
+      const budget = budgetStatus(config, root);
+      const locks = lockStatus(root);
+      const { probeProvider } = await import("./provider-readiness.mjs");
+      const { buildDefaultStages } = await import("./profiles.mjs");
+      const providerProbe = probeProvider(config.provider || "jules");
+      const profileStages = config.verify.stages || buildDefaultStages(config.verify);
+      const status = {
+        version: MCP_SERVER_INFO.version,
+        root,
+        stack: stackInfo.stack,
+        budget: {
+          used: budget.used,
+          limit: budget.limit,
+          remaining: budget.remaining,
+          source: budget.source,
+          enforced: budget.enforced,
+          scope: "this-repository",
+        },
+        activeLocksCount: locks.length,
+        locks,
+        provider: {
+          name: providerProbe.name,
+          kind: providerProbe.kind,
+          ready: providerProbe.ready,
+          reason: providerProbe.reason,
+        },
+        verification: {
+          profile: config.verify.profile,
+          stages: profileStages.map((st) => st.id),
+          skipped: (config.verify.profileSkipped || []).map((sk) => sk.id),
+        },
+      };
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          contents: [{ uri, mimeType: "application/json", text: JSON.stringify(status, null, 2) }],
+        },
+      };
+    }
+
+    if (uri === "jules://sources") {
+      const provider = createProvider(config.provider || "jules", config);
+      const res = await provider.listSources({ root, dryRun: isDryRun });
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          contents: [{ uri, mimeType: "application/json", text: JSON.stringify(res, null, 2) }],
+        },
+      };
+    }
+
+    if (uri === "jules://sessions") {
+      const provider = createProvider(config.provider || "jules", config);
+      const res = await provider.listSessions({ root, pageSize: 20, dryRun: isDryRun });
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          contents: [{ uri, mimeType: "application/json", text: JSON.stringify(res, null, 2) }],
+        },
+      };
+    }
+
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32602, message: `Resource not found: ${uri}` },
+    };
   }
 
   if (method === "tools/list") {
@@ -724,6 +872,127 @@ export async function handleMcpRequest(request, opts = {}) {
           id,
           result: {
             content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_approve_plan") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        const provider = createProvider(config.provider || "jules", config);
+        const res = await provider.approvePlan(args.sessionId, { root, dryRun: isDryRun });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, session: res }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_send_message") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        if (!args.prompt) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'prompt'" },
+          };
+        }
+        const provider = createProvider(config.provider || "jules", config);
+        const res = await provider.resume(args.sessionId, args.prompt, { root, dryRun: isDryRun });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, session: res }, null, 2) }],
+          },
+        };
+      }
+
+      if (toolName === "jules_wait_for_session") {
+        if (!args.sessionId) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
+          };
+        }
+        const timeoutSec = Math.min(Math.max(args.timeoutSeconds || 300, 2), 1800);
+        const intervalSec = Math.min(Math.max(args.pollIntervalSeconds || 10, 1), 60);
+        const targetStates = new Set(
+          (args.targetStates && Array.isArray(args.targetStates)
+            ? args.targetStates
+            : ["COMPLETED", "FAILED", "AWAITING_PLAN_APPROVAL"]
+          ).map((s) => String(s).toUpperCase())
+        );
+        const provider = createProvider(config.provider || "jules", config);
+        const startedAt = Date.now();
+        let lastSession = null;
+
+        if (isDryRun) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ ok: true, dryRun: true, sessionId: args.sessionId, finalState: "COMPLETED", elapsedSeconds: 0 }, null, 2),
+              }],
+            },
+          };
+        }
+
+        while (Date.now() - startedAt < timeoutSec * 1000) {
+          lastSession = await provider.getSession(args.sessionId, { root });
+          const curState = String(lastSession?.state || lastSession?.status || "").toUpperCase();
+          if (targetStates.has(curState)) {
+            return {
+              jsonrpc: "2.0",
+              id,
+              result: {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    ok: true,
+                    sessionId: args.sessionId,
+                    finalState: curState,
+                    elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+                    session: lastSession,
+                  }, null, 2),
+                }],
+              },
+            };
+          }
+          await new Promise((r) => setTimeout(r, intervalSec * 1000));
+        }
+
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                timeout: true,
+                sessionId: args.sessionId,
+                lastObservedState: lastSession?.state || "UNKNOWN",
+                elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+              }, null, 2),
+            }],
+            isError: true,
           },
         };
       }

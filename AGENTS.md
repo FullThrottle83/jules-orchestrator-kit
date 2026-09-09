@@ -74,13 +74,13 @@ Operations run **only** via `agentctl`; a `scripts/*.mjs` not in `package.json` 
 
 ## 5. System Prompting & Guardrail Best Practices
 
-To maximize the ratio of mergeable PRs vs. failed or hallucinated sessions, adhere to the rules defined in `.agent/rules/jules-protocol.md`.
+To maximize mergeable PRs, adhere to `.agent/rules/jules-protocol.md`.
 
 ### Multi-Agent Coordination, Verification Gates & Web Envelopes
 
 - **Task Envelope Premise Validator**: Validates paths, scope, and base freshness (`agentctl task create`).
 - **Task Envelopes & Templates**: Stack-agnostic templates (`agentctl task template --list`): Web (CWV/WCAG/SEO/Playwright/i18n/AI-access), Hardening (dead-code, mutation, CI falsify, isolation, error-paths, security), Universal (`agent-dep-audit`, `agent-doc-drift`, `agent-config-audit`, `agent-api-contract`), Deep Think (`debug`, `feature`, `optimize`, `harden`).
-- **Specialist Roles**: Ten personas in `.agent/prompts/` selected via `agentctl dispatch --role <name>`: `overseer`, `bolt`, `sentinel`, `janitor`, `a11y`, `scribe`, `spectator`, `alchemist`, `bulwark`, `typist`.
+- **Specialist Roles**: 11 roles in `.agent/prompts/` selected via `agentctl dispatch --role <name>`: `auditor`, `performance`, `security`, `hygiene`, `resilience`, `types`, `debugger`, `e2e`, `database`, `docs`, `a11y` (legacy aliases supported).
 - **Stale-Base Gate Predicate**: Rejects PRs whose merge-base is > 25 commits behind `origin/main`.
 - **Asset Integrity Gate**: Inspects assets (`.woff2`, `.png`, `.jpg`) to ensure error pages never land silently.
 - **Edge-Runtime Import Guard**: Blocks unsupported native Node imports (`node:fs`, `node:child_process`) in Edge environments.

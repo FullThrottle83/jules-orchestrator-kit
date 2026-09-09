@@ -119,7 +119,7 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
     resolvedRole = resolveRolePrompt(root, inputObj.role);
     if (!resolvedRole) {
       throw new Error(
-        `Unknown agent role '${inputObj.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Overseer, Bolt, Sentinel, Janitor).`
+        `Unknown agent role '${inputObj.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Auditor, Performance, Security, Hygiene).`
       );
     }
     rawPrompt = `${resolvedRole.content}\n\n${rawPrompt}`.trim();

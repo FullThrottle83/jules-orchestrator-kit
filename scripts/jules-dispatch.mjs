@@ -40,7 +40,7 @@ export function getDynamicGuardrails(promptText = "") {
   const p = (promptText || "").toLowerCase();
   const rules = [];
   if (p.includes("auth") || p.includes("sec") || p.includes("key") || p.includes("token")) {
-    rules.push("Sentinel: SECRET REDACTION GUARDRAILS");
+    rules.push("Security (Sentinel): SECRET REDACTION GUARDRAILS");
   }
   if (p.includes("perf") || p.includes("optimiz") || p.includes("fast")) {
     rules.push("Performance Guidance (Bolt)");
@@ -49,7 +49,7 @@ export function getDynamicGuardrails(promptText = "") {
     rules.push("Clean Code Guidance (Janitor)");
   }
   if (p.includes("db") || p.includes("sql") || p.includes("database") || p.includes("schema")) {
-    rules.push("Alchemist: DATABASE GUARDRAILS");
+    rules.push("Database (Alchemist): DATABASE GUARDRAILS");
   }
   if (p.includes("css") || p.includes("tailwind") || p.includes("theme")) {
     rules.push("CSS & DESIGN GUARDRAILS");

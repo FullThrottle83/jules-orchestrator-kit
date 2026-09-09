@@ -189,4 +189,23 @@ test("every command that takes a prompt takes it the same three ways", async (t)
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  await t.test("dispatch accepts --auto-approve-plans and --auto-approve in dry-run", () => {
+    const dir = repoWithFailingTest("unused");
+    try {
+      const res = run(dir, ["dispatch", "--dry-run", "-p", "Refactor slug builder", "--auto-approve-plans", "--json"]);
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      const parsed = JSON.parse(res.stdout);
+      assert.equal(parsed.ok, true);
+      assert.equal(parsed.session?.data?.dryRun, true);
+
+      const resAlias = run(dir, ["dispatch", "--dry-run", "-p", "Refactor slug builder", "--auto-approve", "--json"]);
+      assert.equal(resAlias.status, 0, resAlias.stdout + resAlias.stderr);
+      const parsedAlias = JSON.parse(resAlias.stdout);
+      assert.equal(parsedAlias.ok, true);
+      assert.equal(parsedAlias.session?.data?.dryRun, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

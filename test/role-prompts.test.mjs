@@ -3,27 +3,48 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { resolveRolePrompt, hydrateRolePrompt, ROLE_PROMPT_TOKENS } from "../src/role-resolver.mjs";
+import { resolveRolePrompt, hydrateRolePrompt, ROLE_PROMPT_TOKENS, CANONICAL_ROLES, ROLE_ALIASES } from "../src/role-resolver.mjs";
 
 const SHIPPED_PROMPTS = join(process.cwd(), ".agent", "prompts");
 
 test("Role prompts are stack-neutral", async (t) => {
   // These files ship inside the npm package (`files` in package.json includes
-  // .agent/prompts/), so every `agentctl init` in any language gets them. They
-  // used to carry this kit's own contribution rules: "npm test", "npm run
-  // lint", and a ban on third-party npm packages in favour of Node built-ins.
-  await t.test("every documented specialist role ships as a prompt file", () => {
-    // JULES_RULES_TEMPLATE.md advertises these personas. A `--role` flag whose
-    // prompt is missing resolves to null, so a documented role with no file is
-    // a broken promise rather than an undocumented feature. Names are matched
-    // case-insensitively by resolveRolePrompt, so the on-disk filename can be
-    // Title-Case without affecting dispatch.
-    const required = ["overseer", "bolt", "sentinel", "janitor", "a11y", "scribe", "spectator", "alchemist", "bulwark", "typist"];
+  // .agent/prompts/), so every `agentctl init` in any language gets them.
+  await t.test("every canonical engineering specialist role ships as a prompt file", () => {
     const present = readdirSync(SHIPPED_PROMPTS)
-      .filter((f) => f.endsWith(".md"))
+      .filter((f) => f.endsWith(".md") && f !== "Task_Template.md")
       .map((f) => f.replace(/\.md$/i, "").toLowerCase());
-    for (const role of required) {
-      assert.ok(present.includes(role), `documented role "${role}" must have a prompt file in .agent/prompts/`);
+    for (const role of CANONICAL_ROLES) {
+      assert.ok(present.includes(role), `canonical role "${role}" must have a prompt file in .agent/prompts/`);
+    }
+  });
+
+  await t.test("legacy aliases resolve transparently to canonical prompt files", () => {
+    const legacyMap = {
+      overseer: "auditor",
+      bolt: "performance",
+      sentinel: "security",
+      janitor: "hygiene",
+      spectator: "e2e",
+      scribe: "docs",
+      alchemist: "database",
+      bulwark: "resilience",
+      typist: "types",
+      hunter: "debugger",
+    };
+    for (const [legacy, canonical] of Object.entries(legacyMap)) {
+      const resolved = resolveRolePrompt(process.cwd(), legacy);
+      assert.ok(resolved, `legacy alias "${legacy}" must resolve`);
+      assert.equal(resolved.role.toLowerCase(), canonical);
+      assert.ok(resolved.content.length > 50);
+    }
+  });
+
+  await t.test("operator shortcuts resolve to canonical prompt files", () => {
+    const shortcuts = ["perf", "sec", "db", "cleanup", "accessibility", "visual", "debug"];
+    for (const sc of shortcuts) {
+      const resolved = resolveRolePrompt(process.cwd(), sc);
+      assert.ok(resolved, `shortcut "${sc}" must resolve`);
     }
   });
 

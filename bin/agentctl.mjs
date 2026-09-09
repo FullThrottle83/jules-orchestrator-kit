@@ -101,7 +101,7 @@ Options:
   --prompt, -p          Task prompt text — dispatch, task create and task optimize
                         also accept it as a positional argument
   --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)
-  --role, -r            Specify specialist agent role (overseer | bolt | sentinel | janitor | bulwark | typist)
+  --role, -r            Specify specialist agent role (auditor | performance | security | hygiene | resilience | types | debugger)
   --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:
   --check-premise       Verify task goal/oracle passes locally before burning API budget
   --dag                 Execute queue tasks via DAG dependency resolution
@@ -289,6 +289,8 @@ async function main() {
           repoless: { type: "boolean" },
           "auto-pr": { type: "boolean" },
           "require-plan-approval": { type: "boolean" },
+          "auto-approve-plans": { type: "boolean" },
+          "auto-approve": { type: "boolean" },
           "check-premise": { type: "boolean" },
           idempotent: { type: "boolean" },
           author: { type: "string" },
@@ -322,6 +324,7 @@ async function main() {
         }
       }
 
+      const autoApprove = Boolean(values["auto-approve-plans"] || values["auto-approve"]);
       const task = {
         title: values.title || "CLI Dispatch Task",
         prompt: promptContent,
@@ -331,7 +334,7 @@ async function main() {
         branch: values.branch,
         repoless: values.repoless,
         autoPr: values["auto-pr"],
-        requirePlanApproval: values["require-plan-approval"],
+        requirePlanApproval: autoApprove ? false : values["require-plan-approval"],
         checkPremise: values["check-premise"] || values.idempotent,
         author: values.author,
         verifyCmd: values["verify-cmd"] || values.verify,
@@ -2434,7 +2437,103 @@ async function main() {
           process.exit(1);
         }
       }
-      console.error(`Error: Unknown session subcommand '${subAction}'. Use get.`);
+
+      if (subAction === "list" || subAction === "ls") {
+        const { values } = parseArgs({
+          args: args.slice(2),
+          options: {
+            limit: { type: "string", short: "l" },
+            "page-size": { type: "string" },
+            remote: { type: "boolean" },
+            "dry-run": { type: "boolean", short: "d" },
+            json: { type: "boolean", short: "j" },
+          },
+          allowPositionals: true,
+        });
+
+        const limit = Number(values.limit || values["page-size"]) || 20;
+        const { createProvider } = await import("../src/provider.mjs");
+        const provider = createProvider(config.provider || "jules", config);
+
+        try {
+          const res = await provider.listSessions({
+            root,
+            pageSize: limit,
+            dryRun: values["dry-run"],
+          });
+          const remoteSessions = Array.isArray(res?.sessions) ? res.sessions : [];
+
+          const localSessions = [];
+          try {
+            const { getStateDir } = await import("../src/state.mjs");
+            const { readdirSync, readFileSync, existsSync } = await import("node:fs");
+            const stateDir = getStateDir(root);
+            if (existsSync(stateDir)) {
+              const files = readdirSync(stateDir).filter((f) => f.startsWith("ledger-") && f.endsWith(".jsonl"));
+              for (const file of files) {
+                const lines = readFileSync(join(stateDir, file), "utf-8").split("\n").filter(Boolean);
+                for (const line of lines) {
+                  try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.sessionId) {
+                      localSessions.push({
+                        id: parsed.sessionId,
+                        status: parsed.status || "DISPATCHED",
+                        timestamp: parsed.timestamp,
+                        title: parsed.task || parsed.title || "",
+                        source: "local-ledger",
+                      });
+                    }
+                  } catch (_) {}
+                }
+              }
+            }
+          } catch (_) {}
+
+          const sessionMap = new Map();
+          for (const s of localSessions) {
+            sessionMap.set(s.id, s);
+          }
+          for (const s of remoteSessions) {
+            const sid = s.id || s.name;
+            if (sid) {
+              sessionMap.set(sid, {
+                id: sid,
+                status: s.state || s.status || "UNKNOWN",
+                createTime: s.createTime || s.created_at,
+                title: s.title || s.prompt?.slice(0, 60) || "",
+                source: "remote",
+              });
+            }
+          }
+
+          const combined = Array.from(sessionMap.values()).slice(0, limit);
+
+          if (values.json) {
+            console.log(JSON.stringify({ ok: true, sessions: combined, count: combined.length, nextPageToken: res?.nextPageToken }, null, 2));
+          } else {
+            console.log(`\n📋 Jules Sessions List (${combined.length} found):`);
+            console.log("--------------------------------------------------");
+            if (combined.length === 0) {
+              console.log("   No active or recent sessions found.");
+            } else {
+              for (const s of combined) {
+                const sid = (s.id || "unknown").slice(0, 24).padEnd(26);
+                const st = (s.status || "UNKNOWN").padEnd(14);
+                const desc = s.title || s.source || "";
+                console.log(`  • ${sid} [${st}] ${desc}`);
+              }
+            }
+            console.log("--------------------------------------------------\n");
+          }
+          process.exit(0);
+        } catch (err) {
+          console.error(`❌ Session List Failed: ${err.message}`);
+          process.exit(1);
+        }
+      }
+
+      console.error(`Error: Unknown session subcommand '${subAction}'. Use get or list.`);
       process.exit(1);
       break;
     }

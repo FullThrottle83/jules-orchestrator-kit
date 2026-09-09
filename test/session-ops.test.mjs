@@ -494,5 +494,19 @@ test("Jules Power-User Session Operations & Lifecycle Engine", async (t) => {
     const retryJson = JSON.parse(retryRes);
     assert.equal(retryJson.ok, true);
     assert.equal(retryJson.originalSessionId, "session-dry-123");
+
+    // 3. session list --dry-run --json
+    const listRes = execFileSync(process.execPath, [cliPath, "session", "list", "--dry-run", "--json"], {
+      encoding: "utf-8",
+    });
+    const listJson = JSON.parse(listRes);
+    assert.equal(listJson.ok, true);
+    assert.ok(Array.isArray(listJson.sessions));
+
+    // 4. session list --dry-run (formatted text)
+    const listText = execFileSync(process.execPath, [cliPath, "session", "list", "--dry-run"], {
+      encoding: "utf-8",
+    });
+    assert.ok(listText.includes("Sessions List"));
   });
 });

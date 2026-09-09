@@ -109,6 +109,7 @@ export async function auditGates(opts = {}) {
     base,
     fix: process.env.ALLOW_AUTO_REPAIR === "true",
     allowProtected: process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true",
+    allowTestChanges: process.env.JULES_ALLOW_TEST_CHANGES || opts.allowTestChanges,
   });
 }
 
