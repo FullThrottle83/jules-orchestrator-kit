@@ -1,22 +1,45 @@
-import test from "node:test";
+/**
+ * Provider failover — the domain suite for getting work to a provider and
+ * surviving its failures:
+ *
+ *   - the failure-domain taxonomy (429 rate limits with Retry-After parsing,
+ *     5xx unavailability, schema errors) against loopback mock servers;
+ *   - token-pool rotation, quarantine and cooldown;
+ *   - HTTP retry/backoff semantics of getSession (404 / 429 / 5xx);
+ *   - the failover router's ordering, recoverable-error classification and
+ *     attempt-trail telemetry;
+ *   - the Jules REST v1alpha alignment and queue retry semantics regressions.
+ *
+ * Formed in P08 by merging: provider-hardening, the P0-01 / P0-06 sections of
+ * p0-remediation and the P-08 section of critical-hardening, plus new
+ * failover-router and retry-backoff tests. All network I/O targets 127.0.0.1.
+ */
+import test, { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createProvider,
+  createFailoverProvider,
   createSyntaxVerifiedProvider,
+  MissingApiKeyError,
   ProviderRateLimitError,
   ProviderUnavailableError,
   ProviderSchemaError,
   parseRetryAfter,
   TokenPool,
 } from "../src/provider.mjs";
-import { dispatch, repair } from "../src/engine.mjs";
+import { dispatch, repair, run } from "../src/engine.mjs";
 import { checkDailyBudget } from "../src/state.mjs";
 
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/provider-hardening.test.mjs
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
 test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
   await t.test("a) HTTP 429 response from mock provider throws ProviderRateLimitError with parsed retryAfterMs", async () => {
     let server;
@@ -550,5 +573,460 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
     }
   });
 });
+}
 
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/p0-remediation.test.mjs — P0-01 Jules REST alignment
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+test("P0-01: Jules REST v1alpha Provider Alignment", async (t) => {
+  await t.test("throws MissingApiKeyError when JULES_API_KEY is missing for non-dryRun jules provider", async () => {
+    const oldKey = process.env.JULES_API_KEY;
+    const oldGeminiKey = process.env.GEMINI_API_KEY;
+    delete process.env.JULES_API_KEY;
+    delete process.env.GEMINI_API_KEY;
 
+    try {
+      const provider = createProvider("jules");
+      await assert.rejects(
+        async () => {
+          await provider.dispatch({ prompt: "hello" });
+        },
+        (err) => {
+          assert.ok(err instanceof MissingApiKeyError);
+          assert.equal(err.status, 401);
+          return true;
+        }
+      );
+    } finally {
+      if (oldKey) process.env.JULES_API_KEY = oldKey;
+      if (oldGeminiKey) process.env.GEMINI_API_KEY = oldGeminiKey;
+    }
+  });
+
+  await t.test("formats request URL, X-Goog-Api-Key, and sourceContext according to v1alpha REST spec", async () => {
+    let capturedReq = null;
+    let capturedBody = null;
+    let server;
+
+    try {
+      server = createServer((req, res) => {
+        capturedReq = req;
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => {
+          capturedBody = JSON.parse(data);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ name: "sessions/12345", state: "ACTIVE" }));
+        });
+      });
+
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+      const customSpec = {
+        name: "jules",
+        type: "http",
+        url: `http://127.0.0.1:${port}/v1alpha/sessions`,
+        headers: {
+          "X-Goog-Api-Key": "{token}",
+          "Content-Type": "application/json",
+        },
+        bodyTemplate: {
+          title: "{title}",
+          prompt: "{prompt}",
+          sourceContext: {
+            source: "{source}",
+            githubRepoContext: {
+              startingBranch: "{branch}",
+            },
+          },
+        },
+      };
+
+      const provider = createProvider(customSpec);
+      const oldKey = process.env.JULES_API_KEY;
+      process.env.JULES_API_KEY = "test-api-key-123";
+
+      try {
+        const res = await provider.dispatch(
+          { prompt: "Fix authentication bug", title: "Task Title" },
+          { source: "sources/github/owner/repo", branch: "feature/fix" }
+        );
+
+        assert.equal(capturedReq.headers["x-goog-api-key"], "test-api-key-123");
+        assert.equal(capturedBody.title, "Task Title");
+        assert.equal(capturedBody.prompt, "Fix authentication bug");
+        assert.equal(capturedBody.sourceContext.source, "sources/github/owner/repo");
+        assert.equal(capturedBody.sourceContext.githubRepoContext.startingBranch, "feature/fix");
+        assert.equal(res.id, "sessions/12345");
+      } finally {
+        if (oldKey) process.env.JULES_API_KEY = oldKey;
+        else delete process.env.JULES_API_KEY;
+      }
+    } finally {
+      if (server) server.close();
+    }
+  });
+
+  await t.test("defaults startingBranch to config.baseBranch or main and attaches autoPr / requirePlanApproval", async () => {
+    let capturedBody = null;
+    let server;
+
+    try {
+      server = createServer((req, res) => {
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => {
+          capturedBody = JSON.parse(data);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ name: "sessions/test-defaults" }));
+        });
+      });
+
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+
+      const provider = createProvider({
+        name: "jules",
+        type: "http",
+        url: `http://127.0.0.1:${port}/v1alpha/sessions`,
+        headers: { "X-Goog-Api-Key": "{token}" },
+        bodyTemplate: {
+          title: "{title}",
+          prompt: "{prompt}",
+          sourceContext: {
+            source: "{source}",
+            githubRepoContext: { startingBranch: "{branch}" },
+          },
+        },
+      });
+
+      process.env.JULES_API_KEY = "test-key";
+      await provider.dispatch(
+        { prompt: "Test default branch", source: "owner/repo", autoPr: true, requirePlanApproval: true },
+        { dryRun: false, baseBranch: "main" }
+      );
+
+      assert.equal(capturedBody.sourceContext.githubRepoContext.startingBranch, "main");
+      assert.equal(capturedBody.automationMode, "AUTO_CREATE_PR");
+      assert.equal(capturedBody.requirePlanApproval, true);
+    } finally {
+      if (server) server.close();
+    }
+  });
+
+  await t.test("throws error when repository source is missing for live non-repoless dispatch", async () => {
+    const oldKey = process.env.JULES_API_KEY;
+    const oldRepo = process.env.JULES_REPO;
+    process.env.JULES_API_KEY = "test-key";
+    delete process.env.JULES_REPO;
+    const tmpEmpty = mkdtempSync(join(tmpdir(), "jules-no-repo-"));
+
+    try {
+      const provider = createProvider("jules");
+      await assert.rejects(
+        async () => {
+          await provider.dispatch({ prompt: "missing source" }, { root: tmpEmpty, dryRun: false });
+        },
+        (err) => {
+          assert.match(err.message, /Missing connected Jules repository source/);
+          return true;
+        }
+      );
+    } finally {
+      if (oldKey) process.env.JULES_API_KEY = oldKey;
+      if (oldRepo) process.env.JULES_REPO = oldRepo;
+      rmSync(tmpEmpty, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("omits sourceContext when repoless mode is true", async () => {
+    let capturedBody = null;
+    let server;
+
+    try {
+      server = createServer((req, res) => {
+        let data = "";
+        req.on("data", (chunk) => (data += chunk));
+        req.on("end", () => {
+          capturedBody = JSON.parse(data);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ name: "sessions/repoless-1" }));
+        });
+      });
+
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+      const customSpec = {
+        name: "jules",
+        type: "http",
+        url: `http://127.0.0.1:${port}/v1alpha/sessions`,
+        headers: { "X-Goog-Api-Key": "{token}" },
+        bodyTemplate: {
+          title: "{title}",
+          prompt: "{prompt}",
+          sourceContext: { source: "{source}" },
+        },
+      };
+
+      const provider = createProvider(customSpec);
+      process.env.JULES_API_KEY = "test-key";
+
+      await provider.dispatch(
+        { prompt: "Repoless script generation", repoless: true },
+        { dryRun: false }
+      );
+
+      assert.equal(capturedBody.sourceContext, undefined);
+    } finally {
+      if (server) server.close();
+    }
+  });
+});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/p0-remediation.test.mjs — P0-06 queue retry semantics
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+test("P0-06: Queue Retry Semantics on Provider Error", async (t) => {
+  await t.test("does not move task file to completed when provider returns rate-limit failure", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-queue-test-"));
+    try {
+      const queueDir = join(tmpDir, ".agent", "jules-queue");
+      mkdirSync(queueDir, { recursive: true });
+      writeFileSync(join(queueDir, "TASK-100.md"), "Task content");
+
+      // Custom provider returning rate limit
+      const failProvider = {
+        name: "fail-provider",
+        async dispatch() {
+          return { ok: false, status: "RATE_LIMITED", error: "Rate limit hit" };
+        },
+        validate() {
+          return true;
+        },
+      };
+
+      const res = await run({
+        root: tmpDir,
+        config: {
+          provider: failProvider,
+          limits: { concurrency: 1, dailyTasks: 10 },
+        },
+        dryRun: false,
+      });
+
+      assert.equal(res.processed, 1);
+      assert.equal(res.results[0].ok, false);
+      assert.equal(res.results[0].status, "RATE_LIMITED");
+
+      // Task file must still remain in queueDir (not moved to completed)
+      assert.ok(existsSync(join(queueDir, "TASK-100.md")));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/critical-hardening.test.mjs — P-08 exec providers
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+describe("P-08: exec CLI providers spawn through the same Windows shim path", () => {
+  it("exec provider still runs a CLI-style command on POSIX", async () => {
+    const provider = createProvider({
+      name: "claude-code",
+      type: "exec",
+      command: process.execPath,
+      args: ["-e", "process.stdout.write('cli-ok')"],
+      promptViaStdin: true,
+    });
+    const res = await provider.dispatch({ prompt: "hello" });
+    assert.equal(res.status, "completed");
+    assert.equal(res.output, "cli-ok");
+  });
+});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// New: failover routing and HTTP retry backoff
+// Written new in P08 for offline coverage of the merged domain.
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * P08 addition: failover ordering and HTTP retry-backoff, exercised against
+ * in-process providers and a loopback-only mock server — zero live egress.
+ */
+
+test("createFailoverProvider routes dispatches across an ordered provider list", async (t) => {
+  await t.test("a healthy primary answers with routing metadata and no failover", async () => {
+    const calls = [];
+    const provider = createFailoverProvider([
+      { name: "primary", dispatch: async () => { calls.push("primary"); return { id: "s1", status: "pending" }; } },
+      { name: "secondary", dispatch: async () => { calls.push("secondary"); return { id: "s2", status: "pending" }; } },
+    ]);
+
+    assert.equal(provider.name, "failover:primary->secondary", "the router is named for its chain");
+    const res = await provider.dispatch({ prompt: "hello" });
+    assert.equal(res.id, "s1");
+    assert.equal(res._routedProvider, "primary");
+    assert.equal(res._failoverAttempts, 0);
+    assert.deepEqual(calls, ["primary"], "the secondary must never be contacted when the primary answers");
+  });
+
+  await t.test("a recoverable rate limit fails over to the next provider", async () => {
+    let secondaryCalls = 0;
+    const provider = createFailoverProvider([
+      {
+        name: "limited",
+        dispatch: async () => {
+          throw new ProviderRateLimitError("Provider HTTP Error (429)", { retryAfterMs: 1, status: 429 });
+        },
+      },
+      {
+        name: "backup",
+        dispatch: async () => {
+          secondaryCalls += 1;
+          return { id: "s2", status: "pending" };
+        },
+      },
+    ]);
+
+    const res = await provider.dispatch({ prompt: "hello" });
+    assert.equal(res._routedProvider, "backup");
+    assert.equal(res._failoverAttempts, 1, "exactly one provider was skipped");
+    assert.equal(secondaryCalls, 1);
+  });
+
+  await t.test("a non-recoverable error fails fast without contacting the next provider", async () => {
+    let secondaryCalls = 0;
+    const provider = createFailoverProvider([
+      {
+        name: "broken",
+        dispatch: async () => {
+          const err = new Error("4xx: bad request");
+          err.status = 400;
+          throw err;
+        },
+      },
+      { name: "backup", dispatch: async () => { secondaryCalls += 1; return { id: "s2" }; } },
+    ]);
+
+    await assert.rejects(() => provider.dispatch({ prompt: "hello" }), /bad request/);
+    assert.equal(secondaryCalls, 0, "a 4xx is a caller problem — retrying elsewhere would double-dispatch");
+  });
+
+  await t.test("exhausting every provider rethrows the last error with the full attempt trail", async () => {
+    const provider = createFailoverProvider([
+      { name: "a", dispatch: async () => { throw new ProviderUnavailableError("down-a", { status: 503 }); } },
+      { name: "b", dispatch: async () => { throw new ProviderRateLimitError("429-b", { retryAfterMs: 1, status: 429 }); } },
+    ]);
+
+    await assert.rejects(
+      () => provider.dispatch({ prompt: "hello" }),
+      (err) => {
+        assert.ok(err instanceof ProviderRateLimitError, "the last provider's error is the one rethrown");
+        assert.ok(Array.isArray(err._failoverErrors));
+        assert.equal(err._failoverErrors.length, 2);
+        assert.equal(err._failoverErrors[0].provider, "a");
+        assert.equal(err._failoverErrors[0].error instanceof ProviderUnavailableError, true);
+        assert.equal(err._failoverErrors[1].provider, "b");
+        return true;
+      }
+    );
+  });
+
+  await t.test("resume walks the same ordered chain", async () => {
+    let liveCalls = 0;
+    // Specs must carry a dispatch to be recognised as provider objects —
+    // otherwise the router rebuilds them from the spec via createProvider.
+    const provider = createFailoverProvider([
+      {
+        name: "dead",
+        dispatch: async () => ({ id: "unused", status: "pending" }),
+        resume: async () => { throw new ProviderUnavailableError("session gone", { status: 503 }); },
+      },
+      {
+        name: "live",
+        dispatch: async () => ({ id: "unused", status: "pending" }),
+        resume: async () => { liveCalls += 1; return { id: "r1", status: "active" }; },
+      },
+    ]);
+
+    const res = await provider.resume("sess-1", "continue");
+    assert.equal(res.id, "r1");
+    assert.equal(res._routedProvider, "live");
+    assert.equal(res._failoverAttempts, 1);
+    assert.equal(liveCalls, 1);
+  });
+});
+
+test("HTTP getSession retries transient failures with backoff before succeeding", async (t) => {
+  // The retry loop lives in getSession (listSources reuses it as an
+  // authenticated GET), honours ctx.maxRetries / ctx.initialDelayMs, and
+  // retries 404, 429 and 5xx while passing other statuses straight through.
+
+  await t.test("503, 503, then 200 retries twice and returns the session", async () => {
+    const oldKey = process.env.JULES_API_KEY;
+    process.env.JULES_API_KEY = "test-key-offline";
+    let server;
+    try {
+      let hits = 0;
+      server = createServer((req, res) => {
+        hits += 1;
+        if (hits <= 2) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "temporarily unavailable" }));
+        } else {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ name: "sess-1", state: "ACTIVE" }));
+        }
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const provider = createProvider({ type: "http", name: "mock-jules", url: `http://127.0.0.1:${server.address().port}` });
+
+      const res = await provider.getSession("sess-1", { maxRetries: 3, initialDelayMs: 1 });
+      assert.equal(res.id, "sess-1");
+      assert.equal(res.status, "ACTIVE");
+      assert.equal(hits, 3, "two 503s were retried, the third attempt succeeded");
+    } finally {
+      if (server) server.close();
+      if (oldKey === undefined) delete process.env.JULES_API_KEY;
+      else process.env.JULES_API_KEY = oldKey;
+    }
+  });
+
+  await t.test("persistent 503 exhausts maxRetries and throws ProviderUnavailableError", async () => {
+    const oldKey = process.env.JULES_API_KEY;
+    process.env.JULES_API_KEY = "test-key-offline";
+    let server;
+    try {
+      let hits = 0;
+      server = createServer((req, res) => {
+        hits += 1;
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "still down" }));
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const provider = createProvider({ type: "http", name: "mock-jules", url: `http://127.0.0.1:${server.address().port}` });
+
+      await assert.rejects(
+        () => provider.getSession("sess-1", { maxRetries: 2, initialDelayMs: 1 }),
+        (err) => {
+          assert.ok(err instanceof ProviderUnavailableError);
+          assert.equal(err.status, 503);
+          return true;
+        }
+      );
+      assert.equal(hits, 3, "the initial attempt plus maxRetries retries were made, then it gave up");
+    } finally {
+      if (server) server.close();
+      if (oldKey === undefined) delete process.env.JULES_API_KEY;
+      else process.env.JULES_API_KEY = oldKey;
+    }
+  });
+});

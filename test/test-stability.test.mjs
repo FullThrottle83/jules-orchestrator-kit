@@ -85,7 +85,7 @@ test("flaky probe", () => {
     try {
       writeFileSync(
         join(root, "good.test.mjs"),
-        'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("ok", () => { assert.ok(true); });\n'
+        'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("ok", () => { assert.equal(2 + 2, 4); });\n'
       );
 
       const res = assertTestStability(
