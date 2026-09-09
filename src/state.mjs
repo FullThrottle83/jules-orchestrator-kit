@@ -10,6 +10,7 @@ import {
   fsyncSync,
   unlinkSync,
   lstatSync,
+  statSync,
 } from "node:fs";
 import { join, basename } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -55,6 +56,32 @@ export function getDailyLedgerPath(rootOrOpts = resolveRoot()) {
   const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
   const dateStr = new Date().toISOString().split("T")[0];
   return join(getStateDir(root), `ledger-${dateStr}.jsonl`);
+}
+
+/**
+ * Delete files in a ledger/state directory older than `retentionDays`.
+ *
+ * Moved out of the deleted scripts/utils.mjs shim; the ledger rotation policy
+ * lives with the ledger.
+ *
+ * @param {string} stateDir
+ * @param {number} [retentionDays=30]
+ */
+export function pruneOldLedgers(stateDir, retentionDays = 30) {
+  if (!existsSync(stateDir)) return;
+  const cutoff = Date.now() - retentionDays * 86400 * 1000;
+  try {
+    const files = readdirSync(stateDir);
+    for (const f of files) {
+      const full = join(stateDir, f);
+      try {
+        const stat = statSync(full);
+        if (stat.isFile() && stat.mtimeMs < cutoff) {
+          unlinkSync(full);
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
 }
 
 /**
@@ -349,6 +376,24 @@ export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300, opts = {}) {
   } catch (err) {
     return { ok: false, used: limit, budget: limit, remaining: 0, error: err.message };
   }
+}
+
+/**
+ * Reserve one unit of the daily budget, nameably.
+ *
+ * @param {number} [maxSessions=300]
+ * @param {string} [taskKey=""]
+ * @param {string} [root] - Ledger root. Defaults to the git toplevel. Pass an
+ *   explicit root to keep callers (notably tests) off the operator's real ledger.
+ */
+export function reserveDailyBudget(maxSessions = 300, taskKey = "", root = resolveRoot()) {
+  // The id is what makes the reservation releasable. Written without one, a
+  // reservation counted against the day and no rollback, commit or reconcile
+  // could ever name it again — it stayed charged until the ledger rotated.
+  const reservationId = `res-${Date.now()}-${randomUUID().slice(0, 8)}`;
+  appendLedger({ event: "budget_reserved", reservationId, key: taskKey }, root);
+  const check = checkDailyBudget(root, maxSessions);
+  return { ok: check.ok, used: check.used, budget: maxSessions, reservationId };
 }
 
 export class BudgetError extends Error {

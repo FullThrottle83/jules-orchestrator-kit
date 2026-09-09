@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createWebhookServer } from "../src/webhook.mjs";
-import { loadEnv, log, timestamp } from "./utils.mjs";
+import { loadEnv, log, timestamp } from "../src/runtime-env.mjs";
 import { spawn } from "node:child_process";
 import { resolveRoot } from "../src/config.mjs";
 

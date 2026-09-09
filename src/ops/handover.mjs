@@ -5,15 +5,9 @@ import {
   readdirSync,
   statSync,
   unlinkSync,
-  renameSync,
-  openSync,
-  writeSync,
-  fsyncSync,
-  closeSync,
 } from "node:fs";
 import { join, resolve, relative, isAbsolute, basename } from "node:path";
-import { randomUUID } from "node:crypto";
-import { redactSecrets } from "../security.mjs";
+import { redactSecrets, safeAtomicWrite } from "../security.mjs";
 import { resolveRoot } from "../config.mjs";
 
 export class HandoverError extends Error {
@@ -75,25 +69,6 @@ function toItemArray(value) {
 function sanitizeText(value) {
   if (!value) return "";
   return redactSecrets(String(value).trim());
-}
-
-function writeFileAtomically(filePath, content) {
-  const tmpPath = `${filePath}.${randomUUID()}.tmp`;
-  let fd;
-  try {
-    fd = openSync(tmpPath, "wx", 0o600);
-    writeSync(fd, content, "utf-8");
-    fsyncSync(fd);
-    closeSync(fd);
-    fd = undefined;
-    renameSync(tmpPath, filePath);
-  } catch (err) {
-    if (fd !== undefined) {
-      try { closeSync(fd); } catch (_) {}
-    }
-    try { unlinkSync(tmpPath); } catch (_) {}
-    throw err;
-  }
 }
 
 /**
@@ -192,7 +167,8 @@ export function createHandover(root = resolveRoot(), data = {}, options = {}) {
   bodySections.push("");
   const fullContent = frontmatterLines.join("\n") + bodySections.join("\n");
 
-  writeFileAtomically(filePath, fullContent);
+  // Handover transcripts can quote session content; keep the private 0600 mode.
+  safeAtomicWrite(filePath, fullContent, { mode: 0o600 });
 
   const retention = typeof options.maxRetention === "number" ? options.maxRetention : 20;
   if (retention > 0) {

@@ -29,9 +29,9 @@ import {
   scanBudgetWindow,
   verifyLedgerIntegrity,
   appendLedger,
+  reserveDailyBudget,
   ROLLING_WINDOW_MS,
 } from "../src/state.mjs";
-import { reserveDailyBudget } from "../scripts/utils.mjs";
 
 /** An isolated repo root so nothing here touches the operator's real ledger. */
 function makeRoot(prefix) {
@@ -527,7 +527,7 @@ describe("legacy reservations written without an id", () => {
   it("counts and releases them, since nothing else ever could", () => {
     const root = makeRoot("jok-budget-anon-");
     try {
-      // Exactly what older kit versions and scripts/utils.mjs used to write.
+      // Exactly what older kit versions wrote through the scripts/utils.mjs shim.
       appendLedger({ event: "budget_reserved", key: "legacy-a" }, root);
       appendLedger({ event: "budget_reserved", key: "legacy-b" }, root);
       const withId = reserveBudget(root, 100);

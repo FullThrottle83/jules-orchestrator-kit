@@ -13,7 +13,7 @@ import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mj
 import fs, { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
-import { appendTelemetry as appendTelemetryUnsafe } from "./telemetry.mjs";
+import { appendTelemetryBestEffort as appendTelemetry } from "./telemetry.mjs";
 
 import { spawn } from "node:child_process";
 import { resolveAffectedTests, executeQueueDag } from "./dag-engine.mjs";
@@ -58,14 +58,6 @@ export {
   runAssertion,
 };
 
-
-function appendTelemetry(root, kind, fields = {}) {
-  try {
-    return appendTelemetryUnsafe(root, kind, fields);
-  } catch (_) {
-    return null;
-  }
-}
 
 function isSafeQueueFileName(fileName) {
   return typeof fileName === "string" && fileName.length > 0 && basename(fileName) === fileName && fileName !== "." && fileName !== "..";
@@ -1622,4 +1614,20 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
   }
 }
 
-
+/**
+ * Classify a queue-run failure as "concurrency_limit" (retry later without
+ * consuming a fresh dispatch) or "retriable".
+ *
+ * Moved out of scripts/jules-queue-runner.mjs, which keeps only the process
+ * entry point; the queue loop itself already lives in this module.
+ *
+ * @param {Error|string} err
+ * @returns {"concurrency_limit" | "retriable"}
+ */
+export function classifyQueueFailure(err) {
+  const msg = String(err?.message || err || "");
+  if (msg.includes("FAILED_PRECONDITION") || msg.includes("Active Session Limit") || msg.includes("concurrency")) {
+    return "concurrency_limit";
+  }
+  return "retriable";
+}

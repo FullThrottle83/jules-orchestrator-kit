@@ -111,13 +111,16 @@ export { measureEventLoopDelay } from "./src/perf.mjs";
 export { DagExecutor, DagCycleError } from "./src/dag-engine.mjs";
 export { journalIntent, journalDone, reapOrphanedIntents, reapStaleMutexDirs } from "./src/journal.mjs";
 
-// Legacy SDK shims for backward compatibility
+// Command resolution entrypoint (package.json/CI required) and its boundary helpers.
 export { resolveProjectCommands, resolveWorkspaceExecutionBoundary } from "./scripts/command-resolver.mjs";
-export { runSelfAudit, runPreflightSandbox } from "./scripts/jules-self-audit.mjs";
-export { scanCodebaseForTodos, runScanner } from "./scripts/jules-scan-todos.mjs";
-export { getDynamicGuardrails, dispatchTask } from "./scripts/jules-dispatch.mjs";
-export { classifyQueueFailure } from "./scripts/jules-queue-runner.mjs";
-export { extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "./scripts/utils.mjs";
+// Self-audit, TODO scanner, dispatch helpers, and swarm sync manifest:
+// implementation lives in src/ (P04 shim cleanup); the scripts/ files are
+// minimal CLI entrypoints that re-export the same surface for compatibility.
+export { runSelfAudit, runPreflightSandbox } from "./src/self-audit.mjs";
+export { scanCodebaseForTodos, runScanner } from "./src/todo-scanner.mjs";
+export { getDynamicGuardrails, dispatchTask } from "./src/dispatch.mjs";
+export { classifyQueueFailure } from "./src/engine.mjs";
+export { extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "./src/swarm.mjs";
 
 // Native TUI Primitives
 export { isTTY, styleText, select, multiSelect, input, confirm, secretInput, spinner, ANSI } from "./src/tui.mjs";
