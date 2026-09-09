@@ -159,24 +159,24 @@ config, so a Cargo or pyproject checkout gets `cargo test`/`pytest`, not
 `npm test`.
 
 ```bash
-# Dispatch performance optimization using Bolt role
-agentctl dispatch --role bolt \
+# Dispatch performance optimization using performance role
+agentctl dispatch --role performance \
   --prompt "Optimize JSON parser throughput in src/mcp.mjs"
 
-# Dispatch security vulnerability patch using Sentinel role
-agentctl dispatch --role sentinel \
+# Dispatch security vulnerability patch using security role
+agentctl dispatch --role security \
   --prompt "Audit and fix prototype pollution risks in src/state.mjs"
 
-# Dispatch tech debt cleanup using Janitor role
-agentctl dispatch --role janitor \
+# Dispatch tech debt cleanup using hygiene role
+agentctl dispatch --role hygiene \
   --prompt "Remove dead code and unused imports in src/utils.mjs"
 
-# Audit accessibility (A11y), metadata (Scribe), E2E (Spectator), or
-# review a database migration (Alchemist) — role names are case-insensitive.
+# Audit accessibility (A11y), metadata (docs), E2E (e2e), or
+# review a database migration (database) — role names are case-insensitive.
 agentctl dispatch --role a11y --prompt "Audit focus management in the checkout modal"
-agentctl dispatch --role scribe --prompt "Audit canonical URLs and OpenGraph tags on /pricing"
-agentctl dispatch --role spectator --prompt "Add headless multi-viewport regression tests for the nav"
-agentctl dispatch --role alchemist --prompt "Review the new migration for reversibility and data-loss risk"
+agentctl dispatch --role docs --prompt "Audit canonical URLs and OpenGraph tags on /pricing"
+agentctl dispatch --role e2e --prompt "Add headless multi-viewport regression tests for the nav"
+agentctl dispatch --role database --prompt "Review the new migration for reversibility and data-loss risk"
 ```
 
 ---

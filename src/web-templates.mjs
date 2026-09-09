@@ -920,7 +920,7 @@ export function synthesizeWebEnvelope(templateId, userParams = {}, options = {})
 
   if (explorationBudget) {
     lines.push("## Google Labs Exploration Budget Protocol (3-Phase Discovery)");
-    lines.push("Use deep planning mode. To maximize diagnostic accuracy (Hit@5 57%), execute this task in 3 distinct phases:");
+    lines.push("Use deep planning mode. execute this task in 3 distinct phases (Discovery, Test Formulation, Surgical Implementation):");
     lines.push("1. **PHASE 1: DISCOVERY & SYMBOL TRACING (Stay Silent, Write NO Code)**");
     lines.push("   - Read target component files, CSS definitions, imports, and existing test specs.");
     lines.push("   - Formulate diagnostic hypothesis and verify symbol signatures before planning edits.");

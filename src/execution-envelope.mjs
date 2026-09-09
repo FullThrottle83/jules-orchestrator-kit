@@ -34,6 +34,18 @@ export function hashExecutionEnvelope(envelope) {
 }
 
 /**
+ * Hashes the envelope's scope triple. The configSha contract: SHA-256 over
+ * exactly `{ denyPaths, allowPaths, protectPaths }`, defined once here so the
+ * implementation cannot drift from the specification.
+ *
+ * @param {{ denyPaths?: string[], allowPaths?: string[], protectPaths?: string[] }} scope
+ * @returns {string} Hex SHA-256 digest.
+ */
+export function hashConfigScope({ denyPaths = [], allowPaths = [], protectPaths = [] } = {}) {
+  return createHash("sha256").update(JSON.stringify({ denyPaths, allowPaths, protectPaths })).digest("hex");
+}
+
+/**
  * Deep freezes an execution envelope to prevent modifications during OODA repair loops.
  */
 export function freezeExecutionEnvelope(envelope) {
@@ -93,7 +105,7 @@ export function createExecutionEnvelope(task = {}, opts = {}) {
     taskId,
     baseRef,
     baseSha,
-    configSha: createHash("sha256").update(JSON.stringify({ denyPaths, allowPaths, protectPaths })).digest("hex"),
+    configSha: hashConfigScope({ denyPaths, allowPaths, protectPaths }),
     scope: {
       deny: denyPaths,
       allow: allowPaths,

@@ -120,4 +120,10 @@ test("Prompt Guard & Input Sanitization Boundary", async (t) => {
     assert.ok(result.includes("kill -9 $PID"), "code inside fences must be preserved verbatim");
     assert.ok(result.includes("prune unused code"), "prose outside code must be sanitized");
   });
+
+  await t.test("f) Sterile SIGKILL substitution is case-insensitive (D8)", () => {
+    assert.equal(sanitizePromptVocabulary("send sigkill to the worker"), "send SIGTERM to the worker");
+    assert.equal(sanitizePromptVocabulary("send SigKill now"), "send SIGTERM now");
+    assert.equal(sanitizePromptVocabulary("send SIGKILL now"), "send SIGTERM now");
+  });
 });

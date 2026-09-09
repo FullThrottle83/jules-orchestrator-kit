@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { resolveRolePrompt, hydrateRolePrompt, ROLE_PROMPT_TOKENS, CANONICAL_ROLES } from "../src/role-resolver.mjs";
+import { resolveRolePrompt, hydrateRolePrompt, ROLE_PROMPT_TOKENS, CANONICAL_ROLES, ROLE_ALIASES } from "../src/role-resolver.mjs";
 
 const SHIPPED_PROMPTS = join(process.cwd(), ".agent", "prompts");
 
@@ -162,4 +162,20 @@ test("Role prompts are stack-neutral", async (t) => {
     assert.ok(resolved);
     assert.equal(resolved.content, "Run `vitest run --coverage`.");
   });
+});
+
+
+test("all role names cited in EXAMPLES.md are registered", () => {
+  const examples = readFileSync(new URL("../EXAMPLES.md", import.meta.url), "utf-8");
+  const cited = [
+    ...Array.from(examples.matchAll(/--role\s+([\w-]+)/g), (match) => match[1]),
+    ...Array.from(examples.matchAll(/using ([\w-]+) role/g), (match) => match[1]),
+    ...Array.from(examples.matchAll(/(?:accessibility|metadata|E2E|migration) \(([\w-]+)\)/g), (match) => match[1]),
+  ];
+  assert.ok(cited.length > 0, "examples must cite specialist roles");
+  for (const role of cited) {
+    const name = role.toLowerCase();
+    assert.ok(CANONICAL_ROLES.includes(name) || Object.hasOwn(ROLE_ALIASES, name),
+      `EXAMPLES.md cites unknown role: ${role}`);
+  }
 });

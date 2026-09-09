@@ -60,6 +60,27 @@ describe("Subscription Tier Presets (Free / Pro / Ultra)", () => {
     }
   });
 
+  it("documents JULES_TIER (free | pro | ultra) in .env.example (D18)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join } = await import("node:path");
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const example = readFileSync(join(root, ".env.example"), "utf-8");
+    assert.match(example, /JULES_TIER\s*=\s*(free|pro|ultra)/);
+  });
+
+  it("keeps TIER_PRESETS aligned with VENDOR_TIERS (D18)", async () => {
+    const { VENDOR_TIERS } = await import("../src/config.mjs");
+    assert.deepEqual([...VENDOR_TIERS].sort(), ["free", "pro", "ultra"]);
+    for (const tier of VENDOR_TIERS) {
+      const preset = TIER_PRESETS[tier];
+      assert.ok(preset, `VENDOR_TIERS entry '${tier}' must exist in TIER_PRESETS`);
+      assert.equal(typeof preset.dailyTasks, "number");
+      assert.equal(typeof preset.concurrency, "number");
+      assert.equal(typeof preset.maxConcurrency, "number");
+    }
+  });
+
   it("allows process.env.JULES_DAILY_BUDGET to override tier defaults", () => {
     const origTier = process.env.JULES_TIER;
     const origBudget = process.env.JULES_DAILY_BUDGET;

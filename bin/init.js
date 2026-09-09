@@ -260,9 +260,12 @@ const setupMdContent = `# Google Jules Encoded Workspace Manifest
 > **Generated**: ${agentState.generatedAt}
 > **Workspace Manifest Code**: \`${payloadToken}\`
 
-## 🔗 Official Setup & Documentation
-1. Documentation & Guide: https://jules.google
-2. Workspace Manifest Code:
+## Encoded workspace preset
+This kit-generated JULES1. token is an encoded workspace preset generated for the Jules web UI, not an official Google setup code or credential. It contains a SHA-256 digest and base64url-encoded Brotli-compressed JSON; encoding is not encryption. Review the decoded settings before use.
+
+Jules web UI: https://jules.google (the preset format is maintained by this kit).
+
+Workspace Manifest Code:
 \`\`\`
 ${payloadToken}
 \`\`\`

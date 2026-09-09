@@ -34,7 +34,7 @@ test("Whack-a-Mole Test-Oscillation Cycle Detector", async (t) => {
     assert.equal(r3.cycleLength, 2);
     assert.ok(r3.oscillatingTests.includes("TestA"));
     assert.ok(r3.oscillatingTests.includes("TestB"));
-    assert.match(r3.promptDirective, /WHACK_A_MOLE_WARNING/);
+    assert.match(r3.promptDirective, /Test Oscillation Circuit Breaker Activated/);
     assert.match(r3.promptDirective, /<UNTRUSTED>(TestA <-> TestB|TestB <-> TestA)<\/UNTRUSTED>/);
   });
 

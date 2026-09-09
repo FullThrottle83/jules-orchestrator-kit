@@ -8,7 +8,7 @@ const root = process.cwd();
 const dirsToScan = ["public", "src/assets", "assets", "static"].map((d) => join(root, d)).filter(existsSync);
 
 if (dirsToScan.length === 0) {
-  console.log("[asset-integrity] No asset directories (public/, src/assets/) found. Passing.");
+  console.log("[asset-integrity] status: N/A — No asset directories (public/, src/assets/, assets/, static/) found. Nothing to check.");
   process.exit(0);
 }
 

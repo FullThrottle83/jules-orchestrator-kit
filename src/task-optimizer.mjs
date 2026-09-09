@@ -360,7 +360,7 @@ export function optimizeTaskPrompt(promptText, options = {}) {
 
   if (includeExplorationBudget) {
     lines.push("## Google Labs Exploration Budget Protocol (3-Phase Discovery)");
-    lines.push("Use deep planning mode. To maximize diagnostic accuracy (Hit@5 57%), execute this task in 3 distinct phases:");
+    lines.push("Use deep planning mode. execute this task in 3 distinct phases (Discovery, Test Formulation, Surgical Implementation):");
     lines.push("1. **PHASE 1: DISCOVERY & SYMBOL TRACING (Stay Silent, Write NO Code)**");
     lines.push("   - Read target source files, definitions, and dependent call sites.");
     lines.push("   - Formulate diagnostic hypothesis and verify exact symbol signatures before making edits.");

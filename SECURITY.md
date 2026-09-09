@@ -1,5 +1,24 @@
 # Security Policy & Zero-Trust Threat Model
 
+## Prompt Sanitization & Content Filters
+
+`sanitizePromptVocabulary()` in `src/prompt-guard.mjs` transforms high-trigger
+operational terms in prompt prose to reduce false-positive provider content
+filter refusals. For example, prose containing `kill -9` becomes
+`terminate with SIGTERM`, and `SIGKILL` becomes `SIGTERM`. These substitutions
+can change technical meaning: SIGTERM is not equivalent to SIGKILL.
+
+Fenced code blocks (triple backticks) and inline backtick code spans are
+preserved verbatim by this vocabulary transformation (commit `ad2011a`). Put
+exact commands and identifiers in code spans or blocks when their spelling
+matters. This preservation does not exempt content from other prompt guards
+or secret redaction.
+
+Vocabulary rewriting is not a security boundary, a guarantee of provider
+acceptance, or a replacement for provider content filters. Review transformed
+prompt text when exact operational semantics matter; scope checks, execution
+envelopes, and verification remain separate controls.
+
 ## 🛡️ Core Security Vision
 
 **Jules Orchestrator Kit** acts as a control plane for autonomous AI agents executing code inside developer repositories. Because AI agents receive instructions via prompts and make programmatic edits, security must be **enforced cryptographically and structural**, never relying solely on LLM prompt compliance.
@@ -13,7 +32,7 @@ The orchestrator enforces 5 non-negotiable security invariants:
 ### 1. Capability-Bounded Execution Envelope (CBEE)
 Before any agent session begins, `createExecutionEnvelope()` computes an immutable JSON execution manifest containing:
 - `baseSha`: Cryptographically locked Git commit SHA.
-- `configSha`: SHA-256 hash of `.agent/jules.yml`.
+- `configSha`: SHA-256 hash of the JSON-serialized scope object `{ denyPaths, allowPaths, protectPaths }`, not the literal `.agent/jules.yml` file or the entire configuration.
 - `scope`: Normalized `allow_paths`, `deny_paths`, and `protect_paths`.
 - `verifyCmds`: Verified `test_cmd` and `build_cmd`.
 

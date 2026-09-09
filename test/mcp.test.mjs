@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleMcpRequest, startMcpServer, MCP_SERVER_INFO, MCP_TOOLS } from "../src/mcp.mjs";
+import { handleMcpRequest, startMcpServer, MCP_SERVER_INFO, MCP_TOOLS, MCP_TOOL_ALIASES } from "../src/mcp.mjs";
 import { BudgetError } from "../src/state.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
 import { PassThrough } from "node:stream";
@@ -26,7 +26,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 3);
     assert.equal(Array.isArray(res.result.tools), true);
-    assert.equal(res.result.tools.length, 20);
+    assert.equal(res.result.tools.length, 36);
     assert.deepEqual(res.result.tools, MCP_TOOLS);
     const names = res.result.tools.map((t) => t.name);
     assert.deepEqual(names, [
@@ -50,6 +50,22 @@ test("Model Context Protocol (MCP) Server", async (t) => {
       "jules_approve_plan",
       "jules_send_message",
       "jules_wait_for_session",
+      "agent_dispatch_task",
+      "agent_audit_gate",
+      "agent_get_status",
+      "agent_optimize_prompt",
+      "agent_list_sessions",
+      "agent_list_activities",
+      "agent_get_session_output",
+      "agent_archive_session",
+      "agent_delete_session",
+      "agent_retry_session",
+      "agent_apply_patch",
+      "agent_list_sources",
+      "agent_prune_sessions",
+      "agent_approve_plan",
+      "agent_send_message",
+      "agent_wait_for_session",
     ]);
   });
 
@@ -355,4 +371,23 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     });
     assert.equal(unknownRes.error.code, -32602);
   });
+});
+
+
+test("MCP aliases preserve schemas and route to original handlers", async () => {
+  assert.equal(new Set(MCP_TOOLS.map((tool) => tool.name)).size, MCP_TOOLS.length);
+  for (const [alias, original] of Object.entries(MCP_TOOL_ALIASES)) {
+    const tool = MCP_TOOLS.find((entry) => entry.name === original);
+    assert.deepEqual(MCP_TOOLS.find((entry) => entry.name === alias), { ...tool, name: alias });
+  }
+  for (const original of ["jules_list_sessions", "jules_send_message", "jules_list_activities"]) {
+    const call = (name) => handleMcpRequest({
+      jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} },
+    }, { dryRun: true });
+    assert.deepEqual(await call(original.replace(/^jules_/, "agent_")), await call(original));
+  }
+  const unknown = await handleMcpRequest({
+    jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "toString" },
+  });
+  assert.ok(unknown.error, "inherited object properties must not resolve as aliases");
 });

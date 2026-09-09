@@ -4,15 +4,10 @@
  */
 
 import http from "node:http";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { join, dirname } from "node:path";
 import { readTelemetry, verifyTelemetryIntegrity } from "./telemetry.mjs";
 import { readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
 import { lockStatus } from "./state.mjs";
 import { KIT_VERSION } from "./version.mjs";
-
-const pkgVersion = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf-8")).version;
 
 export function getDashboardHtml(root = process.cwd()) {
   return `<!DOCTYPE html>
@@ -38,7 +33,7 @@ export function getDashboardHtml(root = process.cwd()) {
   </style>
 </head>
 <body>
-  <h1>🚀 jules-orchestrator-kit Dashboard (v${pkgVersion})</h1>
+  <h1>🚀 jules-orchestrator-kit Dashboard (v${KIT_VERSION})</h1>
   <div class="subtitle">Repository: <code>${root}</code></div>
 
   <div class="grid">
@@ -82,8 +77,9 @@ export function getDashboardHtml(root = process.cwd()) {
 </html>`;
 }
 
-export function createDashboardServer({ root = process.cwd(), port: _port = 4100 } = {}) {
-  return http.createServer((req, res) => {
+export function createDashboardServer({ root = process.cwd(), port = 4100 } = {}) {
+  const dashboardPort = Number(port);
+  const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
     if (url.pathname === "/" || url.pathname === "/index.html") {
@@ -93,7 +89,7 @@ export function createDashboardServer({ root = process.cwd(), port: _port = 4100
 
     if (url.pathname === "/api/status") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      return res.end(JSON.stringify({ ok: true, version: KIT_VERSION, root, ts: new Date().toISOString() }));
+      return res.end(JSON.stringify({ ok: true, version: KIT_VERSION, root, port: dashboardPort, ts: new Date().toISOString() }));
     }
 
     if (url.pathname === "/api/telemetry") {
@@ -124,6 +120,8 @@ export function createDashboardServer({ root = process.cwd(), port: _port = 4100
     res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ ok: false, error: "Not Found", path: url.pathname }));
   });
+  server.dashboardPort = dashboardPort;
+  return server;
 }
 
 export function startDashboardServer(port = 4100, root = process.cwd(), host = "127.0.0.1") {

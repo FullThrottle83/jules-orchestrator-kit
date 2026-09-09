@@ -1,5 +1,16 @@
 # Using Google Jules To The Fullest — Quality Plan
 
+## Status — Historical quality plan
+
+This is a historical quality plan from earlier development milestones, audited
+against `54f0688`, not a statement of current release defects or test counts.
+Original findings, line numbers, measurements, and proposed changes below are
+retained as historical context. Resolution notes were checked against the
+working tree based on `f86fc47` on 2026-09-09; they are source-level observations,
+not live Google API validation. “Partial” does not mean the full acceptance
+proposal has shipped.
+
+
 Audited against `54f0688` (branch `main`). Every finding below names the file and
 line it was read from, and the ones marked **[reproduced]** were produced by
 running the real code path against a response shaped exactly like the
@@ -21,15 +32,15 @@ to do with what comes back.
 | 1 | The OODA retry re-dispatches blind — real diagnostics are dropped | **P0** | S | **Fixed** |
 | 2 | `pollSessionState` reports unfinished sessions as `COMPLETED` | **P0** | S | **Fixed** |
 | 3 | `pollSessionState` has zero test coverage | **P0** | S | **Fixed** |
-| 4 | `:sendMessage` is implemented but never called — no mid-session steering | P1 | M | Open |
-| 5 | `AWAITING_USER_FEEDBACK` sessions die silently | P1 | M | Open |
-| 6 | The generated plan is never inspected before it is approved | P1 | M | Open |
-| 7 | Risk tier does not influence dispatch policy | P1 | S | Open |
-| 8 | Activity stream is read one page deep | P1 | S | Open |
-| 9 | `archiveSession` targets an endpoint the API does not document | P1 | S | Open |
-| 10 | No session-outcome telemetry — merge rate is unmeasurable | P2 | M | Open |
-| 11 | `v1alpha` is hardcoded in three files | P2 | S | Open |
-| 12 | Test scratch directories are committed to the repository | P2 | S | Open |
+| 4 | `:sendMessage` is implemented but never called — no mid-session steering | P1 | M | **Partial** |
+| 5 | `AWAITING_USER_FEEDBACK` sessions die silently | P1 | M | **Partial** |
+| 6 | The generated plan is never inspected before it is approved | P1 | M | **Open** |
+| 7 | Risk tier does not influence dispatch policy | P1 | S | **Open** |
+| 8 | Activity stream is read one page deep | P1 | S | **Open** |
+| 9 | `archiveSession` targets an endpoint the API does not document | P1 | S | **Open / unverified** |
+| 10 | No session-outcome telemetry — merge rate is unmeasurable | P2 | M | **Partial** |
+| 11 | `v1alpha` is hardcoded in three files | P2 | S | **Open** |
+| 12 | Test scratch directories are committed to the repository | P2 | S | **Resolved** |
 
 ---
 
@@ -168,6 +179,10 @@ case.
 
 ### 4. `:sendMessage` exists and nothing calls it
 
+**Current resolution: Partial.** `src/mcp.mjs` exposes operator messaging through `jules_send_message` calling `provider.resume()`. Automatic bounded clarification steering in the engine is still open.
+
+*Historical finding and proposal:*
+
 `src/provider.mjs:578` builds the `:sendMessage` URL and `dispatch`-adjacent
 code is wired for it. `grep -rn "\.sendMessage(" src/ scripts/ bin/` returns
 **zero** call sites. Today the only repair move available is a whole new
@@ -188,6 +203,10 @@ keeps its context, a re-dispatched one does not.
 
 ### 5. `AWAITING_USER_FEEDBACK` should never be silent
 
+**Current resolution: Partial.** `pollSessionState()` returns `AWAITING_USER_FEEDBACK` as blocked, and the repair loop emits `session_not_terminal` telemetry. Automatic question escalation and learning harvest remain open.
+
+*Historical finding and proposal:*
+
 `src/webhook.mjs:19` documents that this state is *deliberately* not
 auto-answered. Keeping it un-answered is right; letting it expire unnoticed is
 not. Today a session that stops to ask a question is reported `COMPLETED`
@@ -203,6 +222,10 @@ this state is a question the envelope should have pre-answered. Feed them into
 highest-signal input to prompt quality that exists, and it costs one query.
 
 ### 6. Inspect the plan before approving it
+
+**Current resolution: Open.** `pollSessionState()` can approve a plan when requested, but does not inspect its steps with a scope-aware plan lint gate.
+
+*Historical finding and proposal:*
 
 `requirePlanApproval` is plumbed end to end (`src/wizard-task.mjs:309`,
 `src/provider.mjs:384`) and `src/engine.mjs:1044` auto-approves when asked.
@@ -223,6 +246,10 @@ plan generation and `:approvePlan`:
 
 ### 7. Let the risk tier drive dispatch policy
 
+**Current resolution: Open.** `src/wizard-task.mjs` still prompts for auto-PR and plan approval with fixed defaults, rather than risk-tier-derived dispatch policy.
+
+*Historical finding and proposal:*
+
 `classifyRiskTier()` (`src/risk.mjs:147`) is called from
 `src/execution-envelope.mjs:106` and `scripts/risk-tier.mjs`. It is **not**
 consulted at dispatch time. Meanwhile `src/wizard-task.mjs:308-309` defaults to
@@ -239,6 +266,10 @@ risk.
 
 ### 8. Read the whole activity stream
 
+**Current resolution: Open.** `extractSessionPatch()` and `retrySession()` in `src/session-ops.mjs` still read one activity page; pagination metadata exists in the provider but these callers do not drain it.
+
+*Historical finding and proposal:*
+
 `listActivities` (`src/provider.mjs:951-968`) accepts and returns
 `nextPageToken`, and `pageSize` is capped at 100 by the API with a default of
 50. Every caller — `extractSessionPatch` (`src/session-ops.mjs:50`),
@@ -251,6 +282,10 @@ and pass the documented `createTime` cursor when the caller already holds a
 timestamp, so a watch loop costs one page per poll instead of the full history.
 
 ### 9. `archiveSession` posts to an endpoint the API does not list
+
+**Current resolution: Open / unverified.** `archiveSession()` still uses `:archive`, and `pruneSessions()` archives unless deletion is requested. No live endpoint probe was performed for this status update.
+
+*Historical finding and proposal:*
 
 `src/provider.mjs:980` issues `POST /v1alpha/sessions/{id}:archive`. The
 documented session methods are `create`, `list`, `get`, `delete`, `sendMessage`
@@ -272,6 +307,10 @@ MCP surface (`src/mcp.mjs:242`).
 
 ### 10. There is no session-outcome ledger
 
+**Current resolution: Partial.** Non-terminal session telemetry exists in the engine, but the proposed linked `session_dispatched`, `session_terminal`, and `session_merged` outcome ledger is not implemented there.
+
+*Historical finding and proposal:*
+
 `src/telemetry.mjs` records nine event kinds:
 `checkpoint_created`, `dag_task_completed`, `dag_task_started`,
 `gate_finished`, `gate_phase`, `gate_started`, `ooda_repair_attempt`,
@@ -289,6 +328,10 @@ and `session_merged` (PR, gate verdict). Then `agentctl dashboard` can answer
 
 ### 11. Pin the API version in one place
 
+**Current resolution: Open.** Provider endpoint defaults still repeat `v1alpha`; there is no centralized `JULES_API_VERSION` constant. The wizard reference is now a comment, not an endpoint setting.
+
+*Historical finding and proposal:*
+
 `v1alpha` appears in `src/provider.mjs` (6 occurrences), `src/wizard-task.mjs`
 and `.env.example`. A `v1beta` cut means touching all of them.
 
@@ -297,6 +340,10 @@ alias convention), plus a `agentctl doctor` probe that reports the version the
 endpoint actually answers on.
 
 ### 12. Remove committed test scratch directories
+
+**Current resolution: Resolved.** `test/kernel-integration-fix.test.mjs` uses `mkdtempSync(join(tmpdir(), "kernel-fix-"))`; `.gitignore` excludes `.test-kernel-fix-*/`, and no such scratch files are tracked.
+
+*Historical finding and proposal:*
 
 `git ls-files` lists eight tracked files under
 `.test-kernel-fix-1788437002942/` and `.test-kernel-fix-1788528407802/`,
