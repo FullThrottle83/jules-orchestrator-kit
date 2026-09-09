@@ -384,7 +384,7 @@ async function main() {
         const { resolveRolePrompt } = await import("../src/role-resolver.mjs");
         if (!resolveRolePrompt(root, values.role, { config })) {
           console.error(
-            `Error: Unknown agent role '${values.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Overseer, Bolt, Sentinel, Janitor).`
+            `Error: Unknown agent role '${values.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Auditor, Performance, Security, Hygiene, Testing).`
           );
           console.error(`   Run 'agentctl init' to scaffold the shipped role prompts.`);
           process.exit(1);
@@ -2827,7 +2827,7 @@ async function main() {
         args: args.slice(2),
         options: {
           dispatch: { type: "boolean" },
-          role: { type: "string", short: "r", default: "janitor" },
+          role: { type: "string", short: "r", default: "hygiene" },
           "test-cmd": { type: "string", short: "t" },
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },

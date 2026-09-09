@@ -20,8 +20,12 @@ import { loadConfig } from "./config.mjs";
 export const ROLE_PROMPT_TOKENS = ["VERIFY_TEST", "VERIFY_LINT", "VERIFY_BUILD", "DIFF_KB", "BASE_BRANCH"];
 
 /**
- * Standard engineering roles and their legacy/convenience aliases.
- * Provides full backward-compatibility for prior command flags (--role bolt, etc.).
+ * Legacy and convenience aliases for the standard engineering roles.
+ *
+ * Strictly one-directional: every key is a non-canonical name and every
+ * value is a canonical role. Provides full backward-compatibility for prior
+ * command flags (--role bolt, etc.) without letting a canonical role ever
+ * resolve away from its own prompt file.
  */
 export const ROLE_ALIASES = Object.freeze({
   // Legacy RPG/fantasy names mapped to canonical engineering roles
@@ -35,18 +39,6 @@ export const ROLE_ALIASES = Object.freeze({
   bulwark: "resilience",
   typist: "types",
   hunter: "debugger",
-
-  // Reverse mapping for repos that still hold legacy filenames on disk
-  auditor: "overseer",
-  performance: "bolt",
-  security: "sentinel",
-  hygiene: "janitor",
-  e2e: "spectator",
-  docs: "scribe",
-  database: "alchemist",
-  resilience: "bulwark",
-  types: "typist",
-  debugger: "hunter",
 
   // Common operator shortcuts
   perf: "performance",
@@ -87,6 +79,28 @@ export const CANONICAL_ROLES = Object.freeze([
   "debugger",
   "testing",
 ]);
+
+/**
+ * Pre-consolidation prompt filenames, canonical role -> legacy file stem.
+ *
+ * Deliberately NOT part of ROLE_ALIASES: the alias table answers "what did
+ * the operator mean", while this map answers "what might an older checkout
+ * still have on disk". Keeping the two separate is what lets ROLE_ALIASES
+ * stay strictly one-directional without stranding repos scaffolded before
+ * the legacy duplicates were deleted.
+ */
+const LEGACY_PROMPT_FILENAMES = Object.freeze({
+  auditor: "overseer",
+  performance: "bolt",
+  security: "sentinel",
+  hygiene: "janitor",
+  e2e: "spectator",
+  docs: "scribe",
+  database: "alchemist",
+  resilience: "bulwark",
+  types: "typist",
+  debugger: "hunter",
+});
 
 /**
  * Substitutes `{{TOKEN}}` placeholders in a role prompt from resolved config.
@@ -132,9 +146,11 @@ export function resolveRolePrompt(root = process.cwd(), roleName = "", opts = {}
   if (!candidates.includes(cleanName)) {
     candidates.push(cleanName);
   }
-  // Secondary fallback: if canonical maps to a legacy alias on disk, include it
-  if (canonical && ROLE_ALIASES[canonical] && !candidates.includes(ROLE_ALIASES[canonical])) {
-    candidates.push(ROLE_ALIASES[canonical]);
+  // Secondary fallback: a checkout scaffolded before consolidation may still
+  // hold only the legacy filename on disk (e.g. Bolt.md). The canonical file
+  // always wins when both exist; this branch just keeps old trees working.
+  if (canonical && LEGACY_PROMPT_FILENAMES[canonical] && !candidates.includes(LEGACY_PROMPT_FILENAMES[canonical])) {
+    candidates.push(LEGACY_PROMPT_FILENAMES[canonical]);
   }
   // Include direct alias if not yet present
   if (directAlias && !candidates.includes(directAlias)) {

@@ -68,14 +68,14 @@ Jules automatically infers test and build verification commands via `scripts/com
 
 - **Untrusted Prompt Fencing**: All dynamic user prompts and issue texts are encapsulated in `<UNTRUSTED_TASK_CONTEXT>` tags with a `# SECURITY DIRECTIVE — UNTRUSTED CONTENT FENCE` header, instructing Jules to treat enclosed text as non-executable data.
 - **Specialized Domain Personas & Task Envelopes** (each persona ships as a stack-neutral prompt in `.agent/prompts/`; select one with `agentctl dispatch --role <name>`, case-insensitive):
-  - **Overseer (Audit)**: Maps structural debt into scoped, file-and-line task definitions for the worker roles; does not refactor in the audit pass.
-  - **Sentinel (Security)**: Input sanitization, token redaction, RBAC guardrails.
-  - **Bolt (Performance / `web-cwv`)**: Core Web Vitals (LCP, CLS, INP), bundle size, token bloat.
+  - **Auditor (Audit)**: Maps structural debt into scoped, file-and-line task definitions for the worker roles; does not refactor in the audit pass.
+  - **Security**: Input sanitization, token redaction, RBAC guardrails.
+  - **Performance (Performance / `web-cwv`)**: Core Web Vitals (LCP, CLS, INP), bundle size, token bloat.
   - **A11y (`--role a11y` / `web-wcag`)**: WCAG 2.2 violations, focus traps, contrast defects.
-  - **Scribe (`--role scribe` / `web-seo`)**: Schema.org JSON-LD, OpenGraph/Twitter cards, canonical links; metadata parity and link resolution.
-  - **Spectator (`--role spectator` / `web-playwright`)**: Headless E2E, visual regression, multi-viewport responsive tests with no sleep-based waits.
-  - **Janitor (Clean Code / `web-flaky-heal`)**: Flaky tests, dead code, lint warnings.
-  - **Alchemist (`--role alchemist`)**: Schema constraints, migration reversibility and data-loss review, batched idempotent backfills.
+  - **Docs (`--role docs` / `web-seo`)**: Schema.org JSON-LD, OpenGraph/Twitter cards, canonical links; metadata parity and link resolution.
+  - **E2E (`--role e2e` / `web-playwright`)**: Headless E2E, visual regression, multi-viewport responsive tests with no sleep-based waits.
+  - **Hygiene (Clean Code / `web-flaky-heal`)**: Flaky tests, dead code, lint warnings.
+  - **Database (`--role database`)**: Schema constraints, migration reversibility and data-loss review, batched idempotent backfills.
 - **Universal task envelopes** (work in any stack the detector recognises — Cargo, Go, Python, PHP, .NET, Java, Ruby, Elixir, Node — because verify commands hydrate from config): `agent-dep-audit` (deps/lockfile pinning, checksums, install scripts, stale-lockfile gate, offline), `agent-doc-drift` (CLI flags, env vars, SDK exports vs shipped surface), `agent-config-audit` (typed loading, fail-closed defaults, secret redaction), `agent-api-contract` (route/handler parity, boundary validation, one error shape).
 
 ---

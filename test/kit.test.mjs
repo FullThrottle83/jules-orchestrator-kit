@@ -971,24 +971,24 @@ describe("Swarm Concurrency & Merge Engine Hardening", () => {
 });
 
 describe("Specialist Agent Prompt Presets", () => {
-  test("loads Overseer, Bolt, Sentinel, and Janitor prompt presets", () => {
+  test("loads Auditor, Performance, Security, and Hygiene prompt presets", () => {
     const promptsDir = path.resolve(process.cwd(), ".agent/prompts");
-    assert.ok(fs.existsSync(path.join(promptsDir, "Overseer.md")));
-    assert.ok(fs.existsSync(path.join(promptsDir, "Bolt.md")));
-    assert.ok(fs.existsSync(path.join(promptsDir, "Sentinel.md")));
-    assert.ok(fs.existsSync(path.join(promptsDir, "Janitor.md")));
+    assert.ok(fs.existsSync(path.join(promptsDir, "Auditor.md")));
+    assert.ok(fs.existsSync(path.join(promptsDir, "Performance.md")));
+    assert.ok(fs.existsSync(path.join(promptsDir, "Security.md")));
+    assert.ok(fs.existsSync(path.join(promptsDir, "Hygiene.md")));
 
-    const overseer = fs.readFileSync(path.join(promptsDir, "Overseer.md"), "utf-8");
-    assert.ok(overseer.includes("Overseer Protocol"));
+    const auditor = fs.readFileSync(path.join(promptsDir, "Auditor.md"), "utf-8");
+    assert.ok(auditor.includes("Audit Journal Protocol"));
 
-    const bolt = fs.readFileSync(path.join(promptsDir, "Bolt.md"), "utf-8");
-    assert.ok(bolt.includes("Payload Budgeting"));
+    const performance = fs.readFileSync(path.join(promptsDir, "Performance.md"), "utf-8");
+    assert.ok(performance.includes("Payload Budgeting"));
 
-    const sentinel = fs.readFileSync(path.join(promptsDir, "Sentinel.md"), "utf-8");
-    assert.ok(sentinel.includes("Vulnerability Mitigation"));
+    const security = fs.readFileSync(path.join(promptsDir, "Security.md"), "utf-8");
+    assert.ok(security.includes("Vulnerability Mitigation"));
 
-    const janitor = fs.readFileSync(path.join(promptsDir, "Janitor.md"), "utf-8");
-    assert.ok(janitor.includes("Janitor Protocol"));
+    const hygiene = fs.readFileSync(path.join(promptsDir, "Hygiene.md"), "utf-8");
+    assert.ok(hygiene.includes("Dead Code Elimination"));
 
     assert.ok(fs.existsSync(path.join(promptsDir, "Task_Template.md")));
     const template = fs.readFileSync(path.join(promptsDir, "Task_Template.md"), "utf-8");

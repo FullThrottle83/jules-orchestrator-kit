@@ -30,9 +30,10 @@ test("src/scaffold.mjs", async (t) => {
     const dir = tempRepo();
     try {
       const res = scaffoldRepoAssets(dir);
-      // `--role bolt` resolves against .agent/prompts/. Without it the flag is
-      // a hard error on `task create` and a silent downgrade on `dispatch`.
-      assert.ok(existsSync(join(dir, ".agent/prompts/Bolt.md")), "role prompts must exist");
+      // `--role performance` (or its legacy `--role bolt` alias) resolves
+      // against .agent/prompts/. Without it the flag is a hard error on
+      // `task create` and a silent downgrade on `dispatch`.
+      assert.ok(existsSync(join(dir, ".agent/prompts/Performance.md")), "role prompts must exist");
       assert.ok(existsSync(join(dir, "AGENTS.md")), "the agent must be able to read the protocol");
       assert.ok(existsSync(join(dir, ".agent/rules/dynamic-guardrails.json")));
       assert.ok(existsSync(join(dir, ".agent/jules-queue")));
@@ -78,12 +79,12 @@ test("src/scaffold.mjs", async (t) => {
     const dir = tempRepo();
     try {
       mkdirSync(join(dir, ".agent/prompts"), { recursive: true });
-      writeFileSync(join(dir, ".agent/prompts/Bolt.md"), "my own bolt\n", "utf-8");
+      writeFileSync(join(dir, ".agent/prompts/Performance.md"), "my own performance\n", "utf-8");
       scaffoldRepoAssets(dir);
-      assert.equal(readFileSync(join(dir, ".agent/prompts/Bolt.md"), "utf-8"), "my own bolt\n");
+      assert.equal(readFileSync(join(dir, ".agent/prompts/Performance.md"), "utf-8"), "my own performance\n");
 
       scaffoldRepoAssets(dir, { force: true });
-      assert.notEqual(readFileSync(join(dir, ".agent/prompts/Bolt.md"), "utf-8"), "my own bolt\n");
+      assert.notEqual(readFileSync(join(dir, ".agent/prompts/Performance.md"), "utf-8"), "my own performance\n");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

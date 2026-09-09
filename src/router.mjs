@@ -73,9 +73,13 @@ const COMPLEX_SIGNALS = [
 ];
 
 // Security specialists handle security-sensitive work; the primary provider is always used.
-const FORCE_COMPLEX_ROLES = new Set(["security", "sentinel"]);
-const FAST_LEANING_ROLES = new Set(["hygiene", "janitor", "performance", "bolt"]);
-const COMPLEX_LEANING_ROLES = new Set(["auditor", "overseer", "security", "sentinel"]);
+// Canonical slugs only: classifyTaskComplexity normalises the requested role
+// through ROLE_ALIASES before these sets are consulted, so a legacy alias
+// already arrives here as its canonical role. Listing legacy names here
+// would be dead weight, not a fallback.
+const FORCE_COMPLEX_ROLES = new Set(["security"]);
+const FAST_LEANING_ROLES = new Set(["hygiene", "performance"]);
+const COMPLEX_LEANING_ROLES = new Set(["auditor", "security"]);
 
 // Supplements config.scope.deny — these are never eligible for the fast tier
 // regardless of user scope config, mirroring src/risk.mjs's RESTRICTED_PATH_PATTERNS.
