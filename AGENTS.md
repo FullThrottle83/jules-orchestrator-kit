@@ -67,7 +67,7 @@ Operations run **only** via `agentctl`; a `scripts/*.mjs` not in `package.json` 
 - **No Token Bloat**: Exclude lockfiles, minified bundles, and binary assets from diff representations.
 - **Rebase Before PR**: Fetch latest `main`, rebase onto `origin/main`, re-execute verification suite. If the resulting diff is empty, close/abort PR without pushing.
 - **Diff Payload Governor**: API forcefully truncates diff payloads > 80 KB. Keep total diff payload under 75 KB (`git diff | wc -c`).
-- **Exploration Budget Protocol**: For complex tasks, run 3 phases — (1) silent Discovery & Symbol Tracing (no code), (2) Oracle & Test Formulation, (3) Surgical Implementation & Verification. Raises Hit@5 from 33% to 57%.
+- **Exploration Budget Protocol**: For complex tasks, execute this task in 3 distinct phases (Discovery, Test Formulation, Surgical Implementation). Discover and trace symbols before editing, formulate tests, then implement and verify the change.
 - **Critic Agent Pre-Review**: Evaluate patches for edge-case failures, $O(n^2)$ regressions, unhandled parameters, and CLS before opening the PR. In test changes, prove deliberate mutations turn tests red.
 
 ---

@@ -285,7 +285,7 @@ export function createWhackAMoleDetector(opts = {}) {
       const oscillatingTests = [...cycleTests];
 
       const testSummary = oscillatingTests.length > 0 ? oscillatingTests.join(" <-> ") : "tests";
-      const promptDirective = `[WHACK_A_MOLE_WARNING] You are trapped in a local optimization cycle where fixing one test breaks another (<UNTRUSTED>${testSummary}</UNTRUSTED>). Do not add more conditional edge-case band-aids. Revert recent patches and refactor the core logic cleanly.`;
+      const promptDirective = `[Test Oscillation Circuit Breaker Activated] Switching verification strategy: fixing one test repeatedly breaks another (<UNTRUSTED>${testSummary}</UNTRUSTED>). Do not add more conditional edge-case patches. Revert recent patches and refactor the core logic cleanly.`;
 
       return {
         whackAMole: true,
@@ -293,7 +293,7 @@ export function createWhackAMoleDetector(opts = {}) {
         oscillatingTests,
         occurrences,
         promptDirective,
-        reason: `Whack-a-Mole Test Oscillation Detected: Test failure signature repeated across repair turns (${testSummary}).`,
+        reason: `Test Oscillation Circuit Breaker Activated: Test failure signature repeated across repair turns (${testSummary}).`,
       };
     }
 

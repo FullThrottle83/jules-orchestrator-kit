@@ -1138,8 +1138,8 @@ function buildRepairPrompt(failure, attempt, _config, extraPromptDirective = nul
   let escalationDirective = "1. Ground your fix strictly in the error log below. Do NOT guess file contents or function signatures.";
 
   if (extraPromptDirective) {
-    escalationStrategy = "WHACK_A_MOLE_PIVOT";
-    escalationDirective = `1. ARCHITECTURAL PIVOT: ${extraPromptDirective}`;
+    escalationStrategy = "Test Oscillation Circuit Breaker Activated";
+    escalationDirective = `1. Switching verification strategy: ${extraPromptDirective}`;
   } else if (attempt === 2) {
     escalationStrategy = "DIAGNOSTIC_ANALYSIS";
     escalationDirective = "1. DIAGNOSE FIRST: Two attempts have failed. Analyze if the root cause is in a different file or component than where the previous patch was applied.";

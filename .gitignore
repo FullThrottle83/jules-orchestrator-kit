@@ -14,7 +14,10 @@ node_modules/
 .agent/evidence/
 .test-kernel-fix-*/
 
-# Maintainer & Operator Private Overlay
+# Local tool and developer overlays (not public package content).
+# .maintainer/, .operator/, CLAUDE.md, .claude/, and .antigravity/
+# hold machine/operator-specific instructions and settings; keep them local.
+# The package.json files allowlist also excludes these overlays from npm.
 .maintainer/
 .operator/
 CLAUDE.md

@@ -353,6 +353,22 @@ export const MCP_TOOLS = [
   },
 ];
 
+// Provider-neutral names share the existing schemas and execution paths.
+// Naming aliases do not add capabilities to the configured provider.
+export const MCP_TOOL_ALIASES = Object.freeze({
+  agent_dispatch_task: "dispatch_jules_task",
+  agent_audit_gate: "audit_jules_gate",
+  agent_get_status: "get_jules_status",
+  agent_optimize_prompt: "optimize_jules_prompt",
+  ...Object.fromEntries(MCP_TOOLS.filter((tool) => tool.name.startsWith("jules_"))
+    .map((tool) => [tool.name.replace(/^jules_/, "agent_"), tool.name])),
+});
+
+for (const [alias, original] of Object.entries(MCP_TOOL_ALIASES)) {
+  const tool = MCP_TOOLS.find((entry) => entry.name === original);
+  MCP_TOOLS.push({ ...tool, name: alias });
+}
+
 export async function handleMcpRequest(request, opts = {}) {
   const root = opts.root || resolveRoot();
   const config = opts.config || loadConfig(root);
@@ -494,7 +510,9 @@ export async function handleMcpRequest(request, opts = {}) {
   }
 
   if (method === "tools/call") {
-    const toolName = params?.name;
+    const requestedName = params?.name;
+    const toolName = Object.hasOwn(MCP_TOOL_ALIASES, requestedName)
+      ? MCP_TOOL_ALIASES[requestedName] : requestedName;
     const args = params?.arguments || {};
 
     try {
