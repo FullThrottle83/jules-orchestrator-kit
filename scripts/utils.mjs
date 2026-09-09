@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { resolveRoot } from "../src/config.mjs";
-import { appendLedger, checkDailyBudget as baseCheckDailyBudget, verifyLedgerIntegrity as baseVerifyLedgerIntegrity } from "../src/state.mjs";
+import { appendLedger, checkDailyBudget as baseCheckDailyBudget } from "../src/state.mjs";
 
 export { loadConfig, resolveRoot, normalizePath } from "../src/config.mjs";
 export {
@@ -23,7 +23,12 @@ export {
   LOW_CONFIDENCE_PATTERNS,
 } from "../src/security.mjs";
 export { git, runCmd } from "../src/git.mjs";
-export { appendLedger, getDailyLedgerPath, ensureDir } from "../src/state.mjs";
+export {
+  appendLedger,
+  getDailyLedgerPath,
+  ensureDir,
+  verifyLedgerIntegrity,
+} from "../src/state.mjs";
 
 export const log = {
   info: (msg) => console.log(`ℹ️  ${msg}`),
@@ -149,24 +154,6 @@ export function reserveDailyBudget(maxSessions = 300, taskKey = "", root = resol
   appendLedger({ event: "budget_reserved", reservationId, key: taskKey }, root);
   const check = checkDailyBudget(root, maxSessions);
   return { ok: check.ok, used: check.used, budget: maxSessions, reservationId };
-}
-
-export function verifyLedgerIntegrity(filePath) {
-  if (!existsSync(filePath)) return { ok: false, count: 0 };
-  try {
-    const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
-    let hasHashes = true;
-    for (const line of lines) {
-      const obj = JSON.parse(line);
-      if (!obj.hash) hasHashes = false;
-    }
-    if (hasHashes && lines.length > 0) {
-      return baseVerifyLedgerIntegrity(filePath);
-    }
-    return { ok: true, count: lines.length, lastHash: "sha256-verified" };
-  } catch (err) {
-    return { ok: false, count: 0, error: err.message || "Invalid JSON in ledger" };
-  }
 }
 
 export function acquireBudgetLock(_root) {
