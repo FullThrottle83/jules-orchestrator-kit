@@ -43,7 +43,8 @@ Start here. Find the page that matches what you are trying to do; every path is 
 - **[docs/uninstall.md](uninstall.md)** — full inventory of scaffolded assets and runtime state, and the exact removal procedure (short version in the README).
 
 ### …contribute, report, or release
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — development workflow and PR expectations.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — PR-based contribution flow, Conventional Commits, and commit-signing rules.
+- [CONTRIBUTORS.md](../CONTRIBUTORS.md) — attribution ledger: human maintainers and autonomous coding agents.
 - [SECURITY.md](../SECURITY.md) — supported versions and vulnerability disclosure.
 - [AGENTS.md → Release Protocol](../AGENTS.md) — changelog-first version bumps and `npm run release` gates.
 - [docs/jules-quality-plan.md](jules-quality-plan.md) — the internal quality program behind the gates.
