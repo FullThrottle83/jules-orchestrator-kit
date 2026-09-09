@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveRolePrompt, hydrateRolePrompt, ROLE_PROMPT_TOKENS, CANONICAL_ROLES, ROLE_ALIASES } from "../src/role-resolver.mjs";
 
@@ -260,7 +260,7 @@ test("P03 role consolidation: canonical-only prompts with one-directional aliase
 
     const violations = [];
     for (const file of shipped) {
-      const rel = file.replace(`${process.cwd()}/`, "");
+      const rel = relative(process.cwd(), file).replace(/\\/g, "/");
       const lines = readFileSync(file, "utf-8").split("\n");
       lines.forEach((line, i) => {
         if (legacyPattern.test(line) && !isAllowlisted(rel, line)) {
