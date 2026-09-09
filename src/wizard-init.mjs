@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseYaml, yamlScalar, TIER_PRESETS, VENDOR_TIERS, FALLBACK_TIER } from "./config.mjs";
+import { safeAtomicWrite } from "./security.mjs";
 import { suggestProvider, detectAvailableProviders } from "./provider-readiness.mjs";
 import { detectDefaultBranch } from "./git.mjs";
 import { resolveWorkspaceBoundary, oracleCandidates } from "./stack-detector.mjs";
@@ -9,23 +10,6 @@ import { detectStackOracles, runVerificationProbe } from "./wizard-oracle.mjs";
 import { parseCollectedTests, producedNoOutput, looksLikeTestSuiteCommand } from "./ops/test-collection.mjs";
 import { select, multiSelect, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { KIT_VERSION } from "./version.mjs";
-
-/**
- * Write a file atomically using a temporary file and atomic rename.
- * @param {string} filePath
- * @param {string} content
- */
-function writeAtomic(filePath, content) {
-  const tmpPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
-  const fd = openSync(tmpPath, "w");
-  try {
-    writeFileSync(fd, content, "utf-8");
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmpPath, filePath);
-}
 
 /**
  * Snake_case projection of {@link TIER_PRESETS} for the YAML the wizard writes.
@@ -580,8 +564,8 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
   const configPath = join(agentDir, "config.yml");
   const julesPath = join(agentDir, "jules.yml");
 
-  writeAtomic(configPath, plan.configYaml);
-  writeAtomic(julesPath, plan.julesYaml);
+  safeAtomicWrite(configPath, plan.configYaml);
+  safeAtomicWrite(julesPath, plan.julesYaml);
 
   return {
     ok: true,

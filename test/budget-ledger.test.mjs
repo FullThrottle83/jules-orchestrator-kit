@@ -17,9 +17,10 @@
  */
 import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmdirSync, rmSync, existsSync, readFileSync, writeFileSync, symlinkSync, renameSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmdirSync, rmSync, existsSync, readFileSync, writeFileSync, symlinkSync, renameSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import {
   resolveDailyLimit,
@@ -43,11 +44,11 @@ import {
   verifyLedgerIntegrity,
   appendLedger,
   checkDailyBudget,
+  reserveDailyBudget,
   ROLLING_WINDOW_MS,
 } from "../src/state.mjs";
 import { loadConfig, TIER_PRESETS } from "../src/config.mjs";
 import { dispatch } from "../src/engine.mjs";
-import { reserveDailyBudget } from "../scripts/utils.mjs";
 import {
   withVfsMutex,
   MutexTimeoutError,
@@ -560,7 +561,7 @@ describe("legacy reservations written without an id", () => {
   it("counts and releases them, since nothing else ever could", () => {
     const root = makeRoot("jok-budget-anon-");
     try {
-      // Exactly what older kit versions and scripts/utils.mjs used to write.
+      // Exactly what older kit versions wrote through the scripts/utils.mjs shim.
       appendLedger({ event: "budget_reserved", key: "legacy-a" }, root);
       appendLedger({ event: "budget_reserved", key: "legacy-b" }, root);
       const withId = reserveBudget(root, 100);
@@ -998,6 +999,86 @@ describe("Kernel Hardening & Concurrency Safety", () => {
 });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/kernel-hardening.test.mjs — test (d), added on main by P04
+// (60300c2) after this file was consolidated; ported verbatim.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+describe("Kernel Hardening & Concurrency Safety", () => {
+  test("d) verifyLedgerIntegrity fails closed on unhashed, truncated, and tampered lines", () => {
+    const testDir = join(process.cwd(), ".agent/test-ledger-fail-closed-" + Date.now());
+    const ledgerPath = join(testDir, "ledger.jsonl");
+    mkdirSync(testDir, { recursive: true });
+
+    try {
+      // An unhashed line is exactly what the deleted scripts/utils.mjs shim
+      // used to bless with { ok: true, lastHash: "sha256-verified" }. It must
+      // now fail closed: no hash fields, no verdict of "intact".
+      writeFileSync(ledgerPath, JSON.stringify({ timestamp: new Date().toISOString(), event: "budget_reserved" }) + "\n");
+      let res = verifyLedgerIntegrity(ledgerPath);
+      assert.strictEqual(res.ok, false, "Unhashed ledger entries must NOT pass verification");
+      assert.strictEqual(res.error, "MISSING_HASH_FIELDS");
+      assert.strictEqual(res.line, 1);
+
+      // A genuine hash chain, built through the kit's own appendLedger.
+      rmSync(ledgerPath);
+      const first = appendLedger({ event: "budget_reserved", key: "alpha" }, testDir);
+      const second = appendLedger({ event: "session_dispatched", key: "alpha" }, testDir);
+      const chainedPath = getDailyLedgerPath(testDir);
+      res = verifyLedgerIntegrity(chainedPath);
+      assert.strictEqual(res.ok, true, "clean chain must verify");
+      assert.strictEqual(res.count, 2);
+      assert.strictEqual(second.prevHash, first.hash, "second entry links to the first hash");
+      assert.strictEqual(res.lastHash, second.hash);
+
+      const lines = readFileSync(chainedPath, "utf-8").split("\n").filter(Boolean);
+
+      // A truncated (torn) final line after an otherwise valid chain must
+      // fail closed as corruption, not be skipped as an incomplete append.
+      appendFileSync(chainedPath, '{"timestamp":"2020-01-01T00:00:00.000Z","event":"bud');
+      res = verifyLedgerIntegrity(chainedPath);
+      assert.strictEqual(res.ok, false, "Truncated ledger line must not pass verification");
+      assert.strictEqual(res.error, "TORN_WRITE_CORRUPTION");
+      assert.strictEqual(res.line, 3);
+      writeFileSync(chainedPath, lines.join("\n") + "\n");
+      assert.strictEqual(verifyLedgerIntegrity(chainedPath).ok, true, "restored chain verifies again");
+
+      // Tampering: flip a payload field on the head line, keep it valid JSON.
+      const head = JSON.parse(lines[0]);
+      head.event = "budget_rolled_back";
+      writeFileSync(chainedPath, JSON.stringify(head) + "\n" + lines.slice(1).join("\n") + "\n");
+      res = verifyLedgerIntegrity(chainedPath);
+      assert.strictEqual(res.ok, false, "Edited payload must break the recomputed SHA-256");
+      assert.strictEqual(res.error, "CORRUPTED_ENTRY_HASH");
+
+      // Truncation of a valid chain (drop the head, orphan the tail) must fail closed.
+      writeFileSync(chainedPath, lines.slice(1).join("\n") + "\n");
+      res = verifyLedgerIntegrity(chainedPath);
+      assert.strictEqual(res.ok, false, "Removed ledger line must break prevHash linkage");
+      assert.strictEqual(res.error, "BROKEN_PREV_HASH");
+
+      // Regression guard: the bypass must never come back. scripts/utils.mjs
+      // may not re-implement verification — it may only forward to the secure
+      // implementation in src/state.mjs (or be gone entirely).
+      const utilsPath = fileURLToPath(new URL("../scripts/utils.mjs", import.meta.url));
+      if (existsSync(utilsPath)) {
+        const utilsSrc = readFileSync(utilsPath, "utf-8");
+        assert.ok(
+          !/function\s+verifyLedgerIntegrity\b/.test(utilsSrc),
+          "scripts/utils.mjs must not define its own verifyLedgerIntegrity"
+        );
+        assert.ok(
+          /export\s*\{[^}]*verifyLedgerIntegrity[^}]*\}\s*from\s*"\.\.\/src\/state\.mjs"/.test(utilsSrc),
+          "scripts/utils.mjs must re-export verifyLedgerIntegrity from src/state.mjs"
+        );
+      }
+    } finally {
+      try { rmSync(testDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
+});
+
+}
 // ═══════════════════════════════════════════════════════════════════════════
 // From: test/whack-a-mole.test.mjs — repair-turn oscillation circuit breaker
 // Moved verbatim by the P08 test consolidation; scoped to its own block.

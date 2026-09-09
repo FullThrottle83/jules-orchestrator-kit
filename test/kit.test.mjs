@@ -6,11 +6,15 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager, parseYamlConfig, detectFrameworkCommands } from "../scripts/command-resolver.mjs";
-import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile, auditLedgers, auditWorktrees, auditGates } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets, anonymizePii, verifyLedgerIntegrity, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation, extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "../scripts/utils.mjs";
-import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective, extractImageAttachments, getMultimodalAttachmentDirective } from "../scripts/jules-dispatch.mjs";
-import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
-import { fetchSessionPatch } from "../scripts/jules-patch.mjs";
+import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile, auditLedgers, auditWorktrees, auditGates } from "../src/self-audit.mjs";
+import { resolveMarkdownConflict } from "../src/merge-blocks.mjs";
+import { redactSecrets, anonymizePii, hasHighConfidenceSecret, hasLowConfidenceSecret } from "../src/security.mjs";
+import { appendLedger, getDailyLedgerPath, verifyLedgerIntegrity, checkDailyBudget, reserveDailyBudget, pruneOldLedgers, ensureDir } from "../src/state.mjs";
+import { loadEnv, getIsolatedCacheDir, ensureSdkCacheIsolation } from "../src/runtime-env.mjs";
+import { extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "../src/swarm.mjs";
+import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective, extractImageAttachments, getMultimodalAttachmentDirective } from "../src/dispatch.mjs";
+import { scanCodebaseForTodos } from "../src/todo-scanner.mjs";
+import { fetchSessionPatch } from "../src/session-ops.mjs";
 
 describe("Dynamic Command Resolver", () => {
   test("detects package manager correctly based on lockfiles", () => {
@@ -227,23 +231,58 @@ describe("Security Redaction & Secret Classification", () => {
     assert.ok(anonymizePii("127.0.0.1").includes("127.0.0.1"), "loopback IP preserved");
   });
 
-  test("verifies ledger SHA-256 hash chain integrity", () => {
+  test("verifies ledger SHA-256 hash chain integrity and fails closed", () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-ledger-"));
     try {
-      const ledgerFile = path.join(tmpDir, "sessions.jsonl");
-      const e1 = JSON.stringify({ event: "budget_reserved", timestamp: new Date().toISOString() });
-      const e2 = JSON.stringify({ event: "session_dispatched", timestamp: new Date().toISOString() });
-      fs.writeFileSync(ledgerFile, `${e1}\n${e2}\n`);
+      fs.mkdirSync(path.join(tmpDir, ".agent", "state"), { recursive: true });
+      appendLedger({ event: "budget_reserved", key: "t1" }, tmpDir);
+      appendLedger({ event: "session_dispatched", key: "t1" }, tmpDir);
+      const ledgerFile = getDailyLedgerPath(tmpDir);
 
       const validRes = verifyLedgerIntegrity(ledgerFile);
       assert.equal(validRes.ok, true);
       assert.equal(validRes.count, 2);
       assert.ok(validRes.lastHash);
 
-      // Tamper with ledger line
-      fs.writeFileSync(ledgerFile, `INVALID JSON LINE\n`);
+      // An entry written outside the hash chain (no `hash` field) must NOT pass.
+      // The old scripts/utils.mjs shim used to return ok: true for exactly this
+      // ledger, silencing tamper detection for every unhashed line.
+      fs.writeFileSync(ledgerFile, JSON.stringify({ event: "budget_reserved" }) + "\n");
+      const unhashedRes = verifyLedgerIntegrity(ledgerFile);
+      assert.equal(unhashedRes.ok, false, "unhashed entries must fail closed");
+      assert.equal(unhashedRes.error, "MISSING_HASH_FIELDS");
+
+      // Torn / invalid JSON must fail closed.
+      fs.appendFileSync(ledgerFile, "not json at all\n");
       const invalidRes = verifyLedgerIntegrity(ledgerFile);
       assert.equal(invalidRes.ok, false);
+
+      // Truncating a chained ledger (dropping the head) must fail closed.
+      const tmpDir2 = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-ledger-trunc-"));
+      try {
+        fs.mkdirSync(path.join(tmpDir2, ".agent", "state"), { recursive: true });
+        appendLedger({ event: "budget_reserved", key: "a" }, tmpDir2);
+        appendLedger({ event: "budget_reserved", key: "b" }, tmpDir2);
+        appendLedger({ event: "budget_reserved", key: "c" }, tmpDir2);
+        const chained = getDailyLedgerPath(tmpDir2);
+        const lines = fs.readFileSync(chained, "utf-8").split("\n").filter(Boolean);
+        fs.writeFileSync(chained, lines.slice(1).join("\n") + "\n");
+        const truncatedRes = verifyLedgerIntegrity(chained);
+        assert.equal(truncatedRes.ok, false, "removing a ledger line must fail closed");
+        assert.equal(truncatedRes.error, "BROKEN_PREV_HASH");
+
+        // Tampering with a chained entry's payload must fail closed.
+        fs.writeFileSync(chained, lines.join("\n") + "\n");
+        assert.equal(verifyLedgerIntegrity(chained).ok, true, "restored chain verifies again");
+        const obj = JSON.parse(lines[0]);
+        obj.event = "budget_rolled_back";
+        fs.writeFileSync(chained, JSON.stringify(obj) + "\n" + lines.slice(1).join("\n") + "\n");
+        const tamperedRes = verifyLedgerIntegrity(chained);
+        assert.equal(tamperedRes.ok, false, "payload edit must break the recomputed hash");
+        assert.equal(tamperedRes.error, "CORRUPTED_ENTRY_HASH");
+      } finally {
+        fs.rmSync(tmpDir2, { recursive: true, force: true });
+      }
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

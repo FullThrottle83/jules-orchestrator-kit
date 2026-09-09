@@ -4,7 +4,7 @@ import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
 import { scanDiff, shannonEntropy } from "./security.mjs";
 import { getQueueDir } from "./state.mjs";
-import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
+import { scanCodebaseForTodos } from "./todo-scanner.mjs";
 import { select, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { scorePromptFalsifiability } from "./task-optimizer.mjs";
 import { getWebTemplate, synthesizeWebEnvelope } from "./web-templates.mjs";

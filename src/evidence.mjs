@@ -4,26 +4,19 @@ import {
   existsSync,
   readdirSync,
   statSync,
-  openSync,
-  writeSync,
-  fsyncSync,
-  closeSync,
-  renameSync,
   unlinkSync,
 } from "node:fs";
-import { join, resolve, relative, isAbsolute, sep, extname } from "node:path";
+import { join, resolve, relative, isAbsolute, extname } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import { isTestPath } from "./test-paths.mjs";
+import { safeAtomicWrite } from "./security.mjs";
+import { normalizePath } from "./config.mjs";
 
-/**
- * Normalizes file path to POSIX slashes.
- * @param {string} p
- * @returns {string}
- */
-export function normalizePath(p = "") {
-  return p.split(sep).join("/").replace(/\\/g, "/");
-}
+// normalizePath is the single shared implementation in src/config.mjs (the
+// copy that used to live here differed only by not guarding non-strings).
+// Re-exported so `./evidence.mjs` callers keep the same entry point.
+export { normalizePath };
 
 /**
  * Computes SHA-256 hex digest of a string or buffer.
@@ -233,30 +226,6 @@ export function computeEvidenceHash(manifest) {
 }
 
 /**
- * Safely writes a file atomically.
- * @param {string} filePath
- * @param {string} content
- */
-function writeFileAtomically(filePath, content) {
-  const tmpPath = `${filePath}.${randomUUID()}.tmp`;
-  let fd;
-  try {
-    fd = openSync(tmpPath, "wx", 0o600);
-    writeSync(fd, content, "utf-8");
-    fsyncSync(fd);
-    closeSync(fd);
-    fd = undefined;
-    renameSync(tmpPath, filePath);
-  } catch (err) {
-    if (fd !== undefined) {
-      try { closeSync(fd); } catch (_) {}
-    }
-    try { unlinkSync(tmpPath); } catch (_) {}
-    throw err;
-  }
-}
-
-/**
  * Queries current git provenance data safely.
  * @param {string} root
  * @returns {object}
@@ -407,12 +376,12 @@ export function writeEvidenceManifest(root, manifest, customPath = null) {
     ? isAbsolute(customPath) ? customPath : join(root, customPath)
     : join(evidenceDir, `${manifest.manifestId}.json`);
 
-  writeFileAtomically(targetPath, JSON.stringify(manifest, null, 2));
+  safeAtomicWrite(targetPath, JSON.stringify(manifest, null, 2), { mode: 0o600 });
 
   // Also maintain symlink/latest pointer
   const latestPath = join(evidenceDir, "manifest.v1.json");
   try {
-    writeFileAtomically(latestPath, JSON.stringify(manifest, null, 2));
+    safeAtomicWrite(latestPath, JSON.stringify(manifest, null, 2), { mode: 0o600 });
   } catch (_) {}
 
   // Written at a custom path means the caller owns the location and its
@@ -612,7 +581,7 @@ export function exportJsonReport(manifest, customPath = null) {
   };
 
   if (customPath) {
-    writeFileAtomically(customPath, JSON.stringify(report, null, 2));
+    safeAtomicWrite(customPath, JSON.stringify(report, null, 2), { mode: 0o600 });
   }
 
   return report;
