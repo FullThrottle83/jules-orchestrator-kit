@@ -109,3 +109,29 @@ describe("Zero-Trust Base Resolution", () => {
     );
   });
 });
+
+describe("Config Hashing Specification Alignment (D17)", () => {
+  test("configSha is the SHA-256 of { denyPaths, allowPaths, protectPaths }", async () => {
+    const { createHash } = await import("node:crypto");
+    const envelope = createExecutionEnvelope(
+      { id: "task-configsha", files: ["src/utils.mjs"] },
+      { forbiddenPaths: ["secrets/**"], allowPaths: ["src/**"], protectPaths: ["package.json"] }
+    );
+    const expected = createHash("sha256")
+      .update(JSON.stringify({ denyPaths: ["secrets/**"], allowPaths: ["src/**"], protectPaths: ["package.json"] }))
+      .digest("hex");
+    assert.strictEqual(envelope.configSha, expected);
+    assert.deepEqual(envelope.scope.deny, ["secrets/**"]);
+    assert.deepEqual(envelope.scope.allow, ["src/**"]);
+    assert.deepEqual(envelope.scope.protect, ["package.json"]);
+  });
+
+  test("configSha changes when any of the three hashed path sets changes", () => {
+    const base = createExecutionEnvelope({ id: "task-configsha-base" }, {});
+    const changed = createExecutionEnvelope(
+      { id: "task-configsha-base" },
+      { forbiddenPaths: [...base.scope.deny, "extra/secret/**"] }
+    );
+    assert.notStrictEqual(changed.configSha, base.configSha);
+  });
+});

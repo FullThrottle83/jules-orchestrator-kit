@@ -1863,9 +1863,33 @@ async function main() {
     }
 
     case "dashboard": {
-      const port = Number(args[1] || 4100);
+      // Accepts both `agentctl dashboard 3000` and `agentctl dashboard --port
+      // 3000`. The old code read args[1] raw, so the documented flag form fed
+      // the literal string "--port" into Number() and died with an uncaught
+      // ERR_SOCKET_BAD_PORT instead of a usable error.
+      let dashboardOpts;
+      try {
+        const parsed = parseArgs({
+          args: args.slice(1),
+          options: {
+            port: { type: "string" },
+            host: { type: "string" },
+          },
+          allowPositionals: true,
+        });
+        dashboardOpts = { port: parsed.values.port, host: parsed.values.host, positional: parsed.positionals[0] };
+      } catch (err) {
+        console.error(`Error: Invalid port argument: ${err.message}`);
+        process.exit(1);
+      }
+      const rawPort = dashboardOpts.port ?? dashboardOpts.positional ?? "4100";
+      const port = Number(rawPort);
+      if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+        console.error(`Error: Invalid port "${rawPort}". Expected an integer between 1024 and 65535.`);
+        process.exit(1);
+      }
       const { startDashboardServer } = await import("../src/dashboard.mjs");
-      startDashboardServer(port, root);
+      startDashboardServer(port, root, dashboardOpts.host || "127.0.0.1");
       break;
     }
 

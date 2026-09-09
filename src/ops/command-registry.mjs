@@ -240,7 +240,7 @@ export const COMMAND_REGISTRY = [
       "agentctl dashboard --port 3000",
     ],
     flags: [
-      { name: "port", type: "string", description: "HTTP server port (default 3000)" },
+      { name: "port", type: "string", description: "HTTP server port (default 4100)" },
       { name: "host", type: "string", description: "Bind host address (default 127.0.0.1)" },
     ],
   },

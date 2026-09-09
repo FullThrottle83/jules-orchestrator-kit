@@ -216,7 +216,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Scrubbing:** Evaluates Deny-before-Allow rules against canonicalized paths. Detects high-entropy strings and base64-encoded credentials (e.g. Kubernetes manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, backed by syntax-check fallback recovery.
 * **Terminal UI & Diagnostics (`agentctl doctor`):** Interactive terminal dashboard, VFS lock management, and automated system diagnostics.
-* **Mechanically Verified:** Comprehensive test suite of **1439 unit tests across 197 suites**, with 59 activation-coverage canaries and 100% pass rate.
+* **Mechanically Verified:** Comprehensive test suite of **1472 unit tests across 199 suites**, with 59 activation-coverage canaries and 100% pass rate.
 
 <br/>
 
@@ -260,7 +260,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 | `rollback` | `agentctl rollback [sessionId \| --latest]` | Restores exact commit, uncommitted files, and cleans orphan task worktrees from pre-flight checkpoints. | `0` (Restored), `1` (Error) |
 | `resume` | `agentctl resume <sessionId> --response "<reply>"` | Streams engineer response back into active Google Jules warm session context window. | `0` (Resumed), `1` (Error) |
 | `test-gen` | `agentctl test-gen --title <t> --spec <s> [--run]` | Scaffolds falsifiable unit tests, verifies RED failure state, and locks test in `scope.deny`. | `0` (Scaffolded/Red) |
-| `dashboard` | `agentctl dashboard [port]` | Starts zero-dependency local HTTP telemetry and audit visualizer dashboard. | `0` (Running) |
+| `dashboard` | `agentctl dashboard [port] [--port <n>]` | Starts zero-dependency local HTTP telemetry and audit visualizer dashboard (default port 4100; valid range 1024–65535). | `0` (Running), `1` (Invalid port) |
 | `evidence` | `agentctl evidence <generate\|verify\|show>` | Generates, verifies, or prints SHA-256 evidence manifests (unkeyed digests: tamper-evident, not signed) with test-tamper locking. | `0` (Verified), `1` (Tamper) |
 | `flaky` | `agentctl flaky <status\|heal\|reset>` | Manages Wilson-quarantined tests (Exit Code 8) and dispatches automated anti-flakiness healing swarms. | `0` (Healed/Listed) |
 | `mcp` | `agentctl mcp` | Starts stdio Model Context Protocol (MCP) server for Claude, Cursor, and Antigravity. | `0` / Stdio stream |

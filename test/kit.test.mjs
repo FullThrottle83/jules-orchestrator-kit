@@ -426,12 +426,12 @@ describe("Specialized Domain Guardrails", () => {
 
   test("triggers Bolt guardrail on performance keywords", () => {
     const rules = getDynamicGuardrails("optimize cache memoization and perf bottlenecks");
-    assert.ok(rules.includes("Performance Guidance (Bolt)"));
+    assert.ok(rules.includes("performance"));
   });
 
   test("triggers Janitor guardrail on cleanup keywords", () => {
     const rules = getDynamicGuardrails("refactor deadcode and fix lint warnings");
-    assert.ok(rules.includes("Clean Code Guidance (Janitor)"));
+    assert.ok(rules.includes("hygiene"));
   });
 
   test("triggers Alchemist guardrail on database keywords", () => {
@@ -440,8 +440,48 @@ describe("Specialized Domain Guardrails", () => {
   });
 
   test("triggers JSON-configured dynamic guardrails when dynamic-guardrails.json is present", () => {
-    const rules = getDynamicGuardrails("update css theme and tailwind styling");
-    assert.ok(rules.includes("CSS & DESIGN GUARDRAILS") || rules.includes("tailwind"));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-guardrails-test-"));
+    try {
+      const rulesDir = path.join(tmpDir, ".agent", "rules");
+      fs.mkdirSync(rulesDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(rulesDir, "dynamic-guardrails.json"),
+        JSON.stringify({
+          rules: [
+            { trigger: "quixotic", guardrail: "CUSTOM_GUARDRAIL_MARKER_7f3a9c" },
+          ],
+        }),
+        "utf-8"
+      );
+      const rules = getDynamicGuardrails("handle the quixotic widget pipeline", tmpDir);
+      assert.ok(rules.includes("CUSTOM_GUARDRAIL_MARKER_7f3a9c"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not trigger security guardrails on substrings like sector or breakfast (word boundaries)", () => {
+    const rules = getDynamicGuardrails("I ate breakfast and read the sector quarterly report").toLowerCase();
+    assert.ok(!rules.includes("security"), `must not match inside words, got: ${rules}`);
+    assert.ok(!rules.includes("performance"), `must not match inside words, got: ${rules}`);
+    assert.ok(!rules.includes("secret redaction"), `must not match inside words, got: ${rules}`);
+  });
+
+  test("does not trigger on keyboard or tokenless substrings but still matches whole words", () => {
+    const negative = getDynamicGuardrails("my keyboard layout and tokenless session handling").toLowerCase();
+    assert.ok(!negative.includes("security"), `must not match inside words, got: ${negative}`);
+    const positive = getDynamicGuardrails("rotate the auth key before the sec review");
+    assert.ok(positive.includes("security"));
+  });
+
+  test("returns canonical role slugs instead of legacy RPG names", () => {
+    const rules = getDynamicGuardrails("fix auth token handling, optimize perf cache, refactor lint warnings, update database schema");
+    for (const role of ["security", "performance", "hygiene", "database"]) {
+      assert.ok(rules.includes(role), `expected canonical role '${role}' in: ${rules}`);
+    }
+    for (const legacy of ["Sentinel", "Bolt", "Janitor", "Alchemist"]) {
+      assert.ok(!rules.includes(legacy), `legacy name '${legacy}' must be gone from: ${rules}`);
+    }
   });
 });
 
@@ -515,6 +555,41 @@ describe("Parallel Slot Partitioning", () => {
   test("returns empty string when total slots <= 1", () => {
     assert.equal(getSlotPartitionDirective("1", "1"), "");
   });
+
+  test("partitions A-Z into balanced letter ranges for any slot count (D16)", () => {
+    assert.deepEqual([getAlphaRange(0, 3), getAlphaRange(1, 3), getAlphaRange(2, 3)], ["A-I", "J-R", "S-Z"]);
+    assert.deepEqual(
+      [getAlphaRange(0, 4), getAlphaRange(1, 4), getAlphaRange(2, 4), getAlphaRange(3, 4)],
+      ["A-G", "H-N", "O-T", "U-Z"]
+    );
+  });
+
+  test("covers every letter exactly once with sizes differing by at most one (D16)", () => {
+    for (const total of [3, 5, 7, 13, 26]) {
+      const ranges = [];
+      for (let i = 0; i < total; i++) ranges.push(getAlphaRange(i, total));
+      const letters = [];
+      const sizes = [];
+      for (const r of ranges) {
+        assert.match(r, /^[A-Z](-[A-Z])?$/, `slot range must be letters, got '${r}' for total=${total}`);
+        const [a, b = a] = r.split("-");
+        const size = b.charCodeAt(0) - a.charCodeAt(0) + 1;
+        sizes.push(size);
+        for (let c = a.charCodeAt(0); c <= b.charCodeAt(0); c++) letters.push(String.fromCharCode(c));
+      }
+      letters.sort();
+      assert.deepEqual(letters, "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""), `total=${total} must cover A-Z exactly once`);
+      assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1, `total=${total} sizes must be balanced, got ${sizes}`);
+    }
+  });
+
+  test("gives single letters when slots exceed the alphabet and empty ranges past Z (D16)", () => {
+    assert.equal(getAlphaRange(0, 26), "A");
+    assert.equal(getAlphaRange(25, 26), "Z");
+    assert.equal(getAlphaRange(0, 30), "A");
+    assert.equal(getAlphaRange(25, 30), "Z");
+    assert.equal(getAlphaRange(26, 30), "");
+  });
 });
 
 describe("Repoless Session Mode Execution", () => {
@@ -539,6 +614,42 @@ describe("Suggested Tasks Scanner", () => {
       assert.equal(tasks.length, 2);
       assert.ok(tasks.some((t) => t.tag === "TODO" && t.type === "TODO" && t.priority === "MEDIUM"));
       assert.ok(tasks.some((t) => t.tag === "FIXME" && t.type === "FIXME" && t.priority === "HIGH"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("skips extensions outside the allowlist, oversized files, and binary files (D9)", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-scan-limits-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "keep.js"), "// TODO: real task\nconst a = 1;");
+      fs.writeFileSync(path.join(tmpDir, "notes.txt"), "// TODO: not a scanned extension");
+      fs.writeFileSync(path.join(tmpDir, "image.png"), "FAKEPNG TODO: not source code");
+      fs.writeFileSync(path.join(tmpDir, "binary.js"), Buffer.concat([Buffer.from("// TODO: binary blob\n"), Buffer.from([0x00, 0xff, 0x00])]));
+      const big = Buffer.alloc(1024 * 1024 + 8, "x");
+      big.write("// TODO: too big to scan\n");
+      fs.writeFileSync(path.join(tmpDir, "huge.js"), big);
+
+      const tasks = scanCodebaseForTodos(tmpDir);
+      assert.equal(tasks.length, 1, `only keep.js should match, got: ${JSON.stringify(tasks.map((t) => t.file))}`);
+      assert.ok(tasks[0].file.endsWith("keep.js"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("ignores paths listed in .gitignore (D9)", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-test-scan-ignore-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, ".gitignore"), "ignored.js\nbuild/\n");
+      fs.writeFileSync(path.join(tmpDir, "kept.js"), "// TODO: visible task");
+      fs.writeFileSync(path.join(tmpDir, "ignored.js"), "// TODO: must be ignored");
+      fs.mkdirSync(path.join(tmpDir, "build"), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, "build", "out.js"), "// TODO: must be ignored");
+
+      const tasks = scanCodebaseForTodos(tmpDir);
+      assert.equal(tasks.length, 1, `only kept.js should match, got: ${JSON.stringify(tasks.map((t) => t.file))}`);
+      assert.ok(tasks[0].file.endsWith("kept.js"));
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -899,6 +1010,80 @@ describe("Pre-Analysis Layering & Status Categorization", () => {
     const { runPreflightStaticCheck } = await import("../scripts/jules-dispatch.mjs");
     const result = runPreflightStaticCheck(process.cwd());
     assert.equal(typeof result, "string");
+  });
+
+  test("runPreflightStaticCheck passes a valid manifest and fails a missing one (D7)", async () => {
+    const { runPreflightStaticCheck } = await import("../scripts/jules-dispatch.mjs");
+    const validDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-preflight-valid-"));
+    const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-preflight-empty-"));
+    try {
+      fs.writeFileSync(path.join(validDir, "package.json"), JSON.stringify({ name: "ok", version: "1.0.0" }));
+      assert.equal(runPreflightStaticCheck(validDir), "PASSED");
+      assert.match(runPreflightStaticCheck(emptyDir), /^FAILED/);
+    } finally {
+      fs.rmSync(validDir, { recursive: true, force: true });
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+    }
+  });
+
+  test("runPreflightStaticCheck fails corrupt package.json instead of passing unconditionally (D7)", async () => {
+    const { runPreflightStaticCheck } = await import("../scripts/jules-dispatch.mjs");
+    const badDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-preflight-bad-"));
+    try {
+      fs.writeFileSync(path.join(badDir, "package.json"), "{ this is not valid JSON !!!");
+      assert.match(runPreflightStaticCheck(badDir), /^FAILED/);
+    } finally {
+      fs.rmSync(badDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Dispatch Argv Scope (D10)", () => {
+  test("parseDispatchArgs parses flags and positionals without touching process.argv", async () => {
+    const { parseDispatchArgs } = await import("../scripts/jules-dispatch.mjs");
+    assert.equal(typeof parseDispatchArgs, "function");
+    const savedDryRun = process.env.JULES_DRY_RUN;
+    delete process.env.JULES_DRY_RUN;
+    try {
+    assert.deepEqual(parseDispatchArgs(["--title", "T", "--prompt", "P"]), {
+      title: "T",
+      prompt: "P",
+      dryRun: false,
+      repoless: false,
+    });
+    assert.deepEqual(parseDispatchArgs(["My Title", "Do the thing", "--repoless"]), {
+      title: "My Title",
+      prompt: "Do the thing",
+      dryRun: false,
+      repoless: true,
+    });
+    const defaults = parseDispatchArgs([]);
+    assert.equal(defaults.title, "Task Dispatch");
+    assert.equal(defaults.prompt, "Execute task");
+    } finally {
+      if (savedDryRun !== undefined) process.env.JULES_DRY_RUN = savedDryRun;
+    }
+  });
+
+  test("importing jules-dispatch.mjs does not consume the importer's argv", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-argv-leak-"));
+    try {
+      const probe = path.join(tmpDir, "probe.mjs");
+      const target = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs").replace(/\\/g, "/");
+      fs.writeFileSync(
+        probe,
+        `import { dispatchTask } from "${target}";\nawait dispatchTask({ dryRun: true });\n`
+      );
+      const output = execFileSync("node", [probe, "--title", "HACKED_TITLE", "--prompt", "HACKED_PROMPT"], {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: { ...process.env, JULES_DRY_RUN: "", JULES_PROJECT_ROOT: tmpDir },
+      });
+      assert.ok(!output.includes("HACKED_TITLE"), `importer argv leaked into dispatch defaults: ${output}`);
+      assert.ok(output.includes("Task Dispatch"), `expected default title, got: ${output}`);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

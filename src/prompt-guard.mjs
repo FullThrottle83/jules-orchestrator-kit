@@ -28,7 +28,7 @@ const INJECTION_PATTERNS = [
  */
 export const STERILE_VOCABULARY_MAP = [
   { pattern: /\bkill\s+-9\b/gi, replacement: "terminate with SIGTERM" },
-  { pattern: /\bSIGKILL\b/g, replacement: "SIGTERM" },
+  { pattern: /\bSIGKILL\b/gi, replacement: "SIGTERM" },
   { pattern: /\bkill\s+(?:the\s+)?processes\b/gi, replacement: "terminate the processes" },
   { pattern: /\bkill\s+(?:the\s+)?process\b/gi, replacement: "terminate the process" },
   { pattern: /\bkill\s+(?:the\s+)?pid\b/gi, replacement: "terminate the PID" },
