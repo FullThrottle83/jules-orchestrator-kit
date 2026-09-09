@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.73.0] - 2026-09-09
+*A system that cannot be falsified cannot be trusted; an autonomous agent without boundaries is a runaway process.*
+
 ### Added
 - **CLI Command Registry & Auto-Generated Documentation (P06) (`src/ops/command-registry.mjs`, `docs/COMMAND_REFERENCE.md`)**: Reconciled all 49 CLI commands and flags with a single source of truth registry. Added `agentctl help <cmd>`, interactive wizard routing, and automated generation and doc-sync validation of `docs/COMMAND_REFERENCE.md`.
 - **Documentation Architecture & Sitemap (P10) (`docs/README.md`, `docs/configuration.md`, `docs/sdk.md`, `docs/uninstall.md`)**: Reorganized documentation into modular reference guides linked from a unified sitemap, and streamlined `README.md` to under 200 lines.

@@ -11,13 +11,21 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 ## 📌 Release Milestones Overview
 
 ```
- v0.72.3 (Current Stable) ──► v0.73.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
- (ASCII Smuggle & Safety)    (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
+ v0.73.0 (Current Stable) ──► v0.74.0 (Distributed Swarms & Leases) ──► v1.0.0 (Production Hardened Kernel)
+ (Security Facade & CLI)     (Multi-Agent DAG & Resource Locks)       (Enterprise Telemetry & SLA)
 ```
 
 ---
 
-## ✅ Shipped Milestones (v0.66.0 – v0.72.3)
+## ✅ Shipped Milestones (v0.66.0 – v0.73.0)
+
+### v0.73.0: Security Facade Decomposition, Command Registry & Canonical Roles
+- [x] **Modular Security Architecture (`src/security.mjs`, `src/fs-atomic.mjs`, `src/scope-guard.mjs`, `src/secret-scanner.mjs`, `src/test-tamper-guard.mjs`, `src/bidi-guard.mjs`)** — split monolithic security module into 5 focused submodules while preserving all 26 public exports and 59/59 tamper canaries.
+- [x] **CLI Command Registry & Single Source of Truth (`src/ops/command-registry.mjs`, `docs/COMMAND_REFERENCE.md`)** — unified 49 CLI switch-cases with auto-generated documentation and dynamic command discovery.
+- [x] **12 Canonical Specialist Roles (`.agent/prompts/`, `src/role-resolver.mjs`)** — consolidated duplicated legacy roles into 12 professional engineering roles with strictly one-directional backwards-compatible aliases.
+- [x] **Audit Ledger Security Hardening (`src/budget.mjs`, `src/state.mjs`)** — eliminated fail-open bypasses on missing ledger states, relocating business logic to `src/`.
+- [x] **Trojan Source BiDi Override Detection (`src/bidi-guard.mjs`, `src/security.mjs`)** — detects invisible Unicode directional control characters across diffs (CVE-2021-42574).
+- [x] **Cold-Start Onboarding & Provenance (`src/git.mjs`, `src/wizard-task.mjs`, `CONTRIBUTORS.md`)** — filtered untracked package artifacts on fresh checkouts and formalized maintainer and agent attribution.
 
 ### v0.72.3: ASCII Smuggling Defense, Safety Filter Mitigations & Deep Planning Envelopes
 - [x] **Unicode Tag ASCII Smuggling Defense (`src/prompt-guard.mjs`, `src/security.mjs`)** — strips and detects Plane 14 Unicode Tag characters (`U+E0000`–`U+E007F`) across untrusted inputs and secret diffs.
@@ -98,9 +106,9 @@ The **jules-orchestrator-kit** is the zero-dependency safety gatekeeper and self
 
 ---
 
-## 🎯 Target Milestones (v0.73.0 & v1.0.0)
+## 🎯 Target Milestones (v0.74.0 & v1.0.0)
 
-### v0.73.0: Distributed File Leases & Preemptive DAG Scheduling
+### v0.74.0: Distributed File Leases & Preemptive DAG Scheduling
 - [ ] **Atomic Filesystem Lease & Heartbeat Protocol (`src/engine.mjs`, `src/flaky-ledger.mjs`)** — Directory-mutex file leasing with heartbeat timestamps, stale-lock detection via PID liveness inspection, and tombstone rotation without third-party daemons or Redis.
 - [ ] **Preemptive Task Cancellation & Interface Fingerprints (`src/dag-engine.mjs`)** — Automatically aborts and yields downstream swarm tasks when upstream exported symbol interfaces diverge from their cryptographic SHA-256 fingerprints.
 - [ ] **POSIX/Win32 Process Group Guillotine (`src/git.mjs:runCmd`, `src/engine.mjs`)** — Tree teardown via `process.kill(-pid, 'SIGKILL')` on POSIX and `taskkill /T /F /PID` on Windows in `runCmd` to eliminate orphaned test runners, dev-servers and background watchers on timeout (`ETIMEDOUT`).

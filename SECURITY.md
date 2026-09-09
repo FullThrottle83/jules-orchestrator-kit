@@ -64,8 +64,8 @@ Failed agent executions generate a 16-character SHA-256 state fingerprint (`fing
 
 | Version | Status | Security Maintenance |
 | :--- | :--- | :--- |
-| `v0.72.x` (Latest) | 🟢 Active | Full security updates & CBEE enforcement |
-| `< v0.72.0` | 🔴 Deprecated | Upgrade to >= v0.72.2 recommended |
+| `v0.73.x` (Latest) | 🟢 Active | Full security updates & CBEE enforcement |
+| `< v0.73.0` | 🔴 Deprecated | Upgrade to >= v0.73.0 recommended |
 
 ---
 
