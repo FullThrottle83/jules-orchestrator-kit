@@ -2001,7 +2001,15 @@ async function main() {
         // tree for files init had just written, which reads as the tool
         // catching the user cheating on step three.
         const rootContracts = ["SPEC.md", "CONSTRAINTS.md", "DESIGN.md"].filter((f) => existsSync(join(root, f)));
-        const filesToAdd = [".agent", "AGENTS.md", ...rootContracts, ".gitignore"].filter((f) => existsSync(join(root, f)));
+        // A fresh `npm install`/`npm init -y` just created package manifests the
+        // scope rules `protect`. Leaving them out of the hint meant the very
+        // first `agentctl gate`/`agentctl task create` still rejected the tree
+        // even after the user committed exactly what this message listed. Fold
+        // the install-produced, currently-addable artifacts in so the suggested
+        // commit actually leaves the tree clean enough for step three.
+        const { addableOnboardingArtifacts } = await import("../src/git.mjs");
+        const filesToAdd = [".agent", "AGENTS.md", ...rootContracts, ...addableOnboardingArtifacts(root), ".gitignore"]
+          .filter((f) => existsSync(join(root, f)));
         console.log(`\n   Commit the manifest and contracts so the gate does not read them as agent edits:`);
         console.log(`     git add ${filesToAdd.join(" ")} && git commit -m "chore: add agent config"`);
 

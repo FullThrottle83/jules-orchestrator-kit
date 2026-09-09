@@ -967,6 +967,79 @@ export function partitionTracked(root = process.cwd(), files = []) {
   };
 }
 
+// Root-level package-manager manifests a just-run `npm install` (or equivalent)
+// writes while onboarding a cold-start repository. `npm init -y` creates a
+// brand-new package.json; `npm install` adds/updates the lockfile. The scope
+// rules legitimately `protect` these — but a tool's *own* install step must not
+// brick the first interaction a newcomer has with it. The two helpers below
+// give callers a way to tell "fresh onboarding artifact" (untracked) apart from
+// "a dependency change the maintainer actually shipped" (tracked+modified), so
+// the gate keeps its teeth while task creation and the init commit hint stop
+// tripping over scaffolding the installer just laid down.
+const ONBOARDING_ROOT_ARTIFACTS = [
+  "package.json",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "bun.lock",
+  "bun.lockb",
+];
+
+/**
+ * Among the given repo-relative paths, which are *untracked* root-level
+ * package-manager artifacts — i.e. manifests a fresh `npm init -y`/install just
+ * created rather than files the maintainer committed and an agent then rewrote?
+ *
+ * The scope rules flag a brand-new package.json as `protect`, which is the
+ * right call for the gate. But a task-create preflight that rejects a brand-new
+ * repository because its own onboarding just produced package.json is a cold
+ * start deadlock: the user has not committed anything yet, so they cannot make
+ * the preflight pass without guessing the secret incantation. Modified
+ * *tracked* lockfiles are deliberately NOT returned here — those stay protected
+ * as supply-chain tampering.
+ *
+ * @param {string} root
+ * @param {string[]} files repo-relative paths (as reported by a scope phase)
+ * @returns {string[]}
+ */
+export function untrackedOnboardingArtifacts(root = process.cwd(), files = []) {
+  const { untracked } = partitionTracked(root, files);
+  if (untracked.length === 0) return [];
+  return untracked.filter((f) => ONBOARDING_ROOT_ARTIFACTS.includes(f));
+}
+
+/**
+ * Root-level package-manager artifacts a `git add` in this repo would actually
+ * stage *right now* — present on disk and not gitignored — for a commit hint.
+ *
+ * A cold-start repo has these as brand-new untracked files; an existing repo
+ * that just ran `npm install -D` may have a modified (tracked) package.json
+ * plus a new lockfile. Gitignored lockfiles (a repo that chooses not to track
+ * them) are excluded, so the suggested `git add …` never errors on a path git
+ * refuses to add.
+ *
+ * @param {string} root
+ * @returns {string[]}
+ */
+export function addableOnboardingArtifacts(root = process.cwd()) {
+  let porcelain = "";
+  try {
+    // `--untracked-files=all` so a lone new file appears verbatim, not as a
+    // collapsed `dir/` entry that would not match a root manifest name.
+    porcelain = git(["status", "--porcelain", "--untracked-files=all"], { cwd: root, ignoreError: true }) || "";
+  } catch (_) {
+    return [];
+  }
+  const changed = new Set();
+  for (const line of porcelain.split("\n")) {
+    // Porcelain v1: two status chars, one space, then the path.
+    const path = line.length > 3 ? line.slice(3) : "";
+    if (path && !path.startsWith('"')) changed.add(path);
+  }
+  return ONBOARDING_ROOT_ARTIFACTS.filter((a) => changed.has(a) && existsSync(join(root, a)));
+}
+
 export function detectDefaultBranch(root = process.cwd()) {
   // `git()` returns trimmed stdout, and "" for a non-zero exit under
   // ignoreError — there is no status field to read.

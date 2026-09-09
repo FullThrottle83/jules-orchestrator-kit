@@ -1,5 +1,6 @@
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { untrackedOnboardingArtifacts } from "./git.mjs";
 import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
 import { scanDiff, shannonEntropy } from "./security.mjs";
@@ -360,9 +361,20 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
   // Perform Gate Preflight
   const gateRes = await gate({ root, mode: "working-tree" });
   if (!gateRes.ok && (gateRes.code === 3 || gateRes.code === 6) && !options.allowGateFailure) {
-    // Filter out uncommitted .agent/ config scope warnings if user initialized locally
-    const realViolations = gateRes.phases[0]?.violations?.filter((v) => !v.file.startsWith(".agent/")) || [];
-    if (realViolations.length > 0 || gateRes.code === 6) {
+    const scopeViolations = gateRes.phases[0]?.violations || [];
+    // A cold-start repository has nothing committed yet: every path init just
+    // wrote — the .agent/ manifest, and the package.json / lockfile a fresh
+    // `npm install` produced — reads as a scope violation because nothing is
+    // on the base branch. Failing task creation on scaffolding the user cannot
+    // have committed *before* installing the tool is a dead end. Untracked
+    // root package-manager artifacts are just-run-install output (not a
+    // dependency change the maintainer shipped), so they are filtered out the
+    // same way the .agent/ scaffolding already is. A modified *tracked*
+    // lockfile stays protected and still rejects the task.
+    const realViolations = scopeViolations.filter((v) => !v.file.startsWith(".agent/")) || [];
+    const installArtifacts = new Set(untrackedOnboardingArtifacts(root, scopeViolations.map((v) => v.file)));
+    const blockers = realViolations.filter((v) => !installArtifacts.has(v.file));
+    if (blockers.length > 0 || gateRes.code === 6) {
       throw new Error(`Gate Preflight Rejected Task: Repository contains scope or secret violations (Exit ${gateRes.code}).`);
     }
   }

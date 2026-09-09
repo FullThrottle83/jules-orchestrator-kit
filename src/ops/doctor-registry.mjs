@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { loadConfig } from "../config.mjs";
+import { loadConfig, detectStack } from "../config.mjs";
 import { probeProvider, detectAvailableProviders, probeProviderLiveness } from "../provider-readiness.mjs";
 import { resolveConcurrency } from "../budget.mjs";
 
@@ -336,49 +336,96 @@ export async function runDoctorChecks(options = {}) {
   }
 
   // 4. Verification Oracle Checks
+  // Judge the command the gate will actually run — `verify.test` from the
+  // config, falling back to the npm `test` script — rather than package.json
+  // alone. package.json-only logic told a fresh Python/Rust/Go or zero-test
+  // repo "missing test script" (a warning, exit 0) while config carried the
+  // real command, or nothing at all; and a green `doctor` right before an
+  // `agentctl gate`/`agentctl task create` that both hard-fail with "No
+  // Verification Oracle" sent newcomers into a contradiction. When verification
+  // is required and there is no oracle, that is a genuine health failure and is
+  // reported red so `doctor`'s exit code matches what the gate will do.
   const pkgPath = join(root, "package.json");
+  let pkgTestScript = "";
+  let pkgValid = false;
   if (existsSync(pkgPath)) {
     try {
       const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-      const testScript = pkg.scripts && pkg.scripts.test;
-      if (testScript) {
-        addResult({
-          id: "oracle.test",
-          category: "Verification",
-          title: "Test Oracle Configuration",
-          status: "pass",
-          severity: "info",
-          summary: `Test oracle script found: "npm test" -> "${testScript}"`,
-          evidence: [{ label: "testScript", value: testScript, sensitive: false }],
-        });
-      } else {
-        addResult({
-          id: "oracle.test",
-          category: "Verification",
-          title: "Test Oracle Configuration",
-          status: "warn",
-          severity: "medium",
-          summary: "package.json missing test script entry",
-        });
-      }
+      pkgValid = true;
+      pkgTestScript = (pkg.scripts && pkg.scripts.test) || "";
     } catch {
-      addResult({
-        id: "oracle.test",
-        category: "Verification",
-        title: "Test Oracle Configuration",
-        status: "warn",
-        severity: "medium",
-        summary: "Malformed package.json file",
-      });
+      pkgValid = false;
     }
-  } else {
+  }
+  let cfg = null;
+  try {
+    cfg = loadConfig(root);
+  } catch (_) {
+    // A config the loader rejects is already reported by config.present; fall
+    // through with null and treat verification as required (the default).
+  }
+  const configTest = (cfg?.verify?.test || "").trim();
+  // verify.required defaults to true; an operator who sets it false is saying
+  // "scope/secret gating only, on purpose" — which is a warning, not a failure.
+  const verificationRequired = cfg?.verify?.required !== false;
+  // The gate auto-detects a per-stack command even before init writes config
+  // (e.g. `python3 -m pytest` for a .py repo), so detection counts as an oracle
+  // too — otherwise a detected but not-yet-onboarded stack would report red.
+  const detectedTest = detectStack(root)?.testCmd || "";
+  const effectiveTest = configTest || pkgTestScript || detectedTest;
+
+  if (effectiveTest) {
+    const source = configTest
+      ? "verify.test in config"
+      : pkgTestScript
+        ? "package.json test script"
+        : "auto-detected from repository stack";
     addResult({
       id: "oracle.test",
       category: "Verification",
       title: "Test Oracle Configuration",
       status: "pass",
       severity: "info",
-      summary: "Non-Node workspace verified",
+      summary: `Verification oracle: "${effectiveTest}" (${source})`,
+      evidence: [{ label: "testCommand", value: effectiveTest, sensitive: false }],
+    });
+  } else if (existsSync(pkgPath) && !pkgValid) {
+    addResult({
+      id: "oracle.test",
+      category: "Verification",
+      title: "Test Oracle Configuration",
+      status: "warn",
+      severity: "medium",
+      summary: "Malformed package.json file",
+    });
+  } else if (!verificationRequired) {
+    addResult({
+      id: "oracle.test",
+      category: "Verification",
+      title: "Test Oracle Configuration",
+      status: "warn",
+      severity: "medium",
+      summary: "No verification oracle — verify.required: false (scope/secret gating only)",
+    });
+  } else {
+    addResult({
+      id: "oracle.test",
+      category: "Verification",
+      title: "Test Oracle Configuration",
+      status: "fail",
+      severity: "high",
+      summary:
+        "No verification command is configured, so the gate rejects every change with a No Verification Oracle finding",
+      fixes: [
+        {
+          id: "oracle.bootstrap",
+          title: "Generate a verification oracle",
+          summary: "Run `agentctl bootstrap` to create one for this stack, or set verify.test in .agent/config.yml",
+          risk: "low",
+          automatic: true,
+          requiresProbe: false,
+        },
+      ],
     });
   }
 
