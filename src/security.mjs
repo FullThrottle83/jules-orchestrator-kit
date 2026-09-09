@@ -483,7 +483,7 @@ export function checkEdgeRuntimeImports(diffOrText = "", options = {}) {
   };
 }
 
-export function checkTrojanSource(diffOrText = "", options = {}) {
+export function checkTrojanSource(diffOrText = "", _options = {}) {
   if (!diffOrText || typeof diffOrText !== "string") return { ok: true, violations: [] };
 
   const violations = [];
