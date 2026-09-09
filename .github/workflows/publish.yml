@@ -1,33 +1,70 @@
 name: Auto Publish to npm
 
+# Publishing is triggered exclusively by a published GitHub Release — the
+# artifact `scripts/release.mjs` creates after its gates pass. `workflow_dispatch`
+# is deliberately absent: a manual dispatch could publish an arbitrary commit
+# that never went through the release pipeline. A failed or cancelled run can
+# always be re-run from the Actions UI.
 on:
   release:
     types: [published]
-  workflow_dispatch:
 
+# Read-only token by default. `id-token: write` (OIDC, needed for npm
+# provenance attestations) is granted to the publish job only, so no other job
+# in this workflow can mint OIDC tokens.
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: "22"
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
-      - run: npm test
-      - run: npm publish --provenance --access public
+
+      # The release event names a tag; the tag must name the version package.json
+      # carries, or the wrong artifact would reach the npm registry.
+      - name: Verify package version matches the release tag
+        run: |
+          pkg_version="$(node -p 'require("./package.json").version')"
+          tag_version="${GITHUB_REF#refs/tags/v}"
+          if [ "${pkg_version}" != "${tag_version}" ]; then
+            echo "::error::package.json version ${pkg_version} does not match release tag ${GITHUB_REF}" >&2
+            exit 1
+          fi
+
+      # Pre-release checks mirroring `scripts/release.mjs` steps 1, 1a and 1a-2,
+      # so a `published` event cannot ship a suite whose guards went silent or a
+      # tarball that is missing files the source tree has.
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Verify every blocking guard can still be made red
+        run: npm run guard-reach
+
+      - name: Verify the published package is self-contained
+        run: npm run package-integrity
+
+      - name: Publish to npm with provenance
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
