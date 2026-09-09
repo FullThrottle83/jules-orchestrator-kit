@@ -40,7 +40,7 @@ describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
     const tmp = mkdtempSync(join(tmpdir(), "evd-dir-test-"));
     try {
       mkdirSync(join(tmp, "test"), { recursive: true });
-      writeFileSync(join(tmp, "test", "a.test.js"), "assert.ok(true);", "utf-8");
+      writeFileSync(join(tmp, "test", "a.test.js"), "assert.equal(2 + 2, 4);", "utf-8");
       writeFileSync(join(tmp, "test", "b.test.js"), "assert.ok(1 === 1);", "utf-8");
 
       const res1 = computeDirectoryHash(tmp, { testOnly: true });
@@ -155,7 +155,7 @@ describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
     const tmp = mkdtempSync(join(tmpdir(), "evd-ops-"));
     try {
       mkdirSync(join(tmp, "test"), { recursive: true });
-      writeFileSync(join(tmp, "test", "sanity.test.js"), "assert.ok(true);", "utf-8");
+      writeFileSync(join(tmp, "test", "sanity.test.js"), "assert.equal(2 + 2, 4);", "utf-8");
 
       const genRes = planEvidenceGenerate(tmp, { markdownOutput: join(tmp, "EVIDENCE.md") });
       assert.equal(genRes.ok, true);

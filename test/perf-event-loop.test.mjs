@@ -65,7 +65,7 @@ test("Node.js Event Loop Delay & Big-O Lag Monitor", async (t) => {
     try {
       writeFileSync(
         join(root, "fast.test.mjs"),
-        'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("fast", () => { assert.ok(true); });\n'
+        'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("fast", () => { assert.equal(2 + 2, 4); });\n'
       );
 
       const res = assertEventLoopLag({ cmd: "node --test fast.test.mjs", maxDelayMs: 100 }, root);

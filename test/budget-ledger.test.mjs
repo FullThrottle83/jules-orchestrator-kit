@@ -1,6 +1,23 @@
-import { describe, it } from "node:test";
+/**
+ * Budget ledger — the domain suite for the append-only accounting that caps
+ * and audits agent work:
+ *
+ *   - the SHA-256 hash-chained daily ledger (src/state.mjs): chaining,
+ *     verification, and every tamper/torn-write failure mode;
+ *   - daily budget limits: learned ceilings, quota classification, certainty-
+ *     gated enforcement, the rolling 24-hour window, concurrency against the
+ *     plan ceiling, multi-user attribution and reconciliation;
+ *   - VFS mutex / lock concurrency safety that serialises ledger writes;
+ *   - the repair-turn oscillation circuit breaker (a limit, like a budget);
+ *   - CRLF-normalised rule-file budgets and snake_case limit config.
+ *
+ * Formed in P08 by merging: budget, kernel-hardening, whack-a-mole, the P-12
+ * section of critical-hardening and the CONFIG-001 section of p0-remediation,
+ * plus new hash-chain tamper-evidence tests. Bodies moved verbatim.
+ */
+import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmdirSync, rmSync, existsSync, readFileSync, writeFileSync, symlinkSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -16,11 +33,7 @@ import {
   resolveConcurrency,
   CEILING_FILE,
 } from "../src/budget.mjs";
-import { loadConfig, TIER_PRESETS } from "../src/config.mjs";
-import { dispatch } from "../src/engine.mjs";
 import {
-  checkDailyBudget,
-  BudgetError,
   reserveBudget,
   commitBudgetReservation,
   rollbackBudgetReservation,
@@ -29,10 +42,30 @@ import {
   scanBudgetWindow,
   verifyLedgerIntegrity,
   appendLedger,
+  checkDailyBudget,
   ROLLING_WINDOW_MS,
 } from "../src/state.mjs";
+import { loadConfig, TIER_PRESETS } from "../src/config.mjs";
+import { dispatch } from "../src/engine.mjs";
 import { reserveDailyBudget } from "../scripts/utils.mjs";
+import {
+  withVfsMutex,
+  MutexTimeoutError,
+  isPidAlive,
+  getProcessStartTime,
+  acquireLock,
+  getLockDir,
+  reserveBudgetAtomic,
+  BudgetError,
+} from "../index.mjs";
+import { createWhackAMoleDetector } from "../src/remediation.mjs";
+import { checkRulesBudget } from "../src/rules-budget.mjs";
 
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/budget.test.mjs
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
 /** An isolated repo root so nothing here touches the operator's real ledger. */
 function makeRoot(prefix) {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -829,4 +862,439 @@ describe("src/budget.mjs — Multi-User Attribution & Identity", () => {
     }
   });
 });
+}
 
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/kernel-hardening.test.mjs
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+describe("Kernel Hardening & Concurrency Safety", () => {
+  test("a) withVfsMutex throws MutexTimeoutError on timeout and DOES NOT execute callback", () => {
+    const testDir = join(process.cwd(), ".agent/test-mutex-timeout-" + Date.now());
+    mkdirSync(testDir, { recursive: true });
+    const mutexDir = join(testDir, ".test.mutex");
+    mkdirSync(mutexDir); // Simulate mutex lock already held by another process
+
+    let callbackExecuted = false;
+
+    try {
+      assert.throws(
+        () => {
+          withVfsMutex(
+            mutexDir,
+            () => {
+              callbackExecuted = true;
+            },
+            { maxRetries: 5, retryDelayMs: 2 }
+          );
+        },
+        (err) => err instanceof MutexTimeoutError && err.name === "MutexTimeoutError"
+      );
+
+      assert.strictEqual(callbackExecuted, false, "Callback must NOT execute when mutex acquisition times out");
+    } finally {
+      try { rmdirSync(mutexDir); } catch (_) {}
+      try { rmSync(testDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
+
+  test("b) Stale lock with recycled/mismatched PID starttime is successfully reaped", () => {
+    const testDir = join(process.cwd(), ".agent/test-stale-lock-" + Date.now());
+    mkdirSync(testDir, { recursive: true });
+    const lockDir = getLockDir(testDir);
+    const taskId = "task-stale-pid-test";
+    const lockFile = join(lockDir, `${taskId}.json`);
+
+    try {
+      // Create a lock payload with alive process.pid but a mismatched starttime
+      const mismatchedPayload = {
+        agent: "stale-worker",
+        taskId,
+        files: ["src/state.mjs"],
+        pid: process.pid,
+        processStartTime: "999999999",
+        starttime: "999999999",
+        nonce: "stale-nonce-12345",
+        hostname: "localhost",
+        acquiredAt: new Date().toISOString(),
+      };
+      writeFileSync(lockFile, JSON.stringify(mismatchedPayload, null, 2), "utf-8");
+
+      // Verify isPidAlive returns false for process.pid when expectedStartTime is mismatched on Linux/macOS
+      if (process.platform === "linux" || process.platform === "darwin") {
+        const alive = isPidAlive(process.pid, "999999999");
+        assert.strictEqual(alive, false, "isPidAlive must return false for mismatched PID starttime");
+      }
+
+      // acquireLock must detect stale PID starttime, reap the lock file, and acquire lock successfully
+      if (process.platform === "linux" || process.platform === "darwin") {
+        const res = acquireLock("new-worker", taskId, ["src/state.mjs"], testDir);
+        assert.strictEqual(res.ok, true, "acquireLock should succeed after reaping stale lock");
+        assert.strictEqual(res.lockFile, lockFile);
+
+        // Verify new lock contents
+        const newLock = JSON.parse(readFileSync(lockFile, "utf-8"));
+        assert.strictEqual(newLock.agent, "new-worker");
+        assert.strictEqual(newLock.pid, process.pid);
+        assert.ok(newLock.nonce, "Lock payload must contain a random UUID nonce");
+
+        if (process.platform === "linux") {
+          const actualStart = getProcessStartTime(process.pid);
+          assert.strictEqual(String(newLock.processStartTime), String(actualStart));
+        }
+      }
+    } finally {
+      try { rmSync(testDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
+
+  test("c) 20 concurrent reservation calls against budget limit 3 results in exactly 3 successes and 17 rejections", async () => {
+    const testDir = join(process.cwd(), ".agent/test-concurrent-budget-" + Date.now());
+    mkdirSync(testDir, { recursive: true });
+    const limit = 3;
+
+    try {
+      const tasks = Array.from({ length: 20 }, () => {
+        return new Promise((resolve) => {
+          setImmediate(() => {
+            try {
+              const res = reserveBudgetAtomic(testDir, limit);
+              resolve({ ok: true, value: res });
+            } catch (err) {
+              resolve({ ok: false, error: err });
+            }
+          });
+        });
+      });
+
+      const results = await Promise.all(tasks);
+      const successes = results.filter((r) => r.ok);
+      const failures = results.filter((r) => !r.ok);
+
+      assert.strictEqual(successes.length, 3, "Exactly 3 reservations must succeed");
+      assert.strictEqual(failures.length, 17, "Exactly 17 reservations must be rejected");
+
+      for (const failure of failures) {
+        assert.ok(failure.error instanceof BudgetError, "Failure error must be an instance of BudgetError");
+        assert.strictEqual(failure.error.code, 7, "BudgetError code must be 7");
+      }
+
+      // Verify ledger file integrity and entry count
+      const dateStr = new Date().toISOString().split("T")[0];
+      const ledgerPath = join(testDir, ".agent/state", `ledger-${dateStr}.jsonl`);
+      assert.strictEqual(existsSync(ledgerPath), true, "Ledger file must exist");
+
+      const lines = readFileSync(ledgerPath, "utf-8").split("\n").filter(Boolean);
+      assert.strictEqual(lines.length, 3, "Ledger must contain exactly 3 reservation entries");
+
+      const integrity = verifyLedgerIntegrity(ledgerPath);
+      assert.strictEqual(integrity.ok, true, "Ledger hash-chain integrity must pass verification");
+      assert.strictEqual(integrity.count, 3);
+    } finally {
+      try { rmSync(testDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
+});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/whack-a-mole.test.mjs — repair-turn oscillation circuit breaker
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+test("Whack-a-Mole Test-Oscillation Cycle Detector", async (t) => {
+  await t.test("allows progressing non-repeating test outcomes", () => {
+    const detector = createWhackAMoleDetector({ threshold: 2 });
+
+    const r1 = detector.recordTestOutcome(["TestAuth", "TestOrder"]);
+    assert.equal(r1.whackAMole, false);
+
+    const r2 = detector.recordTestOutcome(["TestPayment"]);
+    assert.equal(r2.whackAMole, false);
+
+    const r3 = detector.recordTestOutcome([]);
+    assert.equal(r3.whackAMole, false);
+  });
+
+  await t.test("detects alternating test failure oscillation (TestA -> TestB -> TestA)", () => {
+    const detector = createWhackAMoleDetector({ threshold: 2 });
+
+    // Repair turn 1: Test A fails
+    const r1 = detector.recordTestOutcome(["TestA"]);
+    assert.equal(r1.whackAMole, false);
+
+    // Repair turn 2: Test A fixed, but Test B broke
+    const r2 = detector.recordTestOutcome(["TestB"]);
+    assert.equal(r2.whackAMole, false);
+
+    // Repair turn 3: Test B fixed, but Test A broke again (Whack-a-Mole!)
+    const r3 = detector.recordTestOutcome(["TestA"]);
+    assert.equal(r3.whackAMole, true);
+    assert.equal(r3.occurrences, 2);
+    assert.equal(r3.cycleLength, 2);
+    assert.ok(r3.oscillatingTests.includes("TestA"));
+    assert.ok(r3.oscillatingTests.includes("TestB"));
+    assert.match(r3.promptDirective, /Test Oscillation Circuit Breaker Activated/);
+    assert.match(r3.promptDirective, /<UNTRUSTED>(TestA <-> TestB|TestB <-> TestA)<\/UNTRUSTED>/);
+  });
+
+  await t.test("handles multi-test set oscillation and array/string normalization", () => {
+    const detector = createWhackAMoleDetector({ threshold: 2 });
+
+    detector.recordTestOutcome("TestUser::test_login");
+    detector.recordTestOutcome("TestCart::test_checkout");
+
+    const r3 = detector.recordTestOutcome("TestUser::test_login");
+    assert.equal(r3.whackAMole, true);
+    assert.ok(r3.oscillatingTests.includes("TestUser::test_login"));
+    assert.ok(r3.oscillatingTests.includes("TestCart::test_checkout"));
+  });
+
+  await t.test("reset() clears history and restores detector", () => {
+    const detector = createWhackAMoleDetector({ threshold: 2 });
+
+    detector.recordTestOutcome(["TestX"]);
+    detector.recordTestOutcome(["TestY"]);
+    detector.reset();
+
+    const r = detector.recordTestOutcome(["TestX"]);
+    assert.equal(r.whackAMole, false);
+  });
+});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/critical-hardening.test.mjs — P-12 rules budget
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+describe("P-12: CRLF normalisation before rules budget accounting", () => {
+  it("counts a CRLF file by its LF-normalised length", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rules-crlf-"));
+    try {
+      // 10 letters + 9 newlines = 19 chars once CRLF is normalised to LF; the
+      // raw CRLF form is 28 chars and would have falsely tripped a 19-char cap.
+      const crlf = "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\r\ni\r\nj";
+      writeFileSync(join(dir, "AGENTS.md"), crlf, "utf-8");
+      const res = checkRulesBudget(dir, { maxChars: 19, maxLines: 100 });
+      assert.equal(res.ok, true);
+      assert.equal(res.violations.length, 0);
+
+      // The same content as LF measures identically, proving the two dialects
+      // no longer disagree.
+      const lfDir = mkdtempSync(join(tmpdir(), "rules-lf-"));
+      try {
+        writeFileSync(join(lfDir, "AGENTS.md"), crlf.replace(/\r\n/g, "\n"), "utf-8");
+        assert.equal(checkRulesBudget(lfDir, { maxChars: 19, maxLines: 100 }).ok, true);
+      } finally {
+        rmSync(lfDir, { recursive: true, force: true });
+      }
+
+      // A file one character over the budget still fails, and the reported
+      // charCount is the normalised one.
+      writeFileSync(join(dir, "AGENTS.md"), crlf.replace(/j$/, "jj"), "utf-8");
+      const over = checkRulesBudget(dir, { maxChars: 19, maxLines: 100 });
+      assert.equal(over.ok, false);
+      assert.equal(over.violations[0].charCount, 20);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// From: test/p0-remediation.test.mjs — CONFIG-001
+// Moved verbatim by the P08 test consolidation; scoped to its own block.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+test("CONFIG-001: Snake-Case Config Limit Support", async (t) => {
+  await t.test("loadConfig maps snake_case limits to camelCase correctly", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-config-test-"));
+    try {
+      const agentDir = join(tmpDir, ".agent");
+      mkdirSync(agentDir, { recursive: true });
+      writeFileSync(
+        join(agentDir, "config.yml"),
+        `limits:\n  diff_kb: 42\n  daily_tasks: 19\n  repair_attempts: 5\n`
+      );
+
+      const cfg = loadConfig(tmpDir);
+      assert.equal(cfg.limits.diffKb, 42);
+      assert.equal(cfg.limits.dailyTasks, 19);
+      assert.equal(cfg.limits.repairAttempts, 5);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// New: hash-chain tamper evidence and daily limit enforcement
+// Written new in P08 for offline coverage of the merged domain.
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * P08 addition: the SHA-256 hash chain is the ledger's tamper evidence, so the
+ * failure branches of `verifyLedgerIntegrity` are themselves a safety gate —
+ * a verifier that always said "ok" would bless a forged ledger.
+ */
+
+describe("src/state.mjs — SHA-256 hash-chain tamper evidence", () => {
+  it("chains entries by prevHash and verifies clean end-to-end", () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-chain-clean-"));
+    try {
+      const e1 = appendLedger({ event: "probe", n: 1 }, root);
+      const e2 = appendLedger({ event: "probe", n: 2 }, root);
+      const e3 = appendLedger({ event: "probe", n: 3 }, root);
+
+      assert.equal(e1.prevHash, "0".repeat(64), "the genesis entry chains from 64 zeroes");
+      assert.equal(e2.prevHash, e1.hash, "each entry chains from its predecessor");
+      assert.equal(e3.prevHash, e2.hash);
+
+      const verdict = verifyLedgerIntegrity(getDailyLedgerPath(root));
+      assert.equal(verdict.ok, true);
+      assert.equal(verdict.count, 3);
+      assert.equal(verdict.lastHash, e3.hash, "the reported chain head is the last append");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("flags a mutated middle entry as CORRUPTED_ENTRY_HASH at its line", () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-chain-mutate-"));
+    try {
+      appendLedger({ event: "a", n: 1 }, root);
+      appendLedger({ event: "b", n: 2 }, root);
+      appendLedger({ event: "c", n: 3 }, root);
+
+      const path = getDailyLedgerPath(root);
+      const lines = readFileSync(path, "utf-8").split("\n").filter(Boolean);
+      const forged = JSON.parse(lines[1]);
+      forged.event = "forged-after-the-fact";
+      lines[1] = JSON.stringify(forged);
+      writeFileSync(path, lines.join("\n") + "\n", "utf-8");
+
+      const verdict = verifyLedgerIntegrity(path);
+      assert.equal(verdict.ok, false, "an edited payload must break its entry hash");
+      assert.equal(verdict.error, "CORRUPTED_ENTRY_HASH");
+      assert.equal(verdict.line, 2, "the report names the forged line");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("flags a deleted middle entry as BROKEN_PREV_HASH", () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-chain-delete-"));
+    try {
+      appendLedger({ event: "a", n: 1 }, root);
+      appendLedger({ event: "b", n: 2 }, root);
+      appendLedger({ event: "c", n: 3 }, root);
+
+      const path = getDailyLedgerPath(root);
+      const lines = readFileSync(path, "utf-8").split("\n").filter(Boolean);
+      lines.splice(1, 1); // erase the middle entry — the history now lies
+      writeFileSync(path, lines.join("\n") + "\n", "utf-8");
+
+      const verdict = verifyLedgerIntegrity(path);
+      assert.equal(verdict.ok, false, "removing an entry must break the successor's prevHash");
+      assert.equal(verdict.error, "BROKEN_PREV_HASH");
+      assert.equal(verdict.line, 2);
+      assert.equal(verdict.actual, JSON.parse(lines[1]).prevHash);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("flags a torn write (truncated trailing line) as TORN_WRITE_CORRUPTION", () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-chain-torn-"));
+    try {
+      appendLedger({ event: "a", n: 1 }, root);
+      const path = getDailyLedgerPath(root);
+      const raw = readFileSync(path, "utf-8");
+      // Half a JSON line is what a process killed mid-append leaves behind.
+      writeFileSync(path, raw + JSON.stringify({ event: "torn", prevHash: "x" }).slice(0, 18), "utf-8");
+
+      const verdict = verifyLedgerIntegrity(path);
+      assert.equal(verdict.ok, false, "a torn final line must not verify as clean");
+      assert.equal(verdict.error, "TORN_WRITE_CORRUPTION");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("flags an entry stripped of its hash fields as MISSING_HASH_FIELDS", () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-chain-strip-"));
+    try {
+      appendLedger({ event: "a", n: 1 }, root);
+      const path = getDailyLedgerPath(root);
+      const lines = readFileSync(path, "utf-8").split("\n").filter(Boolean);
+      const stripped = JSON.parse(lines[0]);
+      delete stripped.hash;
+      delete stripped.prevHash;
+      lines.push(JSON.stringify(stripped));
+      writeFileSync(path, lines.join("\n") + "\n", "utf-8");
+
+      const verdict = verifyLedgerIntegrity(path);
+      assert.equal(verdict.ok, false, "a hand-written entry without hashes must be rejected");
+      assert.equal(verdict.error, "MISSING_HASH_FIELDS");
+      assert.equal(verdict.line, 2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to append through a symbolic link", () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-chain-symlink-"));
+    try {
+      appendLedger({ event: "a", n: 1 }, root);
+      const path = getDailyLedgerPath(root);
+      const victim = join(root, "victim.jsonl");
+      renameSync(path, victim);
+      symlinkSync(victim, path);
+
+      assert.throws(
+        () => appendLedger({ event: "b", n: 2 }, root),
+        /Refusing to append to symbolic link/,
+        "a symlinked ledger would let one file redirect every future audit entry"
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports FILE_NOT_FOUND for a ledger that does not exist", () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-chain-missing-"));
+    try {
+      const verdict = verifyLedgerIntegrity(join(root, "absent.jsonl"));
+      assert.deepEqual(verdict, { ok: false, count: 0, error: "FILE_NOT_FOUND" });
+      assert.equal(existsSync(join(root, "absent.jsonl")), false, "verification must not create the file");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("daily budget limit enforcement on the ledger", () => {
+  it("stops reserving at the daily limit, and rejected attempts leave the chain verifiable", () => {
+    const root = mkdtempSync(join(tmpdir(), "jok-daily-cap-"));
+    try {
+      const first = reserveBudget(root, 2);
+      const second = reserveBudget(root, 2);
+      assert.equal(first.ok, true);
+      assert.equal(second.ok, true);
+      assert.equal(second.remaining, 0, "the second reservation exhausts a limit of 2");
+
+      assert.throws(
+        () => reserveBudget(root, 2),
+        (err) => err instanceof BudgetError && /Daily budget exhausted \(2\/2/.test(err.message)
+      );
+
+      assert.equal(checkDailyBudget(root, 300).used, 2, "the rejected third attempt consumed no slot");
+      const verdict = verifyLedgerIntegrity(getDailyLedgerPath(root));
+      assert.equal(verdict.ok, true, "rejections happen before any append, so the chain stays intact");
+      assert.equal(verdict.count, 2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
