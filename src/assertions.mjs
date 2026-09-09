@@ -4,7 +4,7 @@ import { gzipSync } from "node:zlib";
 import { checkAssetIntegrity } from "./asset-integrity.mjs";
 import { checkRulesBudget } from "./rules-budget.mjs";
 import { runMutationTest } from "./mutation.mjs";
-import { checkTestTampering } from "./security.mjs";
+import { checkTestTampering, matchesGlob } from "./security.mjs";
 import { runV8Coverage, calculateDiffCoverage } from "./coverage.mjs";
 import { runStabilityProbe } from "./stability.mjs";
 import { measureEventLoopDelay } from "./perf.mjs";
@@ -54,56 +54,11 @@ export function resolveBytesLimit(opts = {}) {
 }
 
 /**
- * Simple zero-dependency glob/pattern matcher supporting * and **.
- * @param {string} pathStr
- * @param {string} pattern
- * @returns {boolean}
+ * Glob matching is delegated to the single linear-time matcher in
+ * src/security.mjs (segment DP; no regex, so no catastrophic backtracking).
+ * Re-exported so `./assertions.mjs` callers keep the same entry point.
  */
-export function matchesGlob(pathStr, pattern) {
-  if (!pattern || pattern === "*") return true;
-  const normalizedPath = normalizePosix(pathStr).replace(/^\.\//, "");
-  const normalizedPattern = normalizePosix(pattern).replace(/^\.\//, "");
-
-  if (normalizedPath === normalizedPattern) return true;
-
-  // Convert simple glob pattern to RegExp
-  let regexStr = "^";
-  let i = 0;
-  while (i < normalizedPattern.length) {
-    const c = normalizedPattern[i];
-    if (c === "*" && normalizedPattern[i + 1] === "*") {
-      if (normalizedPattern[i + 2] === "/") {
-        regexStr += "(?:.*/)?";
-        i += 3;
-        continue;
-      } else {
-        regexStr += ".*";
-        i += 2;
-        continue;
-      }
-    } else if (c === "*") {
-      regexStr += "[^/]*";
-      i++;
-    } else if (c === "?") {
-      regexStr += "[^/]";
-      i++;
-    } else if (["\\", ".", "+", "^", "$", "{", "}", "(", ")", "|", "[", "]"].includes(c)) {
-      regexStr += "\\" + c;
-      i++;
-    } else {
-      regexStr += c;
-      i++;
-    }
-  }
-  regexStr += "$";
-
-  try {
-    const re = new RegExp(regexStr);
-    return re.test(normalizedPath);
-  } catch (_) {
-    return normalizedPath.includes(normalizedPattern);
-  }
-}
+export { matchesGlob };
 
 /**
  * Asserts total byte size of a directory.

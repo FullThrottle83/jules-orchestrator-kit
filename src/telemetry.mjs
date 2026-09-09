@@ -227,6 +227,29 @@ export function appendTelemetry(rootOrOpts = resolveRoot(), kind = "event", fiel
 }
 
 /**
+ * Best-effort companion to {@link appendTelemetry}: records the event when it
+ * can, and returns null instead of throwing when it cannot.
+ *
+ * Telemetry is diagnostic data. A gate verdict must never hinge on the mutex
+ * or disk write that logs how the verdict came about, so the safety policy
+ * "telemetry failures are swallowed" lives here, in the module that owns
+ * appending, instead of being re-implemented by each caller that needs it
+ * (src/engine.mjs carried its own copy of this wrapper).
+ *
+ * @param {string} [root]
+ * @param {string} kind
+ * @param {Object} [fields={}]
+ * @returns {Object|null} Appended telemetry record, or null if it was not written
+ */
+export function appendTelemetryBestEffort(root = resolveRoot(), kind = "event", fields = {}) {
+  try {
+    return appendTelemetry(root, kind, fields);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Days of telemetry kept on disk.
  *
  * The dashboard and `agentctl status` read the current day; nothing in the kit

@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, writeFileSync, openSync, fsyncSync, closeSync, renameSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { userInfo } from "node:os";
 import { resolveRoot } from "./config.mjs";
+import { safeAtomicWrite } from "./security.mjs";
 import {
   getStateDir,
   ensureDir,
@@ -101,18 +102,6 @@ export function isDailyQuotaRejection(err) {
   return DAILY_QUOTA_HINT.test(text);
 }
 
-function writeAtomic(filePath, content) {
-  const tmpPath = `${filePath}.tmp.${process.pid}.${Math.random().toString(36).slice(2)}`;
-  const fd = openSync(tmpPath, "w");
-  try {
-    writeFileSync(fd, content, "utf-8");
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmpPath, filePath);
-}
-
 /**
  * Read the stored ceiling, whenever it was observed.
  *
@@ -190,7 +179,7 @@ export function recordObservedCeiling(usedAtRejection, root = resolveRoot(), met
     observedAt: new Date().toISOString(),
     source: meta.source || "provider-rejection",
   };
-  writeAtomic(join(stateDir, CEILING_FILE), JSON.stringify(record, null, 2) + "\n");
+  safeAtomicWrite(join(stateDir, CEILING_FILE), JSON.stringify(record, null, 2) + "\n");
 
   // Mirrored into the hash-chained ledger so the change is auditable; the JSON
   // file above is only a cheap index that survives ledger rotation.

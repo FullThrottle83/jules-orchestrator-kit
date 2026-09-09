@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { resolveRoot } from "../src/config.mjs";
-import { appendLedger, checkDailyBudget as baseCheckDailyBudget } from "../src/state.mjs";
+import { appendLedger, checkDailyBudget } from "../src/state.mjs";
 
 export { loadConfig, resolveRoot, normalizePath } from "../src/config.mjs";
 export {
@@ -27,6 +27,7 @@ export {
   appendLedger,
   getDailyLedgerPath,
   ensureDir,
+  checkDailyBudget,
   verifyLedgerIntegrity,
 } from "../src/state.mjs";
 
@@ -119,25 +120,6 @@ export function pruneOldLedgers(stateDir, retentionDays = 30) {
       } catch (_) {}
     }
   } catch (_) {}
-}
-
-export function checkDailyBudget(arg1 = resolveRoot(), arg2 = 300) {
-  let root = typeof arg1 === "string" ? arg1 : resolveRoot();
-  let limit = typeof arg1 === "number" ? arg1 : (typeof arg2 === "number" ? arg2 : 300);
-
-  const res = baseCheckDailyBudget(root, limit);
-  // Filter for budget_reserved events if present
-  const ledgerPath = join(root, `.agent/state/ledger-${new Date().toISOString().split("T")[0]}.jsonl`);
-  if (existsSync(ledgerPath)) {
-    try {
-      const lines = readFileSync(ledgerPath, "utf-8").split("\n").filter(Boolean);
-      const reservedCount = lines.filter((l) => l.includes('"event":"budget_reserved"')).length;
-      if (reservedCount > 0) {
-        return { ok: reservedCount < limit, used: reservedCount, budget: limit, remaining: Math.max(0, limit - reservedCount) };
-      }
-    } catch (_) {}
-  }
-  return res;
 }
 
 /**

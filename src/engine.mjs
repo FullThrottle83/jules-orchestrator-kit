@@ -13,7 +13,7 @@ import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mj
 import fs, { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
-import { appendTelemetry as appendTelemetryUnsafe } from "./telemetry.mjs";
+import { appendTelemetryBestEffort as appendTelemetry } from "./telemetry.mjs";
 
 import { spawn } from "node:child_process";
 import { resolveAffectedTests, executeQueueDag } from "./dag-engine.mjs";
@@ -58,14 +58,6 @@ export {
   runAssertion,
 };
 
-
-function appendTelemetry(root, kind, fields = {}) {
-  try {
-    return appendTelemetryUnsafe(root, kind, fields);
-  } catch (_) {
-    return null;
-  }
-}
 
 function isSafeQueueFileName(fileName) {
   return typeof fileName === "string" && fileName.length > 0 && basename(fileName) === fileName && fileName !== "." && fileName !== "..";
