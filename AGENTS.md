@@ -131,5 +131,5 @@ Standardized across all automation entry points (`agentctl`, `jules-dispatch`, `
 Whenever bumping the version:
 1. Add a `CHANGELOG.md` entry, then bump `package.json`.
 2. Push `main` first — the pipeline refuses to release a commit CI has not verified.
-3. Run `npm run release`. It blocks on tests, the doc-sync gate, and a green CI matrix for `HEAD` before tagging `v<version>`, pushing, and creating the GitHub Release via `gh release create`. `--skip-ci-check` only when `gh` is unavailable.
+3. Run `npm run release`. It blocks on tests, guard-reach, package integrity, doc-sync and a green CI matrix for `HEAD`, then tags `v<version>`, pushes, and creates the GitHub Release via `gh release create`. `--skip-ci-check` only when `gh` is unavailable.
 

@@ -536,6 +536,29 @@ npm uninstall -g jules-orchestrator-kit
 - [**Google Jules Official Documentation**](https://jules.google) — Official platform overview and API specifications for Google Jules.
 - [**Examples & Task Envelope Recipes**](./EXAMPLES.md) — Production YAML and Markdown task envelopes.
 - [**Changelog**](./CHANGELOG.md) — Full release history and migration guides.
+- [**Contributing**](./CONTRIBUTING.md) — PR-based contribution flow, Conventional Commits, and commit-signing rules.
+- [**Contributors & Provenance**](./CONTRIBUTORS.md) — Attribution ledger: human maintainers and autonomous coding agents.
+
+<br/>
+
+---
+
+<br/>
+
+## 🤝 Contributions & Provenance
+
+`jules-orchestrator-kit` is a **human-led, agent-assisted** open-source project.
+It is maintained by **Jonas Pudas** ([`FullThrottle83`](https://github.com/FullThrottle83))
+and developed with supervised autonomous coding agents — **`jules-agent`**
+(Google Jules) and **Arena Agent** — which author code inside the task-envelope
+and verification framework defined in `AGENTS.md`. In the `git log`
+(2026-07-26 → 2026-09-09, 448 commits) the majority of commits (~80%) are
+authored by autonomous agents and ~18% by the human maintainers. Every commit
+is CI-verified and merged under maintainer oversight, and agent authorship is
+preserved transparently in git `Author`/`Co-authored-by` metadata — it is
+never hidden or rewritten. See
+[`CONTRIBUTORS.md`](./CONTRIBUTORS.md) for the full provenance ledger and
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) for contribution rules.
 
 <br/>
 
