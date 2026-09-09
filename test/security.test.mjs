@@ -337,8 +337,9 @@ describe("a secret finding names where the secret is", () => {
     const bidiStr = "\u2066AKIA\u2067IOSFO\u2068DNN7E\u2069XAMPLE";
     const res = scanDiff(`+const hidden = "${bidiStr}";`);
     assert.equal(res.ok, false);
-    assert.equal(res.findings[0].severity, "CRITICAL");
-    assert.equal(res.findings[0].type, "HIGH_CONFIDENCE_SECRET");
+    const secretFinding = res.findings.find(f => f.type === "HIGH_CONFIDENCE_SECRET");
+    assert.ok(secretFinding);
+    assert.equal(secretFinding.severity, "CRITICAL");
   });
 
   it("handles homoglyphs via NFKD mapping correctly", () => {

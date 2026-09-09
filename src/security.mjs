@@ -483,6 +483,34 @@ export function checkEdgeRuntimeImports(diffOrText = "", options = {}) {
   };
 }
 
+export function checkTrojanSource(diffOrText = "", options = {}) {
+  if (!diffOrText || typeof diffOrText !== "string") return { ok: true, violations: [] };
+
+  const violations = [];
+  const bidiRegex = /[\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069\u061C\u200E\u200F]/;
+
+  const lines = diffOrText.split("\n");
+  // Only filter diff syntax if we actually start with typical diff headers
+  // This avoids treating text containing "+++ b/" as a diff mistakenly.
+  const isDiff = diffOrText.startsWith("--- a/") || diffOrText.startsWith("+++ b/") || diffOrText.includes("\n+++ b/");
+
+  const targetLines = lines.filter((line) => {
+    if (isDiff) {
+      return line.startsWith("+") && !line.startsWith("+++");
+    }
+    return true;
+  });
+
+  for (const line of targetLines) {
+    if (bidiRegex.test(line)) {
+      violations.push({ reason: "Trojan Source BiDi override detected: contains invisible directional control characters (CVE-2021-42574)." });
+      break; // One violation is enough for the file/diff block
+    }
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
 export function checkCrossPackageImports(diffOrText = "", root = process.cwd(), options = {}) {
   if (!diffOrText || typeof diffOrText !== "string") return { ok: true, violations: [] };
 
@@ -3271,7 +3299,34 @@ export function scanDiff(diffTextStr = "", options = {}) {
   const findings = [];
 
   for (const segment of segments) {
-    const hit = classifyAddedLines(segment.lines.map((l) => l.text).join("\n"), segment.file);
+    const addedText = segment.lines.map((l) => l.text).join("\n");
+
+    // Check Trojan Source
+    if (!segment.file || !segment.file.endsWith('.md')) {
+      const tsRes = checkTrojanSource(addedText, options);
+      if (!tsRes.ok) {
+        // Find line number where it happened if possible
+        const bidiRegex = /[\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069\u061C\u200E\u200F]/;
+        let lineNo = null;
+        for (const l of segment.lines) {
+          if (bidiRegex.test(l.text)) {
+            lineNo = l.no;
+            break;
+          }
+        }
+        for (const v of tsRes.violations) {
+          findings.push({
+            severity: "CRITICAL",
+            type: "TROJAN_SOURCE_DETECTED",
+            file: segment.file,
+            line: lineNo,
+            description: v.reason,
+          });
+        }
+      }
+    }
+
+    const hit = classifyAddedLines(addedText, segment.file);
     if (!hit) continue;
     const line = segment.file ? locateFindingLine(segment.lines, hit.type, segment.file) : null;
     const at = segment.file ? ` (${segment.file}${line ? `:${line}` : ""})` : "";
