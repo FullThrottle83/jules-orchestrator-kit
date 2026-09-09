@@ -12,6 +12,9 @@ node_modules/
 .agent/sync-manifest.json
 !.agent/jules-queue/README.md
 .agent/evidence/
+.agent/handovers/
+.agent/knowledge/
+.agent/SYSTEM_LEARNINGS.md
 .test-kernel-fix-*/
 
 # Local tool and developer overlays (not public package content).

@@ -206,7 +206,7 @@ describe("src/engine.mjs", () => {
 
     const task = {
       title: "Massive task",
-      prompt: "A".repeat(1000), // 1000 bytes raw prompt
+      prompt: "A".repeat(1010), // 1010 bytes raw prompt + 20 bytes envelope = 1030 bytes > 1024
     };
 
     // Set limit to 1 KB (1024 bytes) - raw prompt is 1000 bytes, but envelope + headers push it over 1024 bytes

@@ -1,9 +1,0 @@
-[
-  {
-    "date": "2026-08-19",
-    "agent": "mcp-agent",
-    "category": "EDGE",
-    "trigger": "Vercel Edge Buffer crash",
-    "solution": "Use Uint8Array instead of Buffer in Edge runtime"
-  }
-]

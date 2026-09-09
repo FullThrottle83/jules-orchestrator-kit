@@ -21,6 +21,8 @@ export const RUNTIME_GITIGNORE_ENTRIES = [
   ".agent/state/",
   ".agent/evidence/",
   ".agent/handovers/",
+  ".agent/knowledge/",
+  ".agent/SYSTEM_LEARNINGS.md",
   ".agent/jules-queue/.state/",
   ".agent/jules-queue/failed/",
   ".agent/jules-queue/.processing/",
