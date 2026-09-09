@@ -33,7 +33,7 @@ Runs deterministic test verification, secret scrubbing, and automated repair loo
 * **Autonomous OODA Repair Loop:** Captures test stdout/stderr traces, fingerprints failure patterns, and runs automated repair cycles (up to 3 turns) before requesting human intervention.
 * **Fail-Closed Security:** Deny-before-Allow scope rules, high-entropy and base64 secret scrubbing, semantic test-tamper detection (weakened/removed/vacuous assertions, dead-guard conditions), binary & symlink payload inspection, and a strict 75 KB diff governor.
 * **Zero Runtime Dependencies:** Native Node.js 20+ standard modules only. Cross-platform parity verified on Linux, macOS, and Windows (Node 20, 22, 24).
-* **Mechanically Verified:** Comprehensive test suite of **1524 unit tests across 204 suites**, with 59 activation-coverage canaries and 100% pass rate.
+* **Mechanically Verified:** Comprehensive test suite of **1530 unit tests across 204 suites**, with 59 activation-coverage canaries and 100% pass rate.
 
 Any-repository configuration (monorepo scoping, 26+ ecosystem stack detection, provider selection, CI generation) is derived from your manifests — see the [Configuration Reference](docs/configuration.md).
 
