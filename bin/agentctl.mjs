@@ -13,6 +13,7 @@ import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
 import { budgetStatus, listOpenReservations, releaseOpenReservations, resolveConcurrency } from "../src/budget.mjs";
+import { COMMAND_REGISTRY } from "../src/ops/command-registry.mjs";
 
 // Vendor-neutral env spellings are filled in before any module reads
 // process.env, so `AGENT_API_KEY` works everywhere `JULES_API_KEY` does. A
@@ -43,78 +44,52 @@ export function formatBudgetLine(b) {
 }
 
 export function printHelp() {
-  console.log(`
-agentctl v${VERSION} — Universal Agent Orchestrator & Safety Gatekeeper
-
-Usage: agentctl <command> [options]
-
-Commands:
-  dispatch              Dispatch a single task to an AI agent (--role <name>, --tier fast|complex, --check-premise)
-  check                 Run all-in-one CI security, rules, and stack verification gate
-  gate | audit          Run CI security and verification gate against current branch
-  mutate | mutation     Run zero-dependency diff mutation testing harness (--min-score, --max-mutants)
-  coverage              Run native zero-dependency V8 diff coverage check (--min, --cmd)
-  probe | stability     Run test flakiness stability probe across N repetitions (--repeat, --cmd)
-  perf | event-loop     Monitor Node.js event loop delay and Big-O lag (--max-ms, --cmd)
-  fix                   Auto-repair from piped terminal logs or error trace (npm test 2>&1 | agentctl fix)
-  rules <action>        Audit rule token budgets or compile rule sentinels (check | compile)
-  queue                 Run pending task queue (--dag, --concurrency <n>)
-  swarm                 Run parallel task swarm
-  mcp                   Start stdio Model Context Protocol (MCP) server
-  clean                 Clean stale branches, worktrees, locks, and ledgers
-  lock <action>         Manage mutex locks (acquire [--ttl <min>] [--pid <n>] | release | status)
-  doctor                Run system diagnostics and stack resolution checks
-  providers             List agent providers and whether this machine can reach them (--json)
-  provider set <name>   Switch the active provider in .agent/config.yml
-  profile               Show or set the verification profile (--list, --set <name>, --json)
-  ci init               Generate a stack-aware CI gate workflow (--target github|gitlab, --force)
-  bootstrap             Bootstrap zero-test repository with verification oracle
-  review-repair         Parse PR review comments and synthesize OODA repair tasks
-  dashboard             Start local HTTP telemetry and audit dashboard
-  init                  Scaffold .agent/ config and run onboarding wizard
-  task create           Interactively author and scope a Jules task envelope (--template <name>, --role <name>, --tier fast|complex)
-  task optimize         Linter & optimizer for Jules task prompts (--fix, --json, --web)
-  task template         List and generate task templates (--list, --json)
-  test-gen              Scaffold & run automated TDD Red-to-Green test cycle (--run)
-  mcp init              Scaffold IDE integration config (cursor | vscode | claude | all)
-  rollback              Restore git state & working tree to atomic pre-flight checkpoint
-  handover              Inspect or generate Baton Pass session handover envelopes (list | show | create | prune)
-  resume                Resume warm session with human response (--response "<text>")
-  plan approve <id>     Approve pending plan for a Jules session (:approvePlan)
-  session get <id>      Retrieve remote session status from provider API
-  patch <id>            Extract and test/apply git patch from a Jules session (--apply, --save)
-  retry <id>            Retry failed session with automated failure-trace injection (--role)
-  prune                 Batch-archive or delete stale sessions via Jules API (--age 7d, --yes)
-  pr harvest            Triage, verify CI, and auto-merge low-risk agent PRs (--auto, --tier r0,r1)
-  escalate              Dispatch or manage webhook escalation incidents (--flush, --status, --clear)
-  flaky                 Manage Wilson-quarantined tests and dispatch healing swarm (status | heal | reset)
-  status                Display queue and system status summary
-  budget                Show the 24h task budget, worker slots and their provenance (reset --yes)
-  scan                  Scan codebase for TODO/FIXME task candidates
-  hydrate [prompt]      Prepend active system learnings and baton-pass state to a prompt
-  harvest               Harvest failure traces and record/quarantine resolution rules
-  learning add          Record a system learning rule into .agent/knowledge/
-  evidence <action>     Manage cryptographic audit evidence (generate | verify | show)
-  assert                Run declarative zero-dependency verification assertion primitives
-  version               Output agentctl version
-
-Options:
-  --prompt, -p          Task prompt text — dispatch, task create and task optimize
-                        also accept it as a positional argument
-  --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)
-  --role, -r            Specify specialist agent role (auditor | performance | security | hygiene | resilience | types | debugger | testing | e2e | database | docs | a11y)
-  --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:
-  --check-premise       Verify task goal/oracle passes locally before burning API budget
-  --dag                 Execute queue tasks via DAG dependency resolution
-  --dry-run, -d         Simulate action without making API calls or modifying git
-  --mode, -m            Gate evaluation mode (working-tree | committed | staged)
-  --repoless            Dispatch task in repoless execution mode
-  --source, -s          Specify Jules repository source name
-  --branch, -b          Specify target starting branch
-  --json, -j            Emit machine-readable JSON output
-  --json-report <path>  Write structured machine-readable JSON diagnostics report
-  --help, -h            Show command help
-`);
+  // Single source of truth: the command list is generated from
+  // COMMAND_REGISTRY, so adding a descriptor automatically updates --help,
+  // `help <command>` (via formatCommandHelp) and docs/COMMAND_REFERENCE.md.
+  const CATEGORY_ORDER = ["Create", "Inspect", "Operate", "Repair", "Configure"];
+  const lines = [];
+  lines.push("");
+  lines.push(`agentctl v${VERSION} — Universal Agent Orchestrator & Safety Gatekeeper`);
+  lines.push("");
+  lines.push("Usage: agentctl <command> [options]");
+  lines.push("");
+  lines.push("Commands:");
+  for (const category of CATEGORY_ORDER) {
+    const cmds = COMMAND_REGISTRY.filter((c) => c.category === category);
+    if (cmds.length === 0) continue;
+    lines.push(`  --- ${category} ---`);
+    for (const cmd of cmds) {
+      const name = cmd.path.join(" ");
+      const flagHint =
+        cmd.flags.length > 0
+          ? ` (${cmd.flags.slice(0, 3).map((f) => `--${f.name}`).join(", ")}${cmd.flags.length > 3 ? ", ..." : ""})`
+          : "";
+      lines.push(`  ${name.padEnd(20)} ${cmd.description}${flagHint}`);
+    }
+  }
+  lines.push("  version               Output agentctl version");
+  lines.push("");
+  lines.push("Run `agentctl help <command>` or `agentctl <command> --help` for full flag documentation.");
+  lines.push("");
+  lines.push("Options:");
+  lines.push("  --prompt, -p          Task prompt text — dispatch, task create and task optimize");
+  lines.push("                        also accept it as a positional argument");
+  lines.push("  --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)");
+  lines.push("  --role, -r            Specify specialist agent role (auditor | performance | security | hygiene | resilience | types | debugger | testing | e2e | database | docs | a11y)");
+  lines.push("  --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:");
+  lines.push("  --check-premise       Verify task goal/oracle passes locally before burning API budget");
+  lines.push("  --dag                 Execute queue tasks via DAG dependency resolution");
+  lines.push("  --dry-run, -d         Simulate action without making API calls or modifying git");
+  lines.push("  --mode, -m            Gate evaluation mode (working-tree | committed | staged)");
+  lines.push("  --repoless            Dispatch task in repoless execution mode");
+  lines.push("  --source, -s          Specify Jules repository source name");
+  lines.push("  --branch, -b          Specify target starting branch");
+  lines.push("  --json, -j            Emit machine-readable JSON output");
+  lines.push("  --json-report <path>  Write structured machine-readable JSON diagnostics report");
+  lines.push("  --help, -h            Show command help");
+  lines.push("");
+  console.log(lines.join("\n"));
 }
 
 /**
@@ -1013,8 +988,8 @@ async function main() {
         errorInput = readFileSync(values.file, "utf-8");
       } else if (values.input) {
         errorInput = values.input;
-      } else if (positionals.slice(1).length > 0) {
-        errorInput = positionals.slice(1).join(" ");
+      } else if (positionals.length > 0) {
+        errorInput = positionals.join(" ");
       } else if (!process.stdin.isTTY) {
         const { text } = await import("node:stream/consumers");
         errorInput = await text(process.stdin);
@@ -1077,7 +1052,7 @@ async function main() {
         allowPositionals: true,
       });
 
-      const sessionId = values.session || positionals[0] || positionals[1];
+      const sessionId = values.session || positionals[0];
       if (!sessionId) {
         console.error("❌ Error: Missing required session ID. Usage: agentctl patch <session_id> [--apply] [--save <path>]");
         process.exit(1);
@@ -1128,7 +1103,7 @@ async function main() {
         allowPositionals: true,
       });
 
-      const sessionId = values.session || positionals[0] || positionals[1];
+      const sessionId = values.session || positionals[0];
       if (!sessionId) {
         console.error("❌ Error: Missing required session ID. Usage: agentctl retry <session_id> [--role <role>]");
         process.exit(1);
@@ -1410,7 +1385,21 @@ async function main() {
     }
 
     case "budget": {
-      const action = args[1];
+      const { values: budgetValues, positionals: budgetPositionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          "dry-run": { type: "boolean" },
+          yes: { type: "boolean", short: "y" },
+          all: { type: "boolean" },
+          "by-user": { type: "boolean", short: "u" },
+          json: { type: "boolean" },
+        },
+        allowPositionals: true,
+        // strict:false so `reset` can refuse unknown flags with its own
+        // ledger-aware message instead of a generic parseArgs throw.
+        strict: false,
+      });
+      const action = budgetPositionals[0];
       const b = budgetStatus(config, root);
 
       if (action === "reset") {
@@ -1428,11 +1417,11 @@ async function main() {
           console.error("Accepted: --dry-run, --yes/-y, --all. Nothing was released.");
           process.exit(2);
         }
-        const dryRun = args.includes("--dry-run");
-        const confirmed = args.includes("--yes") || args.includes("-y");
+        const dryRun = Boolean(budgetValues["dry-run"]);
+        const confirmed = Boolean(budgetValues.yes);
         // Committed reservations reached the provider, so releasing them makes
         // the local count understate real usage. That has to be deliberate.
-        const includeCommitted = args.includes("--all");
+        const includeCommitted = Boolean(budgetValues.all);
         if (!dryRun && !confirmed) {
           const open = listOpenReservations(root);
           const committed = open.filter((r) => r.committed).length;
@@ -1459,7 +1448,7 @@ async function main() {
         process.exit(0);
       }
 
-      if (args.includes("--by-user") || args.includes("-u")) {
+      if (budgetValues["by-user"]) {
         console.log("📊 Task Budget Attribution (Rolling 24h Window)");
         console.log(`Daily Limit : ${b.limit} Tasks | Used: ${b.used} | Remaining: ${b.remaining}\n`);
         const users = Object.entries(b.byUser || {});
@@ -1480,7 +1469,7 @@ async function main() {
         process.exit(0);
       }
 
-      if (args.includes("--json")) {
+      if (budgetValues.json) {
         console.log(JSON.stringify({ ok: true, budget: { ...b, scope: "this-repository" } }, null, 2));
         process.exit(0);
       }
@@ -1506,7 +1495,16 @@ async function main() {
     }
 
     case "lock": {
-      const action = args[1];
+      const { values: lockValues, positionals: lockPositionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          ttl: { type: "string" },
+          pid: { type: "string" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+      const action = lockPositionals[0];
       if (action === "acquire") {
         // A lock taken from the command line outlives the command. The process
         // that runs `lock acquire` writes the record and exits; the agent it
@@ -1517,31 +1515,26 @@ async function main() {
         // `--pid` is the escape hatch for a caller that *does* have a durable
         // process to point at: the lock then releases itself when that process
         // dies, exactly as an in-process acquire does.
-        const flagIdx = args.findIndex((a, i) => i >= 2 && a.startsWith("--"));
-        const positional = flagIdx === -1 ? args.slice(2) : args.slice(2, flagIdx);
+        const positional = lockPositionals.slice(1);
         if (positional.length < 3) {
           console.error("Usage: agentctl lock acquire <agent> <task_id> <file_path...> [--ttl <minutes>] [--pid <pid>]");
           process.exit(1);
         }
-        const { values } = parseArgs({
-          args: flagIdx === -1 ? [] : args.slice(flagIdx),
-          options: {
-            ttl: { type: "string" },
-            pid: { type: "string" },
-          },
-          allowPositionals: false,
-        });
         const agent = positional[0];
         const taskId = positional[1];
         const filePaths = positional.slice(2);
-        const ttlMinutes = Number(values.ttl);
-        const ownerPid = Number(values.pid);
+        const ttlMinutes = Number(lockValues.ttl);
+        const ownerPid = Number(lockValues.pid);
         const bindsToProcess = Number.isInteger(ownerPid) && ownerPid > 0;
         const res = acquireLock(agent, taskId, filePaths, root, {
           lease: !bindsToProcess,
           ownerPid: bindsToProcess ? ownerPid : undefined,
           ttlMs: Number.isFinite(ttlMinutes) && ttlMinutes > 0 ? ttlMinutes * 60_000 : undefined,
         });
+        if (lockValues.json) {
+          console.log(JSON.stringify(res, null, 2));
+          process.exit(res.ok ? 0 : 1);
+        }
         if (res.ok) {
           const held = filePaths.length ? ` (${filePaths.length} path${filePaths.length === 1 ? "" : "s"})` : "";
           const until = bindsToProcess ? `bound to pid ${ownerPid}` : `expires ${new Date(Date.now() + (Number.isFinite(ttlMinutes) && ttlMinutes > 0 ? ttlMinutes : 120) * 60_000).toISOString()}`;
@@ -1555,12 +1548,16 @@ async function main() {
           process.exit(1);
         }
       } else if (action === "release") {
-        const taskId = args[2];
+        const taskId = lockPositionals[1];
         if (!taskId) {
           console.error("Usage: agentctl lock release <task_id>");
           process.exit(1);
         }
         const ok = releaseLock(taskId, root);
+        if (lockValues.json) {
+          console.log(JSON.stringify({ ok, taskId }, null, 2));
+          process.exit(ok ? 0 : 1);
+        }
         if (ok) {
           console.log(`✅ Released lock for ${taskId}`);
         } else {
@@ -1569,6 +1566,10 @@ async function main() {
         }
       } else {
         const locks = lockStatus(root);
+        if (lockValues.json) {
+          console.log(JSON.stringify({ ok: true, locks }, null, 2));
+          process.exit(0);
+        }
         if (locks.length === 0) {
           console.log("Active Locks: 0 (no held locks)");
         } else {
@@ -1644,11 +1645,16 @@ async function main() {
 
     case "provider":
     case "providers": {
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        options: { json: { type: "boolean", short: "j" } },
+        allowPositionals: true,
+      });
       // `agentctl providers` used to tell the operator to run
       // `agentctl init --provider <name>` to switch — which restarts the whole
       // onboarding wizard, plan question included, to change one line.
-      if (args[1] === "set") {
-        const target = args[2];
+      if (positionals[0] === "set") {
+        const target = positionals[1];
         if (!target) {
           console.error(`❌ Usage: agentctl provider set <name>   (see: agentctl providers)`);
           process.exit(2);
@@ -1668,11 +1674,6 @@ async function main() {
         process.exit(0);
       }
 
-      const { values } = parseArgs({
-        args: args.slice(1),
-        options: { json: { type: "boolean", short: "j" } },
-        allowPositionals: true,
-      });
       const { detectAvailableProviders, probeProvider } = await import("../src/provider-readiness.mjs");
       const probes = detectAvailableProviders();
       const active = config.provider || "jules";
@@ -1820,11 +1821,16 @@ async function main() {
         options: {
           force: { type: "boolean", short: "f" },
           "dry-run": { type: "boolean", short: "d" },
+          json: { type: "boolean", short: "j" },
         },
         allowPositionals: true,
       });
 
       const res = bootstrapZeroTestRepo(root, { force: values.force });
+      if (values.json) {
+        console.log(JSON.stringify({ ok: res.bootstrapped, ...res }, null, 2));
+        process.exit(res.bootstrapped ? 0 : 1);
+      }
       if (res.bootstrapped) {
         console.log(`✅ Zero-test repo bootstrapped successfully!`);
         console.log(`   Stack detected : ${res.stack}`);
@@ -1845,7 +1851,12 @@ async function main() {
     }
 
     case "review-repair": {
-      const fileArg = args[1];
+      const { positionals: reviewPositionals } = parseArgs({
+        args: args.slice(1),
+        options: {},
+        allowPositionals: true,
+      });
+      const fileArg = reviewPositionals[0];
       if (!fileArg || !existsSync(fileArg)) {
         console.error("Error: Please provide a valid JSON file containing PR review comments.");
         process.exit(1);
@@ -2191,14 +2202,32 @@ async function main() {
     }
 
     case "status": {
+      const { values: statusValues } = parseArgs({
+        args: args.slice(1),
+        options: {
+          json: { type: "boolean" },
+        },
+        allowPositionals: true,
+      });
       const queueDir = getQueueDir(root);
       const files = existsSync(queueDir) ? readdirSync(queueDir).filter((f) => isTaskFile(f, queueDir)) : [];
+      const budget = budgetStatus(config, root);
+      if (statusValues.json) {
+        console.log(JSON.stringify({
+          ok: true,
+          version: VERSION,
+          root,
+          pendingTasks: files.length,
+          activeLocks: lockStatus(root).length,
+          budget,
+        }, null, 2));
+        process.exit(0);
+      }
       console.log(`\n📊 agentctl Status Summary (v${VERSION})`);
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Pending Tasks    : ${files.length}`);
       console.log(`  Active VFS Locks : ${lockStatus(root).length}`);
-      const budget = budgetStatus(config, root);
       console.log(`  Daily Budget     : ${formatBudgetLine(budget)}`);
       console.log(`--------------------------------------------------\n`);
       process.exit(0);
@@ -2394,8 +2423,7 @@ async function main() {
 
     case "resume": {
       const { createProvider } = await import("../src/provider.mjs");
-      const sessionId = args[1];
-      const { values } = parseArgs({
+      const { values, positionals } = parseArgs({
         args: args.slice(1),
         options: {
           response: { type: "string", short: "r" },
@@ -2404,13 +2432,14 @@ async function main() {
         },
         allowPositionals: true,
       });
+      const sessionId = positionals[0];
 
       if (!sessionId || sessionId.startsWith("-")) {
         console.error("Error: Session ID is required for agentctl resume <sessionId>.");
         process.exit(1);
       }
 
-      const responseText = values.response || args.slice(2).join(" ");
+      const responseText = values.response || positionals.slice(1).join(" ");
       if (!responseText) {
         console.error("Error: --response text is required to resume warm session.");
         process.exit(1);
@@ -2437,7 +2466,6 @@ async function main() {
     case "plan": {
       const subAction = args[1];
       if (subAction === "approve") {
-        const sessionId = args[2];
         const { values, positionals } = parseArgs({
           args: args.slice(2),
           options: {
@@ -2446,7 +2474,7 @@ async function main() {
           },
           allowPositionals: true,
         });
-        const targetSessionId = sessionId && !sessionId.startsWith("-") ? sessionId : positionals?.[0];
+        const targetSessionId = positionals?.[0];
         if (!targetSessionId) {
           console.error("Error: Session ID is required for agentctl plan approve <sessionId>.");
           process.exit(1);
@@ -2474,7 +2502,6 @@ async function main() {
     }
 
     case "approve": {
-      const sessionId = args[1];
       const { values, positionals } = parseArgs({
         args: args.slice(1),
         options: {
@@ -2483,7 +2510,7 @@ async function main() {
         },
         allowPositionals: true,
       });
-      const targetSessionId = sessionId && !sessionId.startsWith("-") ? sessionId : positionals?.[0];
+      const targetSessionId = positionals?.[0];
       if (!targetSessionId) {
         console.error("Error: Session ID is required for agentctl approve <sessionId>.");
         process.exit(1);
@@ -2510,7 +2537,6 @@ async function main() {
     case "session": {
       const subAction = args[1];
       if (subAction === "get" || subAction === "status") {
-        const sessionId = args[2];
         const { values, positionals } = parseArgs({
           args: args.slice(2),
           options: {
@@ -2519,7 +2545,7 @@ async function main() {
           },
           allowPositionals: true,
         });
-        const targetSessionId = sessionId && !sessionId.startsWith("-") ? sessionId : positionals?.[0];
+        const targetSessionId = positionals?.[0];
         if (!targetSessionId) {
           console.error("Error: Session ID is required for agentctl session get <sessionId>.");
           process.exit(1);
@@ -2932,7 +2958,7 @@ async function main() {
 
     case "test-gen": {
       const { scaffoldTddTest, runTddCycle } = await import("../src/ops/tdd-generator.mjs");
-      const { values } = parseArgs({
+      const { values, positionals } = parseArgs({
         args: args.slice(1),
         options: {
           title: { type: "string", short: "t" },
@@ -2944,8 +2970,8 @@ async function main() {
         allowPositionals: true,
       });
 
-      const title = values.title || args[1] || "feature-spec";
-      const specText = values.spec || args.slice(2).join(" ") || "TDD requirement specification.";
+      const title = values.title || positionals[0] || "feature-spec";
+      const specText = values.spec || positionals.slice(1).join(" ") || "TDD requirement specification.";
 
       try {
         if (values.run) {
@@ -3074,11 +3100,16 @@ async function main() {
     }
 
     case "learning": {
-      const subcmd = args[1];
+      const { positionals: learningPositionals } = parseArgs({
+        args: args.slice(1),
+        options: {},
+        allowPositionals: true,
+      });
+      const subcmd = learningPositionals[0];
       if (subcmd === "add") {
         const { recordLearning } = await import("../src/memory.mjs");
-        const trigger = args[2];
-        const solution = args[3];
+        const trigger = learningPositionals[1];
+        const solution = learningPositionals[2];
         if (!trigger || !solution) {
           console.error('Usage: agentctl learning add "<trigger/symptom>" "<solution>"');
           process.exit(1);
