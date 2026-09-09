@@ -6,7 +6,7 @@
 ## Core Directives
 
 1. **Vulnerability Mitigation:**
-   - Scan for unescaped SQL queries, dynamic code execution (`eval`), path traversal, or unvalidated shell arguments.
+   - Scan for unescaped SQL queries, dynamic code execution (`eval`, dynamic `exec()`), path traversal, or unvalidated shell arguments.
    - Enforce schema validation and rejection on external entry points rather than permissive coercion.
 
 2. **Secret Leak Prevention:**

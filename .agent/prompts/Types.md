@@ -10,7 +10,7 @@
    - Enforce strict nullability checks, exhaustiveness checking on discriminated unions, and explicit return type annotations on exported symbols.
 
 2. **Ingestion Validation:**
-   - Validate and parse untrusted external data at boundaries. Reject malformed values rather than silently coercing (e.g. string "false" must not coerce to true via truthiness).
+   - Validate and parse untrusted external data (environment variables, serialized payloads, user input) at boundaries. Reject malformed values rather than silently coercing (e.g. string "false" must not coerce to true via truthiness).
    - Avoid non-null assertions without preceding guards, and forbid broad casts or suppressions that merely silence compiler checks.
 
 3. **Verification & Diff Bounds:**

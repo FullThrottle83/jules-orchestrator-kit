@@ -250,7 +250,7 @@ export function synthesizeFlakyHealingTask(quarantinedItem, options = {}) {
   // in a non-Node repo it produced a healing task that could not run.
   const testCmd = item.testCmd || options.testCmd || options.config?.verify?.test || "";
   const oscillationPct = Math.round((item.oscillation || 0.4) * 100);
-  const role = options.role || "janitor";
+  const role = options.role || "hygiene";
   const slug = String(testCmd).replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").slice(0, 20).toLowerCase();
   const taskId = options.taskId || `flaky-heal-${slug}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 

@@ -334,7 +334,7 @@ export const COMMAND_REGISTRY = [
     ],
     flags: [
       { name: "dispatch", type: "boolean", description: "Dispatch healing tasks directly to AI agents" },
-      { name: "role", type: "string", description: "Agent persona role (default: janitor)" },
+      { name: "role", type: "string", description: "Agent persona role (default: hygiene)" },
       { name: "test-cmd", type: "string", description: "Target specific test command" },
       { name: "dry-run", type: "boolean", description: "Simulate healing swarm generation without writing" },
       { name: "json", type: "boolean", description: "Output JSON structured response" },
@@ -508,7 +508,7 @@ export const COMMAND_REGISTRY = [
     shortcuts: [],
     examples: [
       'agentctl dispatch --prompt "Add retry handling to src/webhook.js"',
-      'agentctl dispatch -p "Fix type errors" --role bolt --tier fast',
+      'agentctl dispatch -p "Fix type errors" --role types --tier fast',
       'agentctl dispatch --prompt-file task.md --dry-run',
     ],
     flags: [

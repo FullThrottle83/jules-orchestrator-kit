@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveRolePrompt, hydrateRolePrompt, ROLE_PROMPT_TOKENS, CANONICAL_ROLES, ROLE_ALIASES } from "../src/role-resolver.mjs";
@@ -161,6 +161,114 @@ test("Role prompts are stack-neutral", async (t) => {
     });
     assert.ok(resolved);
     assert.equal(resolved.content, "Run `vitest run --coverage`.");
+  });
+});
+
+
+test("P03 role consolidation: canonical-only prompts with one-directional aliases", async (t) => {
+  const LEGACY_ROLES = [
+    "overseer",
+    "bolt",
+    "sentinel",
+    "janitor",
+    "spectator",
+    "scribe",
+    "alchemist",
+    "bulwark",
+    "typist",
+    "hunter",
+  ];
+
+  await t.test(".agent/prompts/ holds exactly the 12 canonical roles plus Task_Template.md", () => {
+    const files = readdirSync(SHIPPED_PROMPTS).filter((f) => f.endsWith(".md")).sort();
+    assert.equal(files.length, 13, `expected 13 prompt files, found ${files.length}: ${files.join(", ")}`);
+    assert.ok(files.includes("Task_Template.md"), "Task_Template.md must ship alongside the roles");
+    const stems = files.map((f) => f.replace(/\.md$/i, "").toLowerCase());
+    for (const role of CANONICAL_ROLES) {
+      assert.ok(stems.includes(role), `canonical role "${role}" must have a prompt file in .agent/prompts/`);
+    }
+    for (const legacy of LEGACY_ROLES) {
+      assert.ok(!stems.includes(legacy), `legacy duplicate "${legacy}.md" must be gone from .agent/prompts/`);
+    }
+  });
+
+  await t.test("ROLE_ALIASES is one-directional and every key resolves to a file on disk", () => {
+    for (const key of Object.keys(ROLE_ALIASES)) {
+      assert.ok(
+        !CANONICAL_ROLES.includes(key),
+        `ROLE_ALIASES must not map a canonical role away from its own file: "${key}" -> "${ROLE_ALIASES[key]}"`
+      );
+      assert.ok(
+        CANONICAL_ROLES.includes(ROLE_ALIASES[key]),
+        `alias "${key}" must point at a canonical role, got "${ROLE_ALIASES[key]}"`
+      );
+      const resolved = resolveRolePrompt(process.cwd(), key);
+      assert.ok(resolved, `alias "${key}" must resolve to a prompt file`);
+      assert.ok(existsSync(resolved.path), `alias "${key}" resolved to missing file: ${resolved.path}`);
+    }
+    // Hard-constraint spot checks: the old flags keep working through aliases,
+    // and the hunter/debugger pair lands on Debugger.md.
+    assert.equal(ROLE_ALIASES.hunter, "debugger");
+    assert.equal(resolveRolePrompt(process.cwd(), "debugger").role, "Debugger");
+    assert.equal(resolveRolePrompt(process.cwd(), "hunter").role, "Debugger");
+    assert.equal(resolveRolePrompt(process.cwd(), "bolt").role.toLowerCase(), "performance");
+    assert.equal(resolveRolePrompt(process.cwd(), "sentinel").role.toLowerCase(), "security");
+  });
+
+  await t.test("no shipped source file emits legacy role names in user-facing output", () => {
+    // Scope: executable shipped sources plus the rules template, which is
+    // copied verbatim into user repos as active agent instructions. Out of
+    // scope by design: CHANGELOG.md (a historical record — rewriting it would
+    // falsify history), docs/ (not in the published tarball), test/ fixtures,
+    // and .agent/prompts/ content itself (Auditor.md names the legacy journal
+    // path as an upgrade fallback, the same disk-compat rationale as the
+    // resolver's filename map below).
+    const legacyPattern = new RegExp(`\\b(${LEGACY_ROLES.join("|")})\\b`, "i");
+    const shipped = [join(process.cwd(), "index.mjs"), join(process.cwd(), "JULES_RULES_TEMPLATE.md")];
+    for (const dir of ["src", "bin", "scripts"]) {
+      const root = join(process.cwd(), dir);
+      const walk = (d) => {
+        for (const entry of readdirSync(d)) {
+          const full = join(d, entry);
+          if (statSync(full).isDirectory()) walk(full);
+          else if (entry.endsWith(".mjs")) shipped.push(full);
+        }
+      };
+      walk(root);
+    }
+
+    // Lines that name a legacy role without emitting it to a user:
+    // - role-resolver.mjs: the alias table and the pre-consolidation filename
+    //   map (the backward-compatibility mechanism itself) plus comments.
+    // - rules-budget.mjs: BEGIN/END sentinel rule markers (marker word, not role).
+    // - wizard-init.mjs / doc-sync-check.mjs: the advertised doc-sync-sentinel
+    //   preset id (watchdog sense, renaming would break the preset contract).
+    const isAllowlisted = (relPath, line) => {
+      if (relPath === "src/role-resolver.mjs") {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("//") || trimmed.startsWith("*")) return true;
+        return /^\s*[a-z0-9-]+\s*:\s*"[a-z0-9-]+"[,]?\s*(?:\/\/.*)?$/.test(line);
+      }
+      if (relPath === "src/rules-budget.mjs") {
+        return /BEGIN sentinel|END sentinel|JULES_RULES_SENTINEL/i.test(line);
+      }
+      if (relPath === "src/wizard-init.mjs" || relPath === "scripts/doc-sync-check.mjs") {
+        return /doc-sync-sentinel|Doc Sync Sentinel/.test(line);
+      }
+      return false;
+    };
+
+    const violations = [];
+    for (const file of shipped) {
+      const rel = file.replace(`${process.cwd()}/`, "");
+      const lines = readFileSync(file, "utf-8").split("\n");
+      lines.forEach((line, i) => {
+        if (legacyPattern.test(line) && !isAllowlisted(rel, line)) {
+          violations.push(`${rel}:${i + 1}: ${line.trim().slice(0, 120)}`);
+        }
+      });
+    }
+    assert.deepEqual(violations, [], "shipped sources must not surface legacy role names to users");
   });
 });
 
