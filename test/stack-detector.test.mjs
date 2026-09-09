@@ -216,13 +216,31 @@ test("detectPolyglotStack - package manager lockfiles and missing scripts.test",
     assert.equal(res.stack, "deno");
     assert.equal(res.testCmd, "deno test");
     assert.equal(res.buildCmd, "");
+    rmSync(join(tmp, "deno.json"));
 
     // 7. Deno project with tasks.build -> buildCmd is "deno task build"
     writeFileSync(join(tmp, "deno.json"), JSON.stringify({ tasks: { build: "deno compile main.ts" } }));
     res = detectPolyglotStack(tmp);
     assert.equal(res.stack, "deno");
+    assert.equal(res.testCmd, "deno test");
     assert.equal(res.buildCmd, "deno task build");
     rmSync(join(tmp, "deno.json"));
+
+    // 8. Pure Deno project (deno.jsonc without tasks.build) -> buildCmd is empty
+    writeFileSync(join(tmp, "deno.jsonc"), JSON.stringify({ tasks: { test: "deno test" } }));
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "deno");
+    assert.equal(res.testCmd, "deno test");
+    assert.equal(res.buildCmd, "");
+    rmSync(join(tmp, "deno.jsonc"));
+
+    // 9. Deno project with tasks.build via deno.jsonc -> buildCmd is "deno task build"
+    writeFileSync(join(tmp, "deno.jsonc"), JSON.stringify({ tasks: { build: "deno compile main.ts" } }));
+    res = detectPolyglotStack(tmp);
+    assert.equal(res.stack, "deno");
+    assert.equal(res.testCmd, "deno test");
+    assert.equal(res.buildCmd, "deno task build");
+    rmSync(join(tmp, "deno.jsonc"));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
