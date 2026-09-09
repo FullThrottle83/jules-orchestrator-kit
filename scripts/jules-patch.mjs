@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Session patch fetching utility.
+ * Session patch fetching CLI entrypoint.
+ *
+ * fetchSessionPatch (argument validation around src/session-ops.mjs's
+ * extractSessionPatch) moved to session-ops itself (P04 shim cleanup); it is
+ * re-exported here for historical importers.
  */
 
-import { extractSessionPatch } from "../src/session-ops.mjs";
+export { fetchSessionPatch } from "../src/session-ops.mjs";
 
-export async function fetchSessionPatch(sessionId, options = {}) {
-  if (!sessionId || typeof sessionId !== "string") {
-    throw new Error("Session ID is required.");
-  }
-  return await extractSessionPatch(sessionId, options);
-}
+import { fetchSessionPatch } from "../src/session-ops.mjs";
 
 if (process.argv[1] && process.argv[1].endsWith("jules-patch.mjs")) {
   const sessionId = process.argv[2];

@@ -6,12 +6,15 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager, parseYamlConfig, detectFrameworkCommands } from "../scripts/command-resolver.mjs";
-import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile, auditLedgers, auditWorktrees, auditGates } from "../scripts/jules-self-audit.mjs";
-import { resolveMarkdownConflict, redactSecrets, anonymizePii, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation, extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "../scripts/utils.mjs";
-import { appendLedger, getDailyLedgerPath, verifyLedgerIntegrity, checkDailyBudget } from "../src/state.mjs";
-import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective, extractImageAttachments, getMultimodalAttachmentDirective } from "../scripts/jules-dispatch.mjs";
-import { scanCodebaseForTodos } from "../scripts/jules-scan-todos.mjs";
-import { fetchSessionPatch } from "../scripts/jules-patch.mjs";
+import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile, auditLedgers, auditWorktrees, auditGates } from "../src/self-audit.mjs";
+import { resolveMarkdownConflict } from "../src/merge-blocks.mjs";
+import { redactSecrets, anonymizePii, hasHighConfidenceSecret, hasLowConfidenceSecret } from "../src/security.mjs";
+import { appendLedger, getDailyLedgerPath, verifyLedgerIntegrity, checkDailyBudget, reserveDailyBudget, pruneOldLedgers, ensureDir } from "../src/state.mjs";
+import { loadEnv, getIsolatedCacheDir, ensureSdkCacheIsolation } from "../src/runtime-env.mjs";
+import { extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "../src/swarm.mjs";
+import { getDynamicGuardrails, getAlphaRange, getSlotPartitionDirective, extractImageAttachments, getMultimodalAttachmentDirective } from "../src/dispatch.mjs";
+import { scanCodebaseForTodos } from "../src/todo-scanner.mjs";
+import { fetchSessionPatch } from "../src/session-ops.mjs";
 
 describe("Dynamic Command Resolver", () => {
   test("detects package manager correctly based on lockfiles", () => {

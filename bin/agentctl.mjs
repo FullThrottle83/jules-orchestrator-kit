@@ -2206,7 +2206,7 @@ async function main() {
     }
 
     case "scan": {
-      const { scanCodebaseForTodos } = await import("../scripts/jules-scan-todos.mjs");
+      const { scanCodebaseForTodos } = await import("../src/todo-scanner.mjs");
       const todos = scanCodebaseForTodos(root);
       console.log(`\n🔍 Scanned ${todos.length} TODO/FIXME annotation(s).`);
       for (const t of todos.slice(0, 10)) {

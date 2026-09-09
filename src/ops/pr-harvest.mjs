@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { classifyRiskTier, RISK_TIERS } from "../risk.mjs";
-import { checkSafetyGate } from "../../scripts/jules-merge-swarm.mjs";
+import { checkSafetyGate } from "../merge-swarm.mjs";
 import { normalizePath, loadConfig } from "../config.mjs";
 
 /**

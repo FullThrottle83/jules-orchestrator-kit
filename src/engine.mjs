@@ -1614,4 +1614,20 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
   }
 }
 
-
+/**
+ * Classify a queue-run failure as "concurrency_limit" (retry later without
+ * consuming a fresh dispatch) or "retriable".
+ *
+ * Moved out of scripts/jules-queue-runner.mjs, which keeps only the process
+ * entry point; the queue loop itself already lives in this module.
+ *
+ * @param {Error|string} err
+ * @returns {"concurrency_limit" | "retriable"}
+ */
+export function classifyQueueFailure(err) {
+  const msg = String(err?.message || err || "");
+  if (msg.includes("FAILED_PRECONDITION") || msg.includes("Active Session Limit") || msg.includes("concurrency")) {
+    return "concurrency_limit";
+  }
+  return "retriable";
+}

@@ -219,6 +219,35 @@ export async function extractSessionPatch(sessionId, opts = {}) {
  * @param {object} opts
  * @returns {Promise<{ ok: boolean, patchApplied: boolean, checkPassed: boolean, patch: string, files: string[], error?: string }>}
  */
+/**
+ * Fetch a session patch with argument validation at the boundary.
+ * (Moved out of scripts/jules-patch.mjs, which keeps a CLI entry point.)
+ */
+export async function fetchSessionPatch(sessionId, options = {}) {
+  if (!sessionId || typeof sessionId !== "string") {
+    throw new Error("Session ID is required.");
+  }
+  return await extractSessionPatch(sessionId, options);
+}
+
+/**
+ * Maps a Jules session state to the coarse bucket the status CLI reports.
+ * (Moved out of scripts/jules-status.mjs, which keeps a CLI entry point.)
+ */
+export function categorizeTaskStatus(statusStr = "") {
+  const s = String(statusStr).toUpperCase();
+  if (s === "AWAITING_PLAN_APPROVAL" || s === "AWAITING_USER_FEEDBACK") {
+    return "action_required";
+  }
+  if (s === "IN_PROGRESS" || s === "DISPATCHED") {
+    return "in_progress";
+  }
+  if (s === "COMPLETED" || s === "FAILED") {
+    return "completed";
+  }
+  return "unknown";
+}
+
 export async function applySessionPatch(sessionId, opts = {}) {
   const root = opts.root || resolveRoot();
   const res = await extractSessionPatch(sessionId, { ...opts, root });
