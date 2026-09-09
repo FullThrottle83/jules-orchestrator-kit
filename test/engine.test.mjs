@@ -167,4 +167,58 @@ describe("src/engine.mjs", () => {
       try { rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
     }
   });
+
+  it("dispatch injects role instructions idempotently without duplicating", async () => {
+    let capturedPrompt = "";
+    const mockProvider = {
+      dispatch: async (task) => {
+        capturedPrompt = task.prompt;
+        return { id: "test-session", status: "completed" };
+      }
+    };
+
+    const task = {
+      title: "Fix bug",
+      role: "debugger",
+      prompt: "Investigate root cause of timeout.",
+    };
+
+    // First dispatch
+    await dispatch(task, { provider: mockProvider, dryRun: false });
+    const count1 = (capturedPrompt.match(/# Debugger/g) || []).length;
+    assert.equal(count1, 1, "Role heading must appear exactly once");
+
+    // Second dispatch with already-precomposed prompt
+    const precomposedTask = {
+      title: "Fix bug",
+      role: "debugger",
+      prompt: capturedPrompt,
+    };
+    await dispatch(precomposedTask, { provider: mockProvider, dryRun: false });
+    const count2 = (capturedPrompt.match(/# Debugger/g) || []).length;
+    assert.equal(count2, 1, "Precomposed prompt must not duplicate role heading");
+  });
+
+  it("dispatch enforces payload size limit on assembled final prompt", async () => {
+    const mockProvider = {
+      dispatch: async () => ({ id: "oversize-session" })
+    };
+
+    const task = {
+      title: "Massive task",
+      prompt: "A".repeat(1000), // 1000 bytes raw prompt
+    };
+
+    // Set limit to 1 KB (1024 bytes) - raw prompt is 1000 bytes, but envelope + headers push it over 1024 bytes
+    await assert.rejects(
+      async () => {
+        await dispatch(task, {
+          provider: mockProvider,
+          dryRun: false,
+          config: { limits: { promptKb: 1 }, verify: {} }
+        });
+      },
+      /Task prompt exceeds maximum payload limit of 1 KB/
+    );
+  });
 });

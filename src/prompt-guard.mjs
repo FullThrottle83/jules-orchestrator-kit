@@ -45,17 +45,41 @@ export const STERILE_VOCABULARY_MAP = [
 ];
 
 /**
- * Sanitizes aggressive phrases into clinical equivalents.
+ * Sanitizes aggressive phrases into clinical equivalents while preserving
+ * code blocks (```...```) and inline backticks (`...`) verbatim.
  *
  * @param {string} text - Prompt text
  * @returns {string} Sanitized prompt with clinical vocabulary
  */
 export function sanitizePromptVocabulary(text) {
   if (!text || typeof text !== "string") return text || "";
-  let sanitized = text;
+
+  const codeSpans = [];
+  const placeholderPrefix = "@@VERBATIM_CODE_SPAN_";
+
+  // Protect fenced code blocks
+  let protectedText = text.replace(/```[\s\S]*?```/g, (match) => {
+    const idx = codeSpans.length;
+    codeSpans.push(match);
+    return `${placeholderPrefix}${idx}@@`;
+  });
+
+  // Protect inline code spans
+  protectedText = protectedText.replace(/`[^`\n]+`/g, (match) => {
+    const idx = codeSpans.length;
+    codeSpans.push(match);
+    return `${placeholderPrefix}${idx}@@`;
+  });
+
+  let sanitized = protectedText;
   for (const { pattern, replacement } of STERILE_VOCABULARY_MAP) {
     sanitized = sanitized.replace(pattern, replacement);
   }
+
+  for (let i = 0; i < codeSpans.length; i++) {
+    sanitized = sanitized.replace(`${placeholderPrefix}${i}@@`, codeSpans[i]);
+  }
+
   return sanitized;
 }
 

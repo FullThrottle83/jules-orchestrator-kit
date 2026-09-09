@@ -120,4 +120,46 @@ test("Role prompts are stack-neutral", async (t) => {
     assert.equal(resolveRolePrompt(root, "nonexistent"), null);
     assert.equal(resolveRolePrompt(root, ""), null);
   });
+
+  await t.test("operator shortcuts for testing resolve to Testing.md", () => {
+    for (const sc of ["testing", "test", "unit-test", "integration-test", "qa"]) {
+      const resolved = resolveRolePrompt(process.cwd(), sc);
+      assert.ok(resolved, `testing shortcut "${sc}" must resolve`);
+      assert.equal(resolved.role.toLowerCase(), "testing");
+    }
+  });
+
+  await t.test("two-hop legacy alias resolves in legacy-only checkout", () => {
+    const root = mkdtempSync(join(tmpdir(), "jules-legacy-only-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+
+    const promptsDir = join(root, ".agent", "prompts");
+    mkdirSync(promptsDir, { recursive: true });
+    // Write only legacy Bolt.md
+    writeFileSync(join(promptsDir, "Bolt.md"), "# Bolt Protocol\nLegacy micro-optimization.");
+
+    // "perf" -> "performance" -> "bolt" (two-hop fallback)
+    const resolved = resolveRolePrompt(root, "perf");
+    assert.ok(resolved, "perf shortcut must resolve to Bolt.md in legacy-only checkout");
+    assert.equal(resolved.role, "Bolt");
+    assert.ok(resolved.content.includes("Legacy micro-optimization"));
+  });
+
+  await t.test("resolveRolePrompt respects explicit opts.config override", () => {
+    const root = mkdtempSync(join(tmpdir(), "jules-config-override-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+
+    const promptsDir = join(root, ".agent", "prompts");
+    mkdirSync(promptsDir, { recursive: true });
+    writeFileSync(join(promptsDir, "Testing.md"), "Run `{{VERIFY_TEST}}`.");
+    // Disk has standard npm test
+    writeFileSync(join(root, ".agent", "config.yml"), 'version: 1\nverify:\n  test: "npm test"\n');
+
+    // Caller passes explicit custom override
+    const resolved = resolveRolePrompt(root, "testing", {
+      config: { verify: { test: "vitest run --coverage" } }
+    });
+    assert.ok(resolved);
+    assert.equal(resolved.content, "Run `vitest run --coverage`.");
+  });
 });

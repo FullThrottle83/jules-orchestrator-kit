@@ -110,4 +110,14 @@ test("Prompt Guard & Input Sanitization Boundary", async (t) => {
     assert.match(envelope, /Do not terminate the process\./);
     assert.match(envelope, /prune unused code and purge the cache\./i);
   });
+
+  await t.test("e) Preserves code blocks and inline backticks verbatim without vocabulary substitution", () => {
+    const inputWithCode = "Check `SIGKILL` and `exploit_payload` in tests.\n```bash\nkill -9 $PID\n```\nOutside code, amputate code.";
+    const result = sanitizePromptVocabulary(inputWithCode);
+
+    assert.ok(result.includes("`SIGKILL`"), "inline `SIGKILL` must be preserved verbatim");
+    assert.ok(result.includes("`exploit_payload`"), "inline `exploit_payload` must be preserved verbatim");
+    assert.ok(result.includes("kill -9 $PID"), "code inside fences must be preserved verbatim");
+    assert.ok(result.includes("prune unused code"), "prose outside code must be sanitized");
+  });
 });

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "node:util";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync, renameSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { applyEnvAliases } from "../src/env-aliases.mjs";
 import { selectFailureOutput } from "../src/ops/verify-output.mjs";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.mjs";
+import { parseEnvelopeHeader } from "../src/envelope.mjs";
 import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
@@ -101,7 +102,7 @@ Options:
   --prompt, -p          Task prompt text — dispatch, task create and task optimize
                         also accept it as a positional argument
   --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)
-  --role, -r            Specify specialist agent role (auditor | performance | security | hygiene | resilience | types | debugger)
+  --role, -r            Specify specialist agent role (auditor | performance | security | hygiene | resilience | types | debugger | testing | e2e | database | docs | a11y)
   --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:
   --check-premise       Verify task goal/oracle passes locally before burning API budget
   --dag                 Execute queue tasks via DAG dependency resolution
@@ -130,17 +131,65 @@ Options:
  * @param {string[]} [positionals] Remaining free arguments.
  * @returns {string} The prompt, or "" when none was supplied.
  */
-function resolvePromptInput(values, positionals = []) {
+/**
+ * Resolve the prompt text and source path a command was given.
+ *
+ * @param {Record<string, unknown>} values Parsed flags.
+ * @param {string[]} [positionals] Remaining free arguments.
+ * @param {string} [root] Repository root.
+ * @returns {{ content: string, sourceFile: string | null }}
+ */
+function resolvePromptDetails(values, positionals = [], root = process.cwd()) {
   const file = values["prompt-file"] || values.file;
   if (file) {
     if (!existsSync(file)) {
       console.error(`Error: prompt file not found: ${file}`);
       process.exit(1);
     }
-    return readFileSync(file, "utf-8");
+    return { content: readFileSync(file, "utf-8"), sourceFile: file };
   }
-  if (values.prompt) return String(values.prompt);
-  return positionals.join(" ").trim();
+  if (values.prompt) return { content: String(values.prompt), sourceFile: null };
+
+  if (positionals.length === 1) {
+    const raw = String(positionals[0]).trim();
+    const candidateFiles = [
+      raw,
+      resolve(root, raw),
+      join(root, ".agent", "jules-queue", raw),
+      join(root, ".agent", "jules-queue", `${raw}.md`),
+    ];
+    for (const cand of candidateFiles) {
+      if (cand && existsSync(cand)) {
+        try {
+          if (statSync(cand).isFile()) {
+            return { content: readFileSync(cand, "utf-8"), sourceFile: cand };
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
+  if (positionals.length === 0) {
+    const queueDir = getQueueDir(root);
+    if (existsSync(queueDir)) {
+      const candidates = readdirSync(queueDir)
+        .filter((f) => f.endsWith(".md") && !f.startsWith(".") && f !== "README.md" && isTaskFile(f, queueDir))
+        .sort();
+      if (candidates.length > 0) {
+        const selected = join(queueDir, candidates[0]);
+        if (!values?.json) {
+          console.log(`Auto-selected pending queue task: .agent/jules-queue/${candidates[0]}`);
+        }
+        return { content: readFileSync(selected, "utf-8"), sourceFile: selected };
+      }
+    }
+  }
+
+  return { content: positionals.join(" ").trim(), sourceFile: null };
+}
+
+function resolvePromptInput(values, positionals = [], root = process.cwd()) {
+  return resolvePromptDetails(values, positionals, root).content;
 }
 
 /**
@@ -302,10 +351,28 @@ async function main() {
         allowPositionals: true,
       });
 
-      const promptContent = resolvePromptInput(values, positionals);
+      const { content: promptContent, sourceFile } = resolvePromptDetails(values, positionals, root);
       if (!promptContent) {
-        console.error("Error: a prompt is required — pass it as --prompt, --prompt-file, or a positional argument.");
+        console.error("Error: a prompt is required — pass it as --prompt, --prompt-file, a task file path, or create one in .agent/jules-queue/.");
         process.exit(1);
+      }
+
+      // If promptContent has an envelope header, inherit defaults
+      const envelopeMeta = parseEnvelopeHeader(promptContent);
+      if (envelopeMeta) {
+        values.title = values.title || envelopeMeta.title;
+        values.role = values.role || envelopeMeta.role;
+        values.tier = values.tier || envelopeMeta.tier;
+        values["verify-cmd"] = values["verify-cmd"] || values.verify || envelopeMeta.verifyCmd;
+        if (values["auto-pr"] === undefined && envelopeMeta.flags?.autoPr !== undefined) {
+          values["auto-pr"] = envelopeMeta.flags.autoPr;
+        }
+        if (values["require-plan-approval"] === undefined && envelopeMeta.flags?.requirePlanApproval !== undefined) {
+          values["require-plan-approval"] = envelopeMeta.flags.requirePlanApproval;
+        }
+        if (values.repoless === undefined && envelopeMeta.flags?.repoless !== undefined) {
+          values.repoless = envelopeMeta.flags.repoless;
+        }
       }
 
       // `task create --role` has always rejected a role it cannot resolve;
@@ -376,6 +443,19 @@ async function main() {
             console.log(`   Session URL : ${session.url || "N/A"}`);
             if (session._routeTier) {
               console.log(`   Router Tier : ${session._routeTier} (${session._routeReason || "n/a"})`);
+            }
+          }
+        }
+        if (session && session.ok !== false && !values["dry-run"] && sourceFile) {
+          const queueDir = getQueueDir(root);
+          const resolvedSrc = resolve(root, sourceFile);
+          if (resolvedSrc.startsWith(queueDir) && existsSync(resolvedSrc)) {
+            const completedDir = join(queueDir, "completed");
+            if (!existsSync(completedDir)) mkdirSync(completedDir, { recursive: true });
+            const baseName = resolvedSrc.slice(queueDir.length).replace(/^[/\\]+/, "");
+            const dstPath = join(completedDir, baseName);
+            if (!existsSync(dstPath)) {
+              renameSync(resolvedSrc, dstPath);
             }
           }
         }

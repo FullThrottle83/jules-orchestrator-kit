@@ -66,6 +66,11 @@ export const ROLE_ALIASES = Object.freeze({
   "defect-fix": "debugger",
   lead: "auditor",
   coordinator: "auditor",
+  test: "testing",
+  "unit-test": "testing",
+  "integration-test": "testing",
+  qa: "testing",
+  tester: "testing",
 });
 
 export const CANONICAL_ROLES = Object.freeze([
@@ -80,6 +85,7 @@ export const CANONICAL_ROLES = Object.freeze([
   "resilience",
   "types",
   "debugger",
+  "testing",
 ]);
 
 /**
@@ -114,16 +120,25 @@ export function hydrateRolePrompt(content = "", config = {}) {
 export function resolveRolePrompt(root = process.cwd(), roleName = "", opts = {}) {
   if (!roleName || typeof roleName !== "string") return null;
   const cleanName = roleName.trim().toLowerCase();
-  const aliasTarget = ROLE_ALIASES[cleanName];
+  const directAlias = ROLE_ALIASES[cleanName];
+  const canonical = directAlias && CANONICAL_ROLES.includes(directAlias)
+    ? directAlias
+    : (CANONICAL_ROLES.includes(cleanName) ? cleanName : null);
+
   const candidates = [];
-  if (aliasTarget && CANONICAL_ROLES.includes(aliasTarget)) {
-    candidates.push(aliasTarget);
+  if (canonical) {
+    candidates.push(canonical);
   }
   if (!candidates.includes(cleanName)) {
     candidates.push(cleanName);
   }
-  if (aliasTarget && !candidates.includes(aliasTarget)) {
-    candidates.push(aliasTarget);
+  // Secondary fallback: if canonical maps to a legacy alias on disk, include it
+  if (canonical && ROLE_ALIASES[canonical] && !candidates.includes(ROLE_ALIASES[canonical])) {
+    candidates.push(ROLE_ALIASES[canonical]);
+  }
+  // Include direct alias if not yet present
+  if (directAlias && !candidates.includes(directAlias)) {
+    candidates.push(directAlias);
   }
 
   const promptsDir = join(root, ".agent", "prompts");

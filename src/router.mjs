@@ -4,6 +4,7 @@ import { normalizePath } from "./config.mjs";
 import { matchesGlob } from "./security.mjs";
 import { extractPathTokens } from "./task-optimizer.mjs";
 import { createProvider, createFailoverProvider, createSyntaxVerifiedProvider } from "./provider.mjs";
+import { ROLE_ALIASES, CANONICAL_ROLES } from "./role-resolver.mjs";
 
 /**
  * Dynamic Complexity & Cost Router (Roadmap v0.33.0).
@@ -71,10 +72,10 @@ const COMPLEX_SIGNALS = [
   /\bencrypt(ion)?\b/i,
 ];
 
-// Sentinel handles security-sensitive work; the primary provider is always used.
-const FORCE_COMPLEX_ROLES = new Set(["sentinel"]);
-const FAST_LEANING_ROLES = new Set(["janitor", "bolt"]);
-const COMPLEX_LEANING_ROLES = new Set(["overseer", "sentinel"]);
+// Security specialists handle security-sensitive work; the primary provider is always used.
+const FORCE_COMPLEX_ROLES = new Set(["security", "sentinel"]);
+const FAST_LEANING_ROLES = new Set(["hygiene", "janitor", "performance", "bolt"]);
+const COMPLEX_LEANING_ROLES = new Set(["auditor", "overseer", "security", "sentinel"]);
 
 // Supplements config.scope.deny — these are never eligible for the fast tier
 // regardless of user scope config, mirroring src/risk.mjs's RESTRICTED_PATH_PATTERNS.
@@ -129,10 +130,13 @@ export function classifyTaskComplexity(task = {}, config = {}) {
   }
 
   const paths = collectReferencedPaths(task);
-  const role = String(task.role || "").toLowerCase();
+  const rawRole = String(task.role || "").trim().toLowerCase();
+  const role = (ROLE_ALIASES[rawRole] && CANONICAL_ROLES.includes(ROLE_ALIASES[rawRole]))
+    ? ROLE_ALIASES[rawRole]
+    : rawRole;
 
-  if (FORCE_COMPLEX_ROLES.has(role)) {
-    return { tier: ROUTE_TIERS.COMPLEX, score: null, forced: true, reason: `Role '${role}' always routes to the primary provider` };
+  if (FORCE_COMPLEX_ROLES.has(role) || FORCE_COMPLEX_ROLES.has(rawRole)) {
+    return { tier: ROUTE_TIERS.COMPLEX, score: null, forced: true, reason: `Role '${task.role}' always routes to the primary provider` };
   }
 
   // 1. Declarative Asset Override: 100% declarative non-executable files bypass sensitive-path penalty
@@ -216,13 +220,13 @@ export function classifyTaskComplexity(task = {}, config = {}) {
     signals.push(`-1 short prompt (${promptLen} chars)`);
   }
 
-  if (COMPLEX_LEANING_ROLES.has(role)) {
+  if (COMPLEX_LEANING_ROLES.has(role) || COMPLEX_LEANING_ROLES.has(rawRole)) {
     score += 1;
-    signals.push(`+1 role '${role}' leans complex`);
+    signals.push(`+1 role '${task.role}' leans complex`);
   }
-  if (FAST_LEANING_ROLES.has(role)) {
+  if (FAST_LEANING_ROLES.has(role) || FAST_LEANING_ROLES.has(rawRole)) {
     score -= 2;
-    signals.push(`-2 role '${role}' leans fast`);
+    signals.push(`-2 role '${task.role}' leans fast`);
   }
 
   const threshold = Number.isFinite(config?.router?.threshold) ? config.router.threshold : 0;

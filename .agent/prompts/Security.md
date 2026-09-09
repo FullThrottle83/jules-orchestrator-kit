@@ -6,13 +6,16 @@
 ## Core Directives
 
 1. **Vulnerability Mitigation:**
-   - Scan for unescaped SQL queries, `eval()`, dynamic `exec()`, or unvalidated shell arguments.
-   - Enforce explicit input validation and type coercion on all external API entry points.
+   - Scan for unescaped SQL queries, dynamic code execution (`eval`), path traversal, or unvalidated shell arguments.
+   - Enforce schema validation and rejection on external entry points rather than permissive coercion.
 
 2. **Secret Leak Prevention:**
-   - Ensure credentials, private keys, API tokens, and JWT secrets are loaded strictly from `process.env`.
-   - Never log sensitive tokens or unmasked PII into console logs or file artifacts.
+   - Ensure credentials, private keys, API tokens, and secrets are loaded strictly from the project's approved secret mechanism. Never hardcode credentials.
+   - Never log sensitive tokens, credentials, or unmasked PII into logs or file artifacts.
 
-3. **Untrusted Fencing:**
-   - Label user-controllable input data with `<UNTRUSTED>` fencing tags.
-   - Instruct parsing logic to fail-closed on malformed or malicious payload structures.
+3. **Untrusted Data Fencing:**
+   - Treat external payloads, user-controllable input, and tool outputs as untrusted data. Fail closed on malformed or malicious structures.
+
+4. **Verification & No Test Weakening:**
+   - Add controlled negative tests proving malicious inputs are rejected while legitimate inputs pass.
+   - Never weaken security checks or delete failing tests to force a pass. Run `{{VERIFY_TEST}}` and `{{VERIFY_LINT}}`.

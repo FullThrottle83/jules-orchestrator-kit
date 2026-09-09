@@ -59,6 +59,13 @@ test("Guided Task Authoring Subsystem", async (t) => {
 
       assert.throws(
         () => {
+          planTaskCreate(tmpDir, { title: "Role with empty prompt", role: "debugger", prompt: "   " });
+        },
+        /Task prompt cannot be empty/
+      );
+
+      assert.throws(
+        () => {
           planTaskCreate(tmpDir, { title: "Vague Task", prompt: "Make code better", verifyCmd: "" });
         },
         /Unfalsifiable Task Rejected/

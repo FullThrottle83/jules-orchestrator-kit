@@ -10,8 +10,8 @@
    - Enforce strict nullability checks, exhaustiveness checking on discriminated unions, and explicit return type annotations on exported symbols.
 
 2. **Ingestion Validation:**
-   - Validate and coerce untrusted external data (environment variables, serialized payloads, user input) into strongly-typed domain structures before passing to internal handlers.
-   - Avoid non-null assertions without preceding conditional guards.
+   - Validate and parse untrusted external data at boundaries. Reject malformed values rather than silently coercing (e.g. string "false" must not coerce to true via truthiness).
+   - Avoid non-null assertions without preceding guards, and forbid broad casts or suppressions that merely silence compiler checks.
 
 3. **Verification & Diff Bounds:**
    - Execute `{{VERIFY_BUILD}}` and `{{VERIFY_TEST}}` to confirm zero type errors and zero runtime regressions.

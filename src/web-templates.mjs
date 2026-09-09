@@ -388,13 +388,13 @@ The test must fail on a hand-broken fixture before you consider it done.`;
 1. **Prove Each Test Can Fail (Mutation Falsification)**:
    - For every test in scope, deliberately introduce a defect into the code under test (${strategy}), run only that test, and confirm it turns red.
    - Immediately revert every deliberate code mutation before proceeding to the next test.
-   - A test nobody has seen fail is an unverified assumption; delete or rewrite tests that remain green under deliberate mutation.
+   - A test nobody has seen fail is an unverified assumption; add targeted assertions or classify equivalent mutants for tests that remain green under deliberate mutation. Never delete surviving tests.
 2. **Eliminate Vacuous & Tautological Checks**:
    - Strip tests that mock the subject under test (measuring the mock rather than the implementation).
    - Replace shallow shape assertions (\`toBeDefined()\`, \`assertTrue(result)\`, \`is not None\`) with precise value assertions derived from requirements.
 3. **Reconcile Collected vs Passed Counts**:
    - Compare test runner collected test count against actual test function count to detect uncollected or silently ignored test files.
-   - Document every deleted tautological test with its specific failure mode.`;
+   - Document every purged tautological test with its specific failure mode.`;
     }
   },
 

@@ -1205,10 +1205,15 @@ export async function dispatch(task = {}, opts = {}) {
   let cleanPrompt = redactSecrets(task.prompt || "");
 
   // Specialist Role resolution (if role is set and not already present in prompt)
-  if (task.role && !cleanPrompt.includes("Protocol - ")) {
-    const roleObj = resolveRolePrompt(root, task.role);
+  if (task.role) {
+    const roleObj = resolveRolePrompt(root, task.role, { config });
     if (roleObj) {
-      cleanPrompt = `${roleObj.content}\n\n${cleanPrompt}`.trim();
+      const alreadyHasRole = cleanPrompt.includes(roleObj.content.slice(0, 60)) ||
+        cleanPrompt.includes(`# ${roleObj.role}`) ||
+        cleanPrompt.includes("Protocol - ");
+      if (!alreadyHasRole) {
+        cleanPrompt = `${roleObj.content}\n\n${cleanPrompt}`.trim();
+      }
     } else {
       // A role reaching here comes from a task envelope or an internal
       // synthesis rather than a typed flag, so the dispatch still proceeds with
@@ -1227,7 +1232,13 @@ export async function dispatch(task = {}, opts = {}) {
   }
 
   // Wire Prompt Guard, Memory Hydration & Envelope to wrap raw task arguments
-  const taskInstructions = task.taskInstructions || cleanPrompt || task.title || "Autonomous Task Execution";
+  let taskInstructions = cleanPrompt;
+  if (task.taskInstructions && task.taskInstructions !== cleanPrompt) {
+    taskInstructions = cleanPrompt ? `${cleanPrompt}\n\n${task.taskInstructions}` : task.taskInstructions;
+  }
+  if (!taskInstructions) {
+    taskInstructions = task.title || "Autonomous Task Execution";
+  }
   const untrustedData = Array.isArray(task.untrustedData) ? task.untrustedData : [];
   const systemPolicy = task.systemPolicy || config.systemPolicy || "";
 
@@ -1235,6 +1246,11 @@ export async function dispatch(task = {}, opts = {}) {
   const learnedRemediations = task.learnedRemediations || hydrateMemory(root, { targetFiles, fingerprint: task.fingerprint || "" });
 
   const envelopedPrompt = buildAgentEnvelope(systemPolicy, taskInstructions, untrustedData, { learnedRemediations });
+
+  // Enforce prompt size limit on the assembled final payload
+  if (Buffer.byteLength(envelopedPrompt, "utf-8") > promptKb) {
+    throw new Error(`Task prompt exceeds maximum payload limit of ${config.limits.promptKb} KB (${Math.ceil(Buffer.byteLength(envelopedPrompt, "utf-8") / 1024)} KB)`);
+  }
 
   const cleanTask = { ...task, prompt: envelopedPrompt };
 

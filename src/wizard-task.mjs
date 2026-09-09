@@ -110,16 +110,21 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
   const config = loadConfig(root);
 
   let title = inputObj.title;
-  let rawPrompt = inputObj.prompt || "";
+  let rawPrompt = (inputObj.prompt || "").trim();
   let verifyCmd = (inputObj.verifyCmd || config.verify.test || config.verify.build || "").trim();
+
+  // Validate that a task objective or template was provided before injecting role instructions
+  if (!rawPrompt && !inputObj.template) {
+    throw new Error("Task prompt cannot be empty.");
+  }
 
   // 0a. Process Specialist Role if specified
   let resolvedRole = null;
   if (inputObj.role) {
-    resolvedRole = resolveRolePrompt(root, inputObj.role);
+    resolvedRole = resolveRolePrompt(root, inputObj.role, { config });
     if (!resolvedRole) {
       throw new Error(
-        `Unknown agent role '${inputObj.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Auditor, Performance, Security, Hygiene).`
+        `Unknown agent role '${inputObj.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Auditor, Performance, Security, Hygiene, Testing).`
       );
     }
     rawPrompt = `${resolvedRole.content}\n\n${rawPrompt}`.trim();

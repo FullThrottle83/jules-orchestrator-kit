@@ -62,18 +62,38 @@ describe("src/router.mjs — Dynamic Complexity & Cost Router", () => {
     assert.equal(res.forced, true);
   });
 
-  it("always force-routes the 'sentinel' role to COMPLEX regardless of wording", () => {
-    const res = classifyTaskComplexity({ role: "sentinel", prompt: "Fix a typo." }, BASE_CONFIG);
-    assert.equal(res.tier, ROUTE_TIERS.COMPLEX);
-    assert.equal(res.forced, true);
+  it("always force-routes the 'sentinel' and 'security' roles to COMPLEX regardless of wording", () => {
+    const sentinel = classifyTaskComplexity({ role: "sentinel", prompt: "Fix a typo." }, BASE_CONFIG);
+    assert.equal(sentinel.tier, ROUTE_TIERS.COMPLEX);
+    assert.equal(sentinel.forced, true);
+
+    const security = classifyTaskComplexity({ role: "security", prompt: "Fix a typo." }, BASE_CONFIG);
+    assert.equal(security.tier, ROUTE_TIERS.COMPLEX);
+    assert.equal(security.forced, true);
+
+    const sec = classifyTaskComplexity({ role: "sec", prompt: "Fix a typo." }, BASE_CONFIG);
+    assert.equal(sec.tier, ROUTE_TIERS.COMPLEX);
+    assert.equal(sec.forced, true);
   });
 
-  it("nudges 'janitor' and 'bolt' roles toward FAST for otherwise-neutral prompts", () => {
+  it("nudges 'janitor'/'hygiene' and 'bolt'/'performance' roles toward FAST for otherwise-neutral prompts", () => {
     const janitor = classifyTaskComplexity({ role: "janitor", prompt: "Remove unused helper function from src/utils.mjs." }, BASE_CONFIG);
     assert.equal(janitor.tier, ROUTE_TIERS.FAST);
 
+    const hygiene = classifyTaskComplexity({ role: "hygiene", prompt: "Remove unused helper function from src/utils.mjs." }, BASE_CONFIG);
+    assert.equal(hygiene.tier, ROUTE_TIERS.FAST);
+
+    const cleanup = classifyTaskComplexity({ role: "cleanup", prompt: "Remove unused helper function from src/utils.mjs." }, BASE_CONFIG);
+    assert.equal(cleanup.tier, ROUTE_TIERS.FAST);
+
     const bolt = classifyTaskComplexity({ role: "bolt", prompt: "Trim redundant allocations in the hot loop." }, BASE_CONFIG);
     assert.equal(bolt.tier, ROUTE_TIERS.FAST);
+
+    const performance = classifyTaskComplexity({ role: "performance", prompt: "Trim redundant allocations in the hot loop." }, BASE_CONFIG);
+    assert.equal(performance.tier, ROUTE_TIERS.FAST);
+
+    const perf = classifyTaskComplexity({ role: "perf", prompt: "Trim redundant allocations in the hot loop." }, BASE_CONFIG);
+    assert.equal(perf.tier, ROUTE_TIERS.FAST);
   });
 
   it("escalates to COMPLEX when a prompt references 4 or more distinct files", () => {

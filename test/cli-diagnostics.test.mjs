@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -204,6 +204,47 @@ test("every command that takes a prompt takes it the same three ways", async (t)
       const parsedAlias = JSON.parse(resAlias.stdout);
       assert.equal(parsedAlias.ok, true);
       assert.equal(parsedAlias.session?.data?.dryRun, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("dispatch resolves positional task envelope path and inherits metadata", () => {
+    const dir = repoWithFailingTest("unused");
+    try {
+      const qDir = join(dir, ".agent", "jules-queue");
+      mkdirSync(qDir, { recursive: true });
+      const taskFile = join(qDir, "TASK-TEST1.md");
+      const envelope = `<!-- JULES_TASK_ENVELOPE: {"version":1,"id":"TASK-TEST1","title":"feat: Test Positional Task","flags":{"autoPr":true,"requirePlanApproval":false},"verifyCmd":"npm test","role":"performance","tier":"fast"} -->
+# feat: Test Positional Task
+Task instructions here. Verify with npm test.`;
+      writeFileSync(taskFile, envelope, "utf-8");
+
+      // 1. Dispatch via relative file path (json & text)
+      const resPath = run(dir, ["dispatch", ".agent/jules-queue/TASK-TEST1.md", "--dry-run", "--json"]);
+      assert.equal(resPath.status, 0, resPath.stdout + resPath.stderr);
+      const parsedPath = JSON.parse(resPath.stdout);
+      assert.equal(parsedPath.ok, true);
+      assert.equal(parsedPath.session?.title, "feat: Test Positional Task");
+
+      const resText = run(dir, ["dispatch", ".agent/jules-queue/TASK-TEST1.md", "--dry-run"]);
+      assert.equal(resText.status, 0, resText.stdout + resText.stderr);
+      assert.match(resText.stdout, /feat: Test Positional Task/);
+      assert.match(resText.stdout, /performance/);
+
+      // 2. Dispatch via bare task ID
+      const resId = run(dir, ["dispatch", "TASK-TEST1", "--dry-run", "--json"]);
+      assert.equal(resId.status, 0, resId.stdout + resId.stderr);
+      const parsedId = JSON.parse(resId.stdout);
+      assert.equal(parsedId.ok, true);
+      assert.equal(parsedId.session?.title, "feat: Test Positional Task");
+
+      // 3. Dispatch with no arguments auto-selects queued task
+      const resAuto = run(dir, ["dispatch", "--dry-run", "--json"]);
+      assert.equal(resAuto.status, 0, resAuto.stdout + resAuto.stderr);
+      const parsedAuto = JSON.parse(resAuto.stdout);
+      assert.equal(parsedAuto.ok, true);
+      assert.equal(parsedAuto.session?.title, "feat: Test Positional Task");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

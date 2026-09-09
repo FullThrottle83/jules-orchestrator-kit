@@ -157,7 +157,7 @@ export const COMMAND_REGISTRY = [
       { name: "title", type: "string", description: "Short title for task (-t)" },
       { name: "prompt", type: "string", description: "Detailed task instructions (-p)" },
       { name: "prompt-file", type: "string", description: "Read prompt from file (-f)" },
-      { name: "role", type: "string", description: "Specialist role (auditor, performance, security, hygiene, resilience, types, debugger, e2e, database, docs, a11y) (-r)" },
+      { name: "role", type: "string", description: "Specialist role (auditor, performance, security, hygiene, resilience, types, debugger, testing, e2e, database, docs, a11y) (-r)" },
       { name: "tier", type: "string", description: "Execution tier override (fast | complex)" },
       { name: "template", type: "string", description: "Task template preset ID" },
       { name: "depends-on", type: "string", description: "Comma-separated task dependency IDs" },
@@ -514,7 +514,7 @@ export const COMMAND_REGISTRY = [
     flags: [
       { name: "prompt", type: "string", description: "Task prompt instructions (-p)" },
       { name: "prompt-file", type: "string", description: "Read prompt from file (-f)" },
-      { name: "role", type: "string", description: "Specialist role (auditor, performance, security, hygiene, resilience, types, debugger, e2e, database, docs, a11y) (-r)" },
+      { name: "role", type: "string", description: "Specialist role (auditor, performance, security, hygiene, resilience, types, debugger, testing, e2e, database, docs, a11y) (-r)" },
       { name: "tier", type: "string", description: "Execution tier override (fast | complex)" },
       { name: "check-premise", type: "boolean", description: "Verify premise locally before dispatching" },
       { name: "source", type: "string", description: "Jules repository source identifier (-s)" },
