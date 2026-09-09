@@ -224,9 +224,9 @@ Every phase runs against `origin/<base>` rules and short-circuits on first failu
 
 | Phase | Component | Enforcement | Exit code |
 | :--- | :--- | :--- | :--- |
-| **1. Scope** | `checkScope()` (`src/security.mjs`) | Modified + untracked files vs `scope.deny` → `scope.allow` → `scope.protect`. Deny is evaluated first and unconditionally, against a path canonicalised by `canonicalizePath()` and matched **case-insensitively**; paths escaping the repo root are rejected outright. Allow stays case-sensitive so a mismatch fails closed. | `3` |
+| **1. Scope** | `checkScope()` (`src/scope-guard.mjs`, re-exported by `src/security.mjs`) | Modified + untracked files vs `scope.deny` → `scope.allow` → `scope.protect`. Deny is evaluated first and unconditionally, against a path canonicalised by `canonicalizePath()` and matched **case-insensitively**; paths escaping the repo root are rejected outright. Allow stays case-sensitive so a mismatch fails closed. | `3` |
 | **2. Payload** | `diffBytes()` (`src/git.mjs`) | Inclusive `<=` against `limits.diffKb * 1024` (default 75 KB), measured in UTF-8 bytes. | `5` |
-| **3. Diff Scan** | `scanDiff()` (`src/security.mjs`) | Three independent checks folded into one phase — see below. | `6` |
+| **3. Diff Scan** | `scanDiff()` (`src/security.mjs`) | Three independent checks folded into one phase — see below. `scanDiff()` is the orchestrator; the detectors it calls live in `src/secret-scanner.mjs`, `src/test-tamper-guard.mjs` and `src/bidi-guard.mjs`, all re-exported from `src/security.mjs`. | `6` |
 | **4. Verify** | Staged runner + `preload-net-guard.mjs` | Runs the configured stages as sub-processes with a `NODE_OPTIONS` network guard, honouring `verify.policy.networkAccess`. | `4` (or `8` on flaky quarantine) |
 | **5. Evidence** | `generateEvidenceManifest()` (`src/evidence.mjs`) | SHA-256 manifest of changed files plus pre/post test-file hashes; a mismatch means tests were edited to force a pass. | `3` |
 
@@ -237,7 +237,7 @@ Every phase runs against `origin/<base>` rules and short-circuits on first failu
 | Finding type | Detector |
 | :--- | :--- |
 | `HIGH_CONFIDENCE_SECRET` / `LOW_CONFIDENCE_SECRET` | Regex pattern lists (AWS, GitHub, OpenAI, Stripe, private keys, bearer tokens) — **pattern matching, not entropy**. Run against three variants of the added lines: as-written, with invisible characters stripped, and with source-level string concatenation collapsed |
-| `HIGH_CONFIDENCE_SECRET` (encoded) | `hasEncodedSecret()` — base64 blobs on added lines are decoded and matched, so a key in a Kubernetes `Secret` manifest or a base64'd `.env` is not invisible to a line-oriented scanner. The description names the encoding; the type is deliberately the same, so every gate that already blocks on a cleartext key blocks on this one |
+| `HIGH_CONFIDENCE_SECRET` (encoded) | `hasEncodedSecret()` (`src/secret-scanner.mjs`) — base64 blobs on added lines are decoded and matched, so a key in a Kubernetes `Secret` manifest or a base64'd `.env` is not invisible to a line-oriented scanner. The description names the encoding; the type is deliberately the same, so every gate that already blocks on a cleartext key blocks on this one |
 | `EDGE_RUNTIME_VIOLATION` | `checkEdgeRuntimeImports()` — unsupported `node:*` built-ins in Cloudflare / Vercel / Netlify Edge contexts |
 | `CROSS_PACKAGE_BOUNDARY_VIOLATION` | `checkCrossPackageImports()` — illegal cross-package imports in a monorepo |
 
@@ -249,7 +249,7 @@ Entropy is **not** used by the Phase 3 gate. Three different thresholds exist in
 
 | Threshold | Location | Purpose |
 | :--- | :--- | :--- |
-| `> 3.6` | `redactSecrets()` (`src/security.mjs`) | Decides which **environment variable values** get masked in log and diff output |
+| `> 3.6` | `redactSecrets()` (`src/secret-scanner.mjs`) | Decides which **environment variable values** get masked in log and diff output |
 | `> 4.3` | `planTaskCreate()` (`src/wizard-task.mjs`) | Flags a high-entropy **token** inside a task prompt pre-dispatch |
 | `> 4.5` | `planTaskCreate()` (`src/wizard-task.mjs`) | Flags a short prompt that is high-entropy **in aggregate** |
 
