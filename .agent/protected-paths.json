@@ -7,6 +7,12 @@
     "tsconfig.json",
     ".github/**",
     ".agent/jules.yml",
-    ".agent/protected-paths.json"
+    ".agent/protected-paths.json",
+    "scripts/ci-scope-guard.mjs",
+    "scripts/doc-sync-check.mjs",
+    "scripts/guard-reach-check.mjs",
+    "scripts/jules-self-audit.mjs",
+    "scripts/package-integrity-check.mjs",
+    "scripts/run-tests.mjs"
   ]
 }

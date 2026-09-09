@@ -2,6 +2,7 @@ name: Jules Nightly Self-Audit
 
 on:
   schedule:
+    # 03:00 UTC — a low-traffic window for the default branch's nightly maintenance.
     - cron: '0 3 * * *'
   workflow_dispatch:
 
@@ -11,6 +12,7 @@ permissions:
 jobs:
   nightly-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -32,9 +34,43 @@ jobs:
           key: ooda-state-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             ooda-state-${{ runner.os }}-
-      - name: Dispatch Nightly Maintenance to Jules
+
+      # scripts/jules-nightly.mjs currently runs `git worktree prune` only and
+      # makes no Jules API calls, so no secret is injected into the runner
+      # environment (previously `secrets.JULES_API_KEY` was exported here but
+      # never read by the script). If nightly dispatch to the Jules API is added
+      # later, map the secret at the step that needs it instead.
+      - name: Run Nightly Maintenance
+        run: node scripts/jules-nightly.mjs
+
+  # A broken scheduled job otherwise only surfaces as a notification nobody is
+  # watching. Open one tracking issue per failing nightly (deduplicated while an
+  # alert is still open) so maintenance rot cannot stay silent. The issue body
+  # contains run metadata only — never logs, and never secret material.
+  # `issues: write` is scoped to this single job.
+  alert-maintainers:
+    runs-on: ubuntu-latest
+    needs: nightly-audit
+    if: failure()
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open tracking issue for the failed nightly run
         env:
-          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
-          JULES_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node scripts/jules-nightly.mjs
+          set -euo pipefail
+          TITLE="[nightly] Jules Nightly Self-Audit failed ($(date -u +%Y-%m-%d))"
+          open="$(
+            gh issue list --state open --search 'in:title "Jules Nightly Self-Audit failed"' \
+              --json number --jq 'length'
+          )"
+          if [ "${open}" -eq 0 ]; then
+            gh issue create \
+              --title "${TITLE}" \
+              --body "The scheduled **Jules Nightly Self-Audit** workflow failed. Inspect the run — no logs or secrets are included here: ${RUN_URL}"
+          else
+            echo "An alert issue is already open; not creating a duplicate."
+          fi

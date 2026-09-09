@@ -135,10 +135,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # Fork PRs reach this job through `pull_request`, which executes with a
+      # read-only token and no secrets — safe by construction for untrusted
+      # diffs. `advanced-security: false` makes findings fail the job instead
+      # of uploading them as code-scanning alerts, so no `security-events:
+      # write` is needed or granted.
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99 # v0.6.3
         with:
           advanced-security: false
         env:
+          # Minimal read-only scope: workflow-level and job-level permissions
+          # both cap this token at `contents: read`.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

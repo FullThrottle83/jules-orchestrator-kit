@@ -3,6 +3,13 @@ description: 'Zero-dependency autonomous control plane for Google Jules'
 author: 'FullThrottle83'
 
 inputs:
+  jules_api_key:
+    description: >-
+      API key for the hosted Jules provider. Composite actions cannot read
+      secrets or the caller's env context, so map the secret to this input at
+      the call site: with: jules_api_key: secrets.JULES_API_KEY
+    required: false
+    default: ''
   action:
     description: 'CLI command to execute (gate | dispatch | queue | scan | doctor | mcp)'
     required: false
@@ -20,13 +27,17 @@ inputs:
     required: false
     default: 'main'
   tier:
-    description: 'Subscription tier preset (free | pro | ultra)'
+    description: 'Subscription tier preset (free | pro | ultra | enterprise)'
     required: false
     default: 'ultra'
   dry_run:
     description: 'Set to 1 for dry-run simulation mode'
     required: false
     default: '0'
+  node-version:
+    description: 'Node.js version or range to install'
+    required: false
+    default: '>=20.0.0'
 
 runs:
   using: 'composite'
@@ -34,12 +45,17 @@ runs:
     - name: Setup Node.js Environment
       uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
       with:
-        node-version: '>=20.0.0'
+        node-version: ${{ inputs.node-version }}
 
+    # D12: the previous version exported `JULES_API_KEY: ${{ env.JULES_API_KEY }}`,
+    # but a composite action cannot see the caller's secrets through the `env`
+    # context, so the variable was always unpopulated here. The key now arrives
+    # as the explicit `jules_api_key` input; callers map the secret at the call
+    # site (see the input description above).
     - name: Execute Jules Orchestrator Action
       shell: bash
       env:
-        JULES_API_KEY: ${{ env.JULES_API_KEY }}
+        JULES_API_KEY: ${{ inputs.jules_api_key }}
         JULES_REPO: ${{ github.repository }}
         JULES_TIER: ${{ inputs.tier }}
         JULES_DRY_RUN: ${{ inputs.dry_run }}
@@ -48,6 +64,47 @@ runs:
         INPUT_TITLE: ${{ inputs.title }}
         INPUT_PROMPT: ${{ inputs.prompt }}
       run: |
+        set -euo pipefail
+
+        # ---- Input validation: fail fast with a diagnostic, never echo values ----
+        case "$INPUT_ACTION" in
+          gate|dispatch|queue|scan|doctor|mcp) ;;
+          # Passthrough verbs (e.g. `check`) must stay safe shell tokens.
+          *[!a-z0-9._-]*|'')
+            echo "::error::action must be one of gate, dispatch, queue, scan, doctor, mcp, or a plain CLI verb (got '$INPUT_ACTION')" >&2
+            exit 1
+            ;;
+        esac
+        case "$JULES_TIER" in
+          free|pro|ultra|enterprise)
+            ;;
+          *)
+            echo "::error::tier must be one of free, pro, ultra, enterprise (got '$JULES_TIER')" >&2
+            exit 1
+            ;;
+        esac
+        case "$JULES_DRY_RUN" in
+          0|1|true|false)
+            ;;
+          *)
+            echo "::error::dry_run must be 0, 1, true or false (got '$JULES_DRY_RUN')" >&2
+            exit 1
+            ;;
+        esac
+        case "$BASE_BRANCH" in
+          ''|*[!A-Za-z0-9._/-]*) # allow empty (repo default) or plain git refs
+            echo "::error::base_branch contains invalid characters (got '$BASE_BRANCH')" >&2
+            exit 1
+            ;;
+        esac
+        if [ "$INPUT_ACTION" = "dispatch" ] && [ -z "$INPUT_TITLE" ] && [ -z "$INPUT_PROMPT" ]; then
+          echo "::error::action=dispatch requires title or prompt" >&2
+          exit 1
+        fi
+        if [ "$INPUT_ACTION" = "dispatch" ] && [ -z "$JULES_API_KEY" ]; then
+          echo "::warning::jules_api_key was not provided; hosted-Jules dispatches will fail unless the repository uses a CLI provider (claude-code, codex, gemini-cli)." >&2
+        fi
+
         if [ "$INPUT_ACTION" = "dispatch" ]; then
           npx jules-orchestrator-kit dispatch --title "$INPUT_TITLE" --prompt "$INPUT_PROMPT"
         elif [ "$INPUT_ACTION" = "gate" ]; then

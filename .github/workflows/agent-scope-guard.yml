@@ -1,5 +1,15 @@
 name: Agent Scope Guard
 
+# Fork PRs run on `pull_request` (never `pull_request_target`), so this
+# workflow executes with a read-only token and touches no secrets. For a
+# guard, what also matters is *whose code runs it*: a PR that edits `.github/**`
+# or `scripts/ci-scope-guard.mjs` must not be able to neuter the very check
+# that reviews it. The steps below therefore check out the *base* revision
+# (trusted, already-merged guard code and protected-paths manifest) and only
+# fetch the PR head's git objects as an input to `git diff` — the head is never
+# checked out or executed. The manifest is read from the base commit, so a PR
+# cannot delete its own guard in the same diff it uses to touch a protected
+# file, and an unreadable manifest fails the job closed.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -10,6 +20,7 @@ permissions:
 jobs:
   scope-guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -18,11 +29,23 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Checkout repository
+      - name: Checkout base revision (trusted guard code & manifest)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.event.pull_request.base.ref }}
           fetch-depth: 0
           persist-credentials: false
+
+      # The PR head commit is generally unreachable from the default branch
+      # (fork PRs, feature branches), so fetch its objects explicitly. Only the
+      # object database is touched: nothing from the head is checked out or
+      # executed, and the scope guard below merely diffs base..head names.
+      - name: Fetch PR head objects for diffing (never executed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git -c "http.extraheader=AUTHORIZATION: basic $(printf '%s' "x-access-token:${GH_TOKEN}" | base64 -w0)" \
+            fetch --no-tags --depth=1 origin "+refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/origin/pr-head"
 
       - name: Setup Node.js
         uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
