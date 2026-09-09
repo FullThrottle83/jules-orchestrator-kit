@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
 import { resolveProjectCommands, resolveWorkspaceExecutionBoundary, detectPackageManager, parseYamlConfig, detectFrameworkCommands } from "../scripts/command-resolver.mjs";
 import { matchGlob, loadForbiddenPatterns, loadAllowedPatterns, validateJulesConfig, parseAndCleanStderr, COMMAND_DEFINING_FILES, EXECUTION_CONFIG_FILES, RESTRICTED_AGENT_FILES, getOodaStateFile, auditLedgers, auditWorktrees, auditGates } from "../scripts/jules-self-audit.mjs";
 import { resolveMarkdownConflict, redactSecrets, anonymizePii, verifyLedgerIntegrity, checkDailyBudget, reserveDailyBudget, hasHighConfidenceSecret, hasLowConfidenceSecret, pruneOldLedgers, loadEnv, ensureDir, getIsolatedCacheDir, ensureSdkCacheIsolation, extractPrUrls, auditSessions, buildSyncManifest, pushReservationManifest } from "../scripts/utils.mjs";
@@ -1069,7 +1070,7 @@ describe("Dispatch Argv Scope (D10)", () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jules-argv-leak-"));
     try {
       const probe = path.join(tmpDir, "probe.mjs");
-      const target = path.resolve(process.cwd(), "scripts/jules-dispatch.mjs").replace(/\\/g, "/");
+      const target = pathToFileURL(path.resolve(process.cwd(), "scripts/jules-dispatch.mjs")).href;
       fs.writeFileSync(
         probe,
         `import { dispatchTask } from "${target}";\nawait dispatchTask({ dryRun: true });\n`
