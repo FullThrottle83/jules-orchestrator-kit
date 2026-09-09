@@ -20,6 +20,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { resolveRoot } from "../src/config.mjs";
+import { formatRegistryMarkdown } from "../src/ops/command-registry.mjs";
 
 /**
  * Runs the unit suite and extracts the authoritative counts.
@@ -330,6 +331,37 @@ export function checkDocSync(root = process.cwd(), opts = {}) {
       secMatch ? `v${secMatch[1]}.x` === expectedSeries : false,
       secMatch ? `found v${secMatch[1]}.x, expected ${expectedSeries}` : "no `vX.Y.x (Latest)` marker found"
     );
+  }
+
+  // 7. docs/COMMAND_REFERENCE.md — regenerated from the command registry on
+  //    every run and diffed against the file on disk. The registry feeds
+  //    `agentctl --help` and `help <command>`, so a stale reference means the
+  //    docs disagree with the CLI itself. Regenerate with:
+  //      node scripts/generate-command-reference.mjs
+  const referencePath = join(root, "docs", "COMMAND_REFERENCE.md");
+  const referenceOnDisk = readIfExists(referencePath);
+  if (referenceOnDisk === null) {
+    add("COMMAND_REFERENCE present", false, "docs/COMMAND_REFERENCE.md not found");
+  } else {
+    let rendered = null;
+    try {
+      rendered = `${formatRegistryMarkdown()}`.replace(/\s+$/, "") + "\n";
+    } catch {
+      rendered = null;
+    }
+    if (rendered === null) {
+      add("COMMAND_REFERENCE in sync", false, "could not render registry (import failed)");
+    } else {
+      const diskNorm = referenceOnDisk.replace(/\r\n/g, "\n");
+      const renderedNorm = rendered.replace(/\r\n/g, "\n");
+      add(
+        "COMMAND_REFERENCE in sync",
+        diskNorm === renderedNorm,
+        diskNorm === renderedNorm
+          ? "matches src/ops/command-registry.mjs"
+          : "stale — run: node scripts/generate-command-reference.mjs"
+      );
+    }
   }
 
   return { ok: checks.every((c) => c.ok), version, checks };

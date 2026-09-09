@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { detectStackOracles } from "../src/wizard-oracle.mjs";
 import { parseCollectedTests } from "../src/ops/test-collection.mjs";
 import { gate } from "../src/engine.mjs";
-import { getCommandDescriptor } from "../src/ops/command-registry.mjs";
+import { COMMAND_REGISTRY, formatRegistryMarkdown, getCommandDescriptor } from "../src/ops/command-registry.mjs";
 import {
   parseProcStat,
   getProcessStartTime,
@@ -1325,5 +1325,43 @@ describe("agentctl command surface — offline CLI coverage", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * P06 addition: CLI↔registry parity. bin/agentctl.mjs routes on `case "<cmd>":`
+ * labels while --help, `help <command>` and docs/COMMAND_REFERENCE.md render
+ * from src/ops/command-registry.mjs. These tests pin the two together: a new
+ * case without a descriptor (or a descriptor for a command that no longer
+ * exists) fails here instead of shipping silent help drift.
+ */
+describe("P06: CLI case labels and registry descriptors stay in sync", () => {
+  const CLI_SOURCE = readFileSync(AGENTCTL, "utf-8");
+  const caseLabels = [...CLI_SOURCE.matchAll(/^\s*case "([^"]+)":/gm)].map((m) => m[1]);
+
+  it("extracts the routed case labels from bin/agentctl.mjs", () => {
+    assert.ok(caseLabels.length >= 49, `expected at least 49 case labels, found ${caseLabels.length}`);
+  });
+
+  it("every case label resolves to a registry descriptor", () => {
+    // Resolution goes through getCommandDescriptor (id, path, then shortcut)
+    // because multi-word commands are described once: `plan` and `approve`
+    // both resolve via the plan-approve shortcuts, `session` via session-get,
+    // `pr` via pr-harvest.
+    const missing = [...new Set(caseLabels)].filter((label) => !getCommandDescriptor(label));
+    assert.deepEqual(missing, [], `case labels without a registry descriptor: ${missing.join(", ")}`);
+  });
+
+  it("every descriptor path head is a real routed case label", () => {
+    const labels = new Set(caseLabels);
+    const orphaned = COMMAND_REGISTRY.filter((d) => !labels.has(d.path[0])).map((d) => d.id);
+    assert.deepEqual(orphaned, [], `descriptors with no routed command: ${orphaned.join(", ")}`);
+  });
+
+  it("docs/COMMAND_REFERENCE.md matches the rendered registry", () => {
+    const root = fileURLToPath(new URL("..", import.meta.url));
+    const onDisk = readFileSync(join(root, "docs", "COMMAND_REFERENCE.md"), "utf-8").replace(/\r\n/g, "\n");
+    const rendered = `${formatRegistryMarkdown()}`.replace(/\s+$/, "").replace(/\r\n/g, "\n") + "\n";
+    assert.equal(onDisk, rendered, "stale reference — run: node scripts/generate-command-reference.mjs");
   });
 });

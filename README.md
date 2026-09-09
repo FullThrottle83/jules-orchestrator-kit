@@ -216,7 +216,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 * **Fail-Closed Security & Secret Scrubbing:** Evaluates Deny-before-Allow rules against canonicalized paths. Detects high-entropy strings and base64-encoded credentials (e.g. Kubernetes manifests).
 * **Complexity & Cost Router:** Zero-dependency heuristic classifier (`src/router.mjs`) routing mechanical tasks to lightweight models while reserving primary models for complex refactors, backed by syntax-check fallback recovery.
 * **Terminal UI & Diagnostics (`agentctl doctor`):** Interactive terminal dashboard, VFS lock management, and automated system diagnostics.
-* **Mechanically Verified:** Comprehensive test suite of **1520 unit tests across 203 suites**, with 59 activation-coverage canaries and 100% pass rate.
+* **Mechanically Verified:** Comprehensive test suite of **1524 unit tests across 204 suites**, with 59 activation-coverage canaries and 100% pass rate.
 
 <br/>
 
@@ -227,7 +227,7 @@ To maximize PR merge rates, dispatch tasks according to deterministic boundaries
 <a id="cli-docs"></a>
 ## CLI Command Reference (`agentctl`)
 
-`agentctl` is the unified command-line interface for `jules-orchestrator-kit`, available via `npx jules-orchestrator-kit <command>` or `agentctl <command>`.
+`agentctl` is the unified command-line interface for `jules-orchestrator-kit`, available via `npx jules-orchestrator-kit <command>` or `agentctl <command>`. The per-command flag reference is generated from the same registry that powers `--help`: see [docs/COMMAND_REFERENCE.md](docs/COMMAND_REFERENCE.md).
 
 | Command | Usage | Description | Exit Codes |
 | :--- | :--- | :--- | :--- |
