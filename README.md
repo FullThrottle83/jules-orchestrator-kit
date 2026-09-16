@@ -42,8 +42,10 @@ git status --short
 ```
 
 Stage the generated files you reviewed, then commit them. The committed
-configuration establishes the trusted base policy used by verification. Setup
-preserves existing files by default; avoid `--force` unless replacement is intended.
+configuration establishes the trusted base policy used by verification. On an
+already initialized repository, back up and review `.agent/config.yml` and
+`.agent/jules.yml` before rerunning `init`; the wizard can regenerate those
+manifests. Avoid `--force` unless replacement of generated files is intended.
 
 ### 2. Check provider readiness
 
