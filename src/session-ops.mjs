@@ -55,7 +55,7 @@ const BASH_FAILURE_HINTS = [
  * Collects the diagnostics a session actually carries.
  *
  * The documented Activity type — the Jules API types reference, transcribed
- * in `docs/jules-quality-plan.md` — puts command output under
+ * in `docs/archive/jules-quality-plan.md` — puts command output under
  * `artifacts[].bashOutput.{command,output,exitCode}` and the failure reason
  * under `sessionFailed.reason`. Neither `act.error` nor `act.executionOutput`
  * — the only two fields this file used to read — exists in that schema, so a

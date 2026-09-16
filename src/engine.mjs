@@ -999,7 +999,7 @@ export async function checkTaskPremise(task = {}, opts = {}) {
 
 /**
  * Session states the API documents as final. The full `SessionState` enum is
- * transcribed in `docs/jules-quality-plan.md`.
+ * transcribed in `docs/archive/jules-quality-plan.md`.
  */
 export const TERMINAL_SESSION_STATES = new Set(["COMPLETED", "FAILED"]);
 

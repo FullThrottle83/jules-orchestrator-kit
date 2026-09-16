@@ -6,24 +6,11 @@ This project is a human-led, agent-assisted open-source project. Attribution and
 
 ---
 
-## 🏗️ Core Engineering Directives
+## Repository rules
 
-All contributions must strictly follow these core invariants:
-
-1. **Zero Runtime Dependencies:**
-   - The orchestrator has **0 third-party npm runtime dependencies**.
-   - Use ONLY native Node.js built-in ESM modules (`node:fs`, `node:path`, `node:crypto`, `node:child_process`, `node:util`).
-
-2. **Read-Before-Write (Zero Hallucination):**
-   - Inspect exact symbol definitions and method signatures before editing existing files.
-   - Do not guess internal API structures.
-
-3. **Cross-Platform Normalization:**
-   - Always normalize Windows backslashes (`\`) to POSIX slashes (`/`) for paths and glob patterns using `normalizePath()`.
-
-4. **100% Verification Suite:**
-   - Every PR must pass 100% of unit tests (`npm test`) and 0 ESLint errors (`npm run lint`).
-   - Never weaken assertions, swallow errors, or delete failing tests to force a pass.
+[AGENTS.md](AGENTS.md) is the authoritative source for scope, compatibility,
+dependencies and verification rules. This guide covers contribution mechanics,
+review and attribution.
 
 ---
 
@@ -36,7 +23,7 @@ All contributions must strictly follow these core invariants:
 3. **Rebase before PR**: `git fetch origin && git rebase origin/main`, then re-run the verification suite. If the rebase leaves an empty diff, the work already landed — do NOT open the PR.
 4. **Open the PR** with a Conventional Commit title, attach full terminal output of `npm test` and `npm run lint`, and reference any related issues.
 5. **CI gates** run on every PR: unit suite, ESLint, doc-sync, agent scope guard, stale-base gate (> 25 commits behind `origin/main` is rejected), and asset integrity. Once green, the PR is merged per the risk-tier review requirements below (maintainer review for `R1`–`R3`, auto-merge eligible for `R0`).
-6. **Do not push to `main`.** Direct `main` pushes are reserved for maintainers executing the release protocol in `AGENTS.md` § 7 (release commits are pushed to `main` first so CI verifies the exact commit that will be tagged; the pipeline refuses to release a commit CI has not verified).
+6. **Do not push to `main`.** Direct `main` pushes are reserved for maintainers executing the release protocol in `docs/releasing.md` (release commits are pushed to `main` first so CI verifies the exact commit that will be tagged; the pipeline refuses to release a commit CI has not verified).
 7. **Keep the diff small**: stay under the 75 KB diff payload budget (`git diff | wc -c`).
 
 ---

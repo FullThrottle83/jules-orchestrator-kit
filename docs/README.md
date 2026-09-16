@@ -7,7 +7,7 @@ Start here. Find the page that matches what you are trying to do; every path is 
 ## I want to…
 
 ### …get started / onboard a repository
-- **[README → Quickstart](../README.md#quickstart)** — the three-step `init` → commit → `task create` flow, provider probe, and verification-profile selection.
+- **[README → Quickstart](../README.md#quickstart)** — the `init` → review/commit → task → dispatch → verify flow, provider probe, and verification-profile selection.
 - [EXAMPLES.md](../EXAMPLES.md) — production task envelope recipes to copy.
 
 ### …configure an agent, provider, or the gate
@@ -19,7 +19,7 @@ Start here. Find the page that matches what you are trying to do; every path is 
 - [docs/COMMAND_REFERENCE.md](COMMAND_REFERENCE.md) — flags for `check`/`gate`, `mutate`, `coverage`, `probe`, `perf`, `assert`, and `evidence`.
 
 ### …dispatch tasks and run the queue
-- [README → Key Workflows](../README.md#key-workflows) — persona → command mapping and triage boundaries (what to dispatch vs. keep human-in-the-loop).
+- [README → Key Workflows](../README.md#key-workflows) — everyday commands and task selection (what to dispatch vs. keep human-in-the-loop).
 - [docs/COMMAND_REFERENCE.md](COMMAND_REFERENCE.md) — `task create`, `task template`, `dispatch`, `queue`, `swarm`, `retry`, `pr harvest`.
 - [EXAMPLES.md](../EXAMPLES.md) — envelope formats, roles, and templates.
 
@@ -32,26 +32,27 @@ Start here. Find the page that matches what you are trying to do; every path is 
 
 ### …look up a CLI flag or exit code
 - **[docs/COMMAND_REFERENCE.md](COMMAND_REFERENCE.md)** — generated from the same registry that powers `agentctl --help`; always current.
-- [AGENTS.md → Exit Code Registry](../AGENTS.md) — exit codes `0`–`8` (+`188`) and remediation for each.
+- [Architecture → Exit Code Registry](architecture.md#exit-code-registry) — exit codes `0`–`8` (+`188`) and remediation for each.
 
 ### …set the rules an autonomous worker follows
-- **[AGENTS.md](../AGENTS.md)** — authoritative worker directives for this repository (triage, MCP invariants, operator commands, guardrails, exit codes, release protocol).
-- [JULES_RULES_TEMPLATE.md](../JULES_RULES_TEMPLATE.md) — the scaffold master `agentctl init` copies into target repositories; §1–§6 are kept byte-identical to `AGENTS.md` (between the `SYNC-CORE` anchors).
-- [.agent/rules/jules-protocol.md](../.agent/rules/jules-protocol.md) — protocol details referenced by both.
+- **[AGENTS.md](../AGENTS.md)** — authoritative contributor instructions for this repository.
+- [JULES_RULES_TEMPLATE.md](../JULES_RULES_TEMPLATE.md) — the scaffold master `agentctl init` copies into target repositories; the shared working rules are kept byte-identical to `AGENTS.md` (between the `SYNC-CORE` anchors).
+- [Jules provider notes](providers/jules.md) — setup, approval handling and operational limitations. The legacy protocol file is a compatibility reference only.
 
 ### …remove the kit from a repository
-- **[docs/uninstall.md](uninstall.md)** — full inventory of scaffolded assets and runtime state, and the exact removal procedure (short version in the README).
+- **[docs/uninstall.md](uninstall.md)** — full inventory of scaffolded assets and runtime state, and the removal procedure.
 
 ### …contribute, report, or release
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — PR-based contribution flow, Conventional Commits, and commit-signing rules.
 - [CONTRIBUTORS.md](../CONTRIBUTORS.md) — attribution ledger: human maintainers and autonomous coding agents.
 - [SECURITY.md](../SECURITY.md) — supported versions and vulnerability disclosure.
-- [AGENTS.md → Release Protocol](../AGENTS.md) — changelog-first version bumps and `npm run release` gates.
-- [docs/jules-quality-plan.md](jules-quality-plan.md) — the internal quality program behind the gates.
+- [Release procedure](releasing.md) — changelog-first version bumps and `npm run release` gates.
+- [npm payload audit](package-payload.md) — file reachability and packed-package verification.
+- [Historical reports](archive/README.md) — earlier audits retained for traceability.
 
 ### …read history and plans
 - [CHANGELOG.md](../CHANGELOG.md) — full release history (Keep a Changelog format), including archived roadmap milestone summaries for v0.20.0–v0.65.0.
-- [ROADMAP_V1.md](../ROADMAP_V1.md) — the last 10 shipped milestones plus forward targets for v0.73.0 and v1.0.0.
+- [ROADMAP_V1.md](../ROADMAP_V1.md) — current priorities and prerequisites for v1.0.
 
 ---
 
@@ -59,4 +60,4 @@ Start here. Find the page that matches what you are trying to do; every path is 
 
 - `docs/COMMAND_REFERENCE.md` is **generated** — regenerate with `node scripts/generate-command-reference.mjs`, never hand-edit.
 - `npm run jules:doc-sync` enforces README/ROADMAP/CHANGELOG/SECURITY agreement with `package.json` and the real test counts; `npm run jules:rules-lint` enforces the agent rule-file budgets.
-- When trimming history out of `ROADMAP_V1.md`, archive it into `CHANGELOG.md` — never delete release data.
+- Keep released behavior and version history in `CHANGELOG.md`; use the roadmap for current priorities.

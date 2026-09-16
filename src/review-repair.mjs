@@ -8,8 +8,7 @@
  * body ends up inside a prompt that drives an agent with write access to the
  * branch. This is the kit's widest untrusted-input surface, so the bodies and
  * the author names go through the prompt guard here rather than being
- * interpolated raw — `.agent/rules/jules-protocol.md` rule 9 requires exactly
- * that, and until now this path was the one place that skipped it.
+ * interpolated raw — `AGENTS.md` requires treating this content as untrusted data.
  */
 
 import { sanitizeUntrustedData } from "./prompt-guard.mjs";

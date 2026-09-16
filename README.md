@@ -1,197 +1,210 @@
-<div align="center">
-
 # jules-orchestrator-kit
 
-### Task orchestration and automated verification harness for coding agents
+Task dispatch and local verification for coding agents. Requires Node.js 20+ and
+Git; uses no third-party runtime dependencies.
 
-[![Jules PR Audit](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml/badge.svg)](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml)
 [![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org)
-[![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20native-blue.svg)](https://nodejs.org)
-[![Platform: Linux | macOS | Windows](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blueviolet.svg)](https://nodejs.org)
+[![CI](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml/badge.svg)](https://github.com/FullThrottle83/jules-orchestrator-kit/actions/workflows/jules-audit.yml)
 
-**Zero-dependency safety gatekeeper, scoped sandboxing, and automated verification for coding agents.**
-Runs deterministic test verification, secret scrubbing, and automated repair loops across any stack or monorepo before opening Pull Requests.
-
-[Quickstart](#quickstart) • [Key Workflows](#key-workflows) • [Architecture](#architecture) • [Verification Profiles](#verification-profiles) • [CLI](#cli) • [Docs](docs/README.md)
-
-<img src="docs/assets/hero-flow.svg" alt="Autonomous Orchestration Pipeline" width="100%" />
-
-</div>
-
----
-
-<a id="overview"></a>
 ## Overview
 
-> **`jules-orchestrator-kit` serves as a safety gate and automated test runner for AI coding agents.**
-> It drafts falsifiable task envelopes, executes verification commands in an isolated sandbox, automatically retries on test failures using captured diagnostics, and approves PRs only when 100% of tests pass cleanly.
+Use the kit to describe a scoped coding task, send it to Google Jules or an
+installed Claude Code, Codex or Gemini CLI, and verify the resulting changes.
+You can also run local checks without connecting an agent provider.
 
-* **Multi-Provider Dispatch:** Google Jules (hosted REST), Claude Code CLI, OpenAI Codex CLI, and Gemini CLI; `agentctl providers` reports what this machine can dispatch to. Vendor-neutral `AGENT_*`/`JULES_*` environment variables.
-* **Dynamic Verification Profiles:** `verify.profile: minimal | standard | max` schedules linting, tests, builds, AST mutation testing, and stability probing per toolchain. Stack-native CI via `agentctl ci init`.
-* **Autonomous OODA Repair Loop:** Captures test stdout/stderr traces, fingerprints failure patterns, and runs automated repair cycles (up to 3 turns) before requesting human intervention.
-* **Fail-Closed Security:** Deny-before-Allow scope rules, high-entropy and base64 secret scrubbing, semantic test-tamper detection (weakened/removed/vacuous assertions, dead-guard conditions), binary & symlink payload inspection, and a strict 75 KB diff governor.
-* **Zero Runtime Dependencies:** Native Node.js 20+ standard modules only. Cross-platform parity verified on Linux, macOS, and Windows (Node 20, 22, 24).
-* **Mechanically Verified:** Comprehensive test suite of **1530 unit tests across 204 suites**, with 59 activation-coverage canaries and 100% pass rate.
+**Dispatch and verification are separate.** Dispatch sends the task; `gate` runs
+configured checks on changes. `gate --fix` can request automated repairs. Provider
+output and passing checks still need review before merging.
 
-Any-repository configuration (monorepo scoping, 26+ ecosystem stack detection, provider selection, CI generation) is derived from your manifests — see the [Configuration Reference](docs/configuration.md).
+The current release is **v0.73.0**, a pre-1.0 release. A long-term stability policy is a
+[v1.0 goal](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/ROADMAP_V1.md).
 
----
-
-<a id="quickstart"></a>
 ## Quickstart
 
-Configure any repository in three steps. `init` inspects project manifests, detects the stack, probes the test runner, and scaffolds repository guardrails:
+Start in an existing Git repository with working tests. Commit or stash unrelated
+changes so that you can review exactly what setup adds. Node.js runs the kit;
+your project's own runtime and test tools must also be installed.
+
+### 1. Configure the repository
 
 ```bash
-# 1. Scaffold configuration, AGENTS.md, role prompts, and guardrails
-#    Auto-detects Python, Rust, Go, Bun, Deno, Node, PHP, .NET, etc.
-#    Omit --yes to select provider, plan tier, and verification profile interactively.
-npx jules-orchestrator-kit init --yes
+npx jules-orchestrator-kit init
 ```
 
-```bash
-# 2. Commit the scaffolded configuration
-#    .agent/config.yml is protected by scope guards; committing establishes the trusted base policy.
-git add .agent AGENTS.md SPEC.md CONSTRAINTS.md .gitignore && git commit -m "chore: add agent config"
-```
+The wizard detects the project and asks about provider and verification settings.
+Use `init --yes` to accept defaults. It creates `.agent/config.yml`, agent
+instructions, role prompts and project contract files. Inspect the generated
+configuration and diff, especially the test command and protected paths.
 
 ```bash
-# 3. Author a scoped, verified task envelope
-#    Interactive by default. Pass --prompt and --verify to define requirements directly:
-npx jules-orchestrator-kit task create -p "Refactor invoice calculation" --verify "npm test"
+git diff
+git status --short
 ```
 
+Stage the generated files you reviewed, then commit them. The committed
+configuration establishes the trusted base policy used by verification. Setup
+preserves existing files by default; avoid `--force` unless replacement is intended.
+
+### 2. Check provider readiness
+
 ```bash
-# Which agents can this machine dispatch to, and what is missing for the rest?
 npx jules-orchestrator-kit providers
-
-# How hard should the gate verify agent work? (minimal | standard | max)
-npx jules-orchestrator-kit profile --set max
 ```
 
-> [!TIP]
-> Running `agentctl` without arguments inspects the local repository state (git status, active API keys, queued tasks) and prints the immediate next action. Install globally (`npm install -g jules-orchestrator-kit`) for direct `agentctl` access.
+This reports which providers are available and what setup is missing. Remote
+Jules dispatch needs credentials; local CLI providers need their installed,
+authenticated CLI. Follow the
+[configuration reference](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/configuration.md).
+Never commit API keys.
 
----
+### 3. Create and review a task
 
-<a id="key-workflows"></a>
-## Key Workflows
+```bash
+npx jules-orchestrator-kit task create \
+  --prompt "Refactor invoice calculation without changing totals" \
+  --verify "npm test"
+```
 
-| Persona / Team | Primary Value | Everyday Commands |
-| :--- | :--- | :--- |
-| **Solo Developers** | Safely experiment with autonomous coding without risking broken branches, leaked API keys, or ruined git history. | `agentctl init`<br/>`agentctl task create` |
-| **Repo Maintainers** | Automate bug fixes, dependency bumps, and PR reviews with self-healing test loops. | `agentctl gate`<br/>`agentctl queue` |
-| **Monorepo Teams** | Isolate subproject verification (`backend/`, `frontend/`, `cli/`) so agent edits never thrash global test suites. | `agentctl swarm`<br/>`agentctl lock` |
-| **Platform & Security** | Enforce fail-closed security policies, pre-commit secret scrubbing (including base64), and strict 75 KB diff limits. | `agentctl doctor`<br/>`agentctl dashboard` |
+Replace the example objective and test command with your project's requirements.
+A task envelope is a Markdown file under `.agent/jules-queue/` containing the
+objective, scope and verification command. Review it before sending it to an agent.
 
-### Triage: When to Dispatch Tasks
+```bash
+# Preview queued work without dispatching it
+npx jules-orchestrator-kit queue --dry-run
 
-**Ideal tasks (high merge rate):** scoped bug fixes and code changes verifiable by unit tests (`pytest`, `npm test`, `cargo test`, `dotnet test`, `go test`) · type & linter migrations · dependency bumps and CVE patches · backend refactoring · headless E2E/Playwright-verified UI changes.
+# Send the reviewed task, using the path printed by task create
+npx jules-orchestrator-kit dispatch ".agent/jules-queue/TASK-<id>.md"
+```
 
-**Out of scope (keep human-in-the-loop):** unverifiable visual UI tweaks without automated regression tests · closed proprietary platforms without a CLI or git integration · unmocked live cloud systems · protected infrastructure files (`.github/workflows/`, deployment keys, agent gate rules — blocked fail-closed by the Agent Scope Guard).
+Replace `TASK-<id>.md` with the actual filename. Dispatch can use provider quota
+or incur provider costs. Jules can pause for plan approval; see the
+[Jules notes](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/providers/jules.md).
 
-Task envelope recipes: [EXAMPLES.md](EXAMPLES.md).
+### 4. Verify and review the changes
 
----
+Once the provider's changes are available on your local branch:
 
-<a id="architecture"></a>
+```bash
+npx jules-orchestrator-kit gate
+```
+
+Inspect the gate report and the complete diff before merging. For hosted Jules,
+fetch and check out the resulting branch first; local CLI providers leave changes
+in the working tree. Creating or dispatching an envelope does not verify the result.
+
+For direct `agentctl` commands, install globally with
+`npm install -g jules-orchestrator-kit`. All examples above also work as
+`agentctl <command>` after installation.
+
+## Key workflows
+
+| Goal | Command |
+| --- | --- |
+| Inspect provider setup | `agentctl providers` |
+| Create a scoped task | `agentctl task create` |
+| Preview queued work | `agentctl queue --dry-run` |
+| Check changes locally | `agentctl gate` |
+| Verify and request repairs | `agentctl gate --fix` |
+| Diagnose setup | `agentctl doctor` |
+| Inspect a command's flags | `agentctl help <command>` |
+
+Start with small changes and an observable acceptance condition. Visual decisions,
+production credentials and integration environments need explicit human setup.
+See [task examples](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/EXAMPLES.md).
+
+## Verification profiles
+
+| Profile | Verification stages |
+| --- | --- |
+| `minimal` | Setup and tests |
+| `standard` | Setup, lint, tests, build and diff anti-tamper checks |
+| `max` | Standard stages plus mutation scoring, Node V8 diff coverage and flakiness probes |
+
+Select with `agentctl profile --set standard`. Stages depend on the detected stack
+and configuration; unsupported checks are reported. Review those diagnostics
+rather than assuming every profile runs every check on every language.
+
+Local checks do not require a provider API key. The project's configured commands
+may themselves need dependencies, services or network access. Automated repairs
+require a provider.
+
 ## Architecture
 
-Two decoupled pipelines — **Dispatch** (`task create` → `queue`/`dispatch`, routed and hydrated per provider) and **Verification** (`agentctl gate [--fix]`, four audit phases plus the OODA repair loop) — communicate through the repository and the telemetry ledger.
+The dispatch pipeline builds task context and calls a provider. The verification
+pipeline evaluates scope, payload, security findings and configured commands.
+The repository and local state connect them. The package exposes an ESM SDK and a
+stdio MCP server alongside the CLI.
 
-<p align="center">
-  <img src="docs/assets/architecture-layers.svg" alt="Control Plane Architecture Layers" width="100%" />
-</p>
+See [architecture and exit codes](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/architecture.md)
+and [SDK/MCP integration](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/sdk.md).
 
-Full sequence diagrams (verification & repair loop, monorepo boundary resolver, swarm topology, silence governor, flaky-healing swarm): [docs/architecture.md](docs/architecture.md).
-
----
-
-<a id="verification-profiles"></a>
-## Verification Profiles
-
-| Profile | Stages | Recommended Use |
-| :--- | :--- | :--- |
-| `minimal` | Setup → Tests | Large/slow test suites or initial project onboarding. |
-| `standard` | Setup → Lint → Tests → Build → Diff Anti-Tamper | Default gate for routine pull requests. |
-| `max` | All stages above → AST Mutation Scoring → V8 Diff Coverage *(Node)* → 3-Pass Flakiness Probe | High-risk refactors or critical infrastructure changes. |
-
-Profiles evaluate gates dynamically per runtime: unsupported platform checks (such as V8 coverage on Cargo or Go projects) are bypassed with explicit diagnostic logs rather than failing the gate.
-
-All security, integrity, and test gates run locally without network access or API keys (`agentctl check`, `gate`, `mutate`, `coverage`, `probe`, `evidence`, `doctor`). Agent providers are required only for dispatching autonomous tasks.
-
----
-
-<a id="cli"></a>
 ## CLI
 
-`agentctl` is the unified CLI, available via `npx jules-orchestrator-kit <command>` or `agentctl <command>`. Core commands:
-
 | Command | Description |
-| :--- | :--- |
-| `init` | Onboarding wizard & stack detector; scaffolds `.agent/config.yml`, `AGENTS.md`, role prompts, and guardrails. |
-| `task create` / `task template` | Author falsifiable task envelopes, or synthesize pre-calibrated ones (Web, Hardening, Universal, Deep Think). |
-| `dispatch` / `queue` / `swarm` | Send tasks to the active provider, run queued envelopes with DAG resolution, or run parallel worker slots. |
-| `check` / `gate` | Security, secret, scope, payload, and tiered verification gates with `--fix` OODA repair. |
-| `mutate` / `coverage` / `probe` / `perf` | Diff mutation scoring, V8 diff coverage, flakiness probing, event-loop lag. |
-| `providers` / `provider set` / `profile` / `ci init` | Provider readiness, switching, verification depth, stack-native CI generation. |
-| `doctor` / `evidence` / `flaky` / `rollback` | Diagnostics, SHA-256 evidence manifests, flaky quarantine management, checkpoint restore. |
-| `dashboard` | `agentctl dashboard [port] [--port <n>]` — zero-dependency local telemetry & audit visualizer (default port 4100; valid range 1024–65535). |
-| `mcp` / `mcp init` | stdio Model Context Protocol server for Claude, Cursor, and Antigravity, plus 1-click client config. |
+| --- | --- |
+| `dashboard` | Local telemetry viewer; default port 4100. Set another port with `--port <n>`. |
 
-The exhaustive per-command flag reference is generated from the same registry that powers `--help`: [docs/COMMAND_REFERENCE.md](docs/COMMAND_REFERENCE.md). Exit codes `0`–`8` are standardized — see the registry in [AGENTS.md](AGENTS.md#6-exit-code-registry--remediation-matrix).
 
----
+The [command reference](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/COMMAND_REFERENCE.md)
+is generated from the registry used by `--help`. It covers dispatch, queues,
+verification, evidence, diagnostics and the supported aliases.
 
-## 🧹 Complete Uninstall / Removing the Kit (Undo Init)
+## Development and verification
 
-Note that `agentctl clean` performs operational maintenance (clearing ephemeral locks, temporary worktrees, and evidence caches), not an uninstaller. To completely undo `init`:
+Clone this repository to run its tests; the npm package excludes the test suite.
 
 ```bash
-# Remove tracked orchestrator assets (skips any files that were not scaffolded)
-git rm -rf --ignore-unmatch \
-  .agent \
-  AGENTS.md \
-  SPEC.md \
-  CONSTRAINTS.md \
-  DESIGN.md \
-  .github/workflows/agent-gate.yml \
-  .gitlab-ci.agent-gate.yml \
-  .cursor/rules/jules.mdc
+npm ci
+npm test
+npm run lint
+npm run jules:doc-sync
+npm run jules:rules-lint
+npm run package-integrity
+npm run guard-reach
+```
 
-# Remove untracked runtime directories and temporary caches
+The recorded baseline is **1530 unit tests across 204 suites**. Doc-sync compares
+that count with an actual run. Counts do not establish correctness for every
+provider or project. See
+[contributing](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTING.md)
+for the review process.
+
+## Documentation and removal
+
+- [Documentation index](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/README.md)
+- [Configuration](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/configuration.md)
+- [Uninstall and generated-file inventory](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/uninstall.md)
+- [Changelog](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CHANGELOG.md)
+- [Security policy](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/SECURITY.md)
+
+## Complete Uninstall / Removing the Kit (Undo Init)
+
+`agentctl clean` performs operational maintenance; it is not an uninstaller.
+First identify which files setup created and which files already belonged to your
+project. For shared files, remove only the kit's additions using Git history.
+
+For a repository where **all listed paths belong exclusively to the kit**, remove
+the tracked scaffold and runtime state as follows. Adapt this list first if any
+path contains your own instructions, configuration or queued work:
+
+```bash
+git rm -rf --ignore-unmatch .agent AGENTS.md SPEC.md CONSTRAINTS.md DESIGN.md \
+  .github/workflows/agent-gate.yml .gitlab-ci.agent-gate.yml .cursor/rules/jules.mdc
 rm -rf .agent .agentctl
-
-# Revert the appended runtime-state block in .gitignore, then optionally:
 npm uninstall -g jules-orchestrator-kit
 ```
 
-Full inventory of generated assets and runtime state: [docs/uninstall.md](docs/uninstall.md).
+Remove the kit's appended `.gitignore` block while preserving other entries.
+See the uninstall guide for the complete inventory.
 
----
+## Limitations and attribution
 
-## 📖 Documentation
+Secret scanning, test-tamper detection and prompt transformations are checks with
+coverage limits, not a security guarantee. Prompt substitutions can change meaning;
+review exact operational instructions. See the Jules notes for details.
 
-Start at the **[docs sitemap](docs/README.md)** — it maps "I want to …" workflows to the right page: [Configuration Reference](docs/configuration.md) · [CLI Command Reference](docs/COMMAND_REFERENCE.md) · [Architecture & Pipeline Flow](docs/architecture.md) · [SDK & MCP Integrations](docs/sdk.md) · [Examples & Task Envelopes](EXAMPLES.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP_V1.md) · [Security Policy](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Contributors & Provenance](CONTRIBUTORS.md) · [Google Jules Official Documentation](https://jules.google).
-
----
-
-## 🤝 Contributions & Provenance
-
-`jules-orchestrator-kit` is a **human-led, agent-assisted** open-source project. It is maintained by **Jonas Pudas** ([`FullThrottle83`](https://github.com/FullThrottle83)) and developed with supervised autonomous coding agents — **`jules-agent`** (Google Jules) and **Arena Agent** — which author code inside the task-envelope and verification framework defined in `AGENTS.md`. In the `git log` (2026-07-26 → 2026-09-09, 448 commits) the majority of commits (~80%) are authored by autonomous agents and ~18% by the human maintainers. Every commit is CI-verified and merged under maintainer oversight, and agent authorship is preserved transparently in git `Author`/`Co-authored-by` metadata — it is never hidden or rewritten. See [`CONTRIBUTORS.md`](CONTRIBUTORS.md) for the full provenance ledger and [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution rules.
-
----
-
-## ⚖️ Disclaimer
-
-`jules-orchestrator-kit` is an independent, community-driven open-source project and is not affiliated with, endorsed by, or sponsored by Google, Google LLC, or Alphabet Inc. "Google", "Google Jules", and related marks are trademarks of Google LLC.
-
-**Prompt sanitization is not a security boundary.** `sanitizePromptVocabulary()` (`src/prompt-guard.mjs`) rewrites high-trigger operational terms in prompt prose (e.g. `kill -9` → `terminate with SIGTERM`) to reduce false-positive provider content-filter refusals; fenced code blocks and inline code spans are preserved verbatim. These substitutions can change technical meaning (SIGTERM is not equivalent to SIGKILL), do not guarantee provider acceptance, and do not replace scope checks, execution envelopes, secret redaction, or verification. Review transformed prompt text when exact operational semantics matter.
-
----
-
-<div align="center">
-  <p><b>jules-orchestrator-kit</b> • Zero runtime dependencies • MIT License • Universal safety and verification for autonomous coding agents.</p>
-</div>
+Maintained by Jonas Pudas with agent-assisted contributions recorded in Git history
+and the [contributors ledger](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTORS.md).
+Licensed under MIT. This independent project is not affiliated with or endorsed by
+Google; Google and Google Jules are trademarks of their respective owners.

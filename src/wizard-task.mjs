@@ -15,8 +15,7 @@ import { getWebTemplate, synthesizeWebEnvelope } from "./web-templates.mjs";
  *
  * The list is there to steer the agent, not to be exhaustive — the gate is what
  * enforces it. Past ~12 entries the footer starts crowding the task itself,
- * which is the attention-drift failure `.agent/rules/jules-protocol.md` rule 16
- * warns about.
+ * making it harder to identify the assigned scope.
  */
 const FOOTER_PROTECTED_LIMIT = 12;
 

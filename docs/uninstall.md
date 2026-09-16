@@ -22,10 +22,13 @@ During execution, the kit produces untracked runtime artifacts in:
 
 ## 3. Removal Procedure (Preserving Pre-Existing User Files)
 
-To completely undo `init` and restore your working tree to its exact original state:
+Review Git history first to distinguish files created by the kit from pre-existing
+files it appended to. Remove only kit additions from shared files. The commands
+below apply only when every listed path belongs exclusively to the kit; they do
+not detect ownership and will remove user content in those paths too.
 
 ```bash
-# 1. Remove tracked orchestrator assets (skips any files that were not scaffolded)
+# 1. After reviewing ownership, remove exclusively kit-owned tracked assets
 git rm -rf --ignore-unmatch \
   .agent \
   AGENTS.md \
@@ -41,7 +44,7 @@ rm -rf .agent .agentctl
 
 # 3. Clean up .gitignore additions
 # Revert the appended "# Jules Orchestrator runtime state & credentials" block from .gitignore
-git checkout .gitignore   # If .gitignore had no other unstaged changes, or edit by hand
+# Edit only that block; preserve other project ignore rules.
 
 # 4. Optional: Uninstall global CLI package
 npm uninstall -g jules-orchestrator-kit
