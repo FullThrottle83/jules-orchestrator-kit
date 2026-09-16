@@ -1,4 +1,7 @@
 # Test Forensics Audit Report
+
+> Historical audit of `audit/P07-test-forensics`. Counts, paths and findings below
+> describe that snapshot, not the current release. Retained for traceability.
 ## Branch: audit/P07-test-forensics
 ## Repository: jules-orchestrator-kit (Node 20+ ESM, zero runtime dependencies)
 

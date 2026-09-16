@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Consolidated contributor instructions in `AGENTS.md` and shortened the installed
+  rules template while preserving scaffold detection and existing file paths.
+- Reworked onboarding, moved Jules guidance to provider documentation and archived
+  historical audits. Simplified the roadmap and removed release-note epigraphs.
+- Excluded repository-only `AGENTS.md` and `ROADMAP_V1.md` from the npm payload;
+  retained runtime modules, script entry points and scaffold assets.
+
 ## [0.73.0] - 2026-09-09
-*A system that cannot be falsified cannot be trusted; an autonomous agent without boundaries is a runaway process.*
 
 ### Added
 - **CLI Command Registry & Auto-Generated Documentation (P06) (`src/ops/command-registry.mjs`, `docs/COMMAND_REFERENCE.md`)**: Reconciled all 49 CLI commands and flags with a single source of truth registry. Added `agentctl help <cmd>`, interactive wizard routing, and automated generation and doc-sync validation of `docs/COMMAND_REFERENCE.md`.
@@ -55,7 +62,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Environment Tier Specification & Preset Parity (D18) (`.env.example`, `src/config.mjs`, `test/config_tier.test.mjs`)**: Documented `JULES_TIER` (`free` | `pro` | `ultra`) in `.env.example` and verified parity between `TIER_PRESETS` and vendor tier specifications.
 
 ## [0.72.3] - 2026-09-08
-*A directive not understood is silence; a tag not stripped is a backdoor.*
 
 Hardens prompt boundaries against Unicode Tag ASCII smuggling, expands clinical vocabulary to mitigate Vertex AI false-positive aborts, injects deep planning directives, and grounds runtime VM/cgroup constraints:
 - **Unicode Tag Plane & ASCII Smuggling Defense (`src/prompt-guard.mjs`, `src/security.mjs`)**: Gemini Pro tokenizes invisible Unicode Tag characters (`U+E0000` to `U+E007F`) as operational ASCII tokens. Both `ZERO_WIDTH_AND_BIDI_REGEX` and `INVISIBLE_CHARS` now strip and scan Plane 14 tag characters (`[\u{E0000}-\u{E007F}]`), preventing hidden prompt injections in GitHub issues/PR comments and credential hiding in diffs.
@@ -64,7 +70,6 @@ Hardens prompt boundaries against Unicode Tag ASCII smuggling, expands clinical 
 - **Grounded VM & cgroup Invariant Documentation (`.agent/rules/jules-protocol.md`)**: Formally documented KVM sandbox boundaries: Ubuntu 24.04.2 LTS (`x86_64`), cgroup v2 hard limit 8 GiB RAM with zero swap (`memory.swap.max = 0`), 20–30 GiB OverlayFS writable quota, `/workspace` repo mount, headless supervisor init (no systemd), and the three-source startup ingestion hierarchy (Task Prompt, root `AGENTS.md`, and root `README.md`).
 
 ## [0.72.2] - 2026-09-08
-*A test suite that writes to stderr did not write silence.*
 
 Fixes stream preservation in child process execution, stack-detection build defaults, and CLI flag parity uncovered during Bun + TypeScript trial execution:
 - **Child Process Stream Fidelity & Stderr Preservation (`src/git.mjs`)**: `runCmd()` used `execSync`/`execFileSync` which hardcoded `stderr: ""` on zero exit status. Test runners that print progress and summary statistics to `stderr` (notably `bun test`) had their results silenced, causing `parseCollectedTests` to report unverified test counts. `runCmd()` now invokes `spawnSync` natively, capturing both `stdout` and `stderr` streams regardless of exit status.
@@ -72,7 +77,6 @@ Fixes stream preservation in child process execution, stack-detection build defa
 - **CLI Ergonomics & Alias Parity (`bin/agentctl.mjs`)**: Added `--verify` as a first-class alias for `--verify-cmd` across `agentctl task create`, `task template`, and `task optimize`.
 
 ## [0.72.1] - 2026-09-08
-*A diff cannot judge what it cannot see.*
 
 Fixes staged-mode diff extraction and cross-language dead-guard detection uncovered during polyglot trial execution on Python/Make repositories:
 - **Staged Mode Diff Fidelity (`src/git.mjs`)**: `diffText(root, base, "staged")` failed to query the git index, falling through to `git diff <base>...HEAD`. Consequently, staged modifications (`git add`) on feature branches were omitted from the diff passed to the secret scanner and anti-tamper guard. `diffText` now queries `git diff --cached <base>` in staged mode, ensuring cached index additions are fully inspected.
@@ -80,7 +84,6 @@ Fixes staged-mode diff extraction and cross-language dead-guard detection uncove
 - **Assertion Coverage in Dead Conditions (`src/security.mjs`)**: `VACUOUS_ASSERTION` now detects both failure calls (`FAILURE_CALL`) and test assertions (`ASSERTION_PATTERN`) inside dead blocks.
 
 ## [0.72.0] - 2026-09-08
-*A guard is not a policy if the diff under review can rewrite the rules.*
 
 A fifth cold-start audit, against published v0.71.0 on four polyglot repositories (`p-limit`, `itsdangerous`, `is`, `mini_markdown`). Twenty-two findings across three tiers:
 - Tier 1 (Security & Isolation): uncommitted scaffold tampering, untrusted working-tree configs in staged/committed evaluation, and unisolated snapshot leaks.
@@ -110,7 +113,6 @@ A fifth cold-start audit, against published v0.71.0 on four polyglot repositorie
 - **Cold-Start Trial Regression Suites**: Added 52 new regression tests across `test/cold-start-trial-f01-f12.test.mjs`, `test/cold-start-trial-f06-f11.test.mjs`, and `test/cold-start-trial-f13-f22.test.mjs`.
 
 ## [0.71.0] - 2026-09-05
-*A blanket is not a check, and silence is not a suite.*
 
 A fourth cold-start trial, against v0.70.0 on four repositories nobody here chose. Seven findings, and this is the first trial where every one of them held: no quoted output was fabricated, and all four repository SHAs matched. Two of them prove entries in this file wrong, which is recorded below rather than quietly amended.
 
@@ -144,7 +146,6 @@ Two `### Not Reproduced` claims in **[0.69.0]** were wrong, and both were wrong 
 One finding in the fourth trial quoted output that does not reproduce: its `--allow-test-change expectation` case shows `APPROVED (Exit 0)`, where the run rejects at `Exit 4` because the reporter's own `sed` genuinely breaks the dotenv suite — the same fixture artefact this project has hit in every trial. The finding itself, that no override leaves a trace in the report, held and is fixed above.
 
 ## [0.70.0] - 2026-09-05
-*A session that has not finished is not a session that passed.*
 
 An audit of the Jules session layer against the API it talks to. Twelve findings, each traced to a file and line in `docs/jules-quality-plan.md`; the three below are the ones that let the kit believe something about a session that was not true.
 
@@ -161,7 +162,6 @@ An audit of the Jules session layer against the API it talks to. Twelve findings
 - **A Non-Terminal Session Is Announced Before The Gate Runs (`src/engine.mjs`)**: the repair loop polled the session and discarded the answer, then ran re-verification against a tree the agent might not have finished writing. The verdict is now read: a non-terminal session prints `[SESSION_NOT_TERMINAL]` naming what it is waiting on and appends a `session_not_terminal` telemetry event. The gate still runs either way — it is the authority on whether the change works — but it no longer runs silently on a half-applied patch.
 
 ## [0.69.0] - 2026-09-04
-*A denominator is not evidence if the things counted in it were never read.*
 
 A third cold-start trial against v0.68.0. Twelve findings; six reproduced, and the two most serious were graded lower by the trial than they deserved. The pattern in both: the guard recognised a line as an assertion, counted it in `assertionsSeen`, and reported `PASS` without ever reading the value being asserted. `UNREADABLE` exists precisely so that "I could not read this" and "I read this and it is fine" look different — and a line could pass the readability test while its expectation stayed opaque.
 
@@ -191,7 +191,6 @@ Six of the twelve did not hold, and five quoted terminal output that does not ex
 - **Eleven Cases In The Policy Contract (`src/guard-policy.mjs`)**: seven canaries for the expectation forms that were invisible — JUnit and PHPUnit expected-first, `assertIn`, `assertNotIn`, and regex patterns in `toMatch`, `toThrow` and RSpec `match` — and four innocent edits for the renames that were called tampering, plus JUnit 4's message-first form, which must stay silent. 42 canaries, 16 innocent edits.
 
 ## [0.68.0] - 2026-09-04
-*A check that examined nothing does not get to say APPROVED.*
 
 A second cold-start trial against v0.67.0, run as an unprimed stranger against the published package. Thirteen findings; eleven reproduced.
 
@@ -210,7 +209,6 @@ A second cold-start trial against v0.67.0, run as an unprimed stranger against t
 Two findings did not reproduce against the shipped code. The assertion-message case (`assert enc == expect` → `assert enc == expect, "..."`) returns `PASS` on a real clone of `pallets/itsdangerous` running the reported command verbatim — and the transcript names a function, `test_int_to_bytes`, that the repository does not contain. The scaffold-exemption case does not collapse on an untracked file; it collapses on a *protected* one, such as a lockfile, which is the rule working as designed.
 
 ## [0.67.0] - 2026-09-04
-*The last four from the trial, and the rule that a move is not a deletion.*
 
 ### Fixed
 - **A Test Could Be Silenced With Its Own Standard Library (`src/security.mjs`)**: the decorator and annotation forms were covered — `@pytest.mark.skip`, `@Disabled`, `it.skip` — and the in-body call was not. Measured silent on six of seven: `self.skipTest()`, `pytest.skip()`, `raise unittest.SkipTest`, mocha's `this.skip()`, `test.todo()`, and Go's `t.SkipNow()` (`t.Skip(` was listed, but the pattern required the parenthesis immediately after the name). `self.skipTest()` is how unittest's own documentation writes it.
@@ -225,7 +223,6 @@ Two findings did not reproduce against the shipped code. The assertion-message c
 This completes the cold-start trial: all twelve findings closed. Five more were found while reproducing them — a comment read as a line continuation, a message written outside the call, an argument walker that started one character early, line comments that `stripComments` had never stripped, and a test fixture that had left 18 GB in /tmp.
 
 ## [0.66.0] - 2026-09-04
-*Saying nothing and saying approved must not look the same.*
 
 ### Fixed
 - **An Assertion Is A Statement, Not A Line (`src/security.mjs`)**: the denominator counted `+`/`-` lines, so the commonest shape in every language with multi-line calls was invisible — `self.assertEqual(` on an unchanged context line, only its argument lines edited. Nothing among the changed lines matched an assertion pattern and nothing looked assertion-shaped, so a five-element expected list rewritten to one element to match broken output reported `assertionsSeen: 0` and a clean `PASS`. Measured on a real repository: five green phases and `APPROVED`. Detection missed it a second time even after the count was honest, because shape pairing compares statements with their literals blanked and a list that shrank lands in a different bucket; a new argument-level pass takes the arguments as the witness — same assertion, same arity, same *subject*, different expected value.
@@ -241,7 +238,6 @@ This completes the cold-start trial: all twelve findings closed. Five more were 
 The first three come from the cold-start trial's severity-1 findings. Two of them were defects in the mechanism built one release earlier to prevent exactly this class, which is the argument for having somebody else measure.
 
 ## [0.65.0] - 2026-09-04
-*A gate that refuses its own installation is not strict, it is broken.*
 
 Four failures from a cold-start trial on four public repositories nobody here chose. Every one of them meets a user before they have done anything, and every one was invisible to a suite measured in a repository that was already set up correctly by someone who knew how the tool worked.
 
@@ -258,7 +254,6 @@ Four failures from a cold-start trial on four public repositories nobody here ch
 Found by a cold-start trial conducted as an unprimed stranger — install from the registry, `init` on four foreign stacks, then try to make the tool lie. Eleven of its twelve findings reproduced against the shipped code; two were worse than reported. The four here are the ones a user meets first. The rest — the silent-negative family, skip dialects, cross-file test moves, packaging — follow.
 
 ## [0.64.0] - 2026-09-04
-*A guard that cannot read your dialect must say so, not pass.*
 
 ### Fixed
 - **The Package We Published Was Not The Tree We Tested (`package.json`, `src/guard-policy.mjs`)**: `scripts/guard-reach-check.mjs` shipped in the tarball while the policy contract it imports did not, because `files` lists `scripts/` and not `test/`. Unpacked and run, it threw `ERR_MODULE_NOT_FOUND`. The check whose entire purpose is to prove that no guard has silently gone missing was itself silently missing — and every signal that should have caught it (1015 tests, a nine-way matrix, a blocking release) was measured in the source tree, where the file exists by construction. The contract now lives in `src/`, where it is part of the product it describes.
@@ -278,7 +273,6 @@ Found by a cold-start trial conducted as an unprimed stranger — install from t
 - **Test-Language Coverage (`src/security.mjs`)**: `.java`, `.kt`, `.scala`, `.groovy`, `.swift`, `.cs`, `.php`, `.c`, `.cpp`, `.m`, `.sol` and `.rb` are now named explicitly rather than falling through to the JavaScript scanner by default, which is how a `#` comment came to be read as code.
 
 ## [0.63.0] - 2026-09-04
-*A defect that turns a check off cannot be found by the check it turns off.*
 
 ### Added
 - **Activation Coverage (`scripts/guard-reach-check.mjs`, blocking in CI and in `npm run release`)**: the question no existing mechanism could ask — *can every blocking guard still be made red?* When `isTestFile` matched the substring `/test/` and went silent for the standard pytest, Rust and RSpec layouts, five independent safety mechanisms all reported green while working exactly as designed. The unit suite sampled the same distribution the implementation was written from, so its fixtures re-confirmed the dialect it already knew. The doc-sync gate compares counts and versions, and a guard that guards nothing still contributes passing tests. The nine-way CI matrix varies OS and Node version — dimensions orthogonal to the defect; nine runs of `test/foo.test.js` never explore `tests/test_calc.py`. Cold review reads code against its stated intent, and there the code and the intent agreed: the eye supplies the leading slash. And the release gate is a conjunction over those four, where a signal that silently goes absent contributes `true`.
@@ -294,7 +288,6 @@ Found by a cold-start trial conducted as an unprimed stranger — install from t
 Both independent analyses of how the classifier defect survived converged on this mechanism — canaries plus activation coverage, and the rule that a guard must report what it examined rather than only what it found. Neither had seen the other's work.
 
 ## [0.62.0] - 2026-09-04
-*A guard that reports "pass" without saying what it examined is reporting the wrong thing.*
 
 ### Fixed
 - **A File's Existence Was Taken As A Claim About Its Contents (`src/stack-detector.mjs`)**: a `Makefile` in the root produced `make test` whether or not it declared a `test` target — measured on a repository whose `package.json` declared a perfectly good `vitest run`, where `make test` exits 2 with "No rule to make target". A hard red on day one is how a user learns the gate is broken and turns it off. `app.json` likewise claimed a Node stack for a Rust repository with no `package.json` in it. Both now have to earn the claim.
@@ -312,7 +305,6 @@ Both independent analyses of how the classifier defect survived converged on thi
 Two independent analyses of the same question — one from an external agent, one run here — converged on the same four findings about `init` without seeing each other's work, which is stronger evidence than either alone. Each finding was reproduced against the shipped code before it was changed. Two further findings arrived from a separate analysis of how the classifier defect in v0.59.0 survived five independent safety mechanisms; both named the class, and both proposed the same remedy: a guard must report what it examined, never only what it found.
 
 ## [0.61.0] - 2026-09-04
-*A command that ran is not a command that tested something.*
 
 ### Fixed
 - **A Runner That Collected Nothing Counted As Verification (`src/ops/test-collection.mjs`, `src/engine.mjs`)**: the gate's oracle is one number — the verification command's exit code — and that number cannot tell "every test passed" from "there were no tests". Several runners report the second as success by design: `go test ./...` prints `[no test files]` and exits 0, jest has `--passWithNoTests`, and `npm test --workspaces` is green when the one package the diff touched has no suite. So a change could invert a function, add an untested one, and collect five green phases, verified against nothing at all. The v0.57.0 `missingOracle` check catches "no stage executed"; it cannot catch "a stage executed and tested nothing". The collected count is now read out of the runner's own summary (node:test, pytest, cargo, jest, vitest, mocha, go) and a stated zero fails the verify phase as `empty-suite`.
@@ -323,7 +315,6 @@ Two independent analyses of the same question — one from an external agent, on
 Identified in an independent analysis of the oracle problem, which named the collection floor and cross-revision discrimination as the two gaps that are still *checks* rather than proxies for effort. The floor is shipped here. Discrimination — running the new tests against the base revision, and failing when they pass on both — is not, and is under consideration: its own author estimates a 10–25% false-positive rate on behaviour-preserving refactors, which is above the rate at which an operator starts reaching for the override by reflex.
 
 ## [0.60.0] - 2026-09-03
-*Making the expectation guard worth reading a month from now.*
 
 ### Fixed
 - **One Override For Six Checks (`src/security.mjs`, `bin/agentctl.mjs`)**: `--allow-test-modifications` returned early from `checkTestTampering`, so the only way to accept a legitimately changed expectation was to also switch off injected `.skip()`, `expect(true).toBe(true)`, commented-out assertions, outright deletions and weakened assertions — none of which the operator had looked at. That makes the check with the highest firing rate the ceiling for every other check in the bundle: the more useful the expectation check became, the more often it would be used to turn the others off. `--allow-test-change <kind>` now accepts exactly one (`expectation`, `removal`, `weakening`, `skip`, `vacuous`, `commented`, or `all`), takes a list, rejects a name it does not recognise rather than guessing, and the violation message names the narrow flag instead of the blunt one. `--allow-test-modifications` still means all six.
@@ -331,7 +322,6 @@ Identified in an independent analysis of the oracle problem, which named the col
 - **Rewording A Failure Message Reported A Rewritten Expectation (`src/security.mjs`)**: a message is a string literal, so blanking literals made `assert.equal(f(1), 1, "should be one")` and `assert.equal(f(1), 1, "must be one")` the same shape, and improving the wording of a failure fired a CRITICAL finding. Assertion arguments are now compared position by position, and a difference confined to a message position is not an expectation change — trailing for `assert.equal(got, want, "…")` and `assert_eq!(a, b, "…")`, leading for Go's `t.Errorf("got %d want %d", …)`. Two arguments stays the classic `(actual, expected)` shape, so `assert.equal(name(), "Alice")` → `"Bob"` still fires, as does a Go table's `want` value when only the format string was left alone.
 
 ## [0.59.0] - 2026-09-03
-*The bypass I found in my own new check, closed by someone else — and the larger hole they noticed while closing it.*
 
 ### Fixed
 - **Five Modules Disagreed On What A Test File Is (`src/test-paths.mjs`, and five callers)**: `security.mjs` matched the substring `/test/`, which has no match in `tests/test_calc.py` — so the standard pytest layout, the standard Rust integration layout (`tests/*.rs`) and every RSpec suite (`spec/`) were not test files, and *the entire tamper guard was switched off for them*: skip injection, vacuous assertions, commented-out assertions, removal, weakening, expectation rewrites, all silent. `mutation.mjs` had the same substring bug pointed the other way and mutated operators inside those tests, scoring the result. `engine.mjs` never looked for `_test.`, so `strictTestLock` did not consider a Go test file to be a test file. `coverage.mjs` and `evidence.mjs` each had a fourth and fifth spelling. A predicate carrying this much weight cannot have five definitions; `isTestPath` is now the only one, matching whole path segments rather than substrings (so `latest/` is not `test/`) and covering pytest's `test_*.py`, Go's `_test.go`, RSpec's `_spec.rb` and Foundry's `.t.sol`.
@@ -342,7 +332,6 @@ Identified in an independent analysis of the oracle problem, which named the col
 The statement-level pairing, the per-language scanners and the numeric-literal fix arrived as [PR #14](https://github.com/FullThrottle83/jules-orchestrator-kit/pull/14) from an external coding agent, in response to the multi-line bypass being published as an open problem. Verified independently — reproduced against the shipped CLI, re-run on this machine, probed for false positives on realistic diffs — before merging. The test-path classifier is the hole that PR noticed and deliberately left alone as out of scope; it turned out to be the larger of the two.
 
 ## [0.58.0] - 2026-09-03
-*A second cold review, from a reviewer who had never seen the project. Seven findings, all reproduced against the shipped CLI before anything was changed — and two more that only surfaced while fixing them.*
 
 ### Fixed
 - **A Lock Taken From The CLI Locked Nothing (`src/state.mjs`, `bin/agentctl.mjs`)**: `acquireLock` stored `process.pid` and tested it for liveness on the next call — but `agentctl lock acquire` writes the record and exits *by design*, so that test always answered "dead". The next acquire reaped the lock as abandoned and granted the same files to a second agent, telling both they had exclusive access. Two agents editing one file while the mutex reported success is worse than no mutex at all. A record written by a one-shot caller now marks itself `leased` and is bounded by `expiresAt` alone; `--ttl <minutes>` sets the window and `--pid <n>` binds the lock to a real long-lived process when there is one. In-process callers (the engine, the swarm) keep pid liveness, so a crash still cannot wedge the repository.
@@ -358,7 +347,6 @@ The statement-level pairing, the per-language scanners and the numeric-literal f
 - **A Signed Literal Broke Its Own Detector (`src/security.mjs`)**: the first cut of the expectation-rewrite check normalised `3` and `-1` to different shapes, because `\b` finds no boundary before a leading minus. The pair never matched and the attack it was written for still passed. The sign belongs to the literal.
 
 ## [0.57.0] - 2026-09-03
-*The last four review findings — and two more that only surfaced once the fourth stopped lying.*
 
 ### Fixed
 - **Generated TDD Oracles Were Always JavaScript (`src/ops/tdd-generator.mjs`)**: `test-gen` emitted a `node:test` file for every stack and then, in a Python project, ran `pytest generated-x.test.mjs`. pytest exits 4 on a file it cannot collect, and the cycle read any non-zero exit as RED — so it reported a verified failing oracle, and locked an uncollectable file into `scope.deny`, having proven nothing. Oracles are now written in the runner's language (pytest for Python/Django, a `tests/*.rs` integration test for Cargo, `*_test.go` for Go, `node:test` otherwise), and the RED check requires the generated assertion's marker in the output — a runner that never collected the file cannot pass as a falsifiable failure.
@@ -371,7 +359,6 @@ The statement-level pairing, the per-language scanners and the numeric-literal f
 - **`--min-score 0` Enforced 80 (`bin/agentctl.mjs`)**: `Number(x) || 80` swallows a legitimate zero, so the documented way to run the harness for its report without a threshold quietly applied the default instead.
 
 ## [0.56.0] - 2026-09-03
-*Three advertised features that were never wired into the execution path, plus two bugs only a live provider call could surface.*
 
 ### Fixed
 - **Locks Did Not Lock Files (`src/state.mjs`)**: the lock file was named after the task, so `acquireLock()` only ever asked "is this same task already running?". The `files` argument — the entire point of the call — was stored as metadata and compared against nothing, so two agents could each be told they held exclusive access to the same path. Requested paths are now checked against every live lock, separators normalised first, and a conflict names the holder and the overlapping files.
@@ -384,7 +371,6 @@ The statement-level pairing, the per-language scanners and the numeric-literal f
 - **Test Fixture Wrote Into The Repository (`test/ooda_thrash.test.mjs`)**: the OODA thrash fixture built its temp tree under `.agent/` of the checkout being tested, leaving debris behind whenever a run was interrupted — in a consumer's repository that debris is theirs to clean up. Moved to the OS temp directory.
 
 ## [0.55.0] - 2026-09-03
-*Verification integrity. Three more ways an agent's work could look checked without being checked, all reproduced before being fixed.*
 
 ### Security
 - **Test Weakening By Replacement (`src/security.mjs`)**: `checkTestTampering` counted assertions — `removed.length > added` — so swapping `assert.strictEqual(add(2,3), 5)` for `assert.ok(add(2,3) !== undefined)` was one out and one in, the guard stayed silent, and the suite stopped checking the answer. Assertions that name an expected value are now counted separately across dialects (`strictEqual`/`toBe`/`assert_eq!`/`require.Equal`/`t.Errorf`), and a fall in that count is reported as `ASSERTION_WEAKENED`. Strengthening, renaming and adding are unaffected; an assertion deleted outright stays a single `ASSERTION_REMOVAL` rather than being reported twice.
@@ -395,7 +381,6 @@ The statement-level pairing, the per-language scanners and the numeric-literal f
 - **`parseRawDiff()` (`src/git.mjs`)**: the `git diff --raw -z` parsing behind binary sizing and symlink detection lives in one place rather than two.
 
 ## [0.54.1] - 2026-09-03
-*Security hotfix. Three ways the gate could report APPROVED for work it had not checked, all found by a cold-start adversarial review and all reproduced before being fixed. The first two predate this series — the false green is present in 0.52.8.*
 
 ### Security
 - **The Gate Approved Changes It Never Verified (`src/engine.mjs`, `src/config.mjs`)**: `testResult` started optimistic and the stage loop skipped any stage without a command, so a repository with no test oracle ran **zero** verification steps and was told `APPROVED (Exit 0)` — syntactically broken code included. The gate now fails closed (`Exit 4`, stage `oracle`) when no command executed against the change, naming `agentctl bootstrap` and `verify.test` as the fix. Assertions do not count as verification: `assert:test-integrity` proves a test was not weakened, not that the code works. A repository that deliberately uses only the scope and secret phases opts out with `verify.required: false`, read from the base commit like every other trusted field so an uncommitted edit cannot switch the gate off.
@@ -406,7 +391,6 @@ The statement-level pairing, the per-language scanners and the numeric-literal f
 - **Wrong Remediation For A Missing Oracle (`bin/agentctl.mjs`)**: the exit-4 hint offered `--fix`, which cannot help when there was no command to run and no failure to repair.
 
 ## [0.54.0] - 2026-09-03
-*First-run friction pass. Every item here was found by running a fresh dummy project through the whole chain; the engine was not the problem, the CLI's presentation layer was.*
 
 ### Fixed
 - **Hardcoded `main` Base Branch (`src/git.mjs`, `src/wizard-init.mjs`, `bin/agentctl.mjs`)**: `init` scaffolded `base_branch: main` without ever asking git what the repository uses, so the very first `agentctl check` in any repo created on `master` (still the default of many installed gits) or standardised on `develop` failed to resolve its base ref. New `detectDefaultBranch()` resolves `origin/HEAD`, then a local `main`/`master`, then the checked-out branch (covering a repo with no commits yet), then `main`. `agentctl coverage` separately ignored `config.baseBranch` and assumed `main`; it now honours it.

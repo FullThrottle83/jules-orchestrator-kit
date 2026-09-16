@@ -266,7 +266,7 @@ const FROZEN_SDK_EXPORTS = [
 ];
 
 /**
- * Standardized Exit Code Registry (AGENTS.md Section 6).
+ * Standardized Exit Code Registry (docs/architecture.md).
  */
 const EXIT_CODE_CONTRACT = {
   0: "Success — verification passed, PR opened",
