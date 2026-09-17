@@ -32,6 +32,11 @@ Release details, including earlier milestone summaries, are in the
 
 ## Later candidates
 
-Cross-repository coordination, visual regression workflows, telemetry-driven task
-creation and broader structural parsing remain exploratory. Scope and dependencies
-need evaluation before these become scheduled work.
+- Evaluate deterministic review planning: select changed files with engineering logic,
+  group related files within explicit context budgets, resolve path-aware review rules
+  and delegate the resulting review plan to the existing provider layer. AI review must
+  remain advisory and separate from the deterministic `gate`; do not make review output
+  a gate prerequisite or add a dedicated review-model runtime dependency.
+- Cross-repository coordination, visual regression workflows, telemetry-driven task
+  creation and broader structural parsing remain exploratory. Scope and dependencies
+  need evaluation before these become scheduled work.
