@@ -41,11 +41,17 @@ export const RUNTIME_GITIGNORE_ENTRIES = [
  * @param {string} root
  * @returns {string[]} Entries newly appended (empty when already covered).
  */
-export function ensureGitignore(root) {
+export function planGitignoreEntries(root) {
   const gitignorePath = join(root, ".gitignore");
   const current = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
   const lines = new Set(current.split("\n").map((l) => l.trim()));
-  const missing = RUNTIME_GITIGNORE_ENTRIES.filter((e) => !lines.has(e));
+  return RUNTIME_GITIGNORE_ENTRIES.filter((e) => !lines.has(e));
+}
+
+export function ensureGitignore(root) {
+  const gitignorePath = join(root, ".gitignore");
+  const current = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
+  const missing = planGitignoreEntries(root);
   if (missing.length === 0) return [];
 
   const prefix = current && !current.endsWith("\n") ? "\n" : "";
