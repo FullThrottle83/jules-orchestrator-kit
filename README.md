@@ -33,9 +33,15 @@ npx jules-orchestrator-kit init
 ```
 
 The wizard detects the project and asks about provider and verification settings.
-Use `init --yes` to accept defaults. It creates `.agent/config.yml`, agent
-instructions, role prompts and project contract files. Inspect the generated
-configuration and diff, especially the test command and protected paths.
+Use `init --yes` to accept defaults. By default it writes only the canonical
+`.agent/config.yml` plus runtime-state entries in `.gitignore` when they are
+missing. Inspect the generated configuration and diff, especially the test
+command and protected paths. Use `init --dry-run` to preview the exact writes
+without changing the repository.
+
+The historical full scaffold (AGENTS.md, specialist prompts, rules, workflows and
+contract templates) remains available through the legacy `jules-init` entry point
+during the 0.x migration window; it is no longer default-owned by `agentctl init`.
 
 ```bash
 git diff
@@ -44,9 +50,9 @@ git status --short
 
 Stage the generated files you reviewed, then commit them. The committed
 configuration establishes the trusted base policy used by verification. On an
-already initialized repository, back up and review `.agent/config.yml` and
-`.agent/jules.yml` before rerunning `init`; the wizard can regenerate those
-manifests. Avoid `--force` unless replacement of generated files is intended.
+already initialized repository, back up and review `.agent/config.yml` before
+rerunning `init`. Existing legacy `.agent/jules.yml` files are left untouched
+by the default path. Avoid `--force` unless replacement of generated files is intended.
 
 ### 2. Check provider readiness
 
@@ -187,18 +193,12 @@ for the review process.
 First identify which files setup created and which files already belonged to your
 project. For shared files, remove only the kit's additions using Git history.
 
-For a repository where **all listed paths belong exclusively to the kit**, remove
-the tracked scaffold and runtime state as follows. Adapt this list first if any
-path contains your own instructions, configuration or queued work:
+For the default minimal setup, remove `.agent/config.yml` and the kit's
+runtime-state block from `.gitignore`. Repositories that previously used the
+legacy full scaffold may also contain AGENTS.md, prompts, rules, workflows and
+contract files; remove those only after confirming ownership.
 
-```bash
-git rm -rf --ignore-unmatch .agent AGENTS.md SPEC.md CONSTRAINTS.md DESIGN.md \
-  .github/workflows/agent-gate.yml .gitlab-ci.agent-gate.yml .cursor/rules/jules.mdc
-rm -rf .agent .agentctl
-npm uninstall -g jules-orchestrator-kit
-```
-
-Remove the kit's appended `.gitignore` block while preserving other entries.
+See the uninstall guide for the complete inventory and legacy cleanup steps.
 See the uninstall guide for the complete inventory.
 
 ## Limitations and attribution
