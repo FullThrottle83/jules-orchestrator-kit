@@ -1,6 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.mjs";
+
+const SHIPPED_PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", ".agent", "prompts");
 
 /**
  * Placeholders a role prompt may use in place of a hardcoded command.
@@ -157,19 +160,22 @@ export function resolveRolePrompt(root = process.cwd(), roleName = "", opts = {}
     candidates.push(directAlias);
   }
 
-  const promptsDir = join(root, ".agent", "prompts");
-  if (!existsSync(promptsDir)) return null;
+  // A repository-local prompt is an explicit override. When no local
+  // prompt exists, resolve the canonical role from the package payload instead
+  // of requiring init to copy static role files into every target repository.
+  for (const promptsDir of [join(root, ".agent", "prompts"), SHIPPED_PROMPTS_DIR]) {
+    if (!existsSync(promptsDir)) continue;
+    try {
+      const files = readdirSync(promptsDir);
+      let matched = null;
+      for (const cand of candidates) {
+        matched = files.find(
+          (f) => f.toLowerCase() === `${cand}.md` || f.toLowerCase() === cand
+        );
+        if (matched) break;
+      }
+      if (!matched) continue;
 
-  try {
-    const files = readdirSync(promptsDir);
-    let matched = null;
-    for (const cand of candidates) {
-      matched = files.find(
-        (f) => f.toLowerCase() === `${cand}.md` || f.toLowerCase() === cand
-      );
-      if (matched) break;
-    }
-    if (matched) {
       const fullPath = join(promptsDir, matched);
       const raw = readFileSync(fullPath, "utf-8").trim();
 
@@ -187,7 +193,7 @@ export function resolveRolePrompt(root = process.cwd(), roleName = "", opts = {}
         path: fullPath,
         content: hydrateRolePrompt(raw, config),
       };
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
   return null;
 }
