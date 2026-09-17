@@ -31,9 +31,9 @@ if (gateCommands.has(requestedCommand) && args.includes("--fix")) {
   process.exit(2);
 }
 
-// `fix` remains a 0.x compatibility spelling. `repair` is the explicit v1
-// direction and intentionally reuses the existing repair implementation.
-const command = requestedCommand === "repair" ? "fix" : requestedCommand;
+// `repair` is the canonical spelling; `fix` remains a 0.x compatibility
+// alias. Both route through the same existing implementation below.
+const command = requestedCommand;
 
 export const VERSION = KIT_VERSION;
 
@@ -976,6 +976,7 @@ async function main() {
       break;
     }
 
+    case "repair":
     case "fix": {
       const { repair, planTaskCreate, resolveRoot, redactSecrets } = await import("../index.mjs");
       const { values, positionals } = parseArgs({
@@ -1007,7 +1008,7 @@ async function main() {
       }
 
       if (!errorInput.trim()) {
-        console.error("❌ Error: No error log or failure input provided. Pipe stdout/stderr via `npm test 2>&1 | agentctl fix` or provide --file/--input.");
+        console.error("❌ Error: No error log or failure input provided. Pipe stdout/stderr via `npm test 2>&1 | agentctl repair` or provide --file/--input.");
         process.exit(1);
       }
 
