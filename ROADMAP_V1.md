@@ -26,7 +26,7 @@ Until that contract work is complete, avoid adding new top-level subsystems, pub
 SDK exports, command aliases, agent personas, memory systems or provider-specific
 API mirrors.
 
-## Shipped milestones (v0.66.0 – v0.73.1)
+## Shipped Milestones (v0.66.0 – v0.73.1)
 
 Recent releases improved test-tamper detection, session-state handling, verification
 isolation, CLI onboarding and command documentation. v0.73.0 split the security
