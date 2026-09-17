@@ -2,7 +2,7 @@
 
 import { parseArgs } from "node:util";
 import { readFileSync, existsSync, readdirSync, statSync, renameSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, relative } from "node:path";
 import { applyEnvAliases } from "../src/env-aliases.mjs";
 import { selectFailureOutput } from "../src/ops/verify-output.mjs";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
