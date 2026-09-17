@@ -56,7 +56,7 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
     }
   });
 
-  await t.test("runInitWizard in non-TTY mode generates .agent/config.yml and .agent/jules.yml atomically", async () => {
+  await t.test("runInitWizard in non-TTY mode writes only .agent/config.yml by default", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-wizard-"));
     const mockStdin = new PassThrough();
     const mockStdout = new PassThrough();
@@ -75,12 +75,62 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
 
       assert.equal(res.ok, true);
       assert.ok(existsSync(join(tmpDir, ".agent", "config.yml")));
-      assert.ok(existsSync(join(tmpDir, ".agent", "jules.yml")));
+      assert.equal(existsSync(join(tmpDir, ".agent", "jules.yml")), false, "legacy manifest is not default-owned");
 
       const configContent = readFileSync(join(tmpDir, ".agent", "config.yml"), "utf-8");
       assert.ok(configContent.includes("provider: jules"));
       assert.ok(configContent.includes("tier: pro"));
       assert.ok(configContent.includes("profile: standard"), "a fresh repo gets the everyday gate, not just tests");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("runInitWizard dry-run reports exact writes without touching disk", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-dry-"));
+    const mockStdin = new PassThrough();
+    const mockStdout = new PassThrough();
+
+    try {
+      const res = await runInitWizard(tmpDir, {
+        interactive: false,
+        allowDefaults: true,
+        testCmd: "echo ok",
+        probe: false,
+        dryRun: true,
+        env: { PATH: "" },
+        stdin: mockStdin,
+        stdout: mockStdout,
+      });
+
+      assert.equal(res.ok, true);
+      assert.equal(res.dryRun, true);
+      assert.deepEqual(res.writes, [join(tmpDir, ".agent", "config.yml")]);
+      assert.equal(existsSync(join(tmpDir, ".agent")), false, "dry-run must not create .agent");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("legacy manifest remains explicit opt-in for SDK callers", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-legacy-"));
+    try {
+      const res = await runInitWizard(tmpDir, {
+        interactive: false,
+        allowDefaults: true,
+        testCmd: "echo ok",
+        probe: false,
+        legacyManifest: true,
+        env: { PATH: "" },
+      });
+
+      assert.equal(res.ok, true);
+      assert.ok(existsSync(join(tmpDir, ".agent", "config.yml")));
+      assert.ok(existsSync(join(tmpDir, ".agent", "jules.yml")));
+      assert.deepEqual(res.writes, [
+        join(tmpDir, ".agent", "config.yml"),
+        join(tmpDir, ".agent", "jules.yml"),
+      ]);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
