@@ -372,7 +372,7 @@ async function main() {
           console.error(
             `Error: Unknown agent role '${values.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Auditor, Performance, Security, Hygiene, Testing).`
           );
-          console.error(`   Run 'agentctl init' to scaffold the shipped role prompts.`);
+          console.error(`   Use a canonical shipped role name or add a repository override under .agent/prompts/.`);
           process.exit(1);
         }
       }
@@ -1973,6 +1973,9 @@ async function main() {
         // --force is retained as the explicit 0.x compatibility path: it
         // restores the legacy Jules manifest and full repository scaffold.
         legacyManifest: values.force,
+        // JSON mode is a protocol surface: progress spinners must not prefix
+        // the payload with human-readable status lines.
+        stdout: values.json ? { write() {} } : process.stdout,
       });
 
       // Default init deliberately owns only the canonical config plus the
