@@ -15,7 +15,7 @@ Total commands: 52
 - [`agentctl task create`](#task-create) — Author a scoped, falsifiable task
 - [`agentctl task template`](#task-template) — List and synthesize web task template envelopes
 - [`agentctl task optimize`](#task-optimize) — Score task prompt falsifiability and static path resolution
-- [`agentctl init`](#init) — Configure Stack Oracle and Jules provider manifests
+- [`agentctl init`](#init) — Write the minimal canonical project config and runtime ignore entries
 - [`agentctl dashboard`](#dashboard) — Start local web dashboard server
 - [`agentctl budget`](#budget) — Show today's task budget, where its limit came from, and reconcile a wrong count
 - [`agentctl status`](#status) — Show operating status and health summary
@@ -282,7 +282,7 @@ agentctl task optimize --file prompt.txt --json
 
 **ID:** `init` · **Category:** Configure · **Risk:** MODERATE · **Mutates:** yes
 
-Configure Stack Oracle and Jules provider manifests
+Write the minimal canonical project config and runtime ignore entries
 
 **Shortcuts:** `i`
 
@@ -297,8 +297,8 @@ Configure Stack Oracle and Jules provider manifests
 | `--non-interactive` | boolean | Run non-interactively with defaults |
 | `--no-interactive` | boolean | Alias for --non-interactive |
 | `--yes` | boolean | Accept auto-detected Stack Oracle defaults (-y) |
-| `--force` | boolean | Force overwrite existing config and assets (-f) |
-| `--dry-run` | boolean | Preview plan without writing files (-d) |
+| `--force` | boolean | 0.x compatibility: also write the legacy Jules manifest and full scaffold (-f) |
+| `--dry-run` | boolean | List exact files that would be written without changing the repository (-d) |
 | `--json` | boolean | Output structured JSON manifest (-j) |
 
 **Examples:**
