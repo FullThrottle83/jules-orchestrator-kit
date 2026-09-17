@@ -1969,19 +1969,32 @@ async function main() {
         provider: values.provider,
         profile: values.profile,
         allowDefaults: true,
+        dryRun: values["dry-run"],
       });
 
-      // The wizard writes the manifest; the assets the CLI's documented
-      // features actually need — AGENTS.md, the role prompts, the guardrails,
-      // the gitignore entries — used to be scaffolded only by the separate
-      // `jules-init` binary that the README's quickstart never mentions.
-      const { scaffoldRepoAssets } = await import("../src/scaffold.mjs");
-      const scaffold = scaffoldRepoAssets(root, { force: values.force });
+      // Default init deliberately owns only the canonical config plus the
+      // runtime-state ignore block. The historical full scaffold is still
+      // available through the shipped `jules-init` compatibility entry point.
+      const { ensureGitignore, planGitignoreEntries } = await import("../src/scaffold.mjs");
+      const plannedGitignore = planGitignoreEntries(root);
+      const gitignore = values["dry-run"] ? plannedGitignore : ensureGitignore(root);
+      const writes = [
+        ...res.writes.map((p) => relative(root, p) || p),
+        ...(plannedGitignore.length > 0 ? [".gitignore"] : []),
+      ];
 
       if (values.json) {
-        console.log(JSON.stringify({ ...res, scaffold }, null, 2));
+        console.log(JSON.stringify({ ...res, writes, gitignore }, null, 2));
       } else {
-        console.log(`✅ Onboarding complete! Manifest generated at ${res.configPath}`);
+        console.log(
+          values["dry-run"]
+            ? "🧪 Dry run — no files written."
+            : `✅ Onboarding complete! Manifest generated at ${res.configPath}`
+        );
+        if (values["dry-run"]) {
+          console.log("   Would write:");
+          for (const path of writes) console.log(`     - ${path}`);
+        }
         console.log(`   Tier: ${res.plan.tier.toUpperCase()} (${res.plan.limits.concurrency} worker(s), ${res.plan.limits.daily_tasks} daily tasks)`);
         {
           const { probeProvider } = await import("../src/provider-readiness.mjs");
@@ -2000,34 +2013,25 @@ async function main() {
           console.log(`   Verification Test Command : None detected (run "agentctl bootstrap" to create a test oracle)`);
         }
         console.log(`   Active Presets            : ${res.plan.presets.join(", ")}`);
-        for (const item of scaffold.created) {
-          console.log(`   Scaffolded                : ${item}`);
-        }
-        if (scaffold.gitignore.length > 0) {
-          console.log(`   Ignored runtime state     : ${scaffold.gitignore.length} entries added to .gitignore`);
+        if (!values["dry-run"] && gitignore.length > 0) {
+          console.log(`   Ignored runtime state     : ${gitignore.length} entries added to .gitignore`);
         }
 
-        // `.agent/config.yml` and `.agent/jules.yml` are both on the gate's deny
-        // list, by design — the agent must not edit its own rules. Leaving them
-        // uncommitted meant the very first `agentctl gate` rejected the working
-        // tree for files init had just written, which reads as the tool
-        // catching the user cheating on step three.
-        const rootContracts = ["SPEC.md", "CONSTRAINTS.md", "DESIGN.md"].filter((f) => existsSync(join(root, f)));
-        // A fresh `npm install`/`npm init -y` just created package manifests the
-        // scope rules `protect`. Leaving them out of the hint meant the very
-        // first `agentctl gate`/`agentctl task create` still rejected the tree
-        // even after the user committed exactly what this message listed. Fold
-        // the install-produced, currently-addable artifacts in so the suggested
-        // commit actually leaves the tree clean enough for step three.
-        const { addableOnboardingArtifacts } = await import("../src/git.mjs");
-        const filesToAdd = [".agent", "AGENTS.md", ...rootContracts, ...addableOnboardingArtifacts(root), ".gitignore"]
-          .filter((f) => existsSync(join(root, f)));
-        console.log(`\n   Commit the manifest and contracts so the gate does not read them as agent edits:`);
-        console.log(`     git add ${filesToAdd.join(" ")} && git commit -m "chore: add agent config"`);
+        if (!values["dry-run"]) {
+          // A fresh `npm install`/`npm init -y` may have created package
+          // manifests the scope rules protect. Include only files that really
+          // exist; minimal init itself owns .agent/config.yml and, when needed,
+          // the .gitignore runtime-state block.
+          const { addableOnboardingArtifacts } = await import("../src/git.mjs");
+          const filesToAdd = [".agent/config.yml", ...addableOnboardingArtifacts(root), ".gitignore"]
+            .filter((p) => existsSync(join(root, p)));
+          console.log(`\n   Commit the config so the gate does not read it as an agent edit:`);
+          console.log(`     git add ${filesToAdd.join(" ")} && git commit -m "chore: add agent config"`);
 
-        const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
-        const next = resolveNextStep(root);
-        console.log(renderNextStep({ version: VERSION, root, next, budgetLine: "" }));
+          const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
+          const next = resolveNextStep(root);
+          console.log(renderNextStep({ version: VERSION, root, next, budgetLine: "" }));
+        }
       }
       process.exit(0);
       break;
