@@ -137,6 +137,53 @@ test("src/scaffold.mjs", async (t) => {
     }
   });
 
+  await t.test("agentctl init --force preserves the legacy full scaffold", () => {
+    const dir = tempRepo();
+    try {
+      const env = { ...process.env };
+      delete env.JULES_API_KEY;
+      delete env.GEMINI_API_KEY;
+      const res = spawnSync("node", [CLI, "init", "--force"], { cwd: dir, env, encoding: "utf-8" });
+
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      assert.ok(existsSync(join(dir, ".agent/config.yml")));
+      assert.ok(existsSync(join(dir, ".agent/jules.yml")));
+      assert.ok(existsSync(join(dir, "AGENTS.md")));
+      assert.ok(existsSync(join(dir, ".agent/prompts/Performance.md")));
+      assert.ok(existsSync(join(dir, ".agent/rules/dynamic-guardrails.json")));
+      assert.ok(existsSync(join(dir, ".agent/workflows")));
+      assert.ok(existsSync(join(dir, "SPEC.md")));
+      assert.ok(existsSync(join(dir, "CONSTRAINTS.md")));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl init --dry-run --force previews legacy files without writing them", () => {
+    const dir = tempRepo();
+    try {
+      const res = spawnSync("node", [CLI, "init", "--dry-run", "--force", "--json"], {
+        cwd: dir,
+        env: { ...process.env },
+        encoding: "utf-8",
+      });
+
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      const out = JSON.parse(res.stdout);
+      assert.equal(out.dryRun, true);
+      assert.ok(out.writes.includes(".agent/config.yml"));
+      assert.ok(out.writes.includes(".agent/jules.yml"));
+      assert.ok(out.writes.includes("AGENTS.md"));
+      assert.ok(out.writes.includes("SPEC.md"));
+      assert.ok(out.writes.includes(".agent/prompts/Performance.md"));
+      assert.equal(existsSync(join(dir, ".agent")), false);
+      assert.equal(existsSync(join(dir, "AGENTS.md")), false);
+      assert.equal(existsSync(join(dir, ".gitignore")), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   await t.test("init leaves no kit runtime state loose in the working tree", () => {
     // The gate audits the working tree. Every ledger, evidence manifest and
     // telemetry line the kit writes used to land there untracked and get read
