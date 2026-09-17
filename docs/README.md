@@ -36,7 +36,7 @@ Start here. Find the page that matches what you are trying to do; every path is 
 
 ### …set the rules an autonomous worker follows
 - **[AGENTS.md](../AGENTS.md)** — authoritative contributor instructions for this repository.
-- [JULES_RULES_TEMPLATE.md](../JULES_RULES_TEMPLATE.md) — the scaffold master `agentctl init` copies into target repositories; the shared working rules are kept byte-identical to `AGENTS.md` (between the `SYNC-CORE` anchors).
+- [JULES_RULES_TEMPLATE.md](../JULES_RULES_TEMPLATE.md) — legacy scaffold template copied by `agentctl init --force` / `jules-init`; default minimal init does not own target-repository agent instructions.
 - [Jules provider notes](providers/jules.md) — setup, approval handling and operational limitations. The legacy protocol file is a compatibility reference only.
 
 ### …remove the kit from a repository

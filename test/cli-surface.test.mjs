@@ -586,13 +586,13 @@ describe("F22 — Complete uninstall and undo init documentation", () => {
     );
     assert.match(
       content,
-      /git rm -rf --ignore-unmatch.*\.agent.*AGENTS\.md.*SPEC\.md/s,
-      "README.md must document git rm command for tracked scaffold assets"
+      /default minimal setup.*\.agent\/config\.yml.*\.gitignore/is,
+      "README.md must document the minimal init ownership surface"
     );
     assert.match(
       content,
-      /rm -rf \.agent \.agentctl/,
-      "README.md must document runtime state cleanup"
+      /legacy full scaffold.*AGENTS\.md.*prompts.*rules.*workflows/is,
+      "README.md must distinguish legacy scaffold assets from default init"
     );
     assert.match(
       content,
@@ -893,7 +893,7 @@ describe("agentctl command surface — offline CLI coverage", () => {
       const proc = runCli(dir, ["dispatch", "--dry-run", "--json", "-p", "hi", "-r", "NoSuchRole"]);
       assert.equal(proc.status, 1);
       assert.match(proc.stderr, /Unknown agent role 'NoSuchRole'/);
-      assert.match(proc.stderr, /agentctl init/);
+      assert.match(proc.stderr, /canonical shipped role|\.agent\/prompts/);
       assert.equal(proc.stdout.trim(), "", "a rejected role must not produce a session payload");
       assert.equal(checkDailyBudget(dir, 300).used, 0, "a rejected role must not consume a budget slot");
     } finally {

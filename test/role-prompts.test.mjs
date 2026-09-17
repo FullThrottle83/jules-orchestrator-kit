@@ -111,10 +111,13 @@ test("Role prompts are stack-neutral", async (t) => {
     assert.equal(resolved.content, "Verify with `go test ./...`.");
   });
 
-  await t.test("returns null for an unknown role and a missing prompts directory", () => {
+  await t.test("falls back to shipped prompts when the repository has no prompt directory", () => {
     const root = mkdtempSync(join(tmpdir(), "jules-role-empty-"));
     t.after(() => rmSync(root, { recursive: true, force: true }));
-    assert.equal(resolveRolePrompt(root, "janitor"), null);
+
+    const shipped = resolveRolePrompt(root, "janitor");
+    assert.ok(shipped, "canonical roles should resolve from the installed package");
+    assert.equal(shipped.role.toLowerCase(), "hygiene");
 
     mkdirSync(join(root, ".agent", "prompts"), { recursive: true });
     assert.equal(resolveRolePrompt(root, "nonexistent"), null);

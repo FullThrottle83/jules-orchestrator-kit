@@ -2,7 +2,7 @@
 
 import { parseArgs } from "node:util";
 import { readFileSync, existsSync, readdirSync, statSync, renameSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, relative } from "node:path";
 import { applyEnvAliases } from "../src/env-aliases.mjs";
 import { selectFailureOutput } from "../src/ops/verify-output.mjs";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
@@ -305,8 +305,13 @@ async function main() {
   }
 
   const root = resolveRoot();
-  reapOrphanedIntents(root);
-  reapStaleMutexDirs(root);
+  // Init is a configuration boundary, not an operational maintenance command.
+  // In particular, --dry-run must not create .agent/ indirectly by reaping
+  // journal intents or mutex directories before init itself gets control.
+  if (command !== "init") {
+    reapOrphanedIntents(root);
+    reapStaleMutexDirs(root);
+  }
   const config = loadConfig(root);
 
   switch (command) {
@@ -372,7 +377,7 @@ async function main() {
           console.error(
             `Error: Unknown agent role '${values.role}'. Expected matching prompt file in .agent/prompts/ (e.g. Auditor, Performance, Security, Hygiene, Testing).`
           );
-          console.error(`   Run 'agentctl init' to scaffold the shipped role prompts.`);
+          console.error(`   Use a canonical shipped role name or add a repository override under .agent/prompts/.`);
           process.exit(1);
         }
       }
@@ -1969,19 +1974,54 @@ async function main() {
         provider: values.provider,
         profile: values.profile,
         allowDefaults: true,
+        dryRun: values["dry-run"],
+        // --force is retained as the explicit 0.x compatibility path: it
+        // restores the legacy Jules manifest and full repository scaffold.
+        legacyManifest: values.force,
+        // JSON mode is a protocol surface: progress spinners must not prefix
+        // the payload with human-readable status lines.
+        stdout: values.json ? { write() {} } : process.stdout,
       });
 
-      // The wizard writes the manifest; the assets the CLI's documented
-      // features actually need — AGENTS.md, the role prompts, the guardrails,
-      // the gitignore entries — used to be scaffolded only by the separate
-      // `jules-init` binary that the README's quickstart never mentions.
-      const { scaffoldRepoAssets } = await import("../src/scaffold.mjs");
-      const scaffold = scaffoldRepoAssets(root, { force: values.force });
+      // Default init deliberately owns only the canonical config plus the
+      // runtime-state ignore block. The old full scaffold is opt-in via
+      // --force (and remains available through the shipped jules-init binary).
+      const {
+        ensureGitignore,
+        planGitignoreEntries,
+        planScaffoldRepoAssets,
+        scaffoldRepoAssets,
+      } = await import("../src/scaffold.mjs");
+      const plannedGitignore = planGitignoreEntries(root);
+      const legacyPlan = values.force ? planScaffoldRepoAssets(root, { force: true }) : { created: [], gitignore: plannedGitignore };
+      const scaffold =
+        values.force && !values["dry-run"]
+          ? scaffoldRepoAssets(root, { force: true })
+          : { created: legacyPlan.created, gitignore: plannedGitignore };
+      const gitignore =
+        values["dry-run"]
+          ? plannedGitignore
+          : values.force
+            ? scaffold.gitignore
+            : ensureGitignore(root);
+      const writes = [
+        ...res.writes.map((p) => (relative(root, p) || p).replaceAll("\\", "/")),
+        ...legacyPlan.created,
+        ...(plannedGitignore.length > 0 ? [".gitignore"] : []),
+      ].filter((p, index, all) => all.indexOf(p) === index);
 
       if (values.json) {
-        console.log(JSON.stringify({ ...res, scaffold }, null, 2));
+        console.log(JSON.stringify({ ...res, writes, gitignore }, null, 2));
       } else {
-        console.log(`✅ Onboarding complete! Manifest generated at ${res.configPath}`);
+        console.log(
+          values["dry-run"]
+            ? "🧪 Dry run — no files written."
+            : `✅ Onboarding complete! Manifest generated at ${res.configPath}`
+        );
+        if (values["dry-run"]) {
+          console.log("   Would write:");
+          for (const path of writes) console.log(`     - ${path}`);
+        }
         console.log(`   Tier: ${res.plan.tier.toUpperCase()} (${res.plan.limits.concurrency} worker(s), ${res.plan.limits.daily_tasks} daily tasks)`);
         {
           const { probeProvider } = await import("../src/provider-readiness.mjs");
@@ -2000,34 +2040,35 @@ async function main() {
           console.log(`   Verification Test Command : None detected (run "agentctl bootstrap" to create a test oracle)`);
         }
         console.log(`   Active Presets            : ${res.plan.presets.join(", ")}`);
-        for (const item of scaffold.created) {
-          console.log(`   Scaffolded                : ${item}`);
+        if (values.force) {
+          const verb = values["dry-run"] ? "Would scaffold (legacy)" : "Scaffolded (legacy)";
+          for (const item of legacyPlan.created) {
+            console.log(`   ${verb.padEnd(26)}: ${item}`);
+          }
         }
-        if (scaffold.gitignore.length > 0) {
-          console.log(`   Ignored runtime state     : ${scaffold.gitignore.length} entries added to .gitignore`);
+        if (!values["dry-run"] && gitignore.length > 0) {
+          console.log(`   Ignored runtime state     : ${gitignore.length} entries added to .gitignore`);
         }
 
-        // `.agent/config.yml` and `.agent/jules.yml` are both on the gate's deny
-        // list, by design — the agent must not edit its own rules. Leaving them
-        // uncommitted meant the very first `agentctl gate` rejected the working
-        // tree for files init had just written, which reads as the tool
-        // catching the user cheating on step three.
-        const rootContracts = ["SPEC.md", "CONSTRAINTS.md", "DESIGN.md"].filter((f) => existsSync(join(root, f)));
-        // A fresh `npm install`/`npm init -y` just created package manifests the
-        // scope rules `protect`. Leaving them out of the hint meant the very
-        // first `agentctl gate`/`agentctl task create` still rejected the tree
-        // even after the user committed exactly what this message listed. Fold
-        // the install-produced, currently-addable artifacts in so the suggested
-        // commit actually leaves the tree clean enough for step three.
-        const { addableOnboardingArtifacts } = await import("../src/git.mjs");
-        const filesToAdd = [".agent", "AGENTS.md", ...rootContracts, ...addableOnboardingArtifacts(root), ".gitignore"]
-          .filter((f) => existsSync(join(root, f)));
-        console.log(`\n   Commit the manifest and contracts so the gate does not read them as agent edits:`);
-        console.log(`     git add ${filesToAdd.join(" ")} && git commit -m "chore: add agent config"`);
+        if (!values["dry-run"]) {
+          // A fresh `npm install`/`npm init -y` may have created package
+          // manifests the scope rules protect. Include only files that really
+          // exist; minimal init itself owns .agent/config.yml and, when needed,
+          // the .gitignore runtime-state block.
+          const { addableOnboardingArtifacts } = await import("../src/git.mjs");
+          const filesToAdd = [
+            ".agent/config.yml",
+            ...(values.force ? [".agent/jules.yml", ...legacyPlan.created] : []),
+            ...addableOnboardingArtifacts(root),
+            ".gitignore",
+          ].filter((p, index, all) => all.indexOf(p) === index && existsSync(join(root, p)));
+          console.log(`\n   Commit the config so the gate does not read it as an agent edit:`);
+          console.log(`     git add ${filesToAdd.join(" ")} && git commit -m "chore: add agent config"`);
 
-        const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
-        const next = resolveNextStep(root);
-        console.log(renderNextStep({ version: VERSION, root, next, budgetLine: "" }));
+          const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
+          const next = resolveNextStep(root);
+          console.log(renderNextStep({ version: VERSION, root, next, budgetLine: "" }));
+        }
       }
       process.exit(0);
       break;

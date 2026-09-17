@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { scaffoldRepoAssets, ensureGitignore, RUNTIME_GITIGNORE_ENTRIES } from "../src/scaffold.mjs";
+import { scaffoldRepoAssets, ensureGitignore, planGitignoreEntries, RUNTIME_GITIGNORE_ENTRIES } from "../src/scaffold.mjs";
 
 const CLI = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
 
@@ -85,6 +85,100 @@ test("src/scaffold.mjs", async (t) => {
 
       scaffoldRepoAssets(dir, { force: true });
       assert.notEqual(readFileSync(join(dir, ".agent/prompts/Performance.md"), "utf-8"), "my own performance\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl init is minimal by default", () => {
+    const dir = tempRepo();
+    try {
+      const env = { ...process.env };
+      delete env.JULES_API_KEY;
+      delete env.GEMINI_API_KEY;
+      const res = spawnSync("node", [CLI, "init"], { cwd: dir, env, encoding: "utf-8" });
+
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      assert.ok(existsSync(join(dir, ".agent/config.yml")));
+      assert.equal(existsSync(join(dir, ".agent/jules.yml")), false);
+      assert.equal(existsSync(join(dir, "AGENTS.md")), false);
+      assert.equal(existsSync(join(dir, "SPEC.md")), false);
+      assert.equal(existsSync(join(dir, "CONSTRAINTS.md")), false);
+      assert.equal(existsSync(join(dir, "DESIGN.md")), false);
+      assert.equal(existsSync(join(dir, ".agent/prompts")), false);
+      assert.equal(existsSync(join(dir, ".agent/rules")), false);
+      assert.equal(existsSync(join(dir, ".agent/workflows")), false);
+      assert.equal(existsSync(join(dir, ".agent/jules-queue/README.md")), false);
+      assert.deepEqual(planGitignoreEntries(dir), [], "runtime ignore entries should be installed");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl init --dry-run lists writes and leaves the repo untouched", () => {
+    const dir = tempRepo();
+    try {
+      const before = execFileSync("git", ["status", "--porcelain"], { cwd: dir, encoding: "utf-8" });
+      const res = spawnSync("node", [CLI, "init", "--dry-run", "--json"], {
+        cwd: dir,
+        env: { ...process.env },
+        encoding: "utf-8",
+      });
+
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      const out = JSON.parse(res.stdout);
+      assert.equal(out.dryRun, true);
+      assert.deepEqual(out.writes, [".agent/config.yml", ".gitignore"]);
+      assert.equal(existsSync(join(dir, ".agent")), false);
+      assert.equal(existsSync(join(dir, ".gitignore")), false);
+      assert.equal(execFileSync("git", ["status", "--porcelain"], { cwd: dir, encoding: "utf-8" }), before);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl init --force preserves the legacy full scaffold", () => {
+    const dir = tempRepo();
+    try {
+      const env = { ...process.env };
+      delete env.JULES_API_KEY;
+      delete env.GEMINI_API_KEY;
+      const res = spawnSync("node", [CLI, "init", "--force"], { cwd: dir, env, encoding: "utf-8" });
+
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      assert.ok(existsSync(join(dir, ".agent/config.yml")));
+      assert.ok(existsSync(join(dir, ".agent/jules.yml")));
+      assert.ok(existsSync(join(dir, "AGENTS.md")));
+      assert.ok(existsSync(join(dir, ".agent/prompts/Performance.md")));
+      assert.ok(existsSync(join(dir, ".agent/rules/dynamic-guardrails.json")));
+      assert.ok(existsSync(join(dir, ".agent/workflows")));
+      assert.ok(existsSync(join(dir, "SPEC.md")));
+      assert.ok(existsSync(join(dir, "CONSTRAINTS.md")));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl init --dry-run --force previews legacy files without writing them", () => {
+    const dir = tempRepo();
+    try {
+      const res = spawnSync("node", [CLI, "init", "--dry-run", "--force", "--json"], {
+        cwd: dir,
+        env: { ...process.env },
+        encoding: "utf-8",
+      });
+
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      const out = JSON.parse(res.stdout);
+      assert.equal(out.dryRun, true);
+      assert.ok(out.writes.includes(".agent/config.yml"));
+      assert.ok(out.writes.includes(".agent/jules.yml"));
+      assert.ok(out.writes.includes("AGENTS.md"));
+      assert.ok(out.writes.includes("SPEC.md"));
+      assert.ok(out.writes.includes(".agent/prompts/Performance.md"));
+      assert.equal(existsSync(join(dir, ".agent")), false);
+      assert.equal(existsSync(join(dir, "AGENTS.md")), false);
+      assert.equal(existsSync(join(dir, ".gitignore")), false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

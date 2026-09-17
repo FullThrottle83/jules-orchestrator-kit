@@ -40,11 +40,13 @@ try {
 
 if (isHelp) {
   console.log(`
-Google Jules Orchestration Kit - Init Scaffolding CLI
+Google Jules Orchestration Kit - Legacy Full Scaffold
 
 Usage:
-  npx jules-orchestrator-kit [options]
   npx jules-init [options]
+
+For the minimal canonical setup, use:
+  npx jules-orchestrator-kit init
 
 Options:
   -f, --force          Overwrite existing AGENTS.md, .agent/jules.yml, and orchestration scripts.
@@ -119,10 +121,9 @@ if (detected.testCmd || detected.buildCmd) {
   console.log(`   - Build Command: ${detected.buildCmd || "(none)"}`);
 }
 
-// 2-3. Scaffold AGENTS.md, .agent/ structure, role prompts, rules and workflows.
-// Shared with `agentctl init` so the two entry points cannot scaffold different
-// repositories — which is exactly what they used to do, with the README's
-// quickstart pointing at the one that scaffolded less.
+// 2-3. Legacy full scaffold: AGENTS.md, .agent/ role prompts, rules and
+// workflows. The canonical `agentctl init` path is intentionally smaller now;
+// this entry point remains for 0.x repositories that still want the full bundle.
 const { scaffoldRepoAssets } = await import("../src/scaffold.mjs");
 const scaffolded = scaffoldRepoAssets(targetDir, { force: isForce });
 for (const item of scaffolded.created) {
@@ -133,11 +134,8 @@ const agentDir = path.join(targetDir, ".agent");
 
 // Scaffold the manifest pair.
 //
-// This entry point used to hand-roll a thinner `.agent/jules.yml` while
-// `agentctl init` wrote a `.agent/config.yml` the runtime actually reads, so
-// which of the two scaffolders you happened to run decided whether the
-// repository had a provider, a tier and a verification profile at all. Both
-// now go through `planInit`.
+// This compatibility entry point still writes both manifests, but derives them
+// from the same `planInit` model as the canonical path so values cannot drift.
 const { planInit } = await import("../src/wizard-init.mjs");
 const initPlan = planInit(targetDir, {
   testCmd: detected.testCmd,
@@ -226,8 +224,7 @@ if (fs.existsSync(targetPkgPath) && targetDir !== kitRoot) {
   }
 }
 
-// 5b. The .gitignore entries are written by scaffoldRepoAssets above, so the
-// two entry points cannot disagree about which runtime paths stay untracked.
+// 5b. Reuse the same runtime ignore policy as canonical init.
 if (scaffolded.gitignore.length > 0) {
   console.log(`✅ Added ${scaffolded.gitignore.length} runtime state entries to .gitignore`);
 }

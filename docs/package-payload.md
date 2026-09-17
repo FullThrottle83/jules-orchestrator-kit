@@ -9,8 +9,8 @@ Audited for the public-readiness documentation change against base commit
 | --- | --- | --- |
 | `bin/`, `index.mjs`, `src/` | CLI binaries, SDK exports and their imports | Keep |
 | `scripts/` | Manifest commands, legacy entry points, and `bin/init.js` importing `command-resolver.mjs` | Keep; removing the directory breaks supported paths |
-| `JULES_RULES_TEMPLATE.md` | `src/scaffold.mjs` copies it to the host's `AGENTS.md` | Keep, shortened; preserve `<MCP_DIRECTIVE>` for repeat-init detection |
-| `.agent/rules/`, `.agent/prompts/`, `.agent/workflows/` | `scaffoldRepoAssets()` copies these directories; role resolution consumes prompts | Keep; the legacy protocol path is now a reference only |
+| `JULES_RULES_TEMPLATE.md` | Legacy full scaffold copies it to the host's `AGENTS.md` | Keep during 0.x compatibility; default minimal init does not copy it |
+| `.agent/rules/`, `.agent/prompts/`, `.agent/workflows/` | Legacy full scaffold copies these directories; role resolution still consumes prompts when present | Keep during 0.x compatibility; not default init-owned assets |
 | `README.md`, `LICENSE`, `CHANGELOG.md` | Package usage, license and release history | Keep |
 | `AGENTS.md` | Instructions for contributing to this repository | Exclude; scaffold reads the template, not this file |
 | `ROADMAP_V1.md` | Repository documentation and repository-only doc-sync/release checks | Exclude; no CLI or SDK runtime reads it |
