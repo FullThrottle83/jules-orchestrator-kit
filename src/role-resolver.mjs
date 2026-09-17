@@ -128,7 +128,8 @@ export function hydrateRolePrompt(content = "", config = {}) {
 }
 
 /**
- * Resolves specialist agent role markdown prompt from .agent/prompts/
+ * Resolves a specialist role from a repository-local prompt override first,
+ * then from the canonical prompts shipped with the package.
  * @param {string} [root=process.cwd()]
  * @param {string} [roleName=""]
  * @param {object} [opts] - `{ config }` to avoid re-reading .agent/config.yml.
