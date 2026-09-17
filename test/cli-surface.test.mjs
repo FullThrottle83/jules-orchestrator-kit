@@ -586,13 +586,13 @@ describe("F22 — Complete uninstall and undo init documentation", () => {
     );
     assert.match(
       content,
-      /git rm -rf --ignore-unmatch.*\.agent.*AGENTS\.md.*SPEC\.md/s,
-      "README.md must document git rm command for tracked scaffold assets"
+      /default minimal setup.*\.agent\/config\.yml.*\.gitignore/is,
+      "README.md must document the minimal init ownership surface"
     );
     assert.match(
       content,
-      /rm -rf \.agent \.agentctl/,
-      "README.md must document runtime state cleanup"
+      /legacy full scaffold.*AGENTS\.md.*prompts.*rules.*workflows/is,
+      "README.md must distinguish legacy scaffold assets from default init"
     );
     assert.match(
       content,
