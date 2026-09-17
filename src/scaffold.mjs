@@ -217,6 +217,67 @@ export function scaffoldContracts(root = process.cwd(), options = {}) {
 }
 
 /**
+ * Plan the legacy full scaffold without writing it.
+ *
+ * Used by `agentctl init --dry-run --force` so even the compatibility path can
+ * report its exact file ownership before the user opts into it.
+ *
+ * @param {string} [root=process.cwd()]
+ * @param {{ force?: boolean, contracts?: boolean }} [options]
+ * @returns {{ created: string[], gitignore: string[] }}
+ */
+export function planScaffoldRepoAssets(root = process.cwd(), options = {}) {
+  const force = Boolean(options.force);
+  const created = [];
+  const agentDir = join(root, ".agent");
+
+  const agentsFile = join(root, "AGENTS.md");
+  const template = join(KIT_ROOT, "JULES_RULES_TEMPLATE.md");
+  if (
+    existsSync(template) &&
+    template !== agentsFile &&
+    (!existsSync(agentsFile) || force || !readFileSync(agentsFile, "utf-8").includes("<MCP_DIRECTIVE>"))
+  ) {
+    created.push("AGENTS.md");
+  }
+
+  for (const [srcRel, destRel] of [
+    [".agent/prompts", ".agent/prompts"],
+    [".agent/rules", ".agent/rules"],
+    [".agent/workflows", ".agent/workflows"],
+  ]) {
+    const srcDir = join(KIT_ROOT, srcRel);
+    const destDir = join(root, destRel);
+    if (!existsSync(srcDir)) continue;
+    for (const file of readdirSync(srcDir)) {
+      if (!existsSync(join(destDir, file)) || force) {
+        created.push(`${destRel}/${file}`);
+      }
+    }
+  }
+
+  if (options.contracts !== false) {
+    if (!existsSync(join(root, "SPEC.md")) || force) created.push("SPEC.md");
+    if (!existsSync(join(root, "CONSTRAINTS.md")) || force) created.push("CONSTRAINTS.md");
+
+    const isWeb =
+      existsSync(join(root, "astro.config.mjs")) ||
+      existsSync(join(root, "next.config.js")) ||
+      existsSync(join(root, "next.config.mjs")) ||
+      existsSync(join(root, "svelte.config.js")) ||
+      existsSync(join(root, "tailwind.config.js")) ||
+      existsSync(join(root, "tailwind.config.mjs")) ||
+      existsSync(join(root, "tailwind.config.ts"));
+    if (isWeb && (!existsSync(join(root, "DESIGN.md")) || force)) created.push("DESIGN.md");
+  }
+
+  const queueReadme = join(agentDir, "jules-queue", "README.md");
+  if (!existsSync(queueReadme)) created.push(".agent/jules-queue/README.md");
+
+  return { created, gitignore: planGitignoreEntries(root) };
+}
+
+/**
  * Scaffold the repository assets the CLI's documented features depend on.
  *
  * This is the single source of truth for both entry points. `agentctl init`
