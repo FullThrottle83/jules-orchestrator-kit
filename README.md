@@ -40,8 +40,9 @@ command and protected paths. Use `init --dry-run` to preview the exact writes
 without changing the repository.
 
 The historical full scaffold (AGENTS.md, specialist prompts, rules, workflows and
-contract templates) remains available through the legacy `jules-init` entry point
-during the 0.x migration window; it is no longer default-owned by `agentctl init`.
+contract templates) remains available through `agentctl init --force` and the
+legacy `jules-init` entry point during the 0.x migration window; it is no longer
+default-owned by `agentctl init`.
 
 ```bash
 git diff
@@ -52,7 +53,7 @@ Stage the generated files you reviewed, then commit them. The committed
 configuration establishes the trusted base policy used by verification. On an
 already initialized repository, back up and review `.agent/config.yml` before
 rerunning `init`. Existing legacy `.agent/jules.yml` files are left untouched
-by the default path. Avoid `--force` unless replacement of generated files is intended.
+by the default path. `--force` deliberately opts back into the legacy full scaffold.
 
 ### 2. Check provider readiness
 
@@ -199,7 +200,6 @@ legacy full scaffold may also contain AGENTS.md, prompts, rules, workflows and
 contract files; remove those only after confirming ownership.
 
 See the uninstall guide for the complete inventory and legacy cleanup steps.
-See the uninstall guide for the complete inventory.
 
 ## Limitations and attribution
 
