@@ -305,8 +305,13 @@ async function main() {
   }
 
   const root = resolveRoot();
-  reapOrphanedIntents(root);
-  reapStaleMutexDirs(root);
+  // Init is a configuration boundary, not an operational maintenance command.
+  // In particular, --dry-run must not create .agent/ indirectly by reaping
+  // journal intents or mutex directories before init itself gets control.
+  if (command !== "init") {
+    reapOrphanedIntents(root);
+    reapStaleMutexDirs(root);
+  }
   const config = loadConfig(root);
 
   switch (command) {
