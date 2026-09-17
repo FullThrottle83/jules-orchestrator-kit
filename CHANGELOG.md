@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.73.1] - 2026-09-17
+
 ### Changed
 - Consolidated contributor instructions in `AGENTS.md` and shortened the installed
   rules template while preserving scaffold detection and existing file paths.
@@ -14,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   historical audits. Simplified the roadmap and removed release-note epigraphs.
 - Excluded repository-only `AGENTS.md` and `ROADMAP_V1.md` from the npm payload;
   retained runtime modules, script entry points and scaffold assets.
+- Clarified rerunning `init` in initialized repositories: back up and review
+  `.agent/config.yml` and `.agent/jules.yml` because the wizard can regenerate them.
+- Added deterministic review planning as a later roadmap candidate while keeping AI
+  review advisory and separate from the deterministic `gate`.
 
 ## [0.73.0] - 2026-09-09
 
