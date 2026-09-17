@@ -1970,18 +1970,37 @@ async function main() {
         profile: values.profile,
         allowDefaults: true,
         dryRun: values["dry-run"],
+        // --force is retained as the explicit 0.x compatibility path: it
+        // restores the legacy Jules manifest and full repository scaffold.
+        legacyManifest: values.force,
       });
 
       // Default init deliberately owns only the canonical config plus the
-      // runtime-state ignore block. The historical full scaffold is still
-      // available through the shipped `jules-init` compatibility entry point.
-      const { ensureGitignore, planGitignoreEntries } = await import("../src/scaffold.mjs");
+      // runtime-state ignore block. The old full scaffold is opt-in via
+      // --force (and remains available through the shipped jules-init binary).
+      const {
+        ensureGitignore,
+        planGitignoreEntries,
+        planScaffoldRepoAssets,
+        scaffoldRepoAssets,
+      } = await import("../src/scaffold.mjs");
       const plannedGitignore = planGitignoreEntries(root);
-      const gitignore = values["dry-run"] ? plannedGitignore : ensureGitignore(root);
+      const legacyPlan = values.force ? planScaffoldRepoAssets(root, { force: true }) : { created: [], gitignore: plannedGitignore };
+      const scaffold =
+        values.force && !values["dry-run"]
+          ? scaffoldRepoAssets(root, { force: true })
+          : { created: legacyPlan.created, gitignore: plannedGitignore };
+      const gitignore =
+        values["dry-run"]
+          ? plannedGitignore
+          : values.force
+            ? scaffold.gitignore
+            : ensureGitignore(root);
       const writes = [
         ...res.writes.map((p) => relative(root, p) || p),
+        ...legacyPlan.created,
         ...(plannedGitignore.length > 0 ? [".gitignore"] : []),
-      ];
+      ].filter((p, index, all) => all.indexOf(p) === index);
 
       if (values.json) {
         console.log(JSON.stringify({ ...res, writes, gitignore }, null, 2));
@@ -2013,6 +2032,12 @@ async function main() {
           console.log(`   Verification Test Command : None detected (run "agentctl bootstrap" to create a test oracle)`);
         }
         console.log(`   Active Presets            : ${res.plan.presets.join(", ")}`);
+        if (values.force) {
+          const verb = values["dry-run"] ? "Would scaffold (legacy)" : "Scaffolded (legacy)";
+          for (const item of legacyPlan.created) {
+            console.log(`   ${verb.padEnd(26)}: ${item}`);
+          }
+        }
         if (!values["dry-run"] && gitignore.length > 0) {
           console.log(`   Ignored runtime state     : ${gitignore.length} entries added to .gitignore`);
         }
@@ -2023,8 +2048,12 @@ async function main() {
           // exist; minimal init itself owns .agent/config.yml and, when needed,
           // the .gitignore runtime-state block.
           const { addableOnboardingArtifacts } = await import("../src/git.mjs");
-          const filesToAdd = [".agent/config.yml", ...addableOnboardingArtifacts(root), ".gitignore"]
-            .filter((p) => existsSync(join(root, p)));
+          const filesToAdd = [
+            ".agent/config.yml",
+            ...(values.force ? [".agent/jules.yml", ...legacyPlan.created] : []),
+            ...addableOnboardingArtifacts(root),
+            ".gitignore",
+          ].filter((p, index, all) => all.indexOf(p) === index && existsSync(join(root, p)));
           console.log(`\n   Commit the config so the gate does not read it as an agent edit:`);
           console.log(`     git add ${filesToAdd.join(" ")} && git commit -m "chore: add agent config"`);
 
