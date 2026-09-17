@@ -2,7 +2,8 @@ name: PR 40 one-shot simplifier
 
 on:
   push:
-    branches: [refactor/gate-non-mutating]
+    branches:
+      - refactor/gate-non-mutating
 
 permissions:
   contents: write
@@ -55,26 +56,26 @@ jobs:
           old = 'const args = process.argv.slice(2);\nconst command = args[0];\n'
           if cli.count(old) != 1:
               raise SystemExit(f'expected exactly one CLI command prelude, found {cli.count(old)}')
-          new = '''const args = process.argv.slice(2);
-const requestedCommand = args[0] || "";
-const gateCommands = new Set(["gate", "check", "audit"]);
-
-if (gateCommands.has(requestedCommand) && args.includes("--fix")) {
-  console.error("Error: `agentctl gate` is non-mutating; `--fix` no longer dispatches automated repairs.");
-  console.error("Run the gate normally, then use `agentctl repair` explicitly with the failure trace you want repaired.");
-  process.exit(2);
-}
-
-// `fix` remains a 0.x compatibility spelling. `repair` is the explicit v1
-// direction and intentionally reuses the existing repair implementation.
-const command = requestedCommand === "repair" ? "fix" : requestedCommand;
-'''
+          new = '\n'.join([
+              'const args = process.argv.slice(2);',
+              'const requestedCommand = args[0] || "";',
+              'const gateCommands = new Set(["gate", "check", "audit"]);',
+              '',
+              'if (gateCommands.has(requestedCommand) && args.includes("--fix")) {',
+              '  console.error("Error: `agentctl gate` is non-mutating; `--fix` no longer dispatches automated repairs.");',
+              '  console.error("Run the gate normally, then use `agentctl repair` explicitly with the failure trace you want repaired.");',
+              '  process.exit(2);',
+              '}',
+              '',
+              '// `fix` remains a 0.x compatibility spelling. `repair` is the explicit v1',
+              '// direction and intentionally reuses the existing repair implementation.',
+              'const command = requestedCommand === "repair" ? "fix" : requestedCommand;',
+              '',
+          ])
           cli = cli.replace(old, new, 1)
           cli_path.write_text(cli, encoding='utf-8')
           cli_impl.unlink()
 
-          # This workflow is scaffolding for the branch rewrite only. It must not
-          # remain in the PR or weaken the repository's normal workflow surface.
           Path('.github/workflows/pr40-refactor-once.yml').unlink()
           PY
 
