@@ -687,7 +687,7 @@ async function main() {
           } else if (failedPhase === "verify" || failedPhase === "evidence") {
             console.log(`💡 Remediation Hint (Exit ${res.code} Verification Failed):`);
             console.log(`   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.`);
-            console.log(`   • To let agentctl attempt the repair loop itself, pass: agentctl gate --fix\n`);
+            console.log(`   • To start an explicit repair workflow, pipe the failing command's output to: agentctl repair\n`);
           } else if (res.code === 3) {
             // The same violation has two very different causes. Right after
             // `init`, every offending path is a file the tool itself just wrote
