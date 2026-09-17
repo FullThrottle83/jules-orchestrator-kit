@@ -12,9 +12,10 @@ Use the kit to describe a scoped coding task, send it to Google Jules or an
 installed Claude Code, Codex or Gemini CLI, and verify the resulting changes.
 You can also run local checks without connecting an agent provider.
 
-**Dispatch and verification are separate.** Dispatch sends the task; `gate` runs
-configured checks on changes. `gate --fix` can request automated repairs. Provider
-output and passing checks still need review before merging.
+**Dispatch, verification and repair are explicit.** Dispatch sends the task;
+`gate` runs configured checks without mutating the working tree. Use
+`agentctl repair` explicitly for repair workflows. Provider output and passing
+checks still need review before merging.
 
 The current release is **v0.73.1**, a pre-1.0 release. A long-term stability policy is a
 [v1.0 goal](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/ROADMAP_V1.md).
@@ -107,7 +108,7 @@ For direct `agentctl` commands, install globally with
 | Create a scoped task | `agentctl task create` |
 | Preview queued work | `agentctl queue --dry-run` |
 | Check changes locally | `agentctl gate` |
-| Verify and request repairs | `agentctl gate --fix` |
+| Start an explicit repair workflow | `agentctl repair --input "<failure>" --task` |
 | Diagnose setup | `agentctl doctor` |
 | Inspect a command's flags | `agentctl help <command>` |
 
@@ -166,7 +167,7 @@ npm run package-integrity
 npm run guard-reach
 ```
 
-The recorded baseline is **1530 unit tests across 204 suites**. Doc-sync compares
+The recorded baseline is **1532 unit tests across 204 suites**. Doc-sync compares
 that count with an actual run. Counts do not establish correctness for every
 provider or project. See
 [contributing](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTING.md)
