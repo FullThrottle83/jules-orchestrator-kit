@@ -22,7 +22,18 @@ import { COMMAND_REGISTRY } from "../src/ops/command-registry.mjs";
 applyEnvAliases(process.env);
 
 const args = process.argv.slice(2);
-const command = args[0];
+const requestedCommand = args[0] || "";
+const gateCommands = new Set(["gate", "check", "audit"]);
+
+if (gateCommands.has(requestedCommand) && args.includes("--fix")) {
+  console.error("Error: `agentctl gate` is non-mutating; `--fix` no longer dispatches automated repairs.");
+  console.error("Run the gate normally, then use `agentctl repair` explicitly with the failure trace you want repaired.");
+  process.exit(2);
+}
+
+// `repair` is the canonical spelling; `fix` remains a 0.x compatibility
+// alias. Both route through the same existing implementation below.
+const command = requestedCommand;
 
 export const VERSION = KIT_VERSION;
 
@@ -676,7 +687,7 @@ async function main() {
           } else if (failedPhase === "verify" || failedPhase === "evidence") {
             console.log(`💡 Remediation Hint (Exit ${res.code} Verification Failed):`);
             console.log(`   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.`);
-            console.log(`   • To let agentctl attempt the repair loop itself, pass: agentctl gate --fix\n`);
+            console.log(`   • To start an explicit repair workflow, pipe the failing command's output to: agentctl repair\n`);
           } else if (res.code === 3) {
             // The same violation has two very different causes. Right after
             // `init`, every offending path is a file the tool itself just wrote
@@ -965,6 +976,7 @@ async function main() {
       break;
     }
 
+    case "repair":
     case "fix": {
       const { repair, planTaskCreate, resolveRoot, redactSecrets } = await import("../index.mjs");
       const { values, positionals } = parseArgs({
@@ -996,7 +1008,7 @@ async function main() {
       }
 
       if (!errorInput.trim()) {
-        console.error("❌ Error: No error log or failure input provided. Pipe stdout/stderr via `npm test 2>&1 | agentctl fix` or provide --file/--input.");
+        console.error("❌ Error: No error log or failure input provided. Pipe stdout/stderr via `npm test 2>&1 | agentctl repair` or provide --file/--input.");
         process.exit(1);
       }
 

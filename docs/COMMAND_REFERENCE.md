@@ -41,7 +41,7 @@ Total commands: 52
 - [`agentctl plan approve`](#plan-approve) — Approve a pending execution plan for an agent session
 - [`agentctl lock`](#lock) — Multi-agent coordination locks: acquire, release, or view file status
 - [`agentctl evidence`](#evidence) — Manage cryptographic audit evidence (generate | verify | show)
-- [`agentctl fix`](#fix) — Auto-repair from piped terminal logs or error trace (npm test 2>&1 | agentctl fix)
+- [`agentctl repair`](#repair) — Explicitly repair from piped terminal logs or an error trace; `fix` remains a 0.x compatibility alias
 - [`agentctl patch`](#patch) — Extract and test/apply git patch from a Jules session
 - [`agentctl retry`](#retry) — Retry failed session with automated failure-trace injection
 - [`agentctl prune`](#prune) — Batch-archive or delete stale sessions via Jules API
@@ -569,7 +569,6 @@ Run CI security, rules, and stack verification gate
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
 | `--committed` | boolean | Evaluate committed changes |
-| `--fix` | boolean | Trigger automated OODA self-repair loop on failure |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
@@ -584,7 +583,6 @@ Run CI security, rules, and stack verification gate
 ```sh
 agentctl gate
 agentctl gate --mode working-tree
-agentctl gate --fix
 agentctl gate --json
 ```
 
@@ -603,7 +601,6 @@ Alias of gate: run all-in-one CI security, rules, and stack verification gate
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
 | `--committed` | boolean | Evaluate committed changes |
-| `--fix` | boolean | Trigger automated OODA self-repair loop on failure |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
@@ -619,7 +616,6 @@ Alias of gate: run all-in-one CI security, rules, and stack verification gate
 agentctl check
 agentctl check --base main --strict-locks
 agentctl gate --strict-locks  # canonical spelling; check is an alias
-agentctl check --fix
 agentctl check --json
 ```
 
@@ -638,7 +634,6 @@ Alias of gate: run CI security and verification gate against current branch
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
 | `--committed` | boolean | Evaluate committed changes |
-| `--fix` | boolean | Trigger automated OODA self-repair loop on failure |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
@@ -653,7 +648,6 @@ Alias of gate: run CI security and verification gate against current branch
 ```sh
 agentctl audit
 agentctl audit --mode working-tree
-agentctl audit --fix
 agentctl audit --json
 ```
 
@@ -995,11 +989,13 @@ agentctl evidence verify
 agentctl evidence show --json
 ```
 
-## `agentctl fix`
+## `agentctl repair`
 
-**ID:** `fix` · **Category:** Repair · **Risk:** MODERATE · **Mutates:** yes
+**ID:** `repair` · **Category:** Repair · **Risk:** MODERATE · **Mutates:** yes
 
-Auto-repair from piped terminal logs or error trace (npm test 2>&1 | agentctl fix)
+Explicitly repair from piped terminal logs or an error trace; `fix` remains a 0.x compatibility alias
+
+**Shortcuts:** `fix`
 
 **Flags:**
 
@@ -1016,9 +1012,9 @@ Auto-repair from piped terminal logs or error trace (npm test 2>&1 | agentctl fi
 **Examples:**
 
 ```sh
-npm test 2>&1 | agentctl fix
-agentctl fix --file ./fail.log
-agentctl fix --input "Error: boom" --task --json
+npm test 2>&1 | agentctl repair
+agentctl repair --file ./fail.log
+agentctl repair --input "Error: boom" --task --json
 ```
 
 ## `agentctl patch`

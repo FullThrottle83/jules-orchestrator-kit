@@ -143,6 +143,7 @@ export function fingerprintFailureState(failure = {}, root = process.cwd()) {
  * FAILS CLOSED ON GIT OR CONFIG ERRORS.
  */
 export async function gate(opts = {}) {
+  opts = opts && typeof opts === "object" ? { ...opts, fix: false } : { fix: false };
   const root = opts.root || process.cwd();
   const mode = opts.mode || (opts.workingTree ? "working-tree" : (process.env.JULES_GATE_MODE || "working-tree"));
   const config = opts.config || (mode === "working-tree" ? loadConfig(root) : null);

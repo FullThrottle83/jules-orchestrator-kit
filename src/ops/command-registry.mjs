@@ -522,7 +522,6 @@ export const COMMAND_REGISTRY = [
     examples: [
       "agentctl gate",
       "agentctl gate --mode working-tree",
-      "agentctl gate --fix",
       "agentctl gate --json",
     ],
     flags: [
@@ -531,7 +530,6 @@ export const COMMAND_REGISTRY = [
       { name: "working-tree", type: "boolean", description: "Evaluate the working tree (default mode)" },
       { name: "staged", type: "boolean", description: "Evaluate staged changes" },
       { name: "committed", type: "boolean", description: "Evaluate committed changes" },
-      { name: "fix", type: "boolean", description: "Trigger automated OODA self-repair loop on failure" },
       { name: "allow-protected", type: "boolean", description: "Bypass protected path checks for authorized maintainers" },
       { name: "allow-unreadable-tests", type: "boolean", description: "Permit unreadable test dialects for this run" },
       { name: "allow-test-modifications", type: "boolean", description: "Waive every test-tampering check for this run" },
@@ -557,7 +555,6 @@ export const COMMAND_REGISTRY = [
       "agentctl check",
       "agentctl check --base main --strict-locks",
       "agentctl gate --strict-locks  # canonical spelling; check is an alias",
-      "agentctl check --fix",
       "agentctl check --json",
     ],
     flags: [
@@ -566,7 +563,6 @@ export const COMMAND_REGISTRY = [
       { name: "working-tree", type: "boolean", description: "Evaluate the working tree (default mode)" },
       { name: "staged", type: "boolean", description: "Evaluate staged changes" },
       { name: "committed", type: "boolean", description: "Evaluate committed changes" },
-      { name: "fix", type: "boolean", description: "Trigger automated OODA self-repair loop on failure" },
       { name: "allow-protected", type: "boolean", description: "Bypass protected path checks for authorized maintainers" },
       { name: "allow-unreadable-tests", type: "boolean", description: "Permit unreadable test dialects for this run" },
       { name: "allow-test-modifications", type: "boolean", description: "Waive every test-tampering check for this run" },
@@ -591,7 +587,6 @@ export const COMMAND_REGISTRY = [
     examples: [
       "agentctl audit",
       "agentctl audit --mode working-tree",
-      "agentctl audit --fix",
       "agentctl audit --json",
     ],
     flags: [
@@ -600,7 +595,6 @@ export const COMMAND_REGISTRY = [
       { name: "working-tree", type: "boolean", description: "Evaluate the working tree (default mode)" },
       { name: "staged", type: "boolean", description: "Evaluate staged changes" },
       { name: "committed", type: "boolean", description: "Evaluate committed changes" },
-      { name: "fix", type: "boolean", description: "Trigger automated OODA self-repair loop on failure" },
       { name: "allow-protected", type: "boolean", description: "Bypass protected path checks for authorized maintainers" },
       { name: "allow-unreadable-tests", type: "boolean", description: "Permit unreadable test dialects for this run" },
       { name: "allow-test-modifications", type: "boolean", description: "Waive every test-tampering check for this run" },
@@ -940,20 +934,20 @@ export const COMMAND_REGISTRY = [
     ],
   },
   {
-    id: "fix",
-    path: ["fix"],
-    title: "fix",
-    description: "Auto-repair from piped terminal logs or error trace (npm test 2>&1 | agentctl fix)",
+    id: "repair",
+    path: ["repair"],
+    title: "repair",
+    description: "Explicitly repair from piped terminal logs or an error trace; `fix` remains a 0.x compatibility alias",
     category: "Repair",
     mutates: true,
     risk: "moderate",
     interactive: "never",
     requiresRepository: true,
-    shortcuts: [],
+    shortcuts: ["fix"],
     examples: [
-      "npm test 2>&1 | agentctl fix",
-      "agentctl fix --file ./fail.log",
-      'agentctl fix --input "Error: boom" --task --json',
+      "npm test 2>&1 | agentctl repair",
+      "agentctl repair --file ./fail.log",
+      'agentctl repair --input "Error: boom" --task --json',
     ],
     flags: [
       { name: "input", type: "string", description: "Inline error log text (-i)" },

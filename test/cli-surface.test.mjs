@@ -130,21 +130,16 @@ test("a failed verify phase says what broke", async (t) => {
     }
   });
 
-  await t.test("does not offer --fix as a remedy to a run that already used it", () => {
+  await t.test("rejects --fix at the gate boundary and points to explicit repair", () => {
     const dir = repoWithFailingTest("still broken");
     try {
-      const out = run(dir, ["gate", "--fix"]).stdout;
+      const res = run(dir, ["gate", "--fix"]);
+      const out = res.stdout + res.stderr;
+      assert.equal(res.status, 2);
       assert.doesNotMatch(out, /pass: agentctl gate --fix/);
-      // Exit 4 has two distinct causes and they must not be told as one story:
-      // the agent ran and could not fix it, or the provider refused the
-      // dispatch and the agent never ran. Which applies here depends on whether
-      // this machine's provider is usable, so accept either — but require that
-      // whichever it is actually explains itself.
-      assert.match(out, /OODA Repair Exhausted|the repair agent never ran/);
-      if (/the repair agent never ran/.test(out)) {
-        assert.match(out, /Provider error: /, "a dispatch that never happened must say why");
-        assert.match(out, /agentctl providers/, "and point at the command that diagnoses it");
-      }
+      assert.match(out, /non-mutating/);
+      assert.match(out, /agentctl repair/);
+      assert.doesNotMatch(out, /OODA Repair Exhausted|Provider error:/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1336,7 +1331,8 @@ describe("agentctl command surface — offline CLI coverage", () => {
  * exists) fails here instead of shipping silent help drift.
  */
 describe("P06: CLI case labels and registry descriptors stay in sync", () => {
-  const CLI_SOURCE = readFileSync(AGENTCTL, "utf-8");
+  const CLI_ROUTER = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
+  const CLI_SOURCE = readFileSync(CLI_ROUTER, "utf-8");
   const caseLabels = [...CLI_SOURCE.matchAll(/^\s*case "([^"]+)":/gm)].map((m) => m[1]);
 
   it("extracts the routed case labels from bin/agentctl.mjs", () => {
