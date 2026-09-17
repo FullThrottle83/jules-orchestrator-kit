@@ -1331,7 +1331,8 @@ describe("agentctl command surface — offline CLI coverage", () => {
  * exists) fails here instead of shipping silent help drift.
  */
 describe("P06: CLI case labels and registry descriptors stay in sync", () => {
-  const CLI_SOURCE = readFileSync(CLI, "utf-8");
+  const CLI_ROUTER = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
+  const CLI_SOURCE = readFileSync(CLI_ROUTER, "utf-8");
   const caseLabels = [...CLI_SOURCE.matchAll(/^\s*case "([^"]+)":/gm)].map((m) => m[1]);
 
   it("extracts the routed case labels from bin/agentctl.mjs", () => {
