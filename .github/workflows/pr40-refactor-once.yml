@@ -1,0 +1,101 @@
+name: PR 40 one-shot simplifier
+
+on:
+  push:
+    branches: [refactor/gate-non-mutating]
+
+permissions:
+  contents: write
+
+jobs:
+  simplify:
+    if: github.repository == 'FullThrottle83/jules-orchestrator-kit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: '22.x'
+
+      - name: Collapse wrapper split to minimal in-place contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          engine_impl = Path('src/engine-impl.mjs')
+          engine_path = Path('src/engine.mjs')
+          if not engine_impl.exists():
+              raise SystemExit('src/engine-impl.mjs missing; refusing to guess')
+          engine = engine_impl.read_text(encoding='utf-8')
+          gate_head = 'export async function gate(opts = {}) {\n'
+          if engine.count(gate_head) != 1:
+              raise SystemExit(f'expected exactly one gate() definition, found {engine.count(gate_head)}')
+          engine = engine.replace(
+              gate_head,
+              gate_head + '  opts = opts && typeof opts === "object" ? { ...opts, fix: false } : { fix: false };\n',
+              1,
+          )
+          engine_path.write_text(engine, encoding='utf-8')
+          engine_impl.unlink()
+
+          cli_impl = Path('bin/agentctl-impl.mjs')
+          cli_path = Path('bin/agentctl.mjs')
+          if not cli_impl.exists():
+              raise SystemExit('bin/agentctl-impl.mjs missing; refusing to guess')
+          cli = cli_impl.read_text(encoding='utf-8')
+          old = 'const args = process.argv.slice(2);\nconst command = args[0];\n'
+          if cli.count(old) != 1:
+              raise SystemExit(f'expected exactly one CLI command prelude, found {cli.count(old)}')
+          new = '''const args = process.argv.slice(2);
+const requestedCommand = args[0] || "";
+const gateCommands = new Set(["gate", "check", "audit"]);
+
+if (gateCommands.has(requestedCommand) && args.includes("--fix")) {
+  console.error("Error: `agentctl gate` is non-mutating; `--fix` no longer dispatches automated repairs.");
+  console.error("Run the gate normally, then use `agentctl repair` explicitly with the failure trace you want repaired.");
+  process.exit(2);
+}
+
+// `fix` remains a 0.x compatibility spelling. `repair` is the explicit v1
+// direction and intentionally reuses the existing repair implementation.
+const command = requestedCommand === "repair" ? "fix" : requestedCommand;
+'''
+          cli = cli.replace(old, new, 1)
+          cli_path.write_text(cli, encoding='utf-8')
+          cli_impl.unlink()
+
+          # This workflow is scaffolding for the branch rewrite only. It must not
+          # remain in the PR or weaken the repository's normal workflow surface.
+          Path('.github/workflows/pr40-refactor-once.yml').unlink()
+          PY
+
+          git diff --check
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run unit tests
+        run: npm test --if-present
+
+      - name: Run linter
+        run: npm run lint --if-present
+
+      - name: Commit simplified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "refactor: simplify non-mutating gate boundary"
+          git push origin HEAD:refactor/gate-non-mutating
