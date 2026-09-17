@@ -167,7 +167,7 @@ npm run package-integrity
 npm run guard-reach
 ```
 
-The recorded baseline is **1532 unit tests across 204 suites**. Doc-sync compares
+The recorded baseline is **1528 unit tests across 204 suites**. Doc-sync compares
 that count with an actual run. Counts do not establish correctness for every
 provider or project. See
 [contributing](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTING.md)
