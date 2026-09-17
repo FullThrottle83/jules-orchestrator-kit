@@ -2005,7 +2005,7 @@ async function main() {
             ? scaffold.gitignore
             : ensureGitignore(root);
       const writes = [
-        ...res.writes.map((p) => relative(root, p) || p),
+        ...res.writes.map((p) => (relative(root, p) || p).replaceAll("\\", "/")),
         ...legacyPlan.created,
         ...(plannedGitignore.length > 0 ? [".gitignore"] : []),
       ].filter((p, index, all) => all.indexOf(p) === index);
