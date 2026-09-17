@@ -555,21 +555,30 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
     presets: selectedPresets,
   });
 
-  // Atomic write plan
+  // Default init owns one canonical project file: .agent/config.yml.
+  // The legacy Jules manifest remains available only when a caller explicitly
+  // asks for it during the 0.x migration window.
   const agentDir = join(root, ".agent");
-  if (!existsSync(agentDir)) {
-    mkdirSync(agentDir, { recursive: true });
-  }
-
   const configPath = join(agentDir, "config.yml");
   const julesPath = join(agentDir, "jules.yml");
+  const writes = [configPath];
+  if (options.legacyManifest) writes.push(julesPath);
 
-  safeAtomicWrite(configPath, plan.configYaml);
-  safeAtomicWrite(julesPath, plan.julesYaml);
+  if (!options.dryRun) {
+    if (!existsSync(agentDir)) {
+      mkdirSync(agentDir, { recursive: true });
+    }
+    safeAtomicWrite(configPath, plan.configYaml);
+    if (options.legacyManifest) {
+      safeAtomicWrite(julesPath, plan.julesYaml);
+    }
+  }
 
   return {
     ok: true,
     configPath,
     plan,
+    dryRun: Boolean(options.dryRun),
+    writes,
   };
 }
