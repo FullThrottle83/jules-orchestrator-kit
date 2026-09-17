@@ -1,10 +1,10 @@
 # Roadmap
 
-v0.73.0 (Current Stable) is the current release. The package remains pre-1.0;
+v0.73.1 (Current Stable) is the current release. The package remains pre-1.0;
 planned work below is not a delivery commitment or a claim of enterprise compliance.
 The runtime will continue to use Node.js built-ins without third-party dependencies.
 
-## Shipped Milestones (v0.66.0 – v0.73.0)
+## Shipped Milestones (v0.66.0 – v0.73.1)
 
 Recent releases improved test-tamper detection, session-state handling, verification
 isolation, CLI onboarding and command documentation. v0.73.0 split the security
