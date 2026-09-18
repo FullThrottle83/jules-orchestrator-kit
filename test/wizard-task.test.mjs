@@ -226,6 +226,27 @@ test("Guided Task Authoring Subsystem", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("planTaskCreate auto-escalates to Amber lane and requires plan approval when touching protected paths", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-amber-test-"));
+    try {
+      const plan = planTaskCreate(tmpDir, {
+        title: "Bump express dependency",
+        prompt: "Upgrade express to latest version",
+        targetFiles: ["package.json", "package-lock.json"],
+        verifyCmd: "npm test",
+      });
+
+      assert.strictEqual(plan.risk.lane, "amber");
+      assert.strictEqual(plan.risk.require_plan_approval, true);
+      assert.strictEqual(plan.flags.requirePlanApproval, true);
+      assert.ok(!plan.fullPrompt.includes("Do NOT modify these protected paths: package.json"));
+      assert.ok(plan.taskFileContent.includes("lane: amber"));
+      assert.ok(plan.taskFileContent.includes("require_plan_approval: true"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 
@@ -260,6 +281,12 @@ test("Guardrail footer is derived from the repository's scope, not a Node litera
 
     const node = buildGuardrailFooter(nodeRepo);
     assert.match(node, /git diff origin\/main\.\.\.HEAD \| wc -c/);
+  });
+
+  await t.test("buildGuardrailFooter filters out allowed paths so dependency upgrade tasks do not receive conflicting directives", () => {
+    const footer = buildGuardrailFooter(nodeRepo, { allowedPaths: ["package.json"] });
+    assert.ok(!footer.includes("package.json"), "package.json must be excluded from protected paths when explicitly allowed");
+    assert.match(footer, /tsconfig\.json/);
   });
 
   // "Delete ALL temporary files (.py, .sh, ...)" told a Python project's agent

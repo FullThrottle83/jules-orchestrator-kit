@@ -24,8 +24,10 @@ export function validateEnvelope(envelope = {}, opts = {}) {
   }
 
   // 1. Mandatory Fields
-  const intent = envelope.intent || envelope.title || envelope.prompt;
-  if (!intent || typeof intent !== "string" || !intent.trim()) {
+  const rawIntent = (envelope.intent && typeof envelope.intent === "object")
+    ? envelope.intent.outcome
+    : (envelope.intent || envelope.title || envelope.prompt);
+  if (!rawIntent || typeof rawIntent !== "string" || !rawIntent.trim()) {
     errors.push("Envelope missing required 'intent' string.");
   }
 
@@ -87,12 +89,30 @@ export function validateEnvelope(envelope = {}, opts = {}) {
   }
 
   // 4. Allowed Paths & Protected Scope Check
+  const riskObj = envelope.risk && typeof envelope.risk === "object" ? envelope.risk : {};
+  const rawLane = riskObj.lane || envelope.risk_lane || envelope.riskLane;
+  const riskLane = rawLane ? String(rawLane).toLowerCase() : (envelope.flags?.requirePlanApproval ? "amber" : "green");
+  const allowProtected = opts.allowProtected ?? (riskLane === "amber" && Boolean(envelope.flags?.requirePlanApproval || riskObj.require_plan_approval));
+
+  if (riskLane === "red") {
+    errors.push("Red-lane tasks are outside autonomous agent delegation boundaries (unsupervised high-impact, custom crypto, un-oracleable).");
+  } else if (riskLane === "orange") {
+    warnings.push("Orange-lane task: candidate generation only. Execution must be conducted outside Jules via protected control plane.");
+  }
+
   const allowPaths = envelope.allowed_paths || envelope.scope?.allow;
   if (Array.isArray(allowPaths) && allowPaths.length > 0) {
     const scope = normalizeScope(opts.scopeConfig || {});
-    const scopeCheck = checkScope(allowPaths, scope);
+    const scopeCheck = checkScope(allowPaths, scope, { allowProtected });
     if (!scopeCheck.ok) {
-      errors.push(`Allowed paths violate protected scope: ${scopeCheck.violations.map((v) => `${v.file} (${v.reason})`).join(", ")}`);
+      const hasProtectedViolation = scopeCheck.violations.some((v) => v.rule === "protect");
+      if (hasProtectedViolation && !allowProtected) {
+        errors.push(
+          `Allowed paths violate protected scope: ${scopeCheck.violations.map((v) => `${v.file} (${v.reason})`).join(", ")}. Modifying protected paths requires risk.lane 'amber' and requirePlanApproval: true.`
+        );
+      } else {
+        errors.push(`Allowed paths violate protected scope: ${scopeCheck.violations.map((v) => `${v.file} (${v.reason})`).join(", ")}`);
+      }
     }
   }
 
@@ -104,6 +124,15 @@ export function validateEnvelope(envelope = {}, opts = {}) {
   } else if (envelope.verification?.commands !== undefined) {
     if (!Array.isArray(envelope.verification.commands) || envelope.verification.commands.length === 0) {
       errors.push("verification.commands must be a non-empty array of strings when provided.");
+    }
+  }
+
+  if (envelope.verification && typeof envelope.verification === "object") {
+    if (envelope.verification.require_nonzero_test_count !== undefined && typeof envelope.verification.require_nonzero_test_count !== "boolean") {
+      errors.push("verification.require_nonzero_test_count must be a boolean when provided.");
+    }
+    if (envelope.verification.trusted_base !== undefined && typeof envelope.verification.trusted_base !== "string") {
+      errors.push("verification.trusted_base must be a string when provided.");
     }
   }
 
@@ -122,6 +151,38 @@ export function validateEnvelope(envelope = {}, opts = {}) {
   // 8. MCP Directives Check
   if (envelope.mcp_directives !== undefined && !Array.isArray(envelope.mcp_directives)) {
     errors.push("mcp_directives must be an array of strings when provided.");
+  }
+
+  // 9. Risk Object Check
+  if (envelope.risk !== undefined) {
+    if (typeof envelope.risk !== "object" || envelope.risk === null) {
+      errors.push("risk must be an object when provided.");
+    } else {
+      if (envelope.risk.lane !== undefined && !["green", "amber", "orange", "red"].includes(String(envelope.risk.lane).toLowerCase())) {
+        errors.push("risk.lane must be one of 'green', 'amber', 'orange', 'red' when provided.");
+      }
+      if (envelope.risk.require_plan_approval !== undefined && typeof envelope.risk.require_plan_approval !== "boolean") {
+        errors.push("risk.require_plan_approval must be a boolean when provided.");
+      }
+    }
+  }
+
+  // 10. Circuit Breaker Check
+  const cb = envelope.circuit_breaker || envelope.circuitBreaker;
+  if (cb !== undefined) {
+    if (typeof cb !== "object" || cb === null) {
+      errors.push("circuitBreaker must be an object when provided.");
+    } else {
+      if (cb.max_attempts !== undefined && !Number.isInteger(Number(cb.max_attempts))) {
+        errors.push("circuitBreaker.max_attempts must be an integer when provided.");
+      }
+      if (cb.max_diff_lines !== undefined && !Number.isInteger(Number(cb.max_diff_lines))) {
+        errors.push("circuitBreaker.max_diff_lines must be an integer when provided.");
+      }
+      if (cb.stop_if_same_failure_repeats !== undefined && typeof cb.stop_if_same_failure_repeats !== "boolean") {
+        errors.push("circuitBreaker.stop_if_same_failure_repeats must be a boolean when provided.");
+      }
+    }
   }
 
   return {
@@ -284,6 +345,22 @@ export function serializeTaskFrontmatter(meta = {}) {
   const base = meta.baseCommit || meta.base_commit || meta.baseSha || meta.base_sha;
   if (base) lines.push(`base_commit: ${base}`);
 
+  if (meta.risk && typeof meta.risk === "object") {
+    lines.push("risk:");
+    if (meta.risk.lane) lines.push(`  lane: ${meta.risk.lane}`);
+    if (meta.risk.require_plan_approval !== undefined) {
+      lines.push(`  require_plan_approval: ${Boolean(meta.risk.require_plan_approval)}`);
+    }
+  }
+
+  const cb = meta.circuitBreaker || meta.circuit_breaker;
+  if (cb && typeof cb === "object") {
+    lines.push("circuitBreaker:");
+    if (cb.max_attempts !== undefined) lines.push(`  max_attempts: ${cb.max_attempts}`);
+    if (cb.max_diff_lines !== undefined) lines.push(`  max_diff_lines: ${cb.max_diff_lines}`);
+    if (cb.stop_if_same_failure_repeats !== undefined) lines.push(`  stop_if_same_failure_repeats: ${cb.stop_if_same_failure_repeats}`);
+  }
+
   if (Array.isArray(meta.dependsOn) && meta.dependsOn.length > 0) {
     lines.push("dependsOn:");
     for (const dep of meta.dependsOn) {
@@ -305,15 +382,26 @@ export function serializeTaskFrontmatter(meta = {}) {
   }
 
   const commands = meta.verification?.commands || (meta.verifyCmd ? [meta.verifyCmd] : []);
-  if (Array.isArray(commands) && commands.length > 0) {
+  const requireNonzero = meta.verification?.require_nonzero_test_count;
+  const trustedBase = meta.verification?.trusted_base;
+  if ((Array.isArray(commands) && commands.length > 0) || requireNonzero !== undefined || trustedBase) {
     lines.push("verification:");
-    lines.push("  commands:");
-    for (const cmd of commands) lines.push(`    - ${cmd}`);
+    if (Array.isArray(commands) && commands.length > 0) {
+      lines.push("  commands:");
+      for (const cmd of commands) lines.push(`    - ${cmd}`);
+    }
+    if (requireNonzero !== undefined) {
+      lines.push(`  require_nonzero_test_count: ${requireNonzero}`);
+    }
+    if (trustedBase) {
+      lines.push(`  trusted_base: ${trustedBase}`);
+    }
   }
 
-  if (Array.isArray(meta.invariants) && meta.invariants.length > 0) {
+  const invariants = Array.isArray(meta.invariants) ? meta.invariants : (Array.isArray(meta.constraints) ? meta.constraints : []);
+  if (invariants.length > 0) {
     lines.push("invariants:");
-    for (const inv of meta.invariants) lines.push(`  - ${inv}`);
+    for (const inv of invariants) lines.push(`  - ${inv}`);
   }
 
   const mcpList = meta.mcp_directives || meta.mcpDirectives;
@@ -367,20 +455,56 @@ export function parseEnvelopeHeader(content) {
     if (m.requirePlanApproval !== undefined) flags.requirePlanApproval = Boolean(m.requirePlanApproval);
     if (m.repoless !== undefined) flags.repoless = Boolean(m.repoless);
 
+    const risk = m.risk && typeof m.risk === "object" ? m.risk : {};
+    const rawLane = risk.lane || m.risk_lane || m.riskLane;
+    const riskLane = rawLane ? String(rawLane).toLowerCase() : (flags.requirePlanApproval ? "amber" : "green");
+    if (risk.require_plan_approval !== undefined) {
+      flags.requirePlanApproval = Boolean(risk.require_plan_approval);
+    } else if (risk.requirePlanApproval !== undefined) {
+      flags.requirePlanApproval = Boolean(risk.requirePlanApproval);
+    } else if (riskLane === "amber" && flags.requirePlanApproval === undefined) {
+      flags.requirePlanApproval = true;
+    }
+
+    const circuitBreaker = m.circuitBreaker || m.circuit_breaker;
+    const invariants = Array.isArray(m.invariants) ? m.invariants : (Array.isArray(m.constraints) ? m.constraints : []);
     const mcpDirectives = m.mcp_directives || m.mcpDirectives;
 
+    const metaObj = m.metadata && typeof m.metadata === "object" ? m.metadata : {};
+    const taskId = m.id || m.taskId || metaObj.id || metaObj.taskId;
+    const title = m.title || metaObj.title || (typeof m.intent === "string" ? m.intent : m.intent?.outcome);
+
+    let verification = m.verification;
+    if (typeof verification === "string") {
+      verification = { commands: [verification] };
+    } else if (Array.isArray(verification)) {
+      verification = { commands: verification };
+    } else if (verification && typeof verification === "object") {
+      if (typeof verification.commands === "string") {
+        verification = { ...verification, commands: [verification.commands] };
+      }
+    } else if (verifyCmd) {
+      verification = { commands: [verifyCmd] };
+    }
+
     return {
-      version: m.version || 1,
+      version: m.version || m.apiVersion || 1,
       kind: m.kind || "Task",
-      id: m.id || m.taskId,
-      taskId: m.id || m.taskId,
-      title: m.title,
-      role: m.role,
-      tier: m.tier,
+      id: taskId,
+      taskId,
+      title,
+      intent: m.intent,
+      role: m.role || metaObj.role,
+      tier: m.tier || metaObj.tier,
+      risk: {
+        lane: riskLane,
+        require_plan_approval: Boolean(flags.requirePlanApproval),
+      },
+      circuitBreaker,
       dependsOn: m.dependsOn,
       flags,
       verifyCmd,
-      verification: m.verification || (verifyCmd ? { commands: [verifyCmd] } : undefined),
+      verification,
       scope: {
         allow,
         deny,
@@ -388,7 +512,8 @@ export function parseEnvelopeHeader(content) {
       targetFiles: allow,
       allowed_paths: allow,
       forbiddenPaths: deny,
-      invariants: Array.isArray(m.invariants) ? m.invariants : [],
+      invariants,
+      constraints: invariants,
       mcp_directives: Array.isArray(mcpDirectives) ? mcpDirectives : (typeof mcpDirectives === "string" ? [mcpDirectives] : []),
       baseCommit: m.base_commit || m.base_sha || m.baseCommit || m.baseRef,
       base_commit: m.base_commit || m.base_sha || m.baseCommit || m.baseRef,

@@ -10,6 +10,7 @@ import { select, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { scorePromptFalsifiability } from "./task-optimizer.mjs";
 import { getWebTemplate, synthesizeWebEnvelope } from "./web-templates.mjs";
 import { serializeTaskFrontmatter } from "./envelope.mjs";
+import { classifyRiskTier, RISK_TIERS } from "./risk.mjs";
 
 /**
  * Maximum protected paths to name in a prompt before summarising.
@@ -49,6 +50,12 @@ export function buildGuardrailFooter(config = {}, opts = {}) {
   // footer budget that the build manifests actually need.
   const NOT_WORTH_NAMING = /^(\.git\/|\*\*\/\.env|\*\*\/\*\.(pem|key|p12|pfx)$|\*\*\/id_rsa|\*\*\/\.npmrc|\*\*\/\.netrc|\*\.(pem|key)$|id_rsa)/;
 
+  const allowedSet = new Set(
+    (Array.isArray(opts.allowedPaths) ? opts.allowedPaths : (Array.isArray(opts.allow) ? opts.allow : []))
+      .map((p) => (typeof p === "string" ? p.replace(/^\*\*\//, "").toLowerCase() : ""))
+      .filter(Boolean)
+  );
+
   // `protect` comes first because that is where the stack's build manifests
   // live — `Cargo.toml`, `go.mod`, `pyproject.toml`, `composer.json` — and
   // those are the files an agent actually reaches for and must be warned off.
@@ -56,6 +63,7 @@ export function buildGuardrailFooter(config = {}, opts = {}) {
     [...(scope.protect || []), ...(scope.deny || [])]
       .filter((p) => typeof p === "string" && p.trim() && !NOT_WORTH_NAMING.test(p))
       .map((p) => p.replace(/^\*\*\//, ""))
+      .filter((p) => !allowedSet.has(p.toLowerCase()))
   )];
 
   const shown = paths.slice(0, FOOTER_PROTECTED_LIMIT);
@@ -243,6 +251,42 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
     ? `MCP DIRECTIVE: Mandating pre-execution documentation lookup via [${mcpDirectives.join(" | ")}] before modifying code.\n\n`
     : "";
 
+  const targetFiles = inputObj.targetFiles || inputObj.files || inputObj.allow || [];
+
+  const inputRisk = inputObj.risk && typeof inputObj.risk === "object" ? inputObj.risk : {};
+  let lane = inputRisk.lane || inputObj.riskLane || inputObj.lane;
+  if (!lane) {
+    if (targetFiles.length > 0) {
+      const riskClassification = classifyRiskTier(targetFiles, { config });
+      lane = (riskClassification.tier === RISK_TIERS.R3 || riskClassification.tier === RISK_TIERS.R2) ? "amber" : "green";
+    } else {
+      lane = "green";
+    }
+  }
+
+  const requirePlanApproval = inputRisk.require_plan_approval !== undefined
+    ? Boolean(inputRisk.require_plan_approval)
+    : (inputObj.requirePlanApproval !== undefined ? Boolean(inputObj.requirePlanApproval) : lane === "amber");
+
+  flags.requirePlanApproval = requirePlanApproval;
+
+  const risk = {
+    lane,
+    require_plan_approval: requirePlanApproval,
+  };
+
+  const circuitBreaker = inputObj.circuitBreaker || inputObj.circuit_breaker || {
+    max_attempts: 2,
+    max_diff_lines: lane === "amber" ? 400 : 200,
+    stop_if_same_failure_repeats: true,
+  };
+
+  const verification = {
+    commands: verifyCmd ? [verifyCmd] : [],
+    ...(inputObj.requireNonzeroTestCount || inputObj.require_nonzero_test_count ? { require_nonzero_test_count: true } : {}),
+    ...(inputObj.trustedBase || inputObj.trusted_base ? { trusted_base: inputObj.trustedBase || inputObj.trusted_base } : {}),
+  };
+
   // 5. Prompt Envelope & Guardrail Footer Synthesis
   const fullPrompt = `[TASK INSTRUCTIONS]
 ${mcpDirectiveLine}${rawPrompt}
@@ -250,7 +294,7 @@ ${mcpDirectiveLine}${rawPrompt}
 [VERIFICATION ORACLE]
 Test/Verification Command: ${verifyCmd || "(None)"}
 
-${buildGuardrailFooter(config)}`;
+${buildGuardrailFooter(config, { allowedPaths: targetFiles, baseBranch: flags.startingBranch })}`;
 
   const promptAnalysis = scorePromptFalsifiability(rawPrompt, { rootDir: root, verifyCmd });
 
@@ -268,7 +312,10 @@ ${buildGuardrailFooter(config)}`;
     id: taskId,
     title,
     flags,
+    risk,
+    circuitBreaker,
     verifyCmd,
+    verification,
     role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
     dependsOn,
     tier,
@@ -280,10 +327,12 @@ ${buildGuardrailFooter(config)}`;
 
   const scope = config.scope || {};
   const NOT_WORTH_NAMING = /^(\.git\/|\*\*\/\.env|\*\*\/\*\.(pem|key|p12|pfx)$|\*\*\/id_rsa|\*\*\/\.npmrc|\*\*\/\.netrc|\*\.(pem|key)$|id_rsa)/;
+  const allowedSet = new Set(targetFiles.map((p) => (typeof p === "string" ? p.replace(/^\*\*\//, "").toLowerCase() : "")).filter(Boolean));
   const paths = [...new Set(
     [...(scope.protect || []), ...(scope.deny || [])]
       .filter((p) => typeof p === "string" && p.trim() && !NOT_WORTH_NAMING.test(p))
       .map((p) => p.replace(/^\*\*\//, ""))
+      .filter((p) => !allowedSet.has(p.toLowerCase()))
   )];
 
   const frontmatter = serializeTaskFrontmatter({
@@ -293,14 +342,14 @@ ${buildGuardrailFooter(config)}`;
     title,
     role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
     tier,
+    risk,
+    circuitBreaker,
     dependsOn,
     scope: {
-      allow: inputObj.targetFiles || inputObj.files || [],
+      allow: targetFiles,
       deny: paths.slice(0, FOOTER_PROTECTED_LIMIT),
     },
-    verification: {
-      commands: verifyCmd ? [verifyCmd] : [],
-    },
+    verification,
     invariants,
     mcp_directives: mcpDirectives,
     flags,
@@ -326,11 +375,15 @@ ${fullPrompt}
     dependsOn,
     tier,
     flags,
+    risk,
+    circuitBreaker,
+    verification,
     invariants,
     mcpDirectives,
     secretFindings,
     promptAnalysis,
     taskFileContent,
+    envelopeMetadata,
   };
 }
 
