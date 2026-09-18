@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { appendTelemetry } from "./telemetry.mjs";
+import { parseEnvelopeHeader } from "./envelope.mjs";
 
 /**
  * Custom error thrown when a circular dependency is detected in the DAG.
@@ -495,20 +496,19 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
 
     let targetFiles = [];
 
-    // Check envelope header
-    const match = content.match(/<!--\s*JULES_TASK_ENVELOPE:\s*({[\s\S]*?})\s*-->/);
-    if (match) {
-      try {
-        const meta = JSON.parse(match[1]);
-        if (meta.id) taskId = meta.id;
-        if (meta.title) title = meta.title;
-        if (meta.role) role = meta.role;
-        if (meta.tier) tier = meta.tier;
-        if (Array.isArray(meta.targetFiles)) targetFiles = meta.targetFiles;
-        else if (Array.isArray(meta.referenced_paths)) targetFiles = meta.referenced_paths;
-        if (Array.isArray(meta.dependsOn)) dependsOn = meta.dependsOn;
-        else if (typeof meta.dependsOn === "string") dependsOn = meta.dependsOn.split(",").map((s) => s.trim()).filter(Boolean);
-      } catch (_) {}
+    // Check envelope header (supports agentctl.task/v1 YAML frontmatter and legacy HTML comment)
+    const header = parseEnvelopeHeader(content);
+    if (header) {
+      if (header.id || header.taskId) taskId = header.id || header.taskId;
+      if (header.title) title = header.title;
+      if (header.role) role = header.role;
+      if (header.tier) tier = header.tier;
+      if (Array.isArray(header.targetFiles)) targetFiles = header.targetFiles;
+      else if (Array.isArray(header.referenced_paths)) targetFiles = header.referenced_paths;
+      else if (Array.isArray(header.allowed_paths)) targetFiles = header.allowed_paths;
+      else if (header.scope && Array.isArray(header.scope.allow)) targetFiles = header.scope.allow;
+      if (Array.isArray(header.dependsOn)) dependsOn = header.dependsOn;
+      else if (typeof header.dependsOn === "string") dependsOn = header.dependsOn.split(",").map((s) => s.trim()).filter(Boolean);
     } else if (file.endsWith(".json")) {
       try {
         const parsed = JSON.parse(content);

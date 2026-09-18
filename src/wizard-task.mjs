@@ -9,6 +9,7 @@ import { scanCodebaseForTodos } from "./todo-scanner.mjs";
 import { select, input, confirm, spinner, isTTY } from "./tui.mjs";
 import { scorePromptFalsifiability } from "./task-optimizer.mjs";
 import { getWebTemplate, synthesizeWebEnvelope } from "./web-templates.mjs";
+import { serializeTaskFrontmatter } from "./envelope.mjs";
 
 /**
  * Maximum protected paths to name in a prompt before summarising.
@@ -244,7 +245,38 @@ ${buildGuardrailFooter(config)}`;
     grade: promptAnalysis.grade,
   };
 
-  const taskFileContent = `<!-- JULES_TASK_ENVELOPE: ${JSON.stringify(envelopeMetadata)} -->
+  const scope = config.scope || {};
+  const NOT_WORTH_NAMING = /^(\.git\/|\*\*\/\.env|\*\*\/\*\.(pem|key|p12|pfx)$|\*\*\/id_rsa|\*\*\/\.npmrc|\*\*\/\.netrc|\*\.(pem|key)$|id_rsa)/;
+  const paths = [...new Set(
+    [...(scope.protect || []), ...(scope.deny || [])]
+      .filter((p) => typeof p === "string" && p.trim() && !NOT_WORTH_NAMING.test(p))
+      .map((p) => p.replace(/^\*\*\//, ""))
+  )];
+
+  const frontmatter = serializeTaskFrontmatter({
+    kind: "Task",
+    version: "agentctl.task/v1",
+    id: taskId,
+    title,
+    role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
+    tier,
+    dependsOn,
+    scope: {
+      allow: inputObj.targetFiles || inputObj.files || [],
+      deny: paths.slice(0, FOOTER_PROTECTED_LIMIT),
+    },
+    verification: {
+      commands: verifyCmd ? [verifyCmd] : [],
+    },
+    invariants: [
+      "Preserve existing signatures, surrounding logic, and coding style.",
+      "Do not modify files outside scope.allow.",
+    ],
+    flags,
+  });
+
+  const taskFileContent = `${frontmatter}
+<!-- JULES_TASK_ENVELOPE: ${JSON.stringify(envelopeMetadata)} -->
 # ${title}
 # Task ID: ${taskId}
 # Auto-PR: ${flags.autoPr} | Plan Approval: ${flags.requirePlanApproval} | Repoless: ${flags.repoless}
