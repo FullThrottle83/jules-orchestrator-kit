@@ -1,0 +1,16 @@
+# Agent Orchestrator Kit repository configuration
+version: 1
+provider: jules
+base_branch: main
+verify:
+  test: npm test
+  build: ''
+scope:
+  deny:
+    - .github/**
+    - '**/secrets/**'
+    - '**/*.pem'
+    - '**/lock-manager/**'
+    - scripts/jules-self-audit.mjs
+    - .agent/jules.yml
+  allow: []
