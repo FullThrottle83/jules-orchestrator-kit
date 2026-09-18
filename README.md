@@ -17,7 +17,7 @@ You can also run local checks without connecting an agent provider.
 `agentctl repair` explicitly for repair workflows. Provider output and passing
 checks still need review before merging.
 
-The current release is **v0.73.1**, a pre-1.0 release. A long-term stability policy is a
+The current release is **v0.74.0**, a pre-1.0 release. A long-term stability policy is a
 [v1.0 goal](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/ROADMAP_V1.md).
 
 ## Quickstart

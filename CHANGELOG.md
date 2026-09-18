@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.74.0] - 2026-09-19
+
+### Added
+- **Native `agentctl.task/v1` Frontmatter Specification & Zero-Dependency Parser (`src/envelope.mjs`, `scripts/validate-envelope.mjs`)**: Added canonical YAML frontmatter envelope support for task files (`.md`) without third-party dependencies. Reconciles `scope.allow`, `scope.deny`, `verification.commands`, `invariants`, `mcp_directives`, and `flags` with 100% backward compatibility for legacy HTML comments (`<!-- JULES_TASK_ENVELOPE: ... -->`).
+- **Taxonomy Delegation Lanes (Green / Amber / Orange / Red) (`src/envelope.mjs`, `src/wizard-task.mjs`)**: Formulated formal risk lane delegation. Red tasks are rejected at validation; Orange tasks warn for external execution only; Amber tasks allow protected path changes (e.g. dependency upgrades in `package.json`, migrations, auth) under explicit plan approval (`requirePlanApproval: true`). Green tasks prevent unapproved protected scope mutations.
+- **Circuit Breaker & Verification Contract in Envelope (`src/envelope.mjs`)**: Added frontmatter declarations for `circuitBreaker` (`max_attempts`, `max_diff_lines`, `stop_if_same_failure_repeats`) and `verification` metadata (`require_nonzero_test_count`, `trusted_base`), alongside `constraints` alias support.
+- **Stack Invariant & MCP Directive Ingestion (`src/wizard-task.mjs`)**: Automatically infers runtime constraints (Zero-JS for Astro, workerd edge runtime constraints for Cloudflare Wrangler) and injects mandatory pre-execution documentation lookup directives into task instructions.
+- **Dependency Upgrade Scope Harmonization (`src/wizard-task.mjs`)**: Updated `buildGuardrailFooter` to exclude explicitly authorized paths (`opts.allowedPaths`) from forbidden path warnings, eliminating conflicting instructions for dependency upgrade workloads.
+- **Diff Payload Governor Branch Base Comparison (`src/wizard-task.mjs`)**: Calculated diff payload sizes against `git diff origin/${baseBranch}...HEAD | wc -c` instead of local uncommitted diffs.
+
 ## [0.73.1] - 2026-09-17
 
 ### Changed
