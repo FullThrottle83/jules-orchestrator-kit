@@ -1,12 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { detectPolyglotStack } from "../src/stack-detector.mjs";
+import { detectPolyglotStack, bootstrapZeroTestRepo } from "../src/stack-detector.mjs";
 import { loadConfig, parseYaml } from "../src/config.mjs";
 import { planInit } from "../src/wizard-init.mjs";
 import { runDoctorChecks } from "../src/ops/doctor-registry.mjs";
+import { setConfigProvider, setVerificationProfile } from "../src/config-edit.mjs";
 import { resolveProjectCommands } from "../scripts/command-resolver.mjs";
 import { gate } from "../src/engine.mjs";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
@@ -133,6 +134,45 @@ evidence:
       assert.equal(configResult?.status, "warn");
       assert.match(configResult?.summary || "", /migrate to canonical \.agent\/config\.yml/i);
       assert.match(configResult?.fixes?.[0]?.summary || "", /agentctl init --yes/i);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("config mutators refuse to rewrite a legacy-only manifest", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "legacy-readonly-"));
+    try {
+      mkdirSync(join(tmp, ".agent"), { recursive: true });
+      const legacyPath = join(tmp, ".agent", "jules.yml");
+      const legacy = 'version: 2\ntest_cmd: "legacy-test"\n';
+      writeFileSync(legacyPath, legacy, "utf-8");
+
+      const providerRes = setConfigProvider(tmp, "codex");
+      const profileRes = setVerificationProfile(tmp, "standard");
+      assert.equal(providerRes.ok, false);
+      assert.equal(profileRes.ok, false);
+      assert.match(providerRes.error || "", /read-only compatibility input/i);
+      assert.match(profileRes.error || "", /read-only compatibility input/i);
+      assert.equal(readFileSync(legacyPath, "utf-8"), legacy);
+      assert.equal(existsSync(join(tmp, ".agent", "config.yml")), false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("bootstrap writes canonical config without mutating legacy config", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "legacy-bootstrap-"));
+    try {
+      mkdirSync(join(tmp, ".agent"), { recursive: true });
+      const legacyPath = join(tmp, ".agent", "jules.yml");
+      const legacy = 'version: 2\ntest_cmd: ""\nforbidden_paths:\n  - "private/**"\n';
+      writeFileSync(legacyPath, legacy, "utf-8");
+      writeFileSync(join(tmp, "index.js"), "export const value = 1;\n", "utf-8");
+
+      const res = bootstrapZeroTestRepo(tmp, { force: true });
+      assert.equal(res.bootstrapped, true);
+      assert.equal(existsSync(join(tmp, ".agent", "config.yml")), true);
+      assert.equal(readFileSync(legacyPath, "utf-8"), legacy);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
