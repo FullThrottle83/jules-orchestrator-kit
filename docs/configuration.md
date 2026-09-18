@@ -74,6 +74,25 @@ router:
   threshold: 0            # Heuristic score threshold for escalation
 ```
 
+## Canonical file and 0.x migration
+
+`.agent/config.yml` is the only writable project configuration for the v1 contract.
+Readers still accept `.agent/jules.yml` when no canonical file exists so 0.x
+repositories keep working during migration. If both files exist, `.agent/config.yml`
+wins deterministically; mutating commands do not rewrite the legacy manifest.
+
+For a legacy-only repository:
+
+1. Run `agentctl init --yes`. Existing legacy test/build commands and scope lists are
+   translated into the generated `.agent/config.yml`.
+2. Review the diff and confirm the verification commands and scope policy.
+3. Run `agentctl doctor` and `agentctl gate`.
+4. Remove `.agent/jules.yml` after the canonical configuration is verified.
+
+The legacy `jules-init` entry point and `agentctl init --force` remain explicit 0.x
+compatibility paths for the historical full scaffold; ordinary init does not generate
+a parallel Jules manifest.
+
 ## Agent Providers
 
 - **Google Jules** (`jules`) — hosted REST API; requires `JULES_API_KEY`. Jules runs in Google's cloud against the connected GitHub repository and opens the PR itself.
