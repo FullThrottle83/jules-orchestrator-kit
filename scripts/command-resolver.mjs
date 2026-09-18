@@ -13,28 +13,39 @@ export { detectStack, detectPackageManager } from "../src/config.mjs";
  * falling back to the legacy Jules manifest during the 0.x migration window.
  */
 export function parseYamlConfig(root = process.cwd()) {
-  const candidates = [join(root, ".agent", "config.yml"), join(root, ".agent", "jules.yml")];
-  for (const configPath of candidates) {
-    if (existsSync(configPath)) {
-      try {
-        const raw = readFileSync(configPath, "utf-8");
-        const parsed = parseYaml(raw);
-        if (parsed && (parsed.test_cmd || parsed.build_cmd || parsed.verify)) {
-          return {
-            testCmd: parsed.verify?.test || parsed.test_cmd || "",
-            lintCmd: parsed.verify?.lint || parsed.lint_cmd || "",
-            fuzzCmd: parsed.verify?.fuzz || parsed.fuzz_cmd || "",
-            invariantCmd: parsed.verify?.invariant || parsed.invariant_cmd || "",
-            e2eCmd: parsed.verify?.e2e || parsed.e2e_cmd || "",
-            buildCmd: parsed.verify?.build || parsed.build_cmd || "",
-            policy: parsed.verify?.policy || { networkAccess: "allow", offline: false },
-            stages: parsed.verify?.stages || null,
-            source: configPath.endsWith("jules.yml") ? ".agent/jules.yml" : ".agent/config.yml",
-          };
-        }
-      } catch (_) {}
+  const canonicalPath = join(root, ".agent", "config.yml");
+  const legacyPath = join(root, ".agent", "jules.yml");
+
+  // File presence establishes precedence. A canonical config that deliberately
+  // omits verify commands means "use stack detection", not "resurrect commands
+  // from a stale legacy manifest beside it".
+  const configPath = existsSync(canonicalPath)
+    ? canonicalPath
+    : existsSync(legacyPath)
+      ? legacyPath
+      : null;
+  if (!configPath) return null;
+
+  try {
+    const raw = readFileSync(configPath, "utf-8");
+    const parsed = parseYaml(raw);
+    if (parsed && (parsed.test_cmd || parsed.build_cmd || parsed.verify)) {
+      return {
+        testCmd: parsed.verify?.test || parsed.test_cmd || "",
+        lintCmd: parsed.verify?.lint || parsed.lint_cmd || "",
+        fuzzCmd: parsed.verify?.fuzz || parsed.fuzz_cmd || "",
+        invariantCmd: parsed.verify?.invariant || parsed.invariant_cmd || "",
+        e2eCmd: parsed.verify?.e2e || parsed.e2e_cmd || "",
+        buildCmd: parsed.verify?.build || parsed.build_cmd || "",
+        policy: parsed.verify?.policy || { networkAccess: "allow", offline: false },
+        stages: parsed.verify?.stages || null,
+        source: configPath === canonicalPath ? ".agent/config.yml" : ".agent/jules.yml",
+      };
     }
-  }
+  } catch (_) {}
+
+  // Do not fall through to legacy when canonical exists but carries no command
+  // override. The caller will use stack/framework detection instead.
   return null;
 }
 
