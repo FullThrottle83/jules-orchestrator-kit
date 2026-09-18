@@ -264,20 +264,64 @@ export async function runDoctorChecks(options = {}) {
   }
 
   // 3. Config Checks
-  const configCandidates = [
-    [".agent/config.yml", join(root, ".agent", "config.yml")],
-    [".agent/jules.yml", join(root, ".agent", "jules.yml")],
-  ];
-  const existingConfig = configCandidates.find(([, path]) => existsSync(path));
-  if (existingConfig) {
+  const canonicalConfigPath = join(root, ".agent", "config.yml");
+  const legacyConfigPath = join(root, ".agent", "jules.yml");
+  const hasCanonicalConfig = existsSync(canonicalConfigPath);
+  const hasLegacyConfig = existsSync(legacyConfigPath);
+
+  if (hasCanonicalConfig) {
     addResult({
       id: "config.present",
       category: "Config",
       title: "Agent Configuration File",
       status: "pass",
       severity: "info",
-      summary: `${existingConfig[0]} exists`,
-      evidence: [{ label: "configPath", value: existingConfig[0], sensitive: false }],
+      summary: ".agent/config.yml exists and is the canonical project configuration",
+      evidence: [{ label: "configPath", value: ".agent/config.yml", sensitive: false }],
+    });
+    if (hasLegacyConfig) {
+      addResult({
+        id: "config.legacy",
+        category: "Config",
+        title: "Legacy Jules Configuration",
+        status: "warn",
+        severity: "low",
+        summary: ".agent/jules.yml is legacy-only and is ignored when .agent/config.yml exists",
+        evidence: [
+          { label: "canonicalPath", value: ".agent/config.yml", sensitive: false },
+          { label: "legacyPath", value: ".agent/jules.yml", sensitive: false },
+        ],
+        fixes: [
+          {
+            id: "config.remove-legacy",
+            title: "Retire legacy config",
+            summary: "Review .agent/config.yml, run agentctl doctor and agentctl gate, then remove .agent/jules.yml",
+            risk: "low",
+            automatic: false,
+            requiresProbe: false,
+          },
+        ],
+      });
+    }
+  } else if (hasLegacyConfig) {
+    addResult({
+      id: "config.present",
+      category: "Config",
+      title: "Agent Configuration File",
+      status: "warn",
+      severity: "low",
+      summary: "Using legacy .agent/jules.yml compatibility reader; migrate to canonical .agent/config.yml",
+      evidence: [{ label: "configPath", value: ".agent/jules.yml", sensitive: false }],
+      fixes: [
+        {
+          id: "config.migrate-legacy",
+          title: "Migrate legacy config",
+          summary: "Run agentctl init --yes, review .agent/config.yml, run agentctl doctor and agentctl gate, then remove .agent/jules.yml",
+          risk: "low",
+          automatic: false,
+          requiresProbe: false,
+        },
+      ],
     });
   } else {
     addResult({
@@ -286,12 +330,12 @@ export async function runDoctorChecks(options = {}) {
       title: "Agent Configuration File",
       status: "warn",
       severity: "medium",
-      summary: "Neither .agent/config.yml nor .agent/jules.yml exists",
+      summary: "No .agent/config.yml exists",
       fixes: [
         {
           id: "config.create-default",
           title: "Create default config",
-          summary: "Initialize standard .agent/config.yml manifest",
+          summary: "Initialize canonical .agent/config.yml manifest",
           risk: "low",
           automatic: true,
           requiresProbe: false,
