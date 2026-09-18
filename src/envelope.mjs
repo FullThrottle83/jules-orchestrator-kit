@@ -119,6 +119,11 @@ export function validateEnvelope(envelope = {}, opts = {}) {
     errors.push("invariants must be an array of strings when provided.");
   }
 
+  // 8. MCP Directives Check
+  if (envelope.mcp_directives !== undefined && !Array.isArray(envelope.mcp_directives)) {
+    errors.push("mcp_directives must be an array of strings when provided.");
+  }
+
   return {
     ok: errors.length === 0,
     code: errors.length === 0 ? 0 : 1,
@@ -311,6 +316,12 @@ export function serializeTaskFrontmatter(meta = {}) {
     for (const inv of meta.invariants) lines.push(`  - ${inv}`);
   }
 
+  const mcpList = meta.mcp_directives || meta.mcpDirectives;
+  if (Array.isArray(mcpList) && mcpList.length > 0) {
+    lines.push("mcp_directives:");
+    for (const d of mcpList) lines.push(`  - ${d}`);
+  }
+
   if (meta.flags && typeof meta.flags === "object") {
     lines.push("flags:");
     for (const [k, v] of Object.entries(meta.flags)) {
@@ -356,6 +367,8 @@ export function parseEnvelopeHeader(content) {
     if (m.requirePlanApproval !== undefined) flags.requirePlanApproval = Boolean(m.requirePlanApproval);
     if (m.repoless !== undefined) flags.repoless = Boolean(m.repoless);
 
+    const mcpDirectives = m.mcp_directives || m.mcpDirectives;
+
     return {
       version: m.version || 1,
       kind: m.kind || "Task",
@@ -376,6 +389,7 @@ export function parseEnvelopeHeader(content) {
       allowed_paths: allow,
       forbiddenPaths: deny,
       invariants: Array.isArray(m.invariants) ? m.invariants : [],
+      mcp_directives: Array.isArray(mcpDirectives) ? mcpDirectives : (typeof mcpDirectives === "string" ? [mcpDirectives] : []),
       baseCommit: m.base_commit || m.base_sha || m.baseCommit || m.baseRef,
       base_commit: m.base_commit || m.base_sha || m.baseCommit || m.baseRef,
       promptBody: frontmatter.body,

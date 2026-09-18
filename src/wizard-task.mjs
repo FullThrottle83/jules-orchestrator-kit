@@ -1,5 +1,5 @@
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
 import { untrackedOnboardingArtifacts } from "./git.mjs";
 import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
@@ -68,7 +68,7 @@ export function buildGuardrailFooter(config = {}, opts = {}) {
 ---
 HARD CONSTRAINTS:
 ${protectedLine}
-- Diff Payload Governor: Keep total diff payload under ${diffKb} KB (\`git diff | wc -c\`).
+- Diff Payload Governor: Keep total diff payload under ${diffKb} KB (\`git diff origin/${baseBranch}...HEAD | wc -c\`).
 - Falsifiable & Evidence-Based: Attach full terminal verification output to PR. Never weaken assertions or delete failing tests to force a pass.
 - Read-Before-Write: Inspect existing symbol signatures, definitions, and call sites before making edits.
 - Remove any scratch files you created for debugging before submitting. Do not delete files that are part of the project.
@@ -212,9 +212,40 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
   const rawId = inputObj.id || `TASK-${Date.now().toString(36).toUpperCase()}`;
   const taskId = String(rawId).replace(/[^a-zA-Z0-9_-]/g, "_");
 
+  const hasAstro = existsSync(join(root, "astro.config.mjs")) || existsSync(join(root, "astro.config.ts"));
+  const hasWrangler =
+    existsSync(join(root, "wrangler.jsonc")) ||
+    existsSync(join(root, "wrangler.json")) ||
+    existsSync(join(root, "wrangler.toml"));
+
+  const autoInvariants = [
+    "Preserve existing signatures, surrounding logic, and coding style.",
+    "Do not modify files outside scope.allow.",
+  ];
+  if (hasAstro) {
+    autoInvariants.push("Zero-JS runtime-princip: skicka noll onödig klient-JS i src/ och använd plana <img> framför Astro <Image>.");
+  }
+  if (hasWrangler) {
+    autoInvariants.push("Edge runtime constraints: inga otillåtna Node-imports (t.ex. node:fs, node:path, sharp) i workerd runtime-kod.");
+  }
+  const invariants = Array.isArray(inputObj.invariants) && inputObj.invariants.length > 0
+    ? inputObj.invariants
+    : autoInvariants;
+
+  const autoMcpDirectives = [];
+  if (hasAstro) autoMcpDirectives.push("astro-docs");
+  if (hasWrangler) autoMcpDirectives.push("cloudflare-docs");
+  if (existsSync(join(root, "emdash.config.ts"))) autoMcpDirectives.push("emdash-docs");
+  if (autoMcpDirectives.length > 0) autoMcpDirectives.push("context7");
+
+  const mcpDirectives = inputObj.mcpDirectives || inputObj.mcp_directives || (autoMcpDirectives.length > 0 ? autoMcpDirectives : undefined);
+  const mcpDirectiveLine = mcpDirectives && mcpDirectives.length > 0
+    ? `MCP DIRECTIVE: Mandating pre-execution documentation lookup via [${mcpDirectives.join(" | ")}] before modifying code.\n\n`
+    : "";
+
   // 5. Prompt Envelope & Guardrail Footer Synthesis
   const fullPrompt = `[TASK INSTRUCTIONS]
-${rawPrompt}
+${mcpDirectiveLine}${rawPrompt}
 
 [VERIFICATION ORACLE]
 Test/Verification Command: ${verifyCmd || "(None)"}
@@ -241,6 +272,8 @@ ${buildGuardrailFooter(config)}`;
     role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
     dependsOn,
     tier,
+    invariants,
+    mcp_directives: mcpDirectives,
     falsifiabilityScore: promptAnalysis.score,
     grade: promptAnalysis.grade,
   };
@@ -268,10 +301,8 @@ ${buildGuardrailFooter(config)}`;
     verification: {
       commands: verifyCmd ? [verifyCmd] : [],
     },
-    invariants: [
-      "Preserve existing signatures, surrounding logic, and coding style.",
-      "Do not modify files outside scope.allow.",
-    ],
+    invariants,
+    mcp_directives: mcpDirectives,
     flags,
   });
 
@@ -295,6 +326,8 @@ ${fullPrompt}
     dependsOn,
     tier,
     flags,
+    invariants,
+    mcpDirectives,
     secretFindings,
     promptAnalysis,
     taskFileContent,

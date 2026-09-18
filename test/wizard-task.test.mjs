@@ -202,6 +202,30 @@ test("Guided Task Authoring Subsystem", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("planTaskCreate infers stack invariants and MCP directives for Astro and Wrangler projects", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-stack-invariants-"));
+    try {
+      writeFileSync(join(tmpDir, "astro.config.mjs"), "export default {};");
+      writeFileSync(join(tmpDir, "wrangler.jsonc"), "{}");
+
+      const plan = planTaskCreate(tmpDir, {
+        title: "Build landing hero",
+        prompt: "Create Hero component in Astro",
+        verifyCmd: "pnpm test",
+      });
+
+      assert.ok(plan.invariants.some((inv) => inv.includes("Zero-JS runtime-princip")));
+      assert.ok(plan.invariants.some((inv) => inv.includes("Edge runtime constraints")));
+      assert.deepEqual(plan.mcpDirectives, ["astro-docs", "cloudflare-docs", "context7"]);
+      assert.ok(plan.fullPrompt.includes("MCP DIRECTIVE: Mandating pre-execution documentation lookup via [astro-docs | cloudflare-docs | context7] before modifying code."));
+      assert.ok(plan.taskFileContent.includes("mcp_directives:"));
+      assert.ok(plan.taskFileContent.includes("  - astro-docs"));
+      assert.ok(plan.taskFileContent.includes("  - cloudflare-docs"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 
@@ -232,6 +256,10 @@ test("Guardrail footer is derived from the repository's scope, not a Node litera
     const rust = buildGuardrailFooter(rustRepo);
     assert.match(rust, /git fetch origin trunk && git rebase origin\/trunk/);
     assert.match(rust, /under 50 KB/);
+    assert.match(rust, /git diff origin\/trunk\.\.\.HEAD \| wc -c/);
+
+    const node = buildGuardrailFooter(nodeRepo);
+    assert.match(node, /git diff origin\/main\.\.\.HEAD \| wc -c/);
   });
 
   // "Delete ALL temporary files (.py, .sh, ...)" told a Python project's agent

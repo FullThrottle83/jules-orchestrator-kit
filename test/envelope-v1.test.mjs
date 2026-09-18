@@ -180,6 +180,47 @@ Modify workflow
     assert.match(res.errors[0], /Allowed paths violate protected scope/);
   });
 
+  await t.test("parseEnvelopeHeader, serializeTaskFrontmatter, and validateEnvelope support mcp_directives", () => {
+    const v1WithMcp = `---
+kind: Task
+version: agentctl.task/v1
+id: JULES-502
+title: Astro Cloudflare Task
+mcp_directives:
+  - astro-docs
+  - cloudflare-docs
+scope:
+  allow:
+    - src/pages/index.astro
+verification:
+  commands:
+    - pnpm test
+---
+# Uppgift
+`;
+    const parsed = parseEnvelopeHeader(v1WithMcp);
+    assert.deepStrictEqual(parsed.mcp_directives, ["astro-docs", "cloudflare-docs"]);
+
+    const valValid = validateEnvelope(parsed);
+    assert.strictEqual(valValid.ok, true);
+
+    const serialized = serializeTaskFrontmatter({
+      kind: "Task",
+      version: "agentctl.task/v1",
+      id: "JULES-502",
+      title: "Astro Cloudflare Task",
+      mcp_directives: ["astro-docs", "cloudflare-docs"],
+    });
+    assert.ok(serialized.includes("mcp_directives:"));
+    assert.ok(serialized.includes("  - astro-docs"));
+    assert.ok(serialized.includes("  - cloudflare-docs"));
+
+    const invalid = { ...parsed, mcp_directives: "not-an-array" };
+    const valInvalid = validateEnvelope(invalid);
+    assert.strictEqual(valInvalid.ok, false);
+    assert.ok(valInvalid.errors.some((e) => e.includes("mcp_directives must be an array")));
+  });
+
   await t.test("scripts/validate-envelope.mjs CLI validates .md task files with frontmatter", () => {
     const tmp = mkdtempSync(join(tmpdir(), "validate-envelope-test-"));
     try {
