@@ -58,6 +58,10 @@ Release details, including earlier milestone summaries, are in
    - `.agent/jules.yml` remains a 0.x legacy reader with deterministic migration guidance,
      but is no longer generated as a parallel source of truth.
 
+P0 contraction is complete: the public-surface inventory is explicit, `gate` is
+non-mutating, default `init` is minimal, and `.agent/config.yml` is the single
+canonical writable project configuration with a legacy 0.x reader.
+
 ## P1 — before v1
 
 - **Version the task-envelope contract.** Tasks may narrow trusted repository scope and
