@@ -14,12 +14,21 @@ import { PROVIDER_DESCRIPTORS } from "./provider-readiness.mjs";
  */
 
 /**
- * The manifest this repository uses, or null when it has none.
+ * The canonical writable manifest, or null when it does not exist.
+ * .agent/jules.yml remains a read-only compatibility input during 0.x.
  * @param {string} root
  * @returns {string|null}
  */
 function findManifest(root) {
-  return [join(root, ".agent", "config.yml"), join(root, ".agent", "jules.yml")].find((f) => existsSync(f)) || null;
+  const file = join(root, ".agent", "config.yml");
+  return existsSync(file) ? file : null;
+}
+
+function missingCanonicalMessage(root) {
+  if (existsSync(join(root, ".agent", "jules.yml"))) {
+    return "Legacy .agent/jules.yml is read-only compatibility input. Run `agentctl init --yes`, review .agent/config.yml, then retry.";
+  }
+  return "No .agent/config.yml found. Run `agentctl init` first.";
 }
 
 /**
@@ -70,7 +79,7 @@ export function setConfigProvider(root, provider) {
   }
 
   const file = findManifest(root);
-  if (!file) return { ok: false, error: "No .agent/config.yml found. Run `agentctl init` first." };
+  if (!file) return { ok: false, error: missingCanonicalMessage(root) };
 
   return editManifest(file, (lines) => {
     const idx = lines.findIndex((l) => /^provider:\s*/.test(l));
@@ -101,7 +110,7 @@ export function setVerificationProfile(root, profile) {
 
   const file = findManifest(root);
   if (!file) {
-    return { ok: false, error: "No .agent/config.yml found. Run `agentctl init` first." };
+    return { ok: false, error: missingCanonicalMessage(root) };
   }
 
   return editManifest(file, (lines) => {
