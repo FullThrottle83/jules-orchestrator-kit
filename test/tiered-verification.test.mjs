@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { detectPolyglotStack } from "../src/stack-detector.mjs";
-import { loadConfig } from "../src/config.mjs";
+import { loadConfig, parseYaml } from "../src/config.mjs";
+import { planInit } from "../src/wizard-init.mjs";
+import { runDoctorChecks } from "../src/ops/doctor-registry.mjs";
 import { resolveProjectCommands } from "../scripts/command-resolver.mjs";
 import { gate } from "../src/engine.mjs";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
@@ -69,6 +71,68 @@ evidence:
       assert.equal(cfg.verify.policy.offline, true);
       assert.equal(cfg.evidence.enabled, true);
       assert.equal(cfg.evidence.strictTestLock, true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("canonical config wins when both canonical and legacy manifests exist", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "canonical-precedence-"));
+    try {
+      mkdirSync(join(tmp, ".agent"), { recursive: true });
+      writeFileSync(join(tmp, ".agent", "config.yml"), 'verify:\n  test: "canonical-test"\n', "utf-8");
+      writeFileSync(join(tmp, ".agent", "jules.yml"), 'test_cmd: "legacy-test"\n', "utf-8");
+      const cfg = loadConfig(tmp);
+      assert.equal(cfg.verify.test, "canonical-test");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("command resolver uses canonical config before legacy jules.yml", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "canonical-commands-"));
+    try {
+      mkdirSync(join(tmp, ".agent"), { recursive: true });
+      writeFileSync(join(tmp, ".agent", "config.yml"), 'verify:\n  test: "canonical-test"\n', "utf-8");
+      writeFileSync(join(tmp, ".agent", "jules.yml"), 'test_cmd: "legacy-test"\n', "utf-8");
+      const res = resolveProjectCommands(tmp);
+      assert.equal(res.testCmd, "canonical-test");
+      assert.equal(res.source, ".agent/config.yml");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("planInit migrates legacy verification and scope into canonical config", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "legacy-migration-"));
+    try {
+      mkdirSync(join(tmp, ".agent"), { recursive: true });
+      writeFileSync(
+        join(tmp, ".agent", "jules.yml"),
+        'test_cmd: "legacy-test"\nbuild_cmd: "legacy-build"\nforbidden_paths:\n  - "private/**"\nallow_paths:\n  - "private/fixture.txt"\n',
+        "utf-8"
+      );
+      const plan = planInit(tmp, { provider: "jules", tier: "free", baseBranch: "main", profile: "standard" });
+      const parsed = parseYaml(plan.configYaml);
+      assert.equal(plan.verify.test, "legacy-test");
+      assert.equal(plan.verify.build, "legacy-build");
+      assert.deepEqual(parsed.scope?.deny, ["private/**"]);
+      assert.deepEqual(parsed.scope?.allow, ["private/fixture.txt"]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("doctor reports deterministic migration guidance for legacy-only config", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "legacy-doctor-"));
+    try {
+      mkdirSync(join(tmp, ".agent"), { recursive: true });
+      writeFileSync(join(tmp, ".agent", "jules.yml"), 'test_cmd: "node -e \\"console.log(1)\\""\n', "utf-8");
+      const report = await runDoctorChecks({ root: tmp, activeProbe: false });
+      const configResult = report.results.find((entry) => entry.id === "config.present");
+      assert.equal(configResult?.status, "warn");
+      assert.match(configResult?.summary || "", /migrate to canonical \.agent\/config\.yml/i);
+      assert.match(configResult?.fixes?.[0]?.summary || "", /agentctl init --yes/i);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
