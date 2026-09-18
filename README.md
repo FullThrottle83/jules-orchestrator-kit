@@ -50,10 +50,13 @@ git status --short
 ```
 
 Stage the generated files you reviewed, then commit them. The committed
-configuration establishes the trusted base policy used by verification. On an
-already initialized repository, back up and review `.agent/config.yml` before
-rerunning `init`. Existing legacy `.agent/jules.yml` files are left untouched
-by the default path. `--force` deliberately opts back into the legacy full scaffold.
+configuration establishes the trusted base policy used by verification. The canonical
+project file is `.agent/config.yml`; when both files exist, it always wins over the
+legacy `.agent/jules.yml` reader. To migrate a legacy-only repository, run
+`agentctl init --yes`, review the generated `.agent/config.yml`, run `agentctl doctor`
+and `agentctl gate`, then remove `.agent/jules.yml`. The migration preserves legacy
+verification commands and scope lists. `--force` deliberately opts back into the
+legacy full scaffold during the 0.x compatibility window.
 
 ### 2. Check provider readiness
 
@@ -174,7 +177,7 @@ npm run package-integrity
 npm run guard-reach
 ```
 
-The recorded baseline is **1538 unit tests across 204 suites**. Doc-sync compares
+The recorded baseline is **1547 unit tests across 204 suites**. Doc-sync compares
 that count with an actual run. Counts do not establish correctness for every
 provider or project. See
 [contributing](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTING.md)

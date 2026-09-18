@@ -16,6 +16,7 @@ const PATTERNS = [
   "package.json",
   "pnpm-lock.yaml",
   ".github/**",
+  ".agent/config.yml",
   ".agent/jules.yml",
   ".agent/protected-paths.json",
 ];

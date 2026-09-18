@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Made `.agent/config.yml` the canonical writable project configuration. Legacy
+  `.agent/jules.yml` remains readable only when no canonical file exists, and
+  mutating commands now direct legacy-only repositories through `agentctl init --yes`
+  instead of rewriting the legacy manifest.
+- Legacy-only init now translates verification commands and scope lists into the
+  canonical config; command resolution uses the same canonical-first precedence.
+- Migrated this repository itself to `.agent/config.yml` while keeping both config
+  paths protected during the 0.x compatibility window.
+
 ## [0.73.1] - 2026-09-17
 
 ### Changed

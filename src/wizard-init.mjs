@@ -122,27 +122,26 @@ export function planInit(root = process.cwd(), options = {}) {
   // scaffolded limits always match what the runtime will later enforce.
   const tierPresetLimits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
 
-  // Preserve existing config if present (ignored when pristine requested)
+  // Preserve both files for explicit 0.x compatibility output, but legacy
+  // values may influence canonical planning only when no canonical file exists.
   let existingConfig = {};
-  if (!options.pristine) {
-    const existingConfigPath = join(root, ".agent", "config.yml");
-    if (existsSync(existingConfigPath)) {
-      try {
-        existingConfig = parseYaml(readFileSync(existingConfigPath, "utf-8")) || {};
-      } catch (_) {}
-    }
+  let existingJules = {};
+  const existingConfigPath = join(root, ".agent", "config.yml");
+  const existingJulesPath = join(root, ".agent", "jules.yml");
+  const hasCanonicalConfig = !options.pristine && existsSync(existingConfigPath);
+
+  if (!options.pristine && hasCanonicalConfig) {
+    try {
+      existingConfig = parseYaml(readFileSync(existingConfigPath, "utf-8")) || {};
+    } catch (_) {}
+  }
+  if (!options.pristine && existsSync(existingJulesPath)) {
+    try {
+      existingJules = parseYaml(readFileSync(existingJulesPath, "utf-8")) || {};
+    } catch (_) {}
   }
 
-  // Preserve existing jules.yml if present (ignored when pristine requested)
-  let existingJules = {};
-  if (!options.pristine) {
-    const existingJulesPath = join(root, ".agent", "jules.yml");
-    if (existsSync(existingJulesPath)) {
-      try {
-        existingJules = parseYaml(readFileSync(existingJulesPath, "utf-8")) || {};
-      } catch (_) {}
-    }
-  }
+  const migrationJules = hasCanonicalConfig ? {} : existingJules;
 
   const customLimits = options.limits || existingConfig.limits;
   const isCustomLimits = customLimits && Object.entries(customLimits).some(
@@ -151,10 +150,34 @@ export function planInit(root = process.cwd(), options = {}) {
   const limits = isCustomLimits ? { ...tierPresetLimits, ...customLimits } : tierPresetLimits;
 
   const verify = {
-    test: options.testCmd || existingConfig.verify?.test || oracle.candidates.testCmd || "",
-    build: options.buildCmd || existingConfig.verify?.build || oracle.candidates.buildCmd || "",
-    lint: options.lintCmd || existingConfig.verify?.lint || oracle.candidates.lintCmd || "",
-    typecheck: options.typecheckCmd || existingConfig.verify?.typecheck || oracle.candidates.typecheckCmd || "",
+    test:
+      options.testCmd ||
+      existingConfig.verify?.test ||
+      existingConfig.test_cmd ||
+      migrationJules.test_cmd ||
+      oracle.candidates.testCmd ||
+      "",
+    build:
+      options.buildCmd ||
+      existingConfig.verify?.build ||
+      existingConfig.build_cmd ||
+      migrationJules.build_cmd ||
+      oracle.candidates.buildCmd ||
+      "",
+    lint:
+      options.lintCmd ||
+      existingConfig.verify?.lint ||
+      existingConfig.lint_cmd ||
+      migrationJules.lint_cmd ||
+      oracle.candidates.lintCmd ||
+      "",
+    typecheck:
+      options.typecheckCmd ||
+      existingConfig.verify?.typecheck ||
+      existingConfig.typecheck_cmd ||
+      migrationJules.typecheck_cmd ||
+      oracle.candidates.typecheckCmd ||
+      "",
   };
 
   const selectedPresets = options.presets || existingConfig.presets || ["nightly-security-audit", "flaky-test-quarantine"];
@@ -165,7 +188,7 @@ export function planInit(root = process.cwd(), options = {}) {
   // installed. Detection only fills a blank: an explicit option, and an
   // existing config, both still win.
   const provider =
-    options.provider || existingConfig.provider || suggestProvider({ env: options.env || process.env });
+    options.provider || existingConfig.provider || migrationJules.provider || suggestProvider({ env: options.env || process.env });
 
   // How hard this repository wants its agents verified, in one word. Expanded
   // into concrete stages at load time by `loadConfig`, never frozen here, so
@@ -176,7 +199,13 @@ export function planInit(root = process.cwd(), options = {}) {
   // Detected, not assumed. A hardcoded `main` made the very first
   // `agentctl check` fail with an unresolvable base ref in every repository
   // whose git chose `master`, or whose team standardised on `develop`.
-  const baseBranch = options.baseBranch || existingConfig.base_branch || detectDefaultBranch(root);
+  const baseBranch =
+    options.baseBranch ||
+    existingConfig.base_branch ||
+    existingConfig.baseBranch ||
+    migrationJules.base_branch ||
+    migrationJules.baseBranch ||
+    detectDefaultBranch(root);
 
   // A monorepo that runs every package's suite for a one-package change is the
   // complaint the boundary resolver was written to answer, so a repository
@@ -195,6 +224,23 @@ export function planInit(root = process.cwd(), options = {}) {
 
   const limitsBlock = isCustomLimits
     ? `\nlimits:\n  concurrency: ${limits.concurrency}\n  daily_tasks: ${limits.daily_tasks}\n  stagger_ms: ${limits.stagger_ms}\n  diff_kb: ${limits.diff_kb}\n`
+    : "";
+
+  // A legacy-only repository must not lose its policy merely because init now
+  // writes the canonical manifest. Preserve existing scope when present and
+  // translate the v2 Jules allow/forbidden lists into the v1 scope shape.
+  const scopeDeny =
+    options.forbiddenPaths || existingConfig.scope?.deny || existingConfig.forbidden_paths || migrationJules.forbidden_paths || [];
+  const scopeAllow =
+    options.allowPaths || existingConfig.scope?.allow || existingConfig.allow_paths || migrationJules.allow_paths || [];
+  const scopeProtect = existingConfig.scope?.protect || [];
+  const hasExplicitScope = scopeDeny.length > 0 || scopeAllow.length > 0 || scopeProtect.length > 0;
+  const renderScopeList = (name, values) =>
+    values.length > 0
+      ? `  ${name}:\n${values.map((p) => `    - ${yamlScalar(p)}`).join("\n")}\n`
+      : `  ${name}: []\n`;
+  const scopeBlock = hasExplicitScope
+    ? `\nscope:\n${renderScopeList("deny", scopeDeny)}${renderScopeList("allow", scopeAllow)}${renderScopeList("protect", scopeProtect)}`
     : "";
 
   // A generated comment must not begin with an ESLint directive keyword.
@@ -231,7 +277,7 @@ verify:
   build: ${yamlScalar(verify.build)}
   lint: ${yamlScalar(verify.lint)}
   typecheck: ${yamlScalar(verify.typecheck)}
-
+${scopeBlock}
 presets:
 ${selectedPresets.map((p) => `  - ${p}`).join("\n")}
 `;
@@ -425,22 +471,49 @@ async function resolveRunnableOracle(root, testCmd, options = {}) {
 export async function runInitWizard(root = process.cwd(), options = {}) {
   const interactive = options.interactive !== false && isTTY(options.stdin || process.stdin);
 
-  // Preserve existing config if present
+  // Canonical values always win. Legacy values seed migration only when the
+  // canonical file is absent, so the probe cannot replace a custom 0.x oracle
+  // with an autodetected command before migration has even read it.
   let existingConfig = {};
+  let migrationJules = {};
   const existingConfigPath = join(root, ".agent", "config.yml");
-  if (existsSync(existingConfigPath)) {
+  const existingJulesPath = join(root, ".agent", "jules.yml");
+  const hasCanonicalConfig = existsSync(existingConfigPath);
+
+  if (hasCanonicalConfig) {
     try {
       existingConfig = parseYaml(readFileSync(existingConfigPath, "utf-8")) || {};
     } catch (_) {}
+  } else if (existsSync(existingJulesPath)) {
+    try {
+      migrationJules = parseYaml(readFileSync(existingJulesPath, "utf-8")) || {};
+    } catch (_) {}
   }
 
-  if (!interactive && !options.allowDefaults && !options.tier && !existingConfig.tier) {
+  if (!interactive && !options.allowDefaults && !options.tier && !existingConfig.tier && !migrationJules.tier) {
     throw new Error("Non-interactive init requires explicit options or allowDefaults: true");
   }
 
-  let selectedTier = options.tier || existingConfig.tier || FALLBACK_TIER;
-  let selectedProvider = options.provider || existingConfig.provider;
-  let selectedProfile = options.profile || existingConfig.verify?.profile;
+  const existingTestCmd =
+    existingConfig.verify?.test ||
+    existingConfig.test_cmd ||
+    migrationJules.verify?.test ||
+    migrationJules.test_cmd ||
+    "";
+  const existingBuildCmd =
+    existingConfig.verify?.build ||
+    existingConfig.build_cmd ||
+    migrationJules.verify?.build ||
+    migrationJules.build_cmd ||
+    "";
+
+  let selectedTier = options.tier || existingConfig.tier || migrationJules.tier || FALLBACK_TIER;
+  let selectedProvider = options.provider || existingConfig.provider || migrationJules.provider;
+  let selectedProfile =
+    options.profile ||
+    existingConfig.verify?.profile ||
+    migrationJules.verify?.profile ||
+    migrationJules.profile;
   let testCmd = options.testCmd;
   let probeInteractive = null;
   let buildCmd = options.buildCmd;
@@ -499,13 +572,13 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
     });
 
     testCmd = await input("Verification Test Command", {
-      defaultValue: testCmd || existingConfig.verify?.test || oracle.candidates.testCmd || "npm test",
+      defaultValue: testCmd || existingTestCmd || oracle.candidates.testCmd || "npm test",
       stdin: options.stdin,
       stdout: options.stdout,
     });
 
     buildCmd = await input("Verification Build Command", {
-      defaultValue: buildCmd || existingConfig.verify?.build || oracle.candidates.buildCmd || "",
+      defaultValue: buildCmd || existingBuildCmd || oracle.candidates.buildCmd || "",
       stdin: options.stdin,
       stdout: options.stdout,
     });
@@ -534,7 +607,7 @@ export async function runInitWizard(root = process.cwd(), options = {}) {
     // fills it in from detection, so the probe silently examined nothing —
     // the exact fail-open shape this project keeps finding in itself.
     const effective =
-      testCmd || existingConfig.verify?.test || detectStackOracles(root)?.candidates?.testCmd || "";
+      testCmd || existingTestCmd || detectStackOracles(root)?.candidates?.testCmd || "";
     const adopted = await resolveRunnableOracle(root, effective, options);
     if (adopted) testCmd = adopted;
   }

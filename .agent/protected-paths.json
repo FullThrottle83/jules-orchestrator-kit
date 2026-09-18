@@ -6,6 +6,7 @@
     "yarn.lock",
     "tsconfig.json",
     ".github/**",
+    ".agent/config.yml",
     ".agent/jules.yml",
     ".agent/protected-paths.json",
     "scripts/ci-scope-guard.mjs",

@@ -685,7 +685,8 @@ export const FALLBACK_TIER = "free";
 export const DEFAULT_CRITICAL_REASONS = ["R3_GATE_VIOLATION", "SECRET_LEAK_DETECTED", "CRITICAL_FAILURE"];
 
 /**
- * Loads and validates configuration from .agent/config.yml or .agent/jules.yml.
+ * Loads and validates the canonical .agent/config.yml when present, falling
+ * back to the legacy .agent/jules.yml reader only for 0.x compatibility.
  */
 export function loadConfig(root = resolveRoot(), explicitPath = null) {
   if (root === null || root === undefined) {
