@@ -35,6 +35,9 @@ export const RUNTIME_GITIGNORE_ENTRIES = [
   "!.agent/jules-queue/README.md",
 ];
 
+/** Comment header `ensureGitignore` writes above runtime ignore entries. */
+export const RUNTIME_GITIGNORE_HEADER = "# Jules Orchestrator runtime state & credentials";
+
 /**
  * Ensure `.gitignore` lists every runtime path in {@link RUNTIME_GITIGNORE_ENTRIES}.
  *
@@ -57,10 +60,55 @@ export function ensureGitignore(root) {
   const prefix = current && !current.endsWith("\n") ? "\n" : "";
   appendFileSync(
     gitignorePath,
-    `${prefix}\n# Jules Orchestrator runtime state & credentials\n${missing.join("\n")}\n`,
+    `${prefix}\n${RUNTIME_GITIGNORE_HEADER}\n${missing.join("\n")}\n`,
     "utf-8"
   );
   return missing;
+}
+
+/**
+ * Remove kit-owned runtime ignore blocks from a `.gitignore` body.
+ *
+ * Only strips contiguous runs that begin with {@link RUNTIME_GITIGNORE_HEADER}
+ * and continue through lines that match {@link RUNTIME_GITIGNORE_ENTRIES}.
+ * User entries — including a pre-existing `.env` that was never part of a kit
+ * block — are left alone.
+ *
+ * @param {string} content
+ * @returns {{ text: string, stripped: boolean }}
+ */
+export function stripRuntimeGitignoreBlock(content) {
+  const entries = new Set(RUNTIME_GITIGNORE_ENTRIES);
+  const lines = String(content).split(/\r?\n/);
+  const out = [];
+  let stripped = false;
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].trim() === RUNTIME_GITIGNORE_HEADER) {
+      stripped = true;
+      i += 1;
+      while (i < lines.length) {
+        const trimmed = lines[i].trim();
+        if (trimmed === "") {
+          // Trailing blank that ensureGitignore leaves after the block.
+          i += 1;
+          break;
+        }
+        if (entries.has(trimmed)) {
+          i += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
+    out.push(lines[i]);
+    i += 1;
+  }
+  while (out.length > 0 && out[out.length - 1] === "") out.pop();
+  let text = out.join("\n");
+  if (text.length > 0) text += "\n";
+  return { text, stripped };
 }
 
 /**

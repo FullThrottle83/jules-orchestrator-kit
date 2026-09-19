@@ -3,7 +3,7 @@
 > Auto-generated from `src/ops/command-registry.mjs`. Do not edit by hand —
 run `node scripts/generate-command-reference.mjs` to regenerate.
 
-Total commands: 53
+Total commands: 54
 
 ## Index
 
@@ -17,6 +17,7 @@ Total commands: 53
 - [`agentctl task optimize`](#task-optimize) — Score task prompt falsifiability and static path resolution
 - [`agentctl task validate`](#task-validate) — Validate a task envelope markdown or JSON file without dispatching
 - [`agentctl init`](#init) — Write the minimal canonical project config and runtime ignore entries
+- [`agentctl uninstall`](#uninstall) — Remove kit-owned configuration and gitignore entries from the repository
 - [`agentctl dashboard`](#dashboard) — Start local web dashboard server
 - [`agentctl budget`](#budget) — Show today's task budget, where its limit came from, and reconcile a wrong count
 - [`agentctl status`](#status) — Show operating status and health summary
@@ -327,6 +328,29 @@ Write the minimal canonical project config and runtime ignore entries
 agentctl init
 agentctl init --interactive
 agentctl init --tier pro --yes
+```
+
+## `agentctl uninstall`
+
+**ID:** `uninstall` · **Category:** Configure · **Risk:** LOW · **Mutates:** yes
+
+Remove kit-owned configuration and gitignore entries from the repository
+
+**Flags:**
+
+| Flag | Type | Description |
+| :--- | :--- | :--- |
+| `--dry-run` | boolean | Report files that would be removed without modifying disk (-d) |
+| `--yes` | boolean | Confirm uninstallation without prompting (-y) |
+| `--force` | boolean | Remove legacy scaffold directories if present (.agent/rules, .agent/prompts, .agent/workflows) (-f) |
+| `--json` | boolean | Output machine-readable removal plan or outcome (-j) |
+
+**Examples:**
+
+```sh
+agentctl uninstall --dry-run
+agentctl uninstall --yes
+agentctl uninstall --json
 ```
 
 ## `agentctl dashboard`

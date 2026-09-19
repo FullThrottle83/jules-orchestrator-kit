@@ -308,7 +308,9 @@ async function main() {
   // Init is a configuration boundary, not an operational maintenance command.
   // In particular, --dry-run must not create .agent/ indirectly by reaping
   // journal intents or mutex directories before init itself gets control.
-  if (command !== "init") {
+  // init and uninstall must not create kit state as a side-effect of startup
+  // maintenance — dry-run and "nothing installed" paths need a clean tree.
+  if (command !== "init" && command !== "uninstall") {
     reapOrphanedIntents(root);
     reapStaleMutexDirs(root);
   }
@@ -3408,6 +3410,72 @@ async function main() {
         console.error(`Unknown rules action: "${subcmd}". Usage: agentctl rules [check | compile]`);
         process.exit(1);
       }
+      break;
+    }
+
+    case "uninstall": {
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          "dry-run": { type: "boolean", short: "d" },
+          yes: { type: "boolean", short: "y" },
+          force: { type: "boolean", short: "f" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const dryRun = Boolean(values["dry-run"]);
+      const confirmed = Boolean(values.yes);
+      const force = Boolean(values.force);
+      const asJson = Boolean(values.json);
+
+      if (!dryRun && !confirmed) {
+        if (asJson) {
+          console.error(JSON.stringify({
+            ok: false,
+            error: "Refusing to uninstall without --yes. Pass --dry-run to preview, or --yes to confirm.",
+          }));
+        } else {
+          console.error("❌ Refusing to uninstall without --yes. Pass --dry-run to preview, or --yes to confirm.");
+        }
+        process.exit(1);
+      }
+
+      const { uninstallKit } = await import("../src/uninstall.mjs");
+      const res = uninstallKit(root, { dryRun, force });
+
+      if (!res.ok) {
+        if (asJson) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.error(`❌ ${res.error || "Uninstall failed."}`);
+        }
+        process.exit(1);
+      }
+
+      if (asJson) {
+        if (dryRun) {
+          console.log(JSON.stringify({ ok: true, dryRun: true, willRemove: res.willRemove }, null, 2));
+        } else {
+          console.log(JSON.stringify({ ok: true, removed: res.removed }, null, 2));
+        }
+        process.exit(0);
+      }
+
+      if (dryRun) {
+        console.log("🧪 Dry run — no files modified.");
+        console.log("   Would remove / clean:");
+        for (const item of res.willRemove) console.log(`     - ${item}`);
+        if (force && (!res.willRemove.some((p) => p.startsWith(".agent/rules") || p.startsWith(".agent/prompts") || p.startsWith(".agent/workflows") || p.startsWith(".agent/jules-queue")))) {
+          console.log("   (no legacy scaffold directories present)");
+        }
+      } else {
+        console.log("✅ Kit configuration uninstalled.");
+        console.log("   Removed / cleaned:");
+        for (const item of res.removed) console.log(`     - ${item}`);
+      }
+      process.exit(0);
       break;
     }
 
