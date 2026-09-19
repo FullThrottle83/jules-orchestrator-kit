@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { killProcessTree } from "./process-tree.mjs";
 import { readFileSync, existsSync, statSync, lstatSync, readlinkSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { tmpdir } from "node:os";
@@ -215,6 +216,13 @@ export function runCmd(command, opts = {}) {
     throw new GateError("Empty command provided");
   }
 
+  // On POSIX, detach so the child becomes its own process-group leader. Then a
+  // timed-out kill can signal the whole group (`kill(-pid)`) and reap workers
+  // spawned by the command. Windows omits detached: taskkill /T walks the tree
+  // without a separate group, and detached consoles behave differently under
+  // cmd.exe / CreateProcess.
+  const posixDetach = process.platform !== "win32";
+
   try {
     const ret = useShell
       ? spawnSync(shellCmd, {
@@ -225,6 +233,7 @@ export function runCmd(command, opts = {}) {
           env: childEnv,
           timeout,
           maxBuffer,
+          ...(posixDetach ? { detached: true } : {}),
         })
       : spawnSync(winSpawn ? winSpawn.file : binary, winSpawn ? winSpawn.args : args, {
           cwd,
@@ -235,9 +244,15 @@ export function runCmd(command, opts = {}) {
           env: childEnv,
           timeout,
           maxBuffer,
+          ...(posixDetach ? { detached: true } : {}),
         });
 
     const isTimeout = Boolean(ret.error && (ret.error.code === "ETIMEDOUT" || (ret.signal === "SIGTERM" && ret.error.killed)));
+    // Node's spawnSync timeout kills only the direct child; reap the tree so
+    // background workers do not linger (ROADMAP_V1 reliability item).
+    if (isTimeout && ret.pid) {
+      killProcessTree(ret.pid);
+    }
     const isNobufs = Boolean(ret.error && (ret.error.code === "ENOBUFS" || (ret.error.message && ret.error.message.includes("maxBuffer"))));
 
     const status = typeof ret.status === "number" ? ret.status : (isTimeout ? 124 : 1);
