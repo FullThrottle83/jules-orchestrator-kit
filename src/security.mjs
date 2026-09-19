@@ -19,7 +19,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { detectCrossPackageBoundaryViolations, detectEdgeRuntime } from "./stack-detector.mjs";
-import { checkTrojanSource } from "./bidi-guard.mjs";
+import {
+  checkUnicodeSecurity,
+  locateUnicodeFindingLine,
+} from "./bidi-guard.mjs";
 import {
   hasHighConfidenceSecret,
   hasLowConfidenceSecret,
@@ -331,42 +334,35 @@ export function scanDiff(diffTextStr = "", options = {}) {
   for (const segment of segments) {
     const addedText = segment.lines.map((l) => l.text).join("\n");
 
-    // Check Trojan Source
-    if (!segment.file || !segment.file.endsWith('.md')) {
-      const tsRes = checkTrojanSource(addedText, options);
-      if (!tsRes.ok) {
-        // Find line number where it happened if possible
-        const bidiRegex = /[\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069\u061C\u200E\u200F]/;
-        let lineNo = null;
-        for (const l of segment.lines) {
-          if (bidiRegex.test(l.text)) {
-            lineNo = l.no;
-            break;
-          }
-        }
-        for (const v of tsRes.violations) {
+    const hit = classifyAddedLines(addedText, segment.file);
+    if (hit) {
+      const line = segment.file ? locateFindingLine(segment.lines, hit.type, segment.file) : null;
+      const at = segment.file ? ` (${segment.file}${line ? `:${line}` : ""})` : "";
+      findings.push({
+        severity: hit.severity,
+        type: hit.type,
+        file: segment.file,
+        line,
+        description: `${hit.description}${at}`,
+      });
+    }
+
+    // Unicode security: BiDi Trojan Source, invisible obfuscation, mixed-script
+    // confusables. Markdown remains exempt (documentation may cite the controls).
+    if (!segment.file || !segment.file.endsWith(".md")) {
+      const uniRes = checkUnicodeSecurity(addedText, options);
+      if (!uniRes.ok) {
+        for (const v of uniRes.violations) {
           findings.push({
             severity: "CRITICAL",
-            type: "TROJAN_SOURCE_DETECTED",
+            type: v.type,
             file: segment.file,
-            line: lineNo,
+            line: locateUnicodeFindingLine(segment.lines, v.type),
             description: v.reason,
           });
         }
       }
     }
-
-    const hit = classifyAddedLines(addedText, segment.file);
-    if (!hit) continue;
-    const line = segment.file ? locateFindingLine(segment.lines, hit.type, segment.file) : null;
-    const at = segment.file ? ` (${segment.file}${line ? `:${line}` : ""})` : "";
-    findings.push({
-      severity: hit.severity,
-      type: hit.type,
-      file: segment.file,
-      line,
-      description: `${hit.description}${at}`,
-    });
   }
 
   // Scanning per file loses anything that only matches across a file boundary,
@@ -475,4 +471,12 @@ export {
   hasHighEntropyToken,
 } from "./secret-scanner.mjs";
 export { TAMPER_KINDS, TAMPER_KIND_NAMES, resolveAllowedTamperKinds, checkTestTampering } from "./test-tamper-guard.mjs";
-export { checkTrojanSource } from "./bidi-guard.mjs";
+export {
+  checkTrojanSource,
+  checkUnicodeSecurity,
+  BIDI_CONTROL_REGEX,
+  INVISIBLE_OBFUSCATION_REGEX,
+  PLANE14_TAG_REGEX,
+  hasMixedScriptConfusable,
+  locateUnicodeFindingLine,
+} from "./bidi-guard.mjs";

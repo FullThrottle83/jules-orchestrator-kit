@@ -156,7 +156,7 @@ const INVISIBLE_CHARS = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2
 // distinct code points with no compatibility decomposition. A credential
 // scanner without this table can be defeated by a single substituted glyph,
 // e.g. `ghp_` spelled with Cyrillic `р`.
-const CONFUSABLE_TO_ASCII = new Map([
+export const CONFUSABLE_TO_ASCII = new Map([
   // Cyrillic
   ["А", "A"], ["В", "B"], ["Е", "E"], ["К", "K"], ["М", "M"], ["Н", "H"],
   ["О", "O"], ["Р", "P"], ["С", "C"], ["Т", "T"], ["У", "Y"], ["Х", "X"],
