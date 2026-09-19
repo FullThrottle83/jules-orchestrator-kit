@@ -8,7 +8,7 @@ import { selectFailureOutput } from "../src/ops/verify-output.mjs";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.mjs";
-import { parseEnvelopeHeader } from "../src/envelope.mjs";
+import { parseEnvelopeHeader, validateEnvelope } from "../src/envelope.mjs";
 import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
@@ -2255,8 +2255,87 @@ async function main() {
           console.log(`--------------------------------------------------\n`);
         }
         process.exit(analysis.isFalsifiable ? 0 : 1);
+      } else if (subCommand === "validate") {
+        const { values, positionals } = parseArgs({
+          args: args.slice(2),
+          options: {
+            json: { type: "boolean", short: "j" },
+          },
+          allowPositionals: true,
+        });
+
+        const target = positionals[0];
+        if (!target) {
+          console.error("Usage: agentctl task validate <path-to-envelope.md|json> [--json]");
+          process.exit(1);
+        }
+
+        const targetPath = resolve(root, target);
+        if (!existsSync(targetPath)) {
+          console.error(`Error: Envelope file not found: ${target}`);
+          process.exit(1);
+        }
+
+        let payload = null;
+        try {
+          const content = readFileSync(targetPath, "utf-8");
+          if (targetPath.endsWith(".json") || target.toLowerCase().endsWith(".json")) {
+            payload = JSON.parse(content);
+          } else {
+            payload = parseEnvelopeHeader(content);
+            if (!payload || typeof payload !== "object") {
+              try {
+                payload = JSON.parse(content);
+              } catch {
+                payload = null;
+              }
+            }
+          }
+        } catch (err) {
+          console.error(`Error: Failed to read or parse envelope: ${err.message}`);
+          process.exit(1);
+        }
+
+        if (!payload || typeof payload !== "object") {
+          console.error("❌ TASK ENVELOPE VALIDATION FAILED:");
+          console.error("  - File does not contain a valid JSON payload or task envelope frontmatter.");
+          process.exit(1);
+        }
+
+        const res = validateEnvelope(payload, { root });
+        const result = {
+          ok: res.ok === true,
+          file: target,
+          errors: Array.isArray(res.errors) ? res.errors : [],
+          warnings: Array.isArray(res.warnings) ? res.warnings : [],
+        };
+
+        if (values.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else if (!result.ok) {
+          console.error("❌ TASK ENVELOPE VALIDATION FAILED:");
+          for (const err of result.errors) {
+            console.error(`  - ${err}`);
+          }
+          if (result.warnings.length > 0) {
+            console.warn("⚠️ TASK ENVELOPE WARNINGS:");
+            for (const w of result.warnings) {
+              console.warn(`  - ${w}`);
+            }
+          }
+        } else {
+          if (result.warnings.length > 0) {
+            console.warn("⚠️ TASK ENVELOPE WARNINGS:");
+            for (const w of result.warnings) {
+              console.warn(`  - ${w}`);
+            }
+          }
+          console.log(`✅ Task envelope validated successfully: ${target}`);
+        }
+
+        process.exit(result.ok ? 0 : 1);
       } else {
-        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create, agentctl task optimize, agentctl task template`);
+        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create, agentctl task optimize, agentctl task template, agentctl task validate`);
         process.exit(1);
       }
       break;
