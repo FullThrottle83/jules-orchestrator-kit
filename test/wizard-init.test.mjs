@@ -228,4 +228,57 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("planInit rejects invalid profile names fail-closed", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-bad-profile-"));
+    try {
+      for (const profile of ["strict", "unknown"]) {
+        assert.throws(
+          () => planInit(tmpDir, { profile, testCmd: "npm test" }),
+          (err) => {
+            assert.ok(err instanceof Error);
+            assert.match(err.message, new RegExp(`Invalid profile "${profile}"`));
+            assert.match(err.message, /Valid profiles: minimal, standard, max/);
+            assert.doesNotMatch(err.message, /Did you mean/);
+            return true;
+          },
+          `profile "${profile}" must throw without a tier hint`
+        );
+      }
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("planInit hints --tier when a tier name is passed as --profile", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-profile-tier-hint-"));
+    try {
+      assert.throws(
+        () => planInit(tmpDir, { profile: "pro", testCmd: "npm test" }),
+        (err) => {
+          assert.ok(err instanceof Error);
+          assert.equal(
+            err.message,
+            `Invalid profile "pro". Valid profiles: minimal, standard, max. Did you mean '--tier pro'?`
+          );
+          return true;
+        }
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("planInit accepts valid verification profiles", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-good-profile-"));
+    try {
+      for (const profile of ["minimal", "standard", "max"]) {
+        const plan = planInit(tmpDir, { profile, testCmd: "npm test" });
+        assert.equal(plan.profile, profile);
+        assert.ok(plan.configYaml.includes(`profile: ${profile}`));
+      }
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
