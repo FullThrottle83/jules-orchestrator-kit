@@ -667,12 +667,17 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   if (requested.size > 0) {
     for (const held of lockStatus(root)) {
       if (!held || held.taskId === taskId) continue;
-      if (!isLockLive(held)) continue;
 
       const overlap = (Array.isArray(held.files) ? held.files : [])
         .map((f) => normalizePath(f))
         .filter((f) => requested.has(f));
       if (overlap.length > 0) {
+        if (!isLockLive(held)) {
+          if (held.taskId) {
+            try { unlinkSync(join(lockDir, `${held.taskId}.json`)); } catch (_) {}
+          }
+          continue;
+        }
         return {
           ok: false,
           holder: held.agent,
@@ -723,6 +728,8 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
         const existing = JSON.parse(readFileSync(lockFile, "utf-8"));
         return { ok: false, holder: existing.agent, taskId };
       } catch (_) {
+        // Corrupted or 0-byte existing file: unlink so the task does not stay wedged.
+        try { unlinkSync(lockFile); } catch (_) {}
         return { ok: false, holder: "unknown", taskId };
       }
     }
@@ -754,8 +761,9 @@ export function releaseLock(taskId, rootOrOpts = resolveRoot()) {
   return false;
 }
 
-export function lockStatus(rootOrOpts = resolveRoot()) {
-  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
+export function lockStatus(rootOrOpts = resolveRoot(), opts = {}) {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : (rootOrOpts?.root || resolveRoot());
+  const activeOnly = opts?.activeOnly === true;
   const lockDir = getLockDir(root);
   const locks = [];
   try {
@@ -764,7 +772,10 @@ export function lockStatus(rootOrOpts = resolveRoot()) {
       if (file.endsWith(".json")) {
         try {
           const content = readFileSync(join(lockDir, file), "utf-8");
-          locks.push(Object.freeze(JSON.parse(content)));
+          const record = JSON.parse(content);
+          const live = isLockLive(record);
+          if (activeOnly && !live) continue;
+          locks.push(Object.freeze({ ...record, live }));
         } catch (_) {}
       }
     }
@@ -788,6 +799,7 @@ export function isConcurrencyGroupLocked(groupName, rootOrOpts = resolveRoot(), 
   const locks = lockStatus(rootOrOpts);
   for (const lock of locks) {
     if (excludeTaskId && lock.taskId === excludeTaskId) continue;
+    if (!isLockLive(lock)) continue;
     const lockGroup = String(lock.concurrencyGroup || lock.concurrency_group || "").trim().toLowerCase();
     if (lockGroup === targetGroup) {
       return true;
@@ -795,5 +807,89 @@ export function isConcurrencyGroupLocked(groupName, rootOrOpts = resolveRoot(), 
   }
   return false;
 }
+
+/**
+ * Scans .agent/state/locks/ for stale, expired, or corrupted lock records.
+ *
+ * Supported queue/process model:
+ * - Leased locks: reaped if Date.now() >= lockExpiry(record).
+ * - Process-bound locks: reaped if owner PID is dead (or recycled with different start time).
+ * - Corrupted files: 0-byte or unparseable JSON files reaped immediately.
+ * - Live locks: left completely untouched.
+ *
+ * @param {string|Object} [rootOrOpts=resolveRoot()]
+ * @param {Object} [opts]
+ * @param {boolean} [opts.dryRun=false] - When true, reports stale locks without deleting them.
+ * @returns {{ reapedCount: number, reaped: Array<{ file: string, taskId: string, agent: string, pid: number|null, reason: "corrupted"|"expired"|"dead-pid" }> }}
+ */
+export function reapStaleLocks(rootOrOpts = resolveRoot(), { dryRun = false } = {}) {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : (rootOrOpts?.root || resolveRoot());
+  const lockDir = getLockDir(root);
+
+  if (!existsSync(lockDir)) {
+    return { reapedCount: 0, reaped: [] };
+  }
+
+  const reaped = [];
+  let files = [];
+  try {
+    files = readdirSync(lockDir);
+  } catch (_) {
+    return { reapedCount: 0, reaped: [] };
+  }
+
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+    const lockPath = join(lockDir, file);
+    let record = null;
+    let corrupted = false;
+
+    try {
+      const content = readFileSync(lockPath, "utf-8");
+      if (!content || !content.trim()) {
+        corrupted = true;
+      } else {
+        record = JSON.parse(content);
+      }
+    } catch (_) {
+      corrupted = true;
+    }
+
+    let shouldReap = false;
+    let reason = "";
+
+    if (corrupted) {
+      shouldReap = true;
+      reason = "corrupted";
+    } else if (!isLockLive(record)) {
+      shouldReap = true;
+      if (record.leased === true) {
+        reason = "expired";
+      } else if (record.expiresAt && Date.now() >= lockExpiry(record)) {
+        reason = "expired";
+      } else {
+        reason = "dead-pid";
+      }
+    }
+
+    if (shouldReap) {
+      if (!dryRun) {
+        try {
+          unlinkSync(lockPath);
+        } catch (_) {}
+      }
+      reaped.push({
+        file,
+        taskId: record?.taskId || file.replace(/\.json$/, ""),
+        agent: record?.agent || "unknown",
+        pid: record?.pid ?? null,
+        reason,
+      });
+    }
+  }
+
+  return { reapedCount: reaped.length, reaped };
+}
+
 
 

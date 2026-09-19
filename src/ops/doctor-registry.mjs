@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { loadConfig, detectStack } from "../config.mjs";
 import { probeProvider, detectAvailableProviders, probeProviderLiveness, whichBinary } from "../provider-readiness.mjs";
 import { resolveConcurrency } from "../budget.mjs";
+import { isLockLive, getLockDir } from "../state.mjs";
 import {
   extractPrimaryExecutable,
   missingNodeModules,
@@ -582,13 +583,30 @@ export async function runDoctorChecks(options = {}) {
   }
 
   // 6. VFS Locks Check
-  const locksDir = join(root, ".agent", "state", "locks");
+  const locksDir = getLockDir(root);
   let activeLockCount = 0;
+  let staleLockCount = 0;
   let lockInspectionFailed = false;
   try {
     if (existsSync(locksDir)) {
       const lockFiles = readdirSync(locksDir).filter((f) => f.endsWith(".json"));
-      activeLockCount = lockFiles.length;
+      for (const file of lockFiles) {
+        try {
+          const content = readFileSync(join(locksDir, file), "utf-8");
+          if (!content || !content.trim()) {
+            staleLockCount += 1;
+            continue;
+          }
+          const record = JSON.parse(content);
+          if (isLockLive(record)) {
+            activeLockCount += 1;
+          } else {
+            staleLockCount += 1;
+          }
+        } catch (_) {
+          staleLockCount += 1;
+        }
+      }
     }
   } catch (_) {
     lockInspectionFailed = true;
@@ -601,35 +619,50 @@ export async function runDoctorChecks(options = {}) {
       summary: "Could not inspect VFS lock directory",
     });
   }
-  if (!lockInspectionFailed && activeLockCount === 0) {
-    addResult({
-      id: "locks.active",
-      category: "State",
-      title: "VFS Active Locks",
-      status: "pass",
-      severity: "info",
-      summary: "No active VFS locks present",
-    });
-  } else if (!lockInspectionFailed) {
-    addResult({
-      id: "locks.active",
-      category: "State",
-      title: "VFS Active Locks",
-      status: "warn",
-      severity: "medium",
-      summary: `${activeLockCount} active VFS lock(s) held`,
-      evidence: [{ label: "lockCount", value: activeLockCount, sensitive: false }],
-      fixes: [
-        {
-          id: "locks.prune-stale",
-          title: "Prune stale locks",
-          summary: "Remove locks owned by dead processes",
-          risk: "low",
-          automatic: true,
-          requiresProbe: false,
-        },
-      ],
-    });
+  if (!lockInspectionFailed) {
+    if (staleLockCount > 0) {
+      addResult({
+        id: "locks.active",
+        category: "State",
+        title: "VFS Locks",
+        status: "warn",
+        severity: "medium",
+        summary: `${staleLockCount} stale VFS lock(s) detected (${activeLockCount} active)`,
+        evidence: [
+          { label: "staleLockCount", value: staleLockCount, sensitive: false },
+          { label: "activeLockCount", value: activeLockCount, sensitive: false },
+        ],
+        fixes: [
+          {
+            id: "locks.prune-stale",
+            title: "Prune stale locks",
+            summary: "Run `agentctl lock reap` to clean up dead or expired locks",
+            risk: "low",
+            automatic: true,
+            requiresProbe: false,
+          },
+        ],
+      });
+    } else if (activeLockCount === 0) {
+      addResult({
+        id: "locks.active",
+        category: "State",
+        title: "VFS Active Locks",
+        status: "pass",
+        severity: "info",
+        summary: "No active VFS locks present",
+      });
+    } else {
+      addResult({
+        id: "locks.active",
+        category: "State",
+        title: "VFS Active Locks",
+        status: "pass",
+        severity: "info",
+        summary: `${activeLockCount} active VFS lock(s) held`,
+        evidence: [{ label: "lockCount", value: activeLockCount, sensitive: false }],
+      });
+    }
   }
 
   // 7. Provider readiness — for the provider this repository actually selected.

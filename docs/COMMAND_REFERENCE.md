@@ -42,7 +42,7 @@ Total commands: 55
 - [`agentctl session get`](#session-get) — Retrieve remote execution status for a session ID
 - [`agentctl session list`](#session-list) — List recent and active Jules sessions from remote API or local ledger
 - [`agentctl plan approve`](#plan-approve) — Approve a pending execution plan for an agent session
-- [`agentctl lock`](#lock) — Multi-agent coordination locks: acquire, release, or view file status
+- [`agentctl lock`](#lock) — Multi-agent coordination locks: acquire, release, reap, or view file status
 - [`agentctl evidence`](#evidence) — Manage cryptographic audit evidence (generate | verify | show)
 - [`agentctl repair`](#repair) — Explicitly repair from piped terminal logs or an error trace; `fix` remains a 0.x compatibility alias
 - [`agentctl patch`](#patch) — Extract and test/apply git patch from a Jules session
@@ -1013,7 +1013,7 @@ agentctl approve <sessionId>
 
 **ID:** `lock` · **Category:** Operate · **Risk:** LOW · **Mutates:** yes
 
-Multi-agent coordination locks: acquire, release, or view file status
+Multi-agent coordination locks: acquire, release, reap, or view file status
 
 **Flags:**
 
@@ -1021,6 +1021,7 @@ Multi-agent coordination locks: acquire, release, or view file status
 | :--- | :--- | :--- |
 | `--ttl` | string | Lease duration in minutes for acquire (default: 120) |
 | `--pid` | string | Bind the lock to a process id instead of a time lease |
+| `--dry-run` | boolean | Report stale locks without unlinking them |
 | `--json` | boolean | Output structured JSON result (-j) |
 
 **Examples:**
@@ -1030,6 +1031,8 @@ agentctl lock status
 agentctl lock acquire agent-1 task-1 src/main.js
 agentctl lock acquire agent-1 task-1 src/main.js --ttl 60
 agentctl lock release task-1
+agentctl lock reap
+agentctl lock reap --dry-run
 ```
 
 ## `agentctl evidence`

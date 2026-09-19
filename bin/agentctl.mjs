@@ -8,7 +8,7 @@ import { selectFailureOutput } from "../src/ops/verify-output.mjs";
 import { diagnoseVerifyFailure } from "../src/ops/toolchain-diagnostics.mjs";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
-import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.mjs";
+import { acquireLock, releaseLock, reapStaleLocks, lockStatus, getQueueDir } from "../src/state.mjs";
 import { parseEnvelopeHeader, validateEnvelope } from "../src/envelope.mjs";
 import { worktreePrune } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
@@ -314,6 +314,9 @@ async function main() {
   if (command !== "init" && command !== "uninstall" && command !== "migrate") {
     reapOrphanedIntents(root);
     reapStaleMutexDirs(root);
+    if (command !== "lock") {
+      reapStaleLocks(root);
+    }
   }
   const config = loadConfig(root);
 
@@ -1561,6 +1564,7 @@ async function main() {
         options: {
           ttl: { type: "string" },
           pid: { type: "string" },
+          "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
         },
         allowPositionals: true,
@@ -1625,21 +1629,48 @@ async function main() {
           console.log(`❌ Lock for ${taskId} not found or release failed`);
           process.exit(1);
         }
-      } else {
-        const locks = lockStatus(root);
+      } else if (action === "reap" || action === "prune") {
+        const dryRun = Boolean(lockValues["dry-run"]);
+        const res = reapStaleLocks(root, { dryRun });
         if (lockValues.json) {
-          console.log(JSON.stringify({ ok: true, locks }, null, 2));
+          console.log(JSON.stringify(res, null, 2));
           process.exit(0);
         }
-        if (locks.length === 0) {
+        if (res.reapedCount === 0) {
+          console.log("✅ No stale locks found.");
+        } else {
+          const verb = dryRun ? "Would reap" : "Reaped";
+          console.log(`✅ ${verb} ${res.reapedCount} stale lock(s):`);
+          for (const item of res.reaped) {
+            console.log(`   • ${item.taskId || item.file} (${item.reason})`);
+          }
+        }
+        process.exit(0);
+      } else {
+        const allLocks = lockStatus(root);
+        const activeLocks = allLocks.filter((l) => l.live);
+        const staleLocks = allLocks.filter((l) => !l.live);
+        if (lockValues.json) {
+          console.log(JSON.stringify({ ok: true, locks: allLocks, activeCount: activeLocks.length, staleCount: staleLocks.length }, null, 2));
+          process.exit(0);
+        }
+        if (allLocks.length === 0) {
           console.log("Active Locks: 0 (no held locks)");
         } else {
-          console.log(`Active Locks (${locks.length}):`);
-          for (const l of locks) {
+          console.log(`Active Locks (${activeLocks.length}):`);
+          for (const l of activeLocks) {
             const files = Array.isArray(l.files) ? l.files.join(", ") : (l.files || "");
             const expires = l.expiresAt ? `expires ${l.expiresAt}` : (l.ownerPid ? `pid ${l.ownerPid}` : "active");
             console.log(`  • taskId: ${l.taskId || l.id} [${l.agent || "unknown"}] (${expires})`);
             if (files) console.log(`    Paths: ${files}`);
+          }
+          if (staleLocks.length > 0) {
+            console.log(`\nStale Locks (${staleLocks.length}):`);
+            for (const l of staleLocks) {
+              const reason = l.leased ? "expired lease" : `dead pid ${l.pid || "unknown"}`;
+              console.log(`  • taskId: ${l.taskId || l.id} [${l.agent || "unknown"}] (${reason})`);
+            }
+            console.log(`   💡 Run \`agentctl lock reap\` to clean up stale locks.`);
           }
         }
       }
@@ -2402,7 +2433,7 @@ async function main() {
           version: VERSION,
           root,
           pendingTasks: files.length,
-          activeLocks: lockStatus(root).length,
+          activeLocks: lockStatus(root, { activeOnly: true }).length,
           budget,
         }, null, 2));
         process.exit(0);
@@ -2411,7 +2442,7 @@ async function main() {
       console.log(`--------------------------------------------------`);
       console.log(`  Project Root     : ${root}`);
       console.log(`  Pending Tasks    : ${files.length}`);
-      console.log(`  Active VFS Locks : ${lockStatus(root).length}`);
+      console.log(`  Active VFS Locks : ${lockStatus(root, { activeOnly: true }).length}`);
       console.log(`  Daily Budget     : ${formatBudgetLine(budget)}`);
       console.log(`--------------------------------------------------\n`);
       process.exit(0);
