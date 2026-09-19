@@ -40,13 +40,14 @@ function run(cmd, args, opts = {}) {
   // Isolate downstream child processes from verification net-guard preload
   delete env.NODE_OPTIONS;
 
-  const actualCmd = isWin && (cmd === "npm" || cmd === "npx") ? `${cmd}.cmd` : cmd;
+  const isNpmCmd = isWin && (cmd === "npm" || cmd === "npx");
+  const actualCmd = isNpmCmd ? `${cmd}.cmd` : cmd;
   return spawnSync(actualCmd, args, {
     cwd: opts.cwd,
     encoding: "utf-8",
     timeout: opts.timeout ?? 120_000,
     env,
-    shell: isWin,
+    shell: isNpmCmd,
     maxBuffer: 16 * 1024 * 1024,
   });
 }
