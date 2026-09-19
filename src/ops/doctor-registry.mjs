@@ -3,8 +3,14 @@ import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { loadConfig, detectStack } from "../config.mjs";
-import { probeProvider, detectAvailableProviders, probeProviderLiveness } from "../provider-readiness.mjs";
+import { probeProvider, detectAvailableProviders, probeProviderLiveness, whichBinary } from "../provider-readiness.mjs";
 import { resolveConcurrency } from "../budget.mjs";
+import {
+  extractPrimaryExecutable,
+  missingNodeModules,
+  missingPythonEnv,
+  probeOracleLightly,
+} from "./toolchain-diagnostics.mjs";
 
 /**
  * @typedef {"pass" | "warn" | "fail" | "skip" | "unknown"} DiagnosticStatus
@@ -423,6 +429,119 @@ export async function runDoctorChecks(options = {}) {
           summary: "Run `agentctl bootstrap` to create one for this stack, or set verify.test in .agent/config.yml",
           risk: "low",
           automatic: true,
+          requiresProbe: false,
+        },
+      ],
+    });
+  }
+
+
+  // 4b. Toolchain readiness — name a missing verify binary / install tree before
+  // dispatch, so first-run failures are diagnosable without reading spawn ENOENT.
+  if (effectiveTest) {
+    const primaryBin = extractPrimaryExecutable(effectiveTest);
+    if (primaryBin) {
+      const onPath = Boolean(whichBinary(primaryBin));
+      if (!onPath) {
+        const status = verificationRequired ? "fail" : "warn";
+        addResult({
+          id: "toolchain.binary",
+          category: "Verification",
+          title: "Verify Toolchain Binary",
+          status,
+          severity: verificationRequired ? "high" : "medium",
+          summary: `Verification binary \`${primaryBin}\` is not on PATH — gate will fail when it runs \`${effectiveTest}\``,
+          evidence: [
+            { label: "primaryBinary", value: primaryBin, sensitive: false },
+            { label: "testCommand", value: effectiveTest, sensitive: false },
+          ],
+          fixes: [
+            {
+              id: "toolchain.install-binary",
+              title: `Install ${primaryBin}`,
+              summary: `Install \`${primaryBin}\` (or change verify.test to a command available on this machine)`,
+              risk: "low",
+              automatic: false,
+              requiresProbe: false,
+            },
+          ],
+        });
+      } else {
+        addResult({
+          id: "toolchain.binary",
+          category: "Verification",
+          title: "Verify Toolchain Binary",
+          status: "pass",
+          severity: "info",
+          summary: `Verification binary \`${primaryBin}\` is on PATH`,
+          evidence: [
+            { label: "primaryBinary", value: primaryBin, sensitive: false },
+            { label: "testCommand", value: effectiveTest, sensitive: false },
+          ],
+        });
+
+        // Active probe: lightweight read-only check so ops know the pipeline
+        // answers before a paid dispatch.
+        if (activeProbe) {
+          const probe = probeOracleLightly(root, effectiveTest, primaryBin);
+          addResult({
+            id: "oracle.probe",
+            category: "Verification",
+            title: "Verification Oracle Probe",
+            status: probe.ok ? "pass" : "warn",
+            severity: probe.ok ? "info" : "medium",
+            summary: probe.detail,
+            evidence: [
+              { label: "primaryBinary", value: primaryBin, sensitive: false },
+              { label: "probed", value: true, sensitive: false },
+            ],
+          });
+        }
+      }
+    }
+  }
+
+  // 4c. Dependency install trees — warn only; doctor must stay exit 0 for a
+  // missing node_modules on a brand-new clone until the operator installs.
+  if (missingNodeModules(root)) {
+    addResult({
+      id: "toolchain.deps",
+      category: "Verification",
+      title: "Node Dependency Tree",
+      status: "warn",
+      severity: "medium",
+      summary: "package.json is present but node_modules/ is missing — run `npm install` (or pnpm/yarn) before verify",
+      evidence: [{ label: "nodeModules", value: false, sensitive: false }],
+      fixes: [
+        {
+          id: "toolchain.npm-install",
+          title: "Install Node dependencies",
+          summary: "Run npm install (or pnpm install / yarn) at the repository root",
+          risk: "low",
+          automatic: false,
+          requiresProbe: false,
+        },
+      ],
+    });
+  }
+
+  if (missingPythonEnv(root)) {
+    addResult({
+      id: "toolchain.python-env",
+      category: "Verification",
+      title: "Python Virtual Environment",
+      status: "warn",
+      severity: "medium",
+      summary:
+        "Python project manifest found but no usable venv (.venv/venv) — create one and install deps before verify",
+      evidence: [{ label: "venv", value: false, sensitive: false }],
+      fixes: [
+        {
+          id: "toolchain.python-venv",
+          title: "Create a Python venv",
+          summary: "Run `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` (or poetry/uv equivalent)",
+          risk: "low",
+          automatic: false,
           requiresProbe: false,
         },
       ],
