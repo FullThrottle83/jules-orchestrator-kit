@@ -28,17 +28,25 @@ import { fileURLToPath } from "node:url";
 const KIT_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const GITIGNORE_BLOCK_HEADER = "# Jules Orchestrator runtime state & credentials";
 
+const isWin = process.platform === "win32";
+
 /**
  * @param {string} cmd
  * @param {string[]} args
  * @param {{ cwd?: string, timeout?: number, env?: NodeJS.ProcessEnv }} [opts]
  */
 function run(cmd, args, opts = {}) {
-  return spawnSync(cmd, args, {
+  const env = { ...(opts.env ?? process.env) };
+  // Isolate downstream child processes from verification net-guard preload
+  delete env.NODE_OPTIONS;
+
+  const actualCmd = isWin && (cmd === "npm" || cmd === "npx") ? `${cmd}.cmd` : cmd;
+  return spawnSync(actualCmd, args, {
     cwd: opts.cwd,
     encoding: "utf-8",
     timeout: opts.timeout ?? 120_000,
-    env: opts.env ?? process.env,
+    env,
+    shell: isWin,
     maxBuffer: 16 * 1024 * 1024,
   });
 }
