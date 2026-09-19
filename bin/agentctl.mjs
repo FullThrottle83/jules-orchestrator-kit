@@ -5,6 +5,7 @@ import { readFileSync, existsSync, readdirSync, statSync, renameSync, mkdirSync 
 import { join, resolve, relative } from "node:path";
 import { applyEnvAliases } from "../src/env-aliases.mjs";
 import { selectFailureOutput } from "../src/ops/verify-output.mjs";
+import { diagnoseVerifyFailure } from "../src/ops/toolchain-diagnostics.mjs";
 import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../src/config.mjs";
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, lockStatus, getQueueDir } from "../src/state.mjs";
@@ -692,9 +693,14 @@ async function main() {
             console.log(`   • Or set it by hand:   verify.test in ${config._file || ".agent/config.yml"}`);
             console.log(`   • Scope- and secret-scanning only, on purpose? Set verify.required: false there.\n`);
           } else if (failedPhase === "verify" || failedPhase === "evidence") {
+            const verifyFailure =
+              res.phases.find((p) => (p.phase === "verify" || p.phase === "evidence") && !p.ok)?.failure || {};
+            const diagnosis = diagnoseVerifyFailure(verifyFailure);
             console.log(`💡 Remediation Hint (Exit ${res.code} Verification Failed):`);
-            console.log(`   • The stage above exited non-zero. Reproduce it locally, then re-run the gate.`);
-            console.log(`   • To start an explicit repair workflow, pipe the failing command's output to: agentctl repair\n`);
+            for (const line of diagnosis.lines) {
+              console.log(`   • ${line}`);
+            }
+            console.log("");
           } else if (res.code === 3) {
             // The same violation has two very different causes. Right after
             // `init`, every offending path is a file the tool itself just wrote
