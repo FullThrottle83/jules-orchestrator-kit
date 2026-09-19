@@ -3,7 +3,7 @@
 > Auto-generated from `src/ops/command-registry.mjs`. Do not edit by hand —
 run `node scripts/generate-command-reference.mjs` to regenerate.
 
-Total commands: 52
+Total commands: 53
 
 ## Index
 
@@ -11,10 +11,11 @@ Total commands: 52
 - [`agentctl doctor`](#doctor) — Run repository diagnostics and guided fixes
 - [`agentctl queue`](#queue) — Execute pending task envelopes: dispatches each to the provider and moves it out of the queue
 - [`agentctl swarm`](#swarm) — Dispatch every queued task in parallel across worker slots
-- [`agentctl task`](#task) — Manage task envelopes: create, template, or optimize prompts (see task create | task template | task optimize)
+- [`agentctl task`](#task) — Manage task envelopes: create, template, optimize, or validate (see task create | task template | task optimize | task validate)
 - [`agentctl task create`](#task-create) — Author a scoped, falsifiable task
 - [`agentctl task template`](#task-template) — List and synthesize web task template envelopes
 - [`agentctl task optimize`](#task-optimize) — Score task prompt falsifiability and static path resolution
+- [`agentctl task validate`](#task-validate) — Validate a task envelope markdown or JSON file without dispatching
 - [`agentctl init`](#init) — Write the minimal canonical project config and runtime ignore entries
 - [`agentctl dashboard`](#dashboard) — Start local web dashboard server
 - [`agentctl budget`](#budget) — Show today's task budget, where its limit came from, and reconcile a wrong count
@@ -171,7 +172,7 @@ agentctl swarm --concurrency 3 --json
 
 **ID:** `task` · **Category:** Create · **Risk:** MODERATE · **Mutates:** yes
 
-Manage task envelopes: create, template, or optimize prompts (see task create | task template | task optimize)
+Manage task envelopes: create, template, optimize, or validate (see task create | task template | task optimize | task validate)
 
 **Flags:** none.
 
@@ -276,6 +277,25 @@ Score task prompt falsifiability and static path resolution
 agentctl task optimize "Fix JWT token expiry in src/auth.js"
 agentctl task optimize "Refactor auth" --fix
 agentctl task optimize --file prompt.txt --json
+```
+
+## `agentctl task validate`
+
+**ID:** `task-validate` · **Category:** Inspect · **Risk:** LOW · **Mutates:** no
+
+Validate a task envelope markdown or JSON file without dispatching
+
+**Flags:**
+
+| Flag | Type | Description |
+| :--- | :--- | :--- |
+| `--json` | boolean | Output machine-readable validation result |
+
+**Examples:**
+
+```sh
+agentctl task validate .agent/jules-queue/TASK-001.md
+agentctl task validate task.json --json
 ```
 
 ## `agentctl init`
