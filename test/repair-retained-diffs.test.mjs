@@ -21,6 +21,7 @@ function createTempRepo() {
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
   execFileSync("git", ["config", "user.email", "repair-test@example.com"], { cwd: root });
   execFileSync("git", ["config", "user.name", "Repair Test"], { cwd: root });
+  writeFileSync(join(root, ".gitignore"), ".agent/state/\n.agent/evidence/\n");
   writeFileSync(join(root, "app.js"), "export const value = 1;\n");
   execFileSync("git", ["add", "-A"], { cwd: root });
   execFileSync("git", ["commit", "-qm", "initial"], { cwd: root });

@@ -1040,14 +1040,20 @@ async function main() {
         }
         process.exit(0);
       } else {
-        console.log(`\n🔧 Dispatching OODA Repair Loop for captured failure trace...`);
+        if (!values.json) {
+          console.log(`\n🔧 Dispatching OODA Repair Loop for captured failure trace...`);
+        }
         const repairRes = await repair(
           { stderr: cleanTrace, command: values.cmd || "verify" },
           { root, dryRun: values["dry-run"], author: values.author }
         );
 
         if (values.json) {
-          console.log(JSON.stringify(repairRes, null, 2));
+          process.stdout.write(JSON.stringify(repairRes, null, 2) + "\n", () => {
+            process.exit(repairRes.ok ? 0 : 1);
+          });
+          setTimeout(() => process.exit(repairRes.ok ? 0 : 1), 1000).unref();
+          break;
         } else {
           console.log(`------------------------------------------------------------------`);
           console.log(`Repair Status: ${repairRes.ok ? "RESOLVED (Exit 0)" : `FAILED (${repairRes.finalStatus} — Exit 1)`}`);
