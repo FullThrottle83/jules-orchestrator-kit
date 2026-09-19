@@ -122,6 +122,17 @@ export function planInit(root = process.cwd(), options = {}) {
   // scaffolded limits always match what the runtime will later enforce.
   const tierPresetLimits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
 
+  // Same fail-closed rule as tier: an explicit `--profile` that is not one of
+  // PROFILE_NAMES must not silently become `standard`. Guessing wrong used to
+  // scaffold the everyday gate under a name the operator never chose.
+  if (options.profile && !PROFILE_NAMES.includes(String(options.profile).toLowerCase())) {
+    const rawProfile = String(options.profile).toLowerCase();
+    if (validTiers.includes(rawProfile)) {
+      throw new Error(`Invalid profile "${options.profile}". Valid profiles: ${PROFILE_NAMES.join(", ")}. Did you mean '--tier ${options.profile}'?`);
+    }
+    throw new Error(`Invalid profile "${options.profile}". Valid profiles: ${PROFILE_NAMES.join(", ")}.`);
+  }
+
   // Preserve existing config if present (ignored when pristine requested)
   let existingConfig = {};
   if (!options.pristine) {
