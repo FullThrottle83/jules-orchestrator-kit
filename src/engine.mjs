@@ -1,4 +1,4 @@
-import { loadConfig, resolveTrustedPolicy } from "./config.mjs";
+import { loadConfig, resolveTrustedPolicy, normalizePath } from "./config.mjs";
 import { isTestPath } from "./test-paths.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
@@ -10,9 +10,9 @@ import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReserva
 import { resolveDailyLimit, recordObservedCeiling, isDailyQuotaRejection, resolveAmbientIdentity } from "./budget.mjs";
 import { sanitizeUntrustedData, buildAgentEnvelope } from "./prompt-guard.mjs";
 import { recordVerifyRun, readVerifyRuns, flakyVerdict } from "./flaky-ledger.mjs";
-import fs, { readdirSync, readFileSync, renameSync, existsSync } from "node:fs";
+import fs, { readdirSync, readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { appendTelemetryBestEffort as appendTelemetry } from "./telemetry.mjs";
 
 import { spawn } from "node:child_process";
@@ -815,11 +815,68 @@ export async function repair(failure, opts = {}) {
     threshold: 2,
   });
 
+  const repairId = `repair-${Date.now()}-${randomUUID().slice(0, 8)}`;
+  let repairDir = null;
+
   let currentFailure = failure;
   const initialFingerprint = fingerprintFailureState(currentFailure, root);
   breaker.observe(initialFingerprint);
   whackAMole.recordTestOutcome(currentFailure.stderr || currentFailure.message);
   let extraPromptDirective = null;
+
+  const persistFailedAttempt = (n, diff, diagnostics) => {
+    const relDir = normalizePath(join(".agent/state/repairs", repairId));
+    const absDir = join(root, relDir);
+    ensureDir(absDir);
+    const patchName = `attempt-${n}.patch`;
+    const diagName = `attempt-${n}-diagnostics.json`;
+    const patchRel = normalizePath(join(relDir, patchName));
+    const diagRel = normalizePath(join(relDir, diagName));
+    writeFileSync(join(absDir, patchName), redactSecrets(String(diff || "")), "utf-8");
+    const payload = {
+      ...diagnostics,
+      patchPath: patchRel,
+      diagnosticsPath: diagRel,
+    };
+    writeFileSync(join(absDir, diagName), JSON.stringify(payload, null, 2) + "\n", "utf-8");
+    repairDir = relDir;
+    return payload;
+  };
+
+  const captureAttemptDiff = () => {
+    try {
+      // Working-tree mode retains what the repair attempt left on disk; the
+      // default committed mode only shows the last commit and would hide
+      // uncommitted agent edits that operators need to review.
+      const base = config.baseBranch || config.base || "main";
+      return diffText(root, base, "working-tree") || "";
+    } catch (_) {
+      return "";
+    }
+  };
+
+  const buildGateDiagnostics = (gateRes) => {
+    const failingPhase = (gateRes.phases || []).find((p) => p && p.ok === false) || null;
+    const verifyPhase = (gateRes.phases || []).find((p) => p && p.phase === "verify") || null;
+    const failureInfo = verifyPhase?.failure || null;
+    const testResult = verifyPhase?.testResult || null;
+    const stderr = failureInfo?.stderr || testResult?.stderr || gateRes.error || "";
+    const stdout = failureInfo?.stdout || testResult?.stdout || "";
+    return {
+      code: gateRes.code ?? null,
+      phase: failingPhase?.phase || "verify",
+      command: failureInfo?.command || testResult?.command || null,
+      exitCode: failureInfo?.exitCode ?? testResult?.status ?? null,
+      stderr: redactSecrets(String(stderr).slice(0, 8000)),
+      stdout: redactSecrets(String(stdout).slice(0, 4000)),
+      messages: Array.isArray(failureInfo?.diagnostics) ? failureInfo.diagnostics.map((d) => redactSecrets(String(d))) : [],
+      error: redactSecrets(
+        String(gateRes.error || failureInfo?.stderr || testResult?.stderr || "Gate re-verification failed")
+          .split("\n")[0]
+          .slice(0, 500)
+      ),
+    };
+  };
 
   for (let n = 1; n <= maxRetries; n++) {
     if (progressBus && progressToken) {
@@ -847,7 +904,14 @@ export async function repair(failure, opts = {}) {
         const retryAfterMs = err.retryAfterMs || 60000;
         const backoffSec = Math.ceil(retryAfterMs / 1000);
         console.warn(`[PROVIDER_INFRASTRUCTURE_FAILURE] ${err.name}: ${err.message}. Recommended backoff: ${backoffSec}s.`);
-        attempts.push({ n, ok: false, error: err.message, providerError: true, retryAfterMs });
+        attempts.push({
+          n,
+          ok: false,
+          phase: "dispatch",
+          error: err.message,
+          providerError: true,
+          retryAfterMs,
+        });
         appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: false, error: err.message, providerError: true });
         return {
           ok: false,
@@ -856,9 +920,10 @@ export async function repair(failure, opts = {}) {
           error: err.message,
           retryAfterMs,
           providerError: true,
+          repairDir,
         };
       }
-      attempts.push({ n, ok: false, error: err.message });
+      attempts.push({ n, ok: false, phase: "dispatch", error: err.message });
       appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: false, error: err.message });
       break;
     }
@@ -898,17 +963,21 @@ export async function repair(failure, opts = {}) {
       }
     }
 
-    attempts.push({
-      n,
-      session,
-      ok: true,
-      poll: pollVerdict ? { status: pollVerdict.status, terminal: pollVerdict.terminal } : null,
-    });
-    appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: true });
+    const poll = pollVerdict ? { status: pollVerdict.status, terminal: pollVerdict.terminal } : null;
 
     // Re-verify after repair attempt
     const gateRes = await gate({ root, config, fix: false, progressBus, progressToken });
+    const attemptDiff = captureAttemptDiff();
     if (gateRes.ok) {
+      attempts.push({
+        n,
+        session,
+        ok: true,
+        verified: true,
+        diff: attemptDiff,
+        poll,
+      });
+      appendTelemetry(root, "ooda_repair_attempt", { attempt: n, ok: true, verified: true });
       breaker.reset();
       whackAMole.reset();
       recordRemediation(root, {
@@ -917,8 +986,26 @@ export async function repair(failure, opts = {}) {
         remediationHint: `Resolved on repair attempt #${n}`,
         targetFiles: currentFailure.targetFiles || [],
       });
-      return { ok: true, attempts, finalStatus: "PASSED" };
+      return { ok: true, attempts, finalStatus: "PASSED", repairDir };
     }
+
+    const diagnostics = persistFailedAttempt(n, attemptDiff, buildGateDiagnostics(gateRes));
+    attempts.push({
+      n,
+      session,
+      ok: false,
+      verified: false,
+      diff: attemptDiff,
+      diagnostics,
+      poll,
+    });
+    appendTelemetry(root, "ooda_repair_attempt", {
+      attempt: n,
+      ok: false,
+      verified: false,
+      code: gateRes.code ?? null,
+      phase: diagnostics.phase,
+    });
 
     currentFailure = gateRes.phases.find((p) => p.phase === "verify")?.testResult || failure;
     const currentFingerprint = fingerprintFailureState(currentFailure, root);
@@ -943,6 +1030,7 @@ export async function repair(failure, opts = {}) {
         finalStatus: "DETERMINISTIC_REGRESSION",
         reason: `Identical failure state fingerprint (${currentFingerprint}) observed during attempt #${n}`,
         fingerprint: currentFingerprint,
+        repairDir,
       };
     }
   }
@@ -963,7 +1051,7 @@ export async function repair(failure, opts = {}) {
     });
   } catch (_) {}
 
-  return { ok: false, attempts, finalStatus: "OODA_EXHAUSTED" };
+  return { ok: false, attempts, finalStatus: "OODA_EXHAUSTED", repairDir };
 
 }
 

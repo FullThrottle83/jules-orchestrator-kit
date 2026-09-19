@@ -1051,6 +1051,36 @@ async function main() {
         } else {
           console.log(`------------------------------------------------------------------`);
           console.log(`Repair Status: ${repairRes.ok ? "RESOLVED (Exit 0)" : `FAILED (${repairRes.finalStatus} — Exit 1)`}`);
+          if (!repairRes.ok && Array.isArray(repairRes.attempts) && repairRes.attempts.length > 0) {
+            console.log(`\nRepair attempt review:`);
+            if (repairRes.repairDir) {
+              console.log(`  Retained under: ${repairRes.repairDir}`);
+            }
+            for (const attempt of repairRes.attempts) {
+              const phase =
+                attempt.phase ||
+                attempt.diagnostics?.phase ||
+                (attempt.verified === true ? "verified" : attempt.verified === false ? "verify" : "unknown");
+              const errRaw = attempt.error || attempt.diagnostics?.error || "";
+              const concise = String(errRaw).split("\n")[0].slice(0, 200);
+              const diff = typeof attempt.diff === "string" ? attempt.diff : "";
+              const fileCount = [...diff.matchAll(/^diff --git /gm)].length;
+              const lineCount = diff
+                .split("\n")
+                .filter((line) => (line.startsWith("+") && !line.startsWith("+++")) || (line.startsWith("-") && !line.startsWith("---")))
+                .length;
+              console.log(`  #${attempt.n}: phase=${phase} ok=${attempt.ok}${concise ? ` error=${JSON.stringify(concise)}` : ""}`);
+              if (attempt.diff !== undefined) {
+                console.log(`       diff: ${fileCount} file(s), ${lineCount} changed line(s)`);
+              }
+              if (attempt.diagnostics?.patchPath) {
+                console.log(`       patch: ${attempt.diagnostics.patchPath}`);
+              }
+              if (attempt.diagnostics?.diagnosticsPath) {
+                console.log(`       diagnostics: ${attempt.diagnostics.diagnosticsPath}`);
+              }
+            }
+          }
         }
 
         process.exit(repairRes.ok ? 0 : 1);
