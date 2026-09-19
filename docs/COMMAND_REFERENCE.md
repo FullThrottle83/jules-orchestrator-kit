@@ -3,7 +3,7 @@
 > Auto-generated from `src/ops/command-registry.mjs`. Do not edit by hand —
 run `node scripts/generate-command-reference.mjs` to regenerate.
 
-Total commands: 54
+Total commands: 55
 
 ## Index
 
@@ -18,6 +18,7 @@ Total commands: 54
 - [`agentctl task validate`](#task-validate) — Validate a task envelope markdown or JSON file without dispatching
 - [`agentctl init`](#init) — Write the minimal canonical project config and runtime ignore entries
 - [`agentctl uninstall`](#uninstall) — Remove kit-owned configuration and gitignore entries from the repository
+- [`agentctl migrate`](#migrate) — Migrate legacy 0.x config and task envelopes to canonical v1 format
 - [`agentctl dashboard`](#dashboard) — Start local web dashboard server
 - [`agentctl budget`](#budget) — Show today's task budget, where its limit came from, and reconcile a wrong count
 - [`agentctl status`](#status) — Show operating status and health summary
@@ -351,6 +352,28 @@ Remove kit-owned configuration and gitignore entries from the repository
 agentctl uninstall --dry-run
 agentctl uninstall --yes
 agentctl uninstall --json
+```
+
+## `agentctl migrate`
+
+**ID:** `migrate` · **Category:** Configure · **Risk:** LOW · **Mutates:** yes
+
+Migrate legacy 0.x config and task envelopes to canonical v1 format
+
+**Flags:**
+
+| Flag | Type | Description |
+| :--- | :--- | :--- |
+| `--dry-run` | boolean | Report planned migrations without modifying disk (-d) |
+| `--yes` | boolean | Confirm migration without prompting (-y) |
+| `--json` | boolean | Output machine-readable migration plan or outcome (-j) |
+
+**Examples:**
+
+```sh
+agentctl migrate --dry-run
+agentctl migrate --yes
+agentctl migrate --yes --json
 ```
 
 ## `agentctl dashboard`

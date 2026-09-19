@@ -308,9 +308,9 @@ async function main() {
   // Init is a configuration boundary, not an operational maintenance command.
   // In particular, --dry-run must not create .agent/ indirectly by reaping
   // journal intents or mutex directories before init itself gets control.
-  // init and uninstall must not create kit state as a side-effect of startup
-  // maintenance — dry-run and "nothing installed" paths need a clean tree.
-  if (command !== "init" && command !== "uninstall") {
+  // init, uninstall and migrate must not create kit state as a side-effect of
+  // startup maintenance — dry-run and "nothing installed" paths need a clean tree.
+  if (command !== "init" && command !== "uninstall" && command !== "migrate") {
     reapOrphanedIntents(root);
     reapStaleMutexDirs(root);
   }
@@ -3410,6 +3410,90 @@ async function main() {
         console.error(`Unknown rules action: "${subcmd}". Usage: agentctl rules [check | compile]`);
         process.exit(1);
       }
+      break;
+    }
+
+    case "migrate": {
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          "dry-run": { type: "boolean", short: "d" },
+          yes: { type: "boolean", short: "y" },
+          json: { type: "boolean", short: "j" },
+        },
+        allowPositionals: true,
+      });
+
+      const dryRun = Boolean(values["dry-run"]);
+      const confirmed = Boolean(values.yes);
+      const asJson = Boolean(values.json);
+
+      if (!dryRun && !confirmed) {
+        if (asJson) {
+          console.error(JSON.stringify({
+            ok: false,
+            error: "Refusing to migrate without --yes. Pass --dry-run to preview, or --yes to confirm.",
+          }));
+        } else {
+          console.error("❌ Refusing to migrate without --yes. Pass --dry-run to preview, or --yes to confirm.");
+        }
+        process.exit(1);
+      }
+
+      const { executeMigration } = await import("../src/migrate.mjs");
+      const res = executeMigration(root, { dryRun });
+
+      if (!res.ok) {
+        if (asJson) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.error(`❌ ${res.error || "Migration failed."}`);
+        }
+        process.exit(1);
+      }
+
+      if (asJson) {
+        const payload = {
+          ok: true,
+          dryRun: Boolean(res.dryRun),
+          migrated: res.migrated,
+          warnings: res.warnings || [],
+        };
+        if (res.message) payload.message = res.message;
+        console.log(JSON.stringify(payload, null, 2));
+        process.exit(0);
+      }
+
+      if (res.migrated.length === 0 && (!res.warnings || res.warnings.length === 0)) {
+        console.log(`✅ ${res.message || "Repository is already in canonical v1 format."}`);
+        process.exit(0);
+      }
+
+      if (dryRun) {
+        console.log("🧪 Dry run — no files modified.");
+        if (res.migrated.length === 0) {
+          console.log("   Nothing to migrate.");
+        } else {
+          console.log("   Would migrate:");
+          for (const item of res.migrated) {
+            console.log(`     - [${item.type}] ${item.path}`);
+            for (const change of item.changes || []) console.log(`         • ${change}`);
+          }
+        }
+      } else {
+        console.log("✅ Migration applied.");
+        for (const item of res.migrated) {
+          console.log(`   - [${item.type}] ${item.path}`);
+          for (const change of item.changes || []) console.log(`       • ${change}`);
+        }
+      }
+
+      if (res.warnings?.length) {
+        console.log("⚠️  Warnings:");
+        for (const w of res.warnings) console.log(`   - ${w}`);
+      }
+
+      process.exit(0);
       break;
     }
 

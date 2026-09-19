@@ -320,6 +320,28 @@ export const COMMAND_REGISTRY = [
     ],
   },
   {
+    id: "migrate",
+    path: ["migrate"],
+    title: "migrate",
+    description: "Migrate legacy 0.x config and task envelopes to canonical v1 format",
+    category: "Configure",
+    mutates: true,
+    risk: "low",
+    interactive: "never",
+    requiresRepository: true,
+    shortcuts: [],
+    examples: [
+      "agentctl migrate --dry-run",
+      "agentctl migrate --yes",
+      "agentctl migrate --yes --json",
+    ],
+    flags: [
+      { name: "dry-run", type: "boolean", description: "Report planned migrations without modifying disk (-d)" },
+      { name: "yes", type: "boolean", description: "Confirm migration without prompting (-y)" },
+      { name: "json", type: "boolean", description: "Output machine-readable migration plan or outcome (-j)" },
+    ],
+  },
+  {
     id: "dashboard",
     path: ["dashboard"],
     title: "dashboard",
