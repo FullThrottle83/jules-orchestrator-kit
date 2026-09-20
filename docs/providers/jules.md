@@ -15,6 +15,12 @@ Plan approval can pause an unattended session. The CLI supports
 approval is intended. Review the consequences before enabling it; this flag does
 not replace local verification or PR review.
 
+## Google-first Jules workflow
+
+The Google-first Jules workflow uses GitHub issues labeled with `jules` as native task-start triggers. Jules processes structured task contracts in issues, generates implementation branches, and opens pull requests. Independent read-only CI and gatekeeper checks validate PR diffs and scope boundaries. Any targeted follow-up uses `@Jules` comments in Reactive Mode, subject to a bounded two-round repair budget.
+
+For full contract specifications, safety bounds, and operational rules, see the [Google-First Jules Workflow Contract](../jules-workflow.md).
+
 ## Operational limits
 
 - The kit defaults to a 75 KB diff limit. Split larger tasks and inspect the full
