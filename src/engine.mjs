@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendTelemetryBestEffort as appendTelemetry } from "./telemetry.mjs";
 
 import { spawn } from "node:child_process";
+import { killProcessTree } from "./process-tree.mjs";
 import { resolveAffectedTests, executeQueueDag } from "./dag-engine.mjs";
 import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory, createWhackAMoleDetector } from "./remediation.mjs";
 import { hydratePrompt, harvestFailure } from "./memory.mjs";
@@ -1693,11 +1694,7 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
   } finally {
     if (child && child.pid) {
       try {
-        if (isWin) {
-          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-        } else {
-          process.kill(-child.pid, "SIGTERM");
-        }
+        killProcessTree(child.pid, { graceMs: 250, signal: "SIGTERM", forceSignal: "SIGKILL" });
       } catch (_) {}
     }
   }
