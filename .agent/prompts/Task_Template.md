@@ -10,18 +10,32 @@
 - **Key Files & Folders:** [List critical files, directories, or schemas, e.g. `src/auth.ts`, `schema.sql`.]
 - **Tech Stack:** [List this project's languages, frameworks, and libraries.]
 
-## Requirements & Hard Constraints
-- **Functional Requirements:** [List specific, non-negotiable functional requirements.]
-- **Hard Constraints:**
-  - Do NOT introduce new third-party dependencies without explicit authorization.
-  - Do NOT modify this project's build manifest, lockfile, CI configuration, or agent scope files. Run `agentctl gate` to see the enforced set.
-  - Keep total diff payload strictly under {{DIFF_KB}} KB (`git diff | wc -c`).
+## Allowed Paths
+- [List explicitly allowed files and directory patterns, e.g., `src/**`, `test/**`, `docs/**`.]
 
-## Verification Loop
-- **Verification Command:** Execute `{{VERIFY_TEST}}`.
-- **Zero Errors Invariant:** Ensure 100% of tests pass cleanly with 0 errors before submitting.
-- **Carry the Evidence:** Paste the actual terminal output. Exit code 0 proves the process survived, not that the change works.
+## Forbidden Paths
+- [List restricted paths that must not be modified, e.g., `.github/**`, `.agent/jules.yml`, `.agent/protected-paths.json`, package manifests, lockfiles.]
 
-## Expected Artifacts
-- **Code Changes:** Clean, production-grade implementation preserving existing symbol contracts.
-- **Test Coverage:** Updated or new unit/integration test cases covering modified logic.
+## Functional Requirements
+- [List specific, non-negotiable functional requirements.]
+
+## Acceptance Criteria
+- [List measurable criteria that must be satisfied for task completion.]
+
+## Verification Commands
+- Execute `{{VERIFY_TEST}}`.
+- Execute `agentctl gate` to verify safety bounds, diff sizes, and path restrictions.
+
+## Evidence
+- Terminal output logs showing exit code 0 for all verification commands.
+- Summary of changed files and diff scope validation.
+
+## Retry Budget
+- Maximum repair rounds: 2 (Default budget: 2 repair rounds per PR).
+
+## Stop / Escalation Conditions
+- Stop immediately and request human review if:
+  - The retry budget of 2 repair rounds is exhausted.
+  - Changes touch forbidden or protected paths.
+  - Security, credential, or authentication concerns arise.
+  - Task execution exceeds authorized scope or requires production side effects.

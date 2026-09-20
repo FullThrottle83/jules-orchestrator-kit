@@ -1,7 +1,35 @@
 # Google Jules provider notes
 
-These notes describe this kit's Jules integration. Contributor instructions live
-in the repository's root `AGENTS.md`.
+These notes describe this kit's Jules integration and the safe, hands-off Google-first Jules operating flow. Contributor instructions live in the repository's root `AGENTS.md`.
+
+## Google-first operating flow
+
+The safe, hands-off Jules operating flow is structured as follows:
+
+1. **Native Issue-Label Trigger**:
+   - A GitHub issue carrying the standard task contract receives the case-insensitive `jules` label (e.g. `jules` or `Jules`).
+   - The native Google Jules GitHub App detects the label and starts a task execution session.
+   - Note: The native issue-label trigger (`jules` label on an Issue) starts a new Jules task, whereas `@Jules` comments on a PR provide targeted repair feedback in Reactive Mode. These two mechanisms are distinct.
+
+2. **Implementation PR Creation**:
+   - Jules autonomously explores the repository, creates a plan, executes changes, and opens an implementation Pull Request against `main`.
+
+3. **Independent Read-Only CI & Safety Gatekeeping**:
+   - Repository CI remains independent and strictly read-only.
+   - Independent read-only checks such as `Jules PR Audit & Test Gatekeeper` and `Agent Scope Guard` evaluate PR compliance and safety boundaries without assuming or claiming to be required GitHub branch-protection checks.
+
+4. **Reactive Mode PR Feedback & Repair Loop**:
+   - If CI checks, unit tests, or scope audits fail, targeted repair guidance is posted as an explicit `@Jules` comment on the PR thread in Reactive Mode.
+   - **Retry Budget**: Maximum of **2 repair rounds per PR**.
+
+5. **Stop & Escalation Policy**:
+   - If the 2-round repair budget is exhausted, or if a PR touches protected paths (`.github/**`, `.agent/jules.yml`, `.agent/protected-paths.json`, lockfiles), raises security/credential concerns, or requests unauthorized production side effects, automated feedback stops immediately and requests human review.
+
+6. **Manual Merge & Close**:
+   - Auto-merge, auto-close, self-approval, and production side effects are strictly forbidden and disabled.
+   - Passing CI checks and green audit gates are necessary conditions for merging, but they are NOT sufficient for merge.
+   - Merging or closing a PR is strictly a manual action performed by a authorized human maintainer.
+   - Branch protection settings and Jules Reactive Mode settings are authenticated GitHub/Jules administrative settings and are not modified by repository tasks.
 
 ## Setup and dispatch
 

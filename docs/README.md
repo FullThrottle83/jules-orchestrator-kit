@@ -25,6 +25,7 @@ Start here. Find the page that matches what you are trying to do; every path is 
 
 ### …understand how the system works
 - **[docs/architecture.md](architecture.md)** — the two-pipeline model (Dispatch vs Verification), provider execution models, sequence diagrams, exit codes, and what the orchestrator deliberately does not do.
+- [docs/jules-workflow.md](jules-workflow.md) — Google-first hands-off Jules task contract, issue-label trigger, read-only CI, repair loop, and stop policy.
 - [docs/assets/](assets) — SVG diagrams (hero flow, architecture layers, OODA loop, monorepo resolver, swarm topology, silence governor, flaky-healing swarm).
 
 ### …use the SDK or MCP server programmatically
