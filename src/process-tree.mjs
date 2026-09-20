@@ -90,21 +90,62 @@ function safeKill(pid, signal) {
 }
 
 /**
+ * Check if a process is still alive.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+function isAlive(pid) {
+  if (!pid || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err && err.code === "EPERM";
+  }
+}
+
+/**
+ * Sleep synchronously for `ms` milliseconds.
+ * @param {number} ms
+ */
+function sleepSync(ms) {
+  if (ms <= 0) return;
+  try {
+    const sab = new SharedArrayBuffer(4);
+    const int32 = new Int32Array(sab);
+    Atomics.wait(int32, 0, 0, ms);
+  } catch {
+    const start = Date.now();
+    while (Date.now() - start < ms) {
+      // fallback spin loop
+    }
+  }
+}
+
+/**
  * Kill `pid` and its descendants.
  *
  * Never throws for missing / already-dead processes (ESRCH, taskkill exit
  * 128+, empty pgrep). Invalid pids are a no-op.
  *
  * @param {number|string} pid
- * @param {NodeJS.Signals|number} [signal="SIGTERM"]
+ * @param {NodeJS.Signals|number|{ signal?: NodeJS.Signals|number, forceSignal?: NodeJS.Signals|number, graceMs?: number }} [options="SIGTERM"]
  */
-export function killProcessTree(pid, signal = "SIGTERM") {
+export function killProcessTree(pid, options = "SIGTERM") {
   const n = normalizePid(pid);
   if (!n) return;
+
+  const opts = typeof options === "object" && options !== null
+    ? options
+    : { signal: options };
+  const signal = opts.signal || "SIGTERM";
+  const forceSignal = opts.forceSignal || "SIGKILL";
+  const graceMs = typeof opts.graceMs === "number" && opts.graceMs > 0 ? opts.graceMs : 0;
 
   if (process.platform === "win32") {
     try {
       // /T = tree, /F = force. Non-zero exit (e.g. 128 "not found") is fine.
+      // spawnSync blocks until taskkill finishes, ensuring completion is observed.
       spawnSync("taskkill", ["/F", "/T", "/PID", String(n)], {
         stdio: "ignore",
         windowsHide: true,
@@ -118,6 +159,7 @@ export function killProcessTree(pid, signal = "SIGTERM") {
   // Snapshot the tree while parent→child links still exist. After the parent
   // dies, Linux reparents orphans to the subreaper and `pgrep -P` goes blind.
   const descendants = collectDescendants(n);
+  const trackedPids = Array.from(new Set([...descendants, n]));
 
   // Process-group signal: effective when `pid` is a group leader (detached spawn).
   try {
@@ -143,4 +185,35 @@ export function killProcessTree(pid, signal = "SIGTERM") {
     safeKill(childPid, signal);
   }
   safeKill(n, signal);
+
+  if (graceMs > 0) {
+    const start = Date.now();
+    while (Date.now() - start < graceMs) {
+      const remaining = trackedPids.filter(isAlive);
+      if (remaining.length === 0) break;
+      sleepSync(Math.min(25, Math.max(1, graceMs - (Date.now() - start))));
+    }
+
+    const lateDescendants = collectDescendants(n);
+    const stillAlive = Array.from(new Set([...trackedPids, ...lateDescendants])).filter(isAlive);
+
+    if (stillAlive.length > 0) {
+      try {
+        process.kill(-n, forceSignal);
+      } catch {
+        // quiet
+      }
+      try {
+        const forceSigName = typeof forceSignal === "string" ? forceSignal.replace(/^SIG/i, "") : String(forceSignal);
+        spawnSync("pkill", [`-${forceSigName}`, "-P", String(n)], {
+          stdio: "ignore",
+        });
+      } catch {
+        // quiet
+      }
+      for (const pid of stillAlive) {
+        safeKill(pid, forceSignal);
+      }
+    }
+  }
 }
