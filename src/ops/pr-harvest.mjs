@@ -102,6 +102,23 @@ export function readPrFiles(pr = {}, fileCap = 100) {
  * @param {string|string[]} tierOption
  * @returns {Set<string>}
  */
+/**
+ * Checks if a PR carries an exact hold label (case-insensitive, whitespace-trimmed).
+ * Safely handles GitHub label records ({ name }) and raw strings.
+ * @param {object} pr
+ * @returns {boolean}
+ */
+export function hasHoldLabel(pr = {}) {
+  const labels = pr && Array.isArray(pr.labels) ? pr.labels : [];
+  for (const label of labels) {
+    const name = typeof label === "string" ? label : label && typeof label === "object" ? label.name : "";
+    if (typeof name === "string" && name.trim().toLowerCase() === "hold") {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function parseTierFilter(tierOption) {
   const mapShorthand = (t) => {
     const upper = String(t).toUpperCase().trim();
@@ -207,12 +224,15 @@ export async function harvestPullRequests(root = process.cwd(), options = {}) {
     const isMergeable = String(pr.mergeable || "").toUpperCase() === "MERGEABLE";
     const checksUsable = checks.passing || (checks.noChecks && allowNoChecks);
     const filesUsable = fileInfo.known && !fileInfo.truncated;
+    const isHeld = hasHoldLabel(pr);
 
-    const eligible = checksUsable && filesUsable && gate.safe && tierMatches && isMergeable;
+    const eligible = checksUsable && filesUsable && gate.safe && tierMatches && isMergeable && !isHeld;
     let actionStatus = "SKIPPED";
     let actionReason = "";
 
-    if (!filesUsable) {
+    if (isHeld) {
+      actionReason = "PR carries hold label ('hold')";
+    } else if (!filesUsable) {
       actionReason = fileInfo.truncated
         ? `Changed-file list truncated at ${files.length} entries — risk tier cannot be trusted`
         : "Changed-file list unavailable from gh — risk tier cannot be determined";

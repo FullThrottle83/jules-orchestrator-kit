@@ -264,6 +264,117 @@ test("Automated PR Harvester: evaluateStatusCheckRollup & triage", async (t) => 
     assert.equal(info.known, true);
     assert.equal(info.diffLines, 100);
   });
+
+  await t.test("a PR carrying an exact hold label is ineligible for harvest in every mode", async () => {
+    const heldPrs = [
+      {
+        number: 301,
+        title: "docs: update guide with hold label record",
+        headRefName: "jules/docs-301",
+        mergeable: "MERGEABLE",
+        files: [{ path: "docs/guide.md" }],
+        statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        labels: [{ name: "hold" }],
+      },
+      {
+        number: 302,
+        title: "docs: update guide with uppercase hold label record",
+        headRefName: "jules/docs-302",
+        mergeable: "MERGEABLE",
+        files: [{ path: "docs/guide.md" }],
+        statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        labels: [{ name: " HOLD " }],
+      },
+      {
+        number: 303,
+        title: "docs: update guide with hold string label",
+        headRefName: "jules/docs-303",
+        mergeable: "MERGEABLE",
+        files: [{ path: "docs/guide.md" }],
+        statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        labels: ["hold"],
+      },
+    ];
+
+    const mergeCalls = [];
+    const res = await harvestPullRequests(process.cwd(), {
+      tier: "R0,R1",
+      auto: true,
+      allowNoChecks: true,
+      execGh: async () => heldPrs,
+      mergeGh: async (num) => {
+        mergeCalls.push(num);
+        return { ok: true };
+      },
+    });
+
+    assert.equal(res.summary.total, 3);
+    assert.equal(res.summary.eligible, 0);
+    assert.equal(res.summary.merged, 0);
+    assert.equal(mergeCalls.length, 0);
+    for (const pr of res.prs) {
+      assert.equal(pr.eligible, false);
+      assert.equal(pr.status, "SKIPPED");
+      assert.match(pr.reason, /PR carries hold label/);
+    }
+  });
+
+  await t.test("near-match labels do not trigger the hold gate", async () => {
+    const nearMatchPrs = [
+      {
+        number: 401,
+        title: "docs: on-hold label",
+        headRefName: "jules/docs-401",
+        mergeable: "MERGEABLE",
+        files: [{ path: "docs/guide.md" }],
+        statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        labels: [{ name: "on-hold" }],
+      },
+      {
+        number: 402,
+        title: "docs: hold-merge label",
+        headRefName: "jules/docs-402",
+        mergeable: "MERGEABLE",
+        files: [{ path: "docs/guide.md" }],
+        statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        labels: [{ name: "hold-merge" }],
+      },
+      {
+        number: 403,
+        title: "docs: holding label",
+        headRefName: "jules/docs-403",
+        mergeable: "MERGEABLE",
+        files: [{ path: "docs/guide.md" }],
+        statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        labels: ["holding"],
+      },
+      {
+        number: 404,
+        title: "docs: do-not-hold label",
+        headRefName: "jules/docs-404",
+        mergeable: "MERGEABLE",
+        files: [{ path: "docs/guide.md" }],
+        statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        labels: ["do-not-hold"],
+      },
+    ];
+
+    const mergeCalls = [];
+    const res = await harvestPullRequests(process.cwd(), {
+      tier: "R0,R1",
+      auto: true,
+      execGh: async () => nearMatchPrs,
+      mergeGh: async (num) => {
+        mergeCalls.push(num);
+        return { ok: true };
+      },
+    });
+
+    assert.equal(res.summary.total, 4);
+    assert.equal(res.summary.eligible, 4);
+    assert.equal(res.summary.merged, 4);
+    assert.deepEqual(mergeCalls, [401, 402, 403, 404]);
+  });
 });
 
 test("Pre-Flight Idempotency Gate: checkTaskPremise & dispatch", async (t) => {
