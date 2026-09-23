@@ -74,16 +74,39 @@ router:
   threshold: 0            # Heuristic score threshold for escalation
 ```
 
-## Agent Providers
+## Agent Providers & Lifecycle Semantics
 
-- **Google Jules** (`jules`) — hosted REST API; requires `JULES_API_KEY`. Jules runs in Google's cloud against the connected GitHub repository and opens the PR itself.
-- **Claude Code** (`claude-code`), **OpenAI Codex** (`codex`), **Gemini CLI** (`gemini-flash`) — local CLI providers executed on this machine against the local checkout; "ready" means the binary is on `PATH` (it does not prove the CLI is signed in).
+`jules-orchestrator-kit` abstracts disparate AI providers under a unified dispatch and lifecycle contract configured via `.agent/config.yml`.
+
+### Provider Types & Execution Mechanics
+
+- **Google Jules** (`jules`) — **HTTP / Remote Async**: Dispatches to hosted Google REST endpoints (`https://jules.googleapis.com/v1alpha/sessions`). Jules executes server-side against the connected GitHub repository (`JULES_REPO`) and opens the PR directly. Work completes asynchronously, returning a session handle.
+- **Claude Code** (`claude-code`), **OpenAI Codex** (`codex`), **Gemini CLI** (`gemini-flash`) — **Exec / Local Sync**: Spawns local CLI processes on this machine (`spawnSync`) against the local checkout. Local agents mutate files directly in the working tree and return synchronous execution output.
+
+### Provider Lifecycle & Router Configuration
+
+1. **Active Provider Selection (`provider`)**:
+   Sets the default dispatch engine (e.g. `provider: "jules"` or `provider: "claude-code"`).
+
+2. **Cost & Complexity Router (`router`)**:
+   - `router.enabled: true` enables dynamic task routing.
+   - Tasks scored below or equal to `router.threshold` route to `router.fast` (`gemini-flash`).
+   - Tasks exceeding `router.threshold` or touching sensitive paths route to `router.complex` (`jules`).
+   - Fast-tier exec output is checked by `createSyntaxVerifiedProvider()` using native `node --check` parsing; invalid syntax automatically escalates to `router.complex`.
+
+3. **Multi-Token Pool & Rotation**:
+   When using hosted HTTP providers (`jules`), `TokenPool` automatically rotates tokens supplied across `JULES_API_KEY`, `JULES_API_KEYS`, `JULES_API_KEY_SECONDARY`, or `config.julesApiKeys`.
+   - **429 Cooldown**: Tokens encountering rate limits enter temporary quarantine (60s default) while non-cooldown keys service remaining requests.
+   - **Utilization Balancing**: Round-robin selection prioritizes keys with lowest 24h utilization.
+
+4. **Warm Resumption & Session Management**:
+   Remote sessions (`jules`) support multi-turn continuation (`agentctl resume <sessionId> --response "..."`), plan approval (`agentctl plan approve <sessionId>`), activity inspection, and pruning.
 
 ```bash
-# Which agents can this machine dispatch to, and what is missing for the rest?
+# Inspect provider readiness and connectivity across local PATH binaries and hosted API credentials
 agentctl providers
 
-# Switch the active provider without re-running onboarding
+# Switch the active provider in .agent/config.yml
 agentctl provider set claude-code
 ```
 
