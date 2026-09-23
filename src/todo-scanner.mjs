@@ -123,6 +123,9 @@ export function scanCodebaseForTodos(dir = process.cwd()) {
   return todos;
 }
 
+/**
+ * @deprecated Legacy wrapper around scanCodebaseForTodos. Use 'scanCodebaseForTodos' directly.
+ */
 export function runScanner(dir = process.cwd()) {
   const todos = scanCodebaseForTodos(dir);
   return { todos, count: todos.length };

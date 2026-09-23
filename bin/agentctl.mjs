@@ -320,6 +320,14 @@ async function main() {
   }
   const config = loadConfig(root);
 
+  const { getCommandDescriptor } = await import("../src/ops/command-registry.mjs");
+  const currentDesc = getCommandDescriptor(command);
+  if (currentDesc && currentDesc.deprecated && currentDesc.deprecatedInFavorOf && !args.includes("--json") && !args.includes("-j")) {
+    console.error(`⚠️  Deprecation Warning: 'agentctl ${currentDesc.id}' is deprecated in favor of 'agentctl ${currentDesc.deprecatedInFavorOf}'.`);
+  } else if (command === "fix" && !args.includes("--json") && !args.includes("-j")) {
+    console.error(`⚠️  Deprecation Warning: 'agentctl fix' is deprecated in favor of 'agentctl repair'.`);
+  }
+
   switch (command) {
     case "dispatch": {
       const { values, positionals } = parseArgs({
