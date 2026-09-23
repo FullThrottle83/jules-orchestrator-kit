@@ -11,7 +11,7 @@ Start here. Find the page that matches what you are trying to do; every path is 
 - [EXAMPLES.md](../EXAMPLES.md) — production task envelope recipes to copy.
 
 ### …configure an agent, provider, or the gate
-- **[docs/configuration.md](configuration.md)** — `.agent/config.yml` reference (verify commands, scope rules, plan tiers, risk model, limits, cost router), provider setup (`agentctl providers`, `agentctl provider set`), `AGENT_*`/`JULES_*` environment variables, and the 26+ detected ecosystems.
+- **[docs/configuration.md](configuration.md)** — `.agent/config.yml` reference (verify commands, scope rules, plan tiers, risk model, limits, cost router, provider execution & lifecycle semantics), provider setup (`agentctl providers`, `agentctl provider set`), `AGENT_*`/`JULES_*` environment variables, and the 26+ detected ecosystems.
 
 ### …add a verification gate (or make the gate stricter)
 - **[README → Verification Profiles](../README.md#verification-profiles)** — `minimal` / `standard` / `max` stage tables and when to use each.
@@ -24,7 +24,7 @@ Start here. Find the page that matches what you are trying to do; every path is 
 - [EXAMPLES.md](../EXAMPLES.md) — envelope formats, roles, and templates.
 
 ### …understand how the system works
-- **[docs/architecture.md](architecture.md)** — the two-pipeline model (Dispatch vs Verification), provider execution models, sequence diagrams, exit codes, and what the orchestrator deliberately does not do.
+- **[docs/architecture.md](architecture.md)** — the two-pipeline model (Dispatch vs Verification), provider execution models and Provider Lifecycle Contract, sequence diagrams, exit codes, and what the orchestrator deliberately does not do.
 - [docs/assets/](assets) — SVG diagrams (hero flow, architecture layers, OODA loop, monorepo resolver, swarm topology, silence governor, flaky-healing swarm).
 
 ### …use the SDK or MCP server programmatically
