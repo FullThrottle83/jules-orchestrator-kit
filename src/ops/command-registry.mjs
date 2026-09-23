@@ -21,6 +21,8 @@
  * @property {string[]} shortcuts
  * @property {string[]} examples
  * @property {CommandFlag[]} flags
+ * @property {boolean} [deprecated]
+ * @property {string} [deprecatedInFavorOf]
  */
 
 /** @type {CommandDescriptor[]} */
@@ -530,6 +532,8 @@ export const COMMAND_REGISTRY = [
     interactive: "never",
     requiresRepository: true,
     shortcuts: [],
+    deprecated: true,
+    deprecatedInFavorOf: "mutate",
     examples: [
       "agentctl mutation",
       "agentctl mutation --min-score 80",
@@ -615,6 +619,8 @@ export const COMMAND_REGISTRY = [
     interactive: "never",
     requiresRepository: true,
     shortcuts: [],
+    deprecated: true,
+    deprecatedInFavorOf: "gate",
     examples: [
       "agentctl check",
       "agentctl check --base main --strict-locks",
@@ -648,6 +654,8 @@ export const COMMAND_REGISTRY = [
     interactive: "never",
     requiresRepository: true,
     shortcuts: [],
+    deprecated: true,
+    deprecatedInFavorOf: "gate",
     examples: [
       "agentctl audit",
       "agentctl audit --mode working-tree",
@@ -709,6 +717,8 @@ export const COMMAND_REGISTRY = [
     interactive: "never",
     requiresRepository: true,
     shortcuts: [],
+    deprecated: true,
+    deprecatedInFavorOf: "probe",
     examples: [
       "agentctl stability",
       "agentctl stability --repeat 10",
@@ -761,6 +771,8 @@ export const COMMAND_REGISTRY = [
     interactive: "never",
     requiresRepository: true,
     shortcuts: [],
+    deprecated: true,
+    deprecatedInFavorOf: "perf",
     examples: [
       "agentctl event-loop",
       'agentctl event-loop --max-ms 50 --cmd "npm test"',
@@ -1418,6 +1430,9 @@ export function listCommandsByCategory(category) {
 export function formatCommandHelp(descriptor) {
   const lines = [];
   lines.push(`Usage: agentctl ${descriptor.path.join(" ")} [flags]`);
+  if (descriptor.deprecated) {
+    lines.push(`Note:  'agentctl ${descriptor.path.join(" ")}' is deprecated (prefer 'agentctl ${descriptor.deprecatedInFavorOf}').`);
+  }
   lines.push("");
   lines.push(`Description: ${descriptor.description}`);
   lines.push(`Category:    ${descriptor.category}`);
@@ -1474,12 +1489,17 @@ export function formatRegistryMarkdown() {
   lines.push("");
   for (const cmd of COMMAND_REGISTRY) {
     const anchor = cmd.id.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    lines.push(`- [\`agentctl ${cmd.path.join(" ")}\`](#${anchor}) — ${cmd.description}`);
+    const depNotice = cmd.deprecated ? ` *(deprecated: use \`${cmd.deprecatedInFavorOf}\`)*` : "";
+    lines.push(`- [\`agentctl ${cmd.path.join(" ")}\`](#${anchor}) — ${cmd.description}${depNotice}`);
   }
   lines.push("");
   for (const cmd of COMMAND_REGISTRY) {
     lines.push(`## \`agentctl ${cmd.path.join(" ")}\``);
     lines.push("");
+    if (cmd.deprecated) {
+      lines.push(`> **Deprecated**: \`agentctl ${cmd.path.join(" ")}\` is deprecated in favor of [\`agentctl ${cmd.deprecatedInFavorOf}\`](#${cmd.deprecatedInFavorOf}).`);
+      lines.push("");
+    }
     lines.push(`**ID:** \`${cmd.id}\` · **Category:** ${cmd.category} · **Risk:** ${cmd.risk.toUpperCase()} · **Mutates:** ${cmd.mutates ? "yes" : "no"}`);
     lines.push("");
     lines.push(cmd.description);
