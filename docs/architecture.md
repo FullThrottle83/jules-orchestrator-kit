@@ -30,6 +30,59 @@ They communicate through the repository and the telemetry ledger, not through a 
 
 ---
 
+## Provider Lifecycle Contract
+
+Under `.agent/config.yml` semantics, every provider adapter adheres to a versioned lifecycle contract across six distinct operational phases:
+
+```text
+1. Configuration & Resolution
+   ↓
+2. Readiness & Token Pre-Flight
+   ↓
+3. Envelope & Quota Reservation
+   ↓
+4. Execution (Local Sync exec  vs. Remote Async http)
+   ↓
+5. Continuation / Plan Approval (HTTP resume & approvePlan)
+   ↓
+6. Session Housekeeping (list / inspect / archive / delete / prune)
+```
+
+### 1. Configuration & Resolution
+- **Primary Provider**: Selected by `provider` in `.agent/config.yml` (default `"jules"`).
+- **Cost & Complexity Router**: When `router.enabled: true`, `resolveRoutedProvider()` evaluates prompt heuristic complexity against `router.threshold`. Trivial/mechanical tasks route to `router.fast` (`gemini-flash`), while complex or safety-critical tasks route to `router.complex` (`jules`).
+- **Failover Cascade**: `createFailoverProvider([primary, fallback])` cascades sequentially when a provider throws `ProviderRateLimitError` (HTTP 429) or `ProviderUnavailableError` (HTTP 5xx / timeout).
+
+### 2. Readiness & Token Pre-Flight
+- **Exec Providers (`claude-code`, `codex`, `gemini-flash`)**: Readiness checks verify the CLI binary exists on system `PATH`.
+- **HTTP Providers (`jules`)**: `TokenPool.fromEnv()` rotates keys across `JULES_API_KEY`, `JULES_API_KEYS`, and `config.julesApiKeys`.
+  - **429 Cooldown**: Rate-limited tokens enter quarantine for `retryAfterMs` (default 60s) before re-entering round-robin rotation.
+  - **Utilization Balancing**: Token Pool selects available non-cooldown tokens with the lowest 24-hour utilization ratio.
+
+### 3. Envelope & Quota Reservation
+- **Daily Budget Governor**: `withBudget()` reserves a slot against `limits.dailyTasks` (300 per rolling 24h window).
+- **Payload Limits**: Prompts are checked against `limits.promptKb` (50 KB default) and secrets are redacted before dispatch.
+
+### 4. Execution Pipeline
+- **Exec Lifecycle (Local Synchronous)**:
+  - Spawns the local binary via `spawnSync()`.
+  - Mutates files directly in the working tree.
+  - **Syntax Verification Escalation**: Fast-tier exec dispatches are wrapped by `createSyntaxVerifiedProvider()`. Changed `.js`/`.mjs`/`.cjs` files are parsed via V8's native `node --check`. If syntax errors are detected, the task silently re-dispatches to the complex provider without trusting broken output.
+- **HTTP Lifecycle (Remote Asynchronous)**:
+  - Dispatches `POST` request to `https://jules.googleapis.com/v1alpha/sessions`.
+  - Returns immediate session handle `{ id, status: "active" }`. Work continues asynchronously on remote VM.
+  - Server-side PR creation is enabled when `autoPr: true` sets `automationMode: "AUTO_CREATE_PR"`.
+
+### 5. Warm Resumption & Plan Approval
+- **Warm Resumption (`provider.resume()`)**: Sends feedback/instructions to an existing session via `POST /v1alpha/sessions/{id}:sendMessage`. If the remote session is expired or closed (HTTP 400/404), `resume()` fails soft and re-dispatches as a cold session.
+- **Plan Approval (`provider.approvePlan()`)**: When `requirePlanApproval: true` is set, the session pauses for human approval and resumes via `POST /v1alpha/sessions/{id}:approvePlan`.
+
+### 6. Session Housekeeping
+- HTTP providers support programmatic inspection and maintenance via `getSession()`, `listSessions()`, `listActivities()`, `archiveSession()`, `deleteSession()`, and `listSources()`.
+- Unused or terminal sessions can be safely pruned (`agentctl session prune` / `agent_prune_sessions`).
+
+---
+
 ## Pipeline A — Task Dispatch
 
 `dispatch()` in `src/engine.mjs`. Note that it performs **no git operations at all**: no worktree, no branch, no commit, no push.
