@@ -378,36 +378,37 @@ test("Automated PR Harvester: evaluateStatusCheckRollup & triage", async (t) => 
 });
 
 test("Pre-Flight Idempotency Gate: checkTaskPremise & dispatch", async (t) => {
-  await t.test("checkTaskPremise returns satisfied when verifyCmd passes cleanly", async () => {
+  await t.test("a passing generic verifyCmd never proves a requested goal", async () => {
     const task = {
-      title: "Already Satisfied Task",
+      title: "Feature not yet implemented",
       verifyCmd: 'node -e "process.exit(0)"',
     };
     const res = await checkTaskPremise(task, { root: process.cwd() });
-    assert.equal(res.satisfied, true);
-    assert.ok(res.reason.includes("already passes cleanly"));
+    assert.equal(res.satisfied, false);
+    assert.equal(res.status, "UNKNOWN");
+    assert.equal(res.reasonCode, "NO_GOAL_CHECK");
   });
 
-  await t.test("checkTaskPremise returns false when verifyCmd fails", async () => {
+  await t.test("a failing generic verifyCmd is not silently promoted to a goal oracle", async () => {
     const task = {
       title: "Unmet Task",
       verifyCmd: 'node -e "process.exit(1)"',
     };
     const res = await checkTaskPremise(task, { root: process.cwd() });
     assert.equal(res.satisfied, false);
-    assert.ok(res.reason.includes("proving task need"));
+    assert.equal(res.reasonCode, "NO_GOAL_CHECK");
   });
 
-  await t.test("dispatch with checkPremise skips dispatch when satisfied", async () => {
+  await t.test("dry-run with checkPremise does not skip on green generic tests", async () => {
     const task = {
-      title: "Already Fixed Task",
-      prompt: "Fix existing bug",
+      title: "Feature requested",
+      prompt: "Add a new feature",
       verifyCmd: 'node -e "process.exit(0)"',
       checkPremise: true,
     };
     const session = await dispatch(task, { dryRun: true, root: process.cwd() });
-    assert.equal(session.status, "ALREADY_SATISFIED");
-    assert.equal(session.skipped, true);
+    assert.notEqual(session.status, "ALREADY_SATISFIED");
+    assert.notEqual(session.skipped, true);
   });
 });
 

@@ -1056,34 +1056,61 @@ export async function repair(failure, opts = {}) {
 }
 
 /**
- * Polls an async provider for terminal session state (COMPLETED / FAILED) before re-verification.
- */
-/**
- * Evaluates whether a task's verification oracle or goal is already satisfied on the current working tree.
- * Prevents redundant session dispatch and API budget burning.
+ * A passing generic test suite does not prove that a requested feature exists.
+ * Only an explicit goal-specific check may suppress dispatch. This is advisory:
+ * the supplied command must return 0 exactly when the requested state exists.
  */
 export async function checkTaskPremise(task = {}, opts = {}) {
   const root = opts.config?._root || opts.root || process.cwd();
-  const verifyCmd = task.verifyCmd || task.verify;
-  if (!verifyCmd) {
-    return { satisfied: false, reason: "No verification oracle specified for pre-flight premise check." };
+  const goalCheck = task.goalCheck ?? opts.goalCheck;
+  const evidence = { revision: null, goalCheckSha256: null, exitCode: null, durationMs: null };
+  const unknown = (reasonCode, reason) => ({ satisfied: false, status: "UNKNOWN", reasonCode, reason, evidence });
+  if (typeof goalCheck !== "string" || !goalCheck.trim()) {
+    return unknown("NO_GOAL_CHECK", "No explicit goal-specific check supplied; a passing verification suite is not proof that the task is complete.");
   }
+  const command = goalCheck.trim();
+  evidence.goalCheckSha256 = sha256(command);
+  if (isPlaceholderTestScript(command)) {
+    return unknown("PLACEHOLDER_GOAL_CHECK", "Goal check is a no-op or incapable of establishing the requested state.");
+  }
+  const genericCommands = [
+    task.verifyCmd, task.verify,
+    opts.config?.verify?.test, opts.config?.verify?.unit,
+    opts.config?.verify?.lint, opts.config?.verify?.build,
+  ].filter((value) => typeof value === "string").map((value) => value.trim());
+  if (genericCommands.includes(command)) {
+    return unknown("GENERIC_VERIFY_IS_NOT_GOAL_PROOF", "Goal check matches the generic verification command; provide a separate objective-specific condition.");
+  }
+
+  // The check runs against the working tree. A clean tree and stable HEAD are
+  // prerequisites for attributing a successful result to a committed revision.
+  const snapshot = () => {
+    try {
+      const head = runCmd(["git", "rev-parse", "HEAD"], { cwd: root, ignoreError: true, timeout: 5000 });
+      const state = runCmd(["git", "status", "--porcelain", "--untracked-files=all"], { cwd: root, ignoreError: true, timeout: 5000 });
+      if (head.status !== 0 || state.status !== 0 || !/^[0-9a-f]{40,64}$/.test(head.stdout.trim())) return null;
+      return { revision: head.stdout.trim(), clean: !state.stdout.trim() };
+    } catch (_) {
+      return null;
+    }
+  };
+  const before = snapshot();
+  if (!before) return unknown("GIT_STATE_UNAVAILABLE", "Cannot establish the Git revision and working-tree state.");
+  evidence.revision = before.revision;
+  if (!before.clean) return unknown("DIRTY_WORKTREE", "The working tree is not clean; goal proof cannot be attributed to the committed revision.");
 
   const { runVerificationProbe } = await import("./wizard-oracle.mjs");
-  const probe = await runVerificationProbe(verifyCmd, root, { timeoutMs: opts.timeoutMs || 30_000 });
-  if (probe.ok) {
-    return {
-      satisfied: true,
-      reason: `Verification oracle '${verifyCmd}' already passes cleanly with exit code 0 on base branch.`,
-      durationMs: probe.durationMs,
-    };
+  const probe = await runVerificationProbe(command, root, { timeoutMs: opts.timeoutMs || 30_000 });
+  evidence.exitCode = probe.code;
+  evidence.durationMs = probe.durationMs;
+  const after = snapshot();
+  if (!after || after.revision !== before.revision || !after.clean) {
+    return unknown("GIT_STATE_CHANGED", "The goal check changed the repository state or revision; its result cannot justify skipping dispatch.");
   }
-
-  return {
-    satisfied: false,
-    reason: `Verification oracle '${verifyCmd}' failed (exit ${probe.code}), proving task need.`,
-    durationMs: probe.durationMs,
-  };
+  if (!probe.ok) {
+    return { satisfied: false, status: "NOT_PROVEN", reasonCode: "GOAL_CHECK_NOT_SATISFIED", reason: "The goal-specific check did not establish the requested state.", evidence };
+  }
+  return { satisfied: true, status: "PROVEN", reasonCode: "GOAL_CHECK_SATISFIED", reason: "Explicit goal-specific check passed on an unchanged, clean Git revision.", evidence };
 }
 
 /**
@@ -1269,17 +1296,28 @@ export async function dispatch(task = {}, opts = {}) {
     throw new Error(`Task prompt exceeds maximum payload limit of ${config.limits.promptKb} KB`);
   }
 
-  // Pre-flight idempotency premise check
-  if (opts.checkPremise || task.checkPremise) {
-    const premise = await checkTaskPremise(task, { root, config });
-    if (premise.satisfied) {
-      return {
-        id: "premise-already-satisfied",
-        status: "ALREADY_SATISFIED",
-        skipped: true,
-        reason: premise.reason,
-      };
-    }
+  // Record both positive and negative decisions. A generic green test suite
+  // must never be mistaken for proof that a requested task is complete.
+  const premiseRequested = Boolean(opts.checkPremise || task.checkPremise);
+  const premise = premiseRequested
+    ? (opts.dryRun
+        ? { satisfied: false, reasonCode: "DRY_RUN", reason: "Preview does not execute the goal check.", evidence: { revision: null, goalCheckSha256: null, exitCode: null, durationMs: null } }
+        : await checkTaskPremise(task, { root, config }))
+    : { satisfied: false, reasonCode: "PREMISE_CHECK_NOT_REQUESTED", evidence: null };
+  appendTelemetry(root, "dispatch_decision", {
+    taskId: task.id || task.taskId || null,
+    decision: premise.satisfied ? "SKIP" : "DISPATCH",
+    reasonCode: premise.reasonCode,
+    evidence: premise.evidence,
+  });
+  if (premise.satisfied) {
+    return {
+      id: "premise-already-satisfied",
+      status: "ALREADY_SATISFIED",
+      skipped: true,
+      reason: premise.reason,
+      evidence: premise.evidence,
+    };
   }
 
   // Redact secrets in prompt before dispatching

@@ -90,7 +90,8 @@ export function printHelp() {
   lines.push("  --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)");
   lines.push("  --role, -r            Specify specialist agent role (auditor | performance | security | hygiene | resilience | types | debugger | testing | e2e | database | docs | a11y)");
   lines.push("  --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:");
-  lines.push("  --check-premise       Verify task goal/oracle passes locally before burning API budget");
+  lines.push("  --check-premise       Skip only when an explicit --goal-check proves the task complete");
+  lines.push("  --goal-check <cmd>    Objective-specific command; distinct from --verify-cmd");
   lines.push("  --dag                 Execute queue tasks via DAG dependency resolution");
   lines.push("  --dry-run, -d         Simulate action without making API calls or modifying git");
   lines.push("  --mode, -m            Gate evaluation mode (working-tree | committed | staged)");
@@ -338,6 +339,7 @@ async function main() {
           "auto-approve-plans": { type: "boolean" },
           "auto-approve": { type: "boolean" },
           "check-premise": { type: "boolean" },
+          "goal-check": { type: "string" },
           idempotent: { type: "boolean" },
           author: { type: "string" },
           "verify-cmd": { type: "string", short: "v" },
@@ -400,6 +402,7 @@ async function main() {
         autoPr: values["auto-pr"],
         requirePlanApproval: autoApprove ? false : values["require-plan-approval"],
         checkPremise: values["check-premise"] || values.idempotent,
+        goalCheck: values["goal-check"],
         author: values.author,
         verifyCmd: values["verify-cmd"] || values.verify,
       };
@@ -419,7 +422,7 @@ async function main() {
         } else {
           if (session.status === "ALREADY_SATISFIED" || session.skipped) {
             console.log(`\n⚡ Task Already Satisfied (skipped dispatch):`);
-            console.log(`   Reason: ${session.reason || "Verification oracle already passing on base branch."}`);
+            console.log(`   Reason: ${session.reason || "Explicit goal check passed on a clean revision."}`);
           } else if (values["dry-run"]) {
             // The dry run reached the provider adapter and stopped short of the
             // call. Printing the same "Dispatched Successfully!" banner as a

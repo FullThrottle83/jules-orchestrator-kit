@@ -788,6 +788,7 @@ export const COMMAND_REGISTRY = [
       'agentctl dispatch --prompt "Add retry handling to src/webhook.js"',
       'agentctl dispatch -p "Fix type errors" --role types --tier fast',
       'agentctl dispatch --prompt-file task.md --dry-run',
+      'agentctl dispatch --prompt "Add feature" --check-premise --goal-check "node scripts/check-feature.mjs"',
     ],
     flags: [
       { name: "title", type: "string", description: "Task title (-t)" },
@@ -795,7 +796,8 @@ export const COMMAND_REGISTRY = [
       { name: "prompt-file", type: "string", description: "Read prompt from file (-f)" },
       { name: "role", type: "string", description: "Specialist role (auditor, performance, security, hygiene, resilience, types, debugger, testing, e2e, database, docs, a11y) (-r)" },
       { name: "tier", type: "string", description: "Execution tier override (fast | complex)" },
-      { name: "check-premise", type: "boolean", description: "Verify premise locally before dispatching" },
+      { name: "check-premise", type: "boolean", description: "Skip only when an explicit goal check proves the task complete" },
+      { name: "goal-check", type: "string", description: "Objective-specific command for --check-premise; distinct from --verify-cmd" },
       { name: "idempotent", type: "boolean", description: "Alias for --check-premise" },
       { name: "author", type: "string", description: "Attribution author for the dispatch" },
       { name: "verify-cmd", type: "string", description: "Verification command override (-v)" },
