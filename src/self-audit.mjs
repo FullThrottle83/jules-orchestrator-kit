@@ -118,6 +118,15 @@ export async function runSelfAudit(opts = {}) {
   const gatesResult = await auditGates(optsWithContext);
 
   if (!gatesResult.ok) {
+    // The CLI's exit-6 banner intentionally does not print diff contents.
+    // Surface safe finding coordinates so a legitimate change can be repaired
+    // without disabling the independent audit or guessing at the failure.
+    if (gatesResult.code === 6) {
+      const findings = gatesResult.phases?.find((phase) => phase.phase === "secrets")?.findings || [];
+      for (const finding of findings) {
+        console.error(`Self-audit finding: ${finding.type || "UNKNOWN"} at ${finding.file || "unattributed"}${finding.line ? `:${finding.line}` : ""}`);
+      }
+    }
     return gatesResult;
   }
 
