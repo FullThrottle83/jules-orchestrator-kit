@@ -68,6 +68,9 @@ test("replay: generic verification reused as goal check is not sufficient", asyn
     const result = await checkTaskPremise({ verifyCmd: GENERIC, goalCheck: GENERIC }, { root });
     assert.equal(result.reasonCode, "GENERIC_VERIFY_IS_NOT_GOAL_PROOF");
     assert.equal(result.satisfied, false);
+    const fromConfig = await checkTaskPremise({ goalCheck: GENERIC }, { root, config: loadConfig(root) });
+    assert.equal(fromConfig.reasonCode, "GENERIC_VERIFY_IS_NOT_GOAL_PROOF");
+    assert.equal(fromConfig.satisfied, false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
