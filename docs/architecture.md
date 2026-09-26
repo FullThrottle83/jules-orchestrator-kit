@@ -3,9 +3,9 @@
 `jules-orchestrator-kit` is **two decoupled pipelines**, not one linear flow:
 
 1. **Dispatch** (`agentctl dispatch`, `task create` → `queue`) — routes, hydrates and envelopes a task, then hands it to a provider.
-2. **Verification** (`agentctl gate [--fix]`) — audits a working tree or branch in four phases and, only with `--fix`, drives the OODA repair loop.
+2. **Verification** (`agentctl gate`) — audits a working tree or branch without mutating source code. Repair is an explicit separate operation.
 
-They communicate through the repository and the telemetry ledger, not through a shared call stack. `dispatch()` never invokes the gate, and `gate()` is what owns the OODA loop.
+They communicate through the repository and the telemetry ledger, not through a shared call stack. `dispatch()` never invokes the gate; `repair()` owns the bounded OODA loop and calls `gate()` to verify each attempt.
 
 > [!IMPORTANT]
 > **Where code changes land depends entirely on the provider type.** This is the single most important thing to understand before reading the diagrams below — the two modes execute in different machines.
@@ -32,7 +32,7 @@ They communicate through the repository and the telemetry ledger, not through a 
 
 ## Pipeline A — Task Dispatch
 
-`dispatch()` in `src/engine.mjs`. Note that it performs **no git operations at all**: no worktree, no branch, no commit, no push.
+`dispatch()` in `src/engine.mjs` prepares the task and optionally records a pre-dispatch Git checkpoint. It does not create a working branch, commit, push, or run the verification gate.
 
 ```mermaid
 sequenceDiagram
@@ -86,79 +86,60 @@ When the router is enabled, a `fast`-tier task is dispatched through `createFail
 
 ---
 
-## Pipeline B — Verification Gate & OODA Repair
+## Pipeline B — Non-mutating verification and explicit repair
 
-`gate()` in `src/engine.mjs`. This runs against whatever is already in the tree — typically in CI against a PR branch (including one Jules opened), or locally after an exec provider has finished. Phases short-circuit: the first failure returns immediately.
+`gate()` verifies the selected working tree or revision. It always forces `fix: false`:
+verification failure is reported, not repaired behind the operator's back.
+`repair()` is a separate explicit, bounded operation; it uses `gate()` after
+each attempt and stops on repeated failure fingerprints.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor CI as Client (CI / CLI)
-    participant Gate as gate() — src/engine.mjs
-    participant Tree as Working Tree / Branch Diff
-    participant Sandbox as Verify Stages (NetGuard preload)
-    participant Prov as Provider (repair dispatch)
-
-    CI->>Gate: gate({ base, mode, fix })
-    Gate->>Tree: resolveBase() + changedFiles()
-    Gate->>Gate: resolveTrustedPolicy() — authoritative verify & policy from base commit
-
-    Gate->>Gate: Phase 1 — checkScope() vs scope.deny / allow / protect
-    alt scope violation
-        Gate-->>CI: Exit 3
-    end
-
-    Gate->>Gate: Phase 2 — diffBytes() vs limits.diffKb (75 KB)
-    alt payload exceeded
-        Gate-->>CI: Exit 5
-    end
-
-    Gate->>Gate: Phase 3 — scanDiff() on added lines (tamper & secret checks)
-    alt secret / edge-import / cross-package / test tampering
-        Gate-->>CI: Exit 6
-    end
-
-    Gate->>Sandbox: Phase 4 — materializeSnapshot() (detached worktree with symlinked deps)
-    Gate->>Sandbox: staged verify (setup, lint, unit, fuzz, invariant, e2e, build)
-    Sandbox-->>Gate: exit codes + stdout / stderr
-    alt flaky quarantine (Wilson oscillation >= 0.40)
-        Gate-->>CI: Exit 8 — repair suppressed by design
-    end
-
-    Gate->>Gate: generateEvidenceManifest() — SHA-256 + test-tamper hashes
-    alt test files tampered
-        Gate-->>CI: Exit 3
-    end
-
-    alt verification failed AND --fix
-        loop OODA repair (max limits.repairAttempts, default 3)
-            Gate->>Gate: fingerprintFailureState() → OODACircuitBreaker.observe()
-            alt breaker tripped (repeat fingerprint)
-                Gate-->>CI: Exit 4 — non-convergent, aborted early
-            end
-            Gate->>Prov: dispatch({ id: repair-N, prompt: escalated repair })
-            note over Gate,Prov: Cold dispatch each turn — a new session per attempt
-            Prov-->>Gate: agent applies a fix
-            Gate->>Sandbox: re-run verification
+    actor Operator as Operator / CI
+    participant Gate as gate()
+    participant Tree as Git revision / snapshot
+    participant Provider as Provider (explicit repair only)
+    Operator->>Gate: gate({ base, mode })
+    Gate->>Tree: Resolve trusted base, scope and revision
+    Gate->>Gate: Scope, payload and secret/tamper checks
+    Gate->>Tree: Materialize isolated verification snapshot
+    Gate->>Gate: Run configured verification and bind evidence
+    Gate-->>Operator: Pass or failure report (no source mutation)
+    opt Explicit repair requested separately
+        Operator->>Provider: repair(failure, bounded attempts)
+        loop Until verified, non-convergent or exhausted
+            Provider->>Gate: Apply fix, then gate({ fix: false })
+            Gate-->>Provider: Verification and failure fingerprint
         end
-        alt repaired
-            Gate-->>CI: Exit 0
-        else attempts exhausted
-            Gate-->>CI: Exit 4
-        end
-    else verification failed, no --fix
-        Gate-->>CI: Exit 4
-    else verification passed
-        Gate-->>CI: Exit 0 + evidence manifest
+        Provider-->>Operator: Verified result or unresolved failure
     end
 ```
 
 ### On warm session resumption
 
-`provider.resume()` targets `POST /v1alpha/sessions/{id}:sendMessage` with a fail-soft cold-dispatch fallback on HTTP 400/404. It is reached from **`agentctl resume <sessionId> --response "…"`** — the asynchronous human-in-the-loop path — and from `createFailoverProvider`'s delegating wrapper.
+`provider.resume()` targets `POST /v1alpha/sessions/{id}:sendMessage`, with a
+fail-soft cold-dispatch fallback on HTTP 400/404. `agentctl resume` is the
+human-in-the-loop path. The bounded OODA repair path currently cold-dispatches
+each retry via `provider.dispatch()`; it does not claim warm-session reuse.
 
-The automatic OODA loop above does **not** use it: `repair()` calls `provider.dispatch()` with a fresh `{ id: "repair-N" }` task on every attempt. Each repair turn is therefore a cold session. `synthesizePrDescription()` reads `session._warmResumed` / `session._warmAttempts`, but nothing in the current code path ever sets them.
+### Evidence-grounded preflight
 
+`dispatch --check-premise` never treats a passing generic `--verify-cmd` or
+envelope verification command as proof that a new feature already exists.
+To allow `ALREADY_SATISFIED`, explicitly supply `--goal-check <command>` that
+returns zero only when the requested outcome is present. The check must be
+non-placeholder, distinct from generic verification, and pass on an unchanged
+clean Git revision. Otherwise dispatch proceeds. Its decision and bounded
+evidence (revision, command hash, exit code and duration) are recorded as
+`dispatch_decision` telemetry. A dry run does not execute the goal check.
+
+Example:
+
+```sh
+agentctl dispatch --prompt "Add feature X" --verify-cmd "npm test" \
+  --check-premise --goal-check "node scripts/check-feature-x.mjs"
+```
 ---
 
 ## Pipeline C — Type III Silence Governor & Interruption Budgeting

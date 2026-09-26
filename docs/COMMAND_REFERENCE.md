@@ -837,7 +837,8 @@ Dispatch a single task to an AI agent
 | `--prompt-file` | string | Read prompt from file (-f) |
 | `--role` | string | Specialist role (auditor, performance, security, hygiene, resilience, types, debugger, testing, e2e, database, docs, a11y) (-r) |
 | `--tier` | string | Execution tier override (fast | complex) |
-| `--check-premise` | boolean | Verify premise locally before dispatching |
+| `--check-premise` | boolean | Skip only when an explicit goal check proves the task complete |
+| `--goal-check` | string | Objective-specific command for --check-premise; distinct from --verify-cmd |
 | `--idempotent` | boolean | Alias for --check-premise |
 | `--author` | string | Attribution author for the dispatch |
 | `--verify-cmd` | string | Verification command override (-v) |
@@ -858,6 +859,7 @@ Dispatch a single task to an AI agent
 agentctl dispatch --prompt "Add retry handling to src/webhook.js"
 agentctl dispatch -p "Fix type errors" --role types --tier fast
 agentctl dispatch --prompt-file task.md --dry-run
+agentctl dispatch --prompt "Add feature" --check-premise --goal-check "node scripts/check-feature.mjs"
 ```
 
 ## `agentctl bootstrap`
