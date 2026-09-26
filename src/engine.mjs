@@ -1073,8 +1073,12 @@ export async function checkTaskPremise(task = {}, opts = {}) {
   if (isPlaceholderTestScript(command)) {
     return unknown("PLACEHOLDER_GOAL_CHECK", "Goal check is a no-op or incapable of establishing the requested state.");
   }
-  const genericVerify = String(task.verifyCmd || task.verify || "").trim();
-  if (genericVerify && command === genericVerify) {
+  const genericCommands = [
+    task.verifyCmd, task.verify,
+    opts.config?.verify?.test, opts.config?.verify?.unit,
+    opts.config?.verify?.lint, opts.config?.verify?.build,
+  ].filter((value) => typeof value === "string").map((value) => value.trim());
+  if (genericCommands.includes(command)) {
     return unknown("GENERIC_VERIFY_IS_NOT_GOAL_PROOF", "Goal check matches the generic verification command; provide a separate objective-specific condition.");
   }
 
