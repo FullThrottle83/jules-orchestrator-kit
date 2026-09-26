@@ -1056,9 +1056,6 @@ export async function repair(failure, opts = {}) {
 }
 
 /**
- * Polls an async provider for terminal session state (COMPLETED / FAILED) before re-verification.
- */
-/**
  * A passing generic test suite does not prove that a requested feature exists.
  * Only an explicit goal-specific check may suppress dispatch. This is advisory:
  * the supplied command must return 0 exactly when the requested state exists.
