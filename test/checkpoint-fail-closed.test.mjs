@@ -407,4 +407,124 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
       assert.equal(git(["status", "--porcelain=v1", "-uall"], { cwd: tmpDir }).trim(), "");
     }
   );
+
+  await t.test(
+    "10. Path obstructions: forced rollback refuses safely when ignored files or directories obstruct restoration of tracked paths, preserving them byte-for-byte",
+    () => {
+      // Scenario A: Tracked file 'payload' replaced by an ignored directory containing local files
+      const payloadFile = join(tmpDir, "payload");
+      writeFileSync(payloadFile, "original tracked file content\n");
+      const gitignorePath = join(tmpDir, ".gitignore");
+      writeFileSync(gitignorePath, readText(gitignorePath) + "payload/**\n");
+      gitExec(tmpDir, ["add", "payload", ".gitignore"]);
+      gitExec(tmpDir, ["commit", "-m", "Commit tracked payload and gitignore entry"]);
+
+      // Create a clean checkpoint at this commit
+      const cleanSnap = createCheckpoint("session-safe-obs", { root: tmpDir });
+      assert.equal(cleanSnap.clean, true);
+      assert.equal(cleanSnap.preflight.clean, true);
+
+      // Now simulate task replacing tracked file 'payload' with an ignored directory containing local work
+      rmSync(payloadFile, { force: true });
+      mkdirSync(payloadFile, { recursive: true });
+      const privateFile = join(payloadFile, "private.txt");
+      const secretContent = "SECRET_LOCAL_TOKEN_ABC123\n";
+      writeFileSync(privateFile, secretContent);
+
+      const nestedDir = join(payloadFile, "nested");
+      mkdirSync(nestedDir, { recursive: true });
+      const nestedCfg = join(nestedDir, "local.cfg");
+      const cfgContent = "database_url=localhost\n";
+      writeFileSync(nestedCfg, cfgContent);
+
+      // Verify porcelain v1 status: only ' D payload' is reported; ignored contents are hidden
+      const statusRaw = git(["status", "--porcelain=v1", "-uall"], { cwd: tmpDir, raw: true });
+      assert.ok(statusRaw.includes(" D payload"), "Git status must report deleted tracked file 'payload'");
+      assert.ok(!statusRaw.includes("private.txt"), "Ignored file inside directory must not appear in status");
+
+      // 1. Unforced restore must refuse and flag the path obstruction
+      const unforced = restoreCheckpoint("session-safe-obs", { root: tmpDir });
+      assert.equal(unforced.ok, false);
+      assert.equal(unforced.status, "refused");
+      assert.equal(unforced.canRestore, false);
+      assert.ok(
+        unforced.obstructions.includes("payload"),
+        "Obstruction 'payload' must be recorded in refusal payload"
+      );
+      assert.match(unforced.reason, /Path obstruction detected/);
+      // Byte-for-byte survival:
+      assert.equal(readText(privateFile), secretContent);
+      assert.equal(readText(nestedCfg), cfgContent);
+
+      // 2. Forced restore MUST ALSO REFUSE safely: no git reset --hard, no data loss
+      const forced = restoreCheckpoint("session-safe-obs", { root: tmpDir, force: true });
+      assert.equal(forced.ok, false);
+      assert.equal(forced.status, "refused");
+      assert.equal(forced.canRestore, false);
+      assert.match(
+        forced.reason,
+        /Path obstruction detected: directory on disk obstructs tracked file 'payload'; refusing destructive restore to prevent data loss/
+      );
+      // Byte-for-byte survival under --force:
+      assert.equal(readText(privateFile), secretContent);
+      assert.equal(readText(nestedCfg), cfgContent);
+
+      // Clean up Scenario A artifacts and restore tracked payload file
+      rmSync(payloadFile, { recursive: true, force: true });
+      writeFileSync(payloadFile, "original tracked file content\n");
+
+      // Scenario B: Tracked directory path 'pkg/config.json' obstructed by a local file 'pkg'
+      const pkgDir = join(tmpDir, "pkg");
+      mkdirSync(pkgDir, { recursive: true });
+      const pkgConfig = join(pkgDir, "config.json");
+      writeFileSync(pkgConfig, '{"active": true}\n');
+      gitExec(tmpDir, ["add", "pkg/config.json"]);
+      gitExec(tmpDir, ["commit", "-m", "Commit tracked pkg/config.json"]);
+
+      const snapPkg = createCheckpoint("session-pkg-clean", { root: tmpDir });
+      assert.equal(snapPkg.clean, true);
+
+      // Replace directory 'pkg' on disk with an ignored file 'pkg'
+      writeFileSync(gitignorePath, readText(gitignorePath) + "pkg\n");
+      rmSync(pkgDir, { recursive: true, force: true });
+      const pkgFileObstruction = join(tmpDir, "pkg");
+      const pkgFileContent = "local ignored standalone file\n";
+      writeFileSync(pkgFileObstruction, pkgFileContent);
+
+      // Forced restore must refuse because file 'pkg' obstructs tracked directory path 'pkg/config.json'
+      const forcedPkg = restoreCheckpoint("session-pkg-clean", { root: tmpDir, force: true });
+      assert.equal(forcedPkg.ok, false);
+      assert.equal(forcedPkg.status, "refused");
+      assert.equal(forcedPkg.canRestore, false);
+      assert.match(
+        forcedPkg.reason,
+        /file on disk at 'pkg' obstructs tracked directory path 'pkg\/config\.json'/
+      );
+      assert.equal(readText(pkgFileObstruction), pkgFileContent, "obstructing file must survive byte-for-byte");
+
+      // Clean up Scenario B obstruction and restore pkg/config.json
+      rmSync(pkgFileObstruction, { force: true });
+      mkdirSync(pkgDir, { recursive: true });
+      writeFileSync(pkgConfig, '{"active": true}\n');
+
+      // Scenario C: Benign ignored directories do NOT obstruct restoration of unrelated tracked files
+      const benignFile = join(tmpDir, ".agent", "state", "cache.tmp");
+      writeFileSync(benignFile, "benign build cache\n");
+
+      // Modify tracked file1.txt
+      const file1Path = join(tmpDir, "file1.txt");
+      writeFileSync(file1Path, "uncommitted modification to file1\n");
+
+      // Forced restore to clean checkpoint must succeed: benign ignored dir is untouched
+      const forcedBenign = restoreCheckpoint("session-pkg-clean", { root: tmpDir, force: true });
+      assert.equal(forcedBenign.ok, true);
+      assert.equal(forcedBenign.status, "restored");
+      assert.equal(readText(file1Path), "Initial content\n", "tracked file1.txt must be restored");
+      assert.equal(
+        readText(benignFile),
+        "benign build cache\n",
+        "benign ignored file must remain untouched"
+      );
+    }
+  );
 });
