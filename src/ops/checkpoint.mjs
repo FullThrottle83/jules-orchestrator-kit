@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { git, changedFiles, diffText } from "../git.mjs";
 import { resolveRoot, isWindowsAbsolutePath } from "../config.mjs";
@@ -32,6 +32,82 @@ function assertSafeCheckpointId(id) {
     );
   }
   return id;
+}
+
+function safeLstat(targetPath) {
+  try {
+    return lstatSync(targetPath);
+  } catch (err) {
+    if (err.code === "ENOENT" || err.code === "ENOTDIR") return null;
+    throw err;
+  }
+}
+
+/**
+ * Inspects tracked status paths against disk state to identify directories or entities
+ * that would obstruct Git from restoring tracked files without data loss.
+ *
+ * @param {string} root - Repository root
+ * @param {string[]} statusLines - Raw porcelain v1 status lines
+ * @returns {Array<{ path: string, reason: string }>} Detected path obstructions
+ */
+export function findPathObstructions(root, statusLines = []) {
+  const obstructions = [];
+  const seenPaths = new Set();
+
+  for (const line of statusLines) {
+    const code = line.slice(0, 2);
+    const rawFile = line.slice(3).trim();
+    if (code === "??") continue;
+
+    const cleanFile = rawFile.replace(/^"(.*)"$/, "$1");
+    const file = cleanFile.includes(" -> ")
+      ? cleanFile.split(" -> ").pop().trim().replace(/^"(.*)"$/, "$1")
+      : cleanFile;
+
+    const normalizedFile = file.replace(/\\/g, "/");
+    const fullTarget = join(root, ...normalizedFile.split("/"));
+
+    const stat = safeLstat(fullTarget);
+    if (stat) {
+      if (stat.isDirectory()) {
+        if (!seenPaths.has(file)) {
+          seenPaths.add(file);
+          obstructions.push({
+            path: file,
+            reason: `directory on disk obstructs tracked file '${file}'`,
+          });
+        }
+      } else if (code[0] === "D" || code[1] === "D") {
+        if (!seenPaths.has(file)) {
+          seenPaths.add(file);
+          obstructions.push({
+            path: file,
+            reason: `local file or entity on disk obstructs deleted tracked file '${file}'`,
+          });
+        }
+      }
+    }
+
+    const parts = normalizedFile.split("/").filter(Boolean);
+    let currentPrefix = "";
+    for (let i = 0; i < parts.length - 1; i++) {
+      currentPrefix = currentPrefix ? `${currentPrefix}/${parts[i]}` : parts[i];
+      const parentTarget = join(root, ...currentPrefix.split("/"));
+      const parentStat = safeLstat(parentTarget);
+      if (parentStat && !parentStat.isDirectory()) {
+        if (!seenPaths.has(currentPrefix)) {
+          seenPaths.add(currentPrefix);
+          obstructions.push({
+            path: currentPrefix,
+            reason: `file on disk at '${currentPrefix}' obstructs tracked directory path '${file}'`,
+          });
+        }
+      }
+    }
+  }
+
+  return obstructions;
 }
 
 /**
@@ -123,7 +199,13 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
     }
   }
 
-  const isClean = stagedFiles.length === 0 && unstagedFiles.length === 0 && untrackedFiles.length === 0;
+  const obstructions = findPathObstructions(root, statusLines);
+
+  const isClean =
+    stagedFiles.length === 0 &&
+    unstagedFiles.length === 0 &&
+    untrackedFiles.length === 0 &&
+    obstructions.length === 0;
 
   const snapshot = {
     version: 2,
@@ -139,6 +221,7 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
       staged: stagedFiles,
       unstaged: unstagedFiles,
       untracked: untrackedFiles,
+      obstructions: obstructions.map((o) => o.path),
     },
   };
 
@@ -239,7 +322,16 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
     }
   }
 
-  const dirty = Boolean(gitQueryError) || staged.length > 0 || unstaged.length > 0 || untracked.length > 0;
+  const obstructions = (rawStatus && !gitQueryError)
+    ? findPathObstructions(root, statusLines)
+    : [];
+
+  const dirty =
+    Boolean(gitQueryError) ||
+    staged.length > 0 ||
+    unstaged.length > 0 ||
+    untracked.length > 0 ||
+    obstructions.length > 0;
   const refusalReasons = [];
 
   // Check 0: Git query failures or empty live values
@@ -298,6 +390,15 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
     );
   }
 
+  // Check 6: Path obstructions present on disk
+  if (obstructions.length > 0) {
+    for (const obs of obstructions) {
+      refusalReasons.push(
+        `Path obstruction detected: ${obs.reason}; refusing destructive restore to prevent data loss`
+      );
+    }
+  }
+
   const alreadyAtCheckpoint = !gitQueryError && !headDrift && !branchDrift && !dirty && Boolean(snapshot.headSha);
   const canRestore =
     !gitQueryError &&
@@ -308,9 +409,10 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
     !headDrift &&
     !branchDrift &&
     isLosslessPreflight &&
-    untracked.length === 0;
+    untracked.length === 0 &&
+    obstructions.length === 0;
 
-  // Check 6: Explicit authorization
+  // Check 7: Explicit authorization
   const authorized = Boolean(options.force) && !options.checkOnly;
   if (!authorized) {
     refusalReasons.unshift("Destructive restore requires explicit authorization (--force)");
@@ -332,6 +434,7 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
       staged,
       unstaged,
       untracked,
+      obstructions: obstructions.map((o) => o.path),
       reason: refusalReasons.join("; "),
       reasons: refusalReasons,
     };
