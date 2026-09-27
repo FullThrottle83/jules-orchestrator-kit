@@ -2482,40 +2482,70 @@ async function main() {
           // reached. Restoring the newest checkpoint is also the no-argument
           // default, so the flag is explicit-intent sugar rather than a mode.
           latest: { type: "boolean" },
+          force: { type: "boolean", short: "f" },
         },
         allowPositionals: true,
       });
 
       const targetId = positionals[0] || "--latest";
       try {
-        const res = restoreCheckpoint(targetId, { root });
+        const res = restoreCheckpoint(targetId, {
+          root,
+          force: Boolean(values.force),
+        });
         let hoResult = null;
         if (values.handover !== false) {
           try {
             hoResult = createHandover(root, {
               sessionId: res.id,
-              status: "rolled-back",
-              intent: values.intent || "Restored working tree to pre-flight checkpoint",
-              landmines: values.reason ? [values.reason] : ["Session cancelled or rolled back by operator"],
-              branch: res.branch,
-              headSha: res.headSha,
+              status: res.status === "restored" ? "rolled-back" : "refused",
+              intent: values.intent || (res.status === "restored"
+                ? "Restored working tree to pre-flight checkpoint"
+                : "Rollback preflight refused restoration"),
+              landmines: res.status === "restored"
+                ? (values.reason ? [values.reason] : ["Session cancelled or rolled back by operator"])
+                : [res.reason, ...(values.reason ? [values.reason] : [])],
+              branch: res.branch || res.currentBranch,
+              headSha: res.headSha || res.currentHeadSha,
             });
           } catch (_) {}
         }
 
-        if (values.json) {
-          console.log(JSON.stringify({ ok: true, ...res, handover: hoResult?.filePath }, null, 2));
-        } else {
-          console.log(`\n✅ Git Checkpoint Restored Successfully!`);
-          console.log(`   Session ID : ${res.id}`);
-          console.log(`   HEAD SHA   : ${res.headSha || "N/A"}`);
-          console.log(`   RestoredAt : ${res.restoredAt}`);
-          if (hoResult) {
-            console.log(`   Handover   : ${hoResult.filePath}`);
+        if (res.status === "restored") {
+          if (values.json) {
+            console.log(JSON.stringify({ ok: true, ...res, handover: hoResult?.filePath }, null, 2));
+          } else {
+            console.log(`\n✅ Git Checkpoint Restored Successfully!`);
+            console.log(`   Session ID : ${res.id}`);
+            console.log(`   HEAD SHA   : ${res.headSha || "N/A"}`);
+            if (res.branch) {
+              console.log(`   Branch     : ${res.branch}`);
+            }
+            console.log(`   RestoredAt : ${res.restoredAt}`);
+            if (hoResult) {
+              console.log(`   Handover   : ${hoResult.filePath}`);
+            }
+            console.log("");
           }
-          console.log("");
+          process.exit(0);
+        } else {
+          if (values.json) {
+            console.log(JSON.stringify({ ok: false, ...res, handover: hoResult?.filePath }, null, 2));
+          } else {
+            console.log(`\n⚠️  Rollback Preflight Refused Restoration`);
+            console.log(`   Session ID  : ${res.id}`);
+            console.log(`   Status      : refused`);
+            console.log(`   Reason      : ${res.reason}`);
+            console.log(`   Stored HEAD : ${res.headSha || "N/A"}`);
+            console.log(`   Actual HEAD : ${res.currentHeadSha || "N/A"}`);
+            console.log(`   Can Restore : ${res.canRestore ? "yes (requires --force)" : "no"}`);
+            if (hoResult) {
+              console.log(`   Handover    : ${hoResult.filePath}`);
+            }
+            console.log("");
+          }
+          process.exit(values.force ? 1 : 0);
         }
-        process.exit(0);
       } catch (err) {
         console.error(`❌ Rollback Failed: ${err.message}`);
         process.exit(1);

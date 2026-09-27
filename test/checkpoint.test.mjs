@@ -46,7 +46,7 @@ test("Atomic Git Checkpoint & Rollback Manager", async (t) => {
     assert.equal(list[0].id, "sess-1");
   });
 
-  await t.test("b) restoreCheckpoint resets uncommitted file modifications and untracked files", () => {
+  await t.test("b) restoreCheckpoint fails closed without authorization and preserves untracked files", () => {
     createCheckpoint("sess-2", { root: tmpDir });
 
     // Modify file and add un-tracked file
@@ -56,13 +56,29 @@ test("Atomic Git Checkpoint & Rollback Manager", async (t) => {
     assert.equal(readFileSync(join(tmpDir, "file1.txt"), "utf-8"), "Dirty modified content!");
     assert.equal(existsSync(join(tmpDir, "untracked.txt")), true);
 
-    // Rollback to latest checkpoint
-    const res = restoreCheckpoint("--latest", { root: tmpDir });
+    // Default rollback to latest checkpoint is a non-destructive inspection that refuses mutation
+    const preflight = restoreCheckpoint("--latest", { root: tmpDir });
+    assert.equal(preflight.ok, false);
+    assert.equal(preflight.status, "refused");
+
+    // Verify uncommitted modifications and untracked files are preserved
+    assert.equal(readFileSync(join(tmpDir, "file1.txt"), "utf-8"), "Dirty modified content!");
+    assert.equal(existsSync(join(tmpDir, "untracked.txt")), true);
+
+    // Explicit restore request refuses when untracked files are present to prevent data loss
+    const forcedRefused = restoreCheckpoint("--latest", { root: tmpDir, force: true });
+    assert.equal(forcedRefused.ok, false);
+    assert.equal(forcedRefused.status, "refused");
+    assert.equal(existsSync(join(tmpDir, "untracked.txt")), true);
+
+    // When untracked files are removed, authorized restore safely resets tracked files
+    rmSync(join(tmpDir, "untracked.txt"), { force: true });
+    const res = restoreCheckpoint("--latest", { root: tmpDir, force: true });
     assert.equal(res.ok, true);
+    assert.equal(res.status, "restored");
 
     // Verify state restored
     assert.equal(readFileSync(join(tmpDir, "file1.txt"), "utf-8"), "Initial content");
-    assert.equal(existsSync(join(tmpDir, "untracked.txt")), false);
   });
 
   await t.test("c) pruneCheckpoints keeps only the N most recent checkpoints", () => {
