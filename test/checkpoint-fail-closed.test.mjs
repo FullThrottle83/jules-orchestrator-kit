@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, symlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, symlinkSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execSync, spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   createCheckpoint,
   restoreCheckpoint,
@@ -12,15 +12,19 @@ import {
 } from "../src/ops/checkpoint.mjs";
 import { git } from "../src/git.mjs";
 
+function gitExec(cwd, args) {
+  return execFileSync("git", args, { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
 function setupRepo(prefix = "ckpt-test-") {
   const dir = mkdtempSync(join(tmpdir(), prefix));
-  execSync("git init -b main", { cwd: dir, stdio: "ignore" });
-  execSync('git config user.name "Test Runner"', { cwd: dir, stdio: "ignore" });
-  execSync('git config user.email "test@runner.local"', { cwd: dir, stdio: "ignore" });
+  gitExec(dir, ["init", "-b", "main"]);
+  gitExec(dir, ["config", "user.name", "Test Runner"]);
+  gitExec(dir, ["config", "user.email", "test@runner.local"]);
   writeFileSync(join(dir, ".gitignore"), ".agent/state/\n.agent/handovers/\n");
   writeFileSync(join(dir, "file1.txt"), "Initial content\n");
-  execSync("git add .", { cwd: dir, stdio: "ignore" });
-  execSync('git commit -m "Initial commit"', { cwd: dir, stdio: "ignore" });
+  gitExec(dir, ["add", "."]);
+  gitExec(dir, ["commit", "-m", "Initial commit"]);
   return dir;
 }
 
@@ -46,7 +50,7 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
 
       // b) staged change
       writeFileSync(join(tmpDir, "staged.txt"), "Staged change\n");
-      execSync("git add staged.txt", { cwd: tmpDir, stdio: "ignore" });
+      gitExec(tmpDir, ["add", "staged.txt"]);
 
       // c) untracked text file
       writeFileSync(join(tmpDir, "untracked.txt"), "Untracked pre-existing text\n");
@@ -98,25 +102,28 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
   );
 
   await t.test("2. Post-checkpoint changes and untracked files are not silently deleted", () => {
-    // Checkpoint taken while clean
-    const snap = createCheckpoint("session-post", { root: tmpDir });
+    // 1. Create clean checkpoint
+    const snap = createCheckpoint("session-clean", { root: tmpDir });
     assert.equal(snap.clean, true);
 
-    // Post-checkpoint modifications and new untracked files
+    // 2. Add untracked files (both text and binary) and post-checkpoint modifications
+    writeFileSync(join(tmpDir, "post-untracked.txt"), "Should survive\n");
+    writeFileSync(join(tmpDir, "post-binary.dat"), Buffer.from([0xde, 0xad, 0xbe, 0xef]));
     writeFileSync(join(tmpDir, "file1.txt"), "Post-checkpoint modification\n");
-    writeFileSync(join(tmpDir, "post-untracked.txt"), "Post-checkpoint untracked\n");
-    writeFileSync(join(tmpDir, "post-binary.dat"), Buffer.from([0xca, 0xfe, 0xba, 0xbe]));
 
-    // Unauthorized rollback attempt: refuses preflight without mutation
-    const unauth = restoreCheckpoint("session-post", { root: tmpDir });
-    assert.equal(unauth.ok, false);
-    assert.equal(unauth.status, "refused");
+    // 3. Default rollback fails closed and reports refused
+    const res = restoreCheckpoint("session-clean", { root: tmpDir });
+    assert.equal(res.ok, false);
+    assert.equal(res.status, "refused");
+    assert.match(res.reason, /Destructive restore requires explicit authorization/);
+
+    // Untracked files and modifications are preserved
     assert.equal(existsSync(join(tmpDir, "post-untracked.txt")), true);
     assert.equal(existsSync(join(tmpDir, "post-binary.dat")), true);
+    assert.equal(readFileSync(join(tmpDir, "file1.txt"), "utf-8"), "Post-checkpoint modification\n");
 
-    // Authorized rollback attempt when untracked files are present:
-    // MUST REFUSE to prevent silent destruction of untracked material
-    const forced = restoreCheckpoint("session-post", { root: tmpDir, force: true });
+    // 4. Forced rollback also refuses if untracked files are present (preventing silent data loss)
+    const forced = restoreCheckpoint("session-clean", { root: tmpDir, force: true });
     assert.equal(forced.ok, false);
     assert.equal(forced.status, "refused");
     assert.match(forced.reason, /Untracked files are present/);
@@ -133,7 +140,7 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
 
     // Make a new commit (HEAD drift)
     writeFileSync(join(tmpDir, "file1.txt"), "Committed revision 2\n");
-    execSync('git commit -am "Second commit"', { cwd: tmpDir, stdio: "ignore" });
+    gitExec(tmpDir, ["commit", "-am", "Second commit"]);
     const secondHead = git(["rev-parse", "HEAD"], { cwd: tmpDir });
     assert.notEqual(secondHead, initialHead);
 
@@ -145,7 +152,7 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
     assert.equal(git(["rev-parse", "HEAD"], { cwd: tmpDir }), secondHead, "HEAD was not rewritten");
 
     // Branch drift test
-    execSync("git checkout -b feature-drift", { cwd: tmpDir, stdio: "ignore" });
+    gitExec(tmpDir, ["checkout", "-b", "feature-drift"]);
     const branchDriftRes = restoreCheckpoint("session-drift", { root: tmpDir, force: true });
     assert.equal(branchDriftRes.ok, false);
     assert.equal(branchDriftRes.status, "refused");
@@ -214,7 +221,8 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
       // 2. Tracked edits are introduced (unstaged and staged), NO untracked files
       writeFileSync(join(tmpDir, "file1.txt"), "Modified tracked content\n");
       writeFileSync(join(tmpDir, "tracked2.txt"), "Second tracked file\n");
-      execSync("git add file1.txt tracked2.txt && git commit -m 'Add tracked2 and update file1'", { cwd: tmpDir, stdio: "ignore" });
+      gitExec(tmpDir, ["add", "file1.txt", "tracked2.txt"]);
+      gitExec(tmpDir, ["commit", "-m", "Add tracked2 and update file1"]);
 
       // Take a clean checkpoint at this commit
       const snap2 = createCheckpoint("session-safe-2", { root: tmpDir });
@@ -223,7 +231,7 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
       // Modify both tracked files
       writeFileSync(join(tmpDir, "file1.txt"), "Dirty edit 1\n");
       writeFileSync(join(tmpDir, "tracked2.txt"), "Dirty edit 2\n");
-      execSync("git add tracked2.txt", { cwd: tmpDir, stdio: "ignore" }); // tracked2 is staged
+      gitExec(tmpDir, ["add", "tracked2.txt"]); // tracked2 is staged
 
       assert.equal(git(["status", "--porcelain=v1", "-uall"], { cwd: tmpDir }).trim().length > 0, true);
 
@@ -286,4 +294,112 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
     assert.equal(outForced.status, "refused");
     assert.equal(existsSync(join(tmpDir, "untracked-cli.txt")), true);
   });
+
+  await t.test(
+    "8. Git command failures (status or rev-parse) fail closed immediately, refusing restore without touching HEAD, index, or files",
+    () => {
+      // Create clean baseline checkpoint
+      const snap = createCheckpoint("session-git-fail", { root: tmpDir });
+      assert.equal(snap.clean, true);
+
+      // Add tracked modification and untracked file
+      writeFileSync(join(tmpDir, "file1.txt"), "Dirty in-flight data\n");
+      writeFileSync(join(tmpDir, "untracked-work.txt"), "Untracked important work\n");
+      const headBefore = git(["rev-parse", "HEAD"], { cwd: tmpDir });
+
+      // Corrupt .git/index so git status fails
+      const indexPath = join(tmpDir, ".git", "index");
+      const savedIndex = readFileSync(indexPath);
+      writeFileSync(indexPath, "corrupted-git-index-payload\n");
+
+      // Attempt forced restore while Git queries fail
+      const resStatusFail = restoreCheckpoint("session-git-fail", { root: tmpDir, force: true });
+      assert.equal(resStatusFail.ok, false);
+      assert.equal(resStatusFail.status, "refused");
+      assert.equal(resStatusFail.canRestore, false);
+      assert.match(resStatusFail.reason, /Failed to inspect repository status/);
+
+      // Verify material untouched
+      assert.equal(readFileSync(join(tmpDir, "file1.txt"), "utf-8"), "Dirty in-flight data\n");
+      assert.equal(readFileSync(join(tmpDir, "untracked-work.txt"), "utf-8"), "Untracked important work\n");
+
+      // Restore .git/index
+      writeFileSync(indexPath, savedIndex);
+
+      // Corrupt .git/HEAD so git rev-parse HEAD fails
+      const headRefPath = join(tmpDir, ".git", "HEAD");
+      const savedHeadRef = readFileSync(headRefPath);
+      writeFileSync(headRefPath, "ref: refs/heads/nonexistent-branch-nowhere\n");
+
+      const resHeadFail = restoreCheckpoint("session-git-fail", { root: tmpDir, force: true });
+      assert.equal(resHeadFail.ok, false);
+      assert.equal(resHeadFail.status, "refused");
+      assert.equal(resHeadFail.canRestore, false);
+      assert.match(resHeadFail.reason, /Failed to determine current HEAD commit/);
+
+      // Verify files still untouched
+      assert.equal(readFileSync(join(tmpDir, "file1.txt"), "utf-8"), "Dirty in-flight data\n");
+      assert.equal(readFileSync(join(tmpDir, "untracked-work.txt"), "utf-8"), "Untracked important work\n");
+
+      // Restore HEAD ref
+      writeFileSync(headRefPath, savedHeadRef);
+      assert.equal(git(["rev-parse", "HEAD"], { cwd: tmpDir }), headBefore);
+    }
+  );
+
+  await t.test(
+    "9. Tracked files under internal paths (e.g. .agent/state/) are not ignored: uncommitted modifications prevent falsely clean snapshots and default rollback preserves them",
+    () => {
+      // 1. Commit a tracked file under .agent/state/
+      const internalDir = join(tmpDir, ".agent", "state");
+      mkdirSync(internalDir, { recursive: true });
+      const internalTracked = join(internalDir, "tracked-schema.json");
+      writeFileSync(internalTracked, '{"version": 1, "status": "clean"}\n');
+      gitExec(tmpDir, ["add", "-f", ".agent/state/tracked-schema.json"]);
+      gitExec(tmpDir, ["commit", "-m", "Track internal schema file"]);
+
+      // 2. Clean checkpoint at this commit
+      const cleanSnap = createCheckpoint("session-internal-clean", { root: tmpDir });
+      assert.equal(cleanSnap.clean, true);
+      assert.equal(cleanSnap.preflight.clean, true);
+      assert.deepEqual(cleanSnap.preflight.unstaged, []);
+
+      // 3. Modify the tracked internal file (unstaged)
+      writeFileSync(internalTracked, '{"version": 1, "status": "dirty modification"}\n');
+
+      // 4. createCheckpoint must NOT mark this as clean!
+      const dirtySnap = createCheckpoint("session-internal-dirty", { root: tmpDir });
+      assert.equal(dirtySnap.clean, false, "tracked internal modification must make checkpoint dirty");
+      assert.equal(dirtySnap.preflight.clean, false);
+      assert.ok(
+        dirtySnap.preflight.unstaged.some((f) => f.includes(".agent/state/tracked-schema.json")),
+        "tracked internal modification must be recorded in unstaged preflight"
+      );
+
+      // 5. Default rollback targets checkpoint and refuses without deleting tracked modifications
+      const refusal = restoreCheckpoint("session-internal-dirty", { root: tmpDir });
+      assert.equal(refusal.ok, false);
+      assert.equal(refusal.status, "refused");
+      assert.equal(refusal.dirty, true);
+      assert.ok(
+        refusal.unstaged.some((f) => f.includes(".agent/state/tracked-schema.json")),
+        "unstaged tracked internal file must be reported in preflight"
+      );
+      assert.equal(readFileSync(internalTracked, "utf-8"), '{"version": 1, "status": "dirty modification"}\n');
+
+      // 6. Forced restore to dirtySnap refuses because it lacks complete lossless preflight state
+      const forcedDirty = restoreCheckpoint("session-internal-dirty", { root: tmpDir, force: true });
+      assert.equal(forcedDirty.ok, false);
+      assert.equal(forcedDirty.status, "refused");
+      assert.match(forcedDirty.reason, /lacks complete lossless preflight state/);
+      assert.equal(readFileSync(internalTracked, "utf-8"), '{"version": 1, "status": "dirty modification"}\n');
+
+      // 7. Forced restore to cleanSnap resets tracked modifications safely
+      const forcedClean = restoreCheckpoint("session-internal-clean", { root: tmpDir, force: true });
+      assert.equal(forcedClean.ok, true);
+      assert.equal(forcedClean.status, "restored");
+      assert.equal(readFileSync(internalTracked, "utf-8"), '{"version": 1, "status": "clean"}\n');
+      assert.equal(git(["status", "--porcelain=v1", "-uall"], { cwd: tmpDir }).trim(), "");
+    }
+  );
 });

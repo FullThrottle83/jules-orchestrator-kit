@@ -70,27 +70,40 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
 
   let headSha = "";
   try {
-    headSha = git(["rev-parse", "HEAD"], { cwd: root, ignoreError: true }).trim();
-  } catch (_) {}
+    headSha = git(["rev-parse", "HEAD"], { cwd: root }).trim();
+  } catch (err) {
+    throw new CheckpointError(`Failed to determine current HEAD commit: ${err.message}`);
+  }
+  if (!headSha) {
+    throw new CheckpointError("Failed to determine current HEAD commit: git rev-parse returned empty SHA");
+  }
 
   let branch = "";
   try {
-    branch = git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root, ignoreError: true }).trim();
-  } catch (_) {}
+    branch = git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root }).trim();
+  } catch (err) {
+    throw new CheckpointError(`Failed to determine current branch: ${err.message}`);
+  }
+  if (!branch) {
+    throw new CheckpointError("Failed to determine current branch: git rev-parse returned empty branch name");
+  }
 
-  const uncommittedFiles = changedFiles(root, branch || "main", "working-tree");
-  const diffContent = diffText(root, branch || "main", "working-tree");
-
-  let statusLines = [];
+  let rawStatus = "";
   try {
-    const rawStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root, ignoreError: true });
-    statusLines = rawStatus
-      ? rawStatus
-          .split(/\r?\n/)
-          .filter((l) => l.trim().length > 0)
-          .filter((l) => !isInternalRuntimePath(l.slice(3).trim()))
-      : [];
-  } catch (_) {}
+    rawStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root, raw: true });
+  } catch (err) {
+    throw new CheckpointError(`Failed to inspect repository status: ${err.message}`);
+  }
+
+  const uncommittedFiles = changedFiles(root, branch, "working-tree");
+  const diffContent = diffText(root, branch, "working-tree");
+
+  const statusLines = rawStatus
+    ? rawStatus
+        .split(/\r?\n/)
+        .map((l) => l.trimEnd())
+        .filter((l) => l.length > 0)
+    : [];
 
   const stagedFiles = [];
   const unstagedFiles = [];
@@ -99,14 +112,18 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
     const code = line.slice(0, 2);
     const file = line.slice(3).trim();
     if (code === "??") {
-      untrackedFiles.push(file);
+      // Untracked internal runtime files (e.g. checkpoint files themselves) are ignored
+      if (!isInternalRuntimePath(file)) {
+        untrackedFiles.push(file);
+      }
     } else {
+      // Tracked files under any path (including .agent/) are NEVER ignored
       if (code[0] !== " ") stagedFiles.push(file);
       if (code[1] !== " ") unstagedFiles.push(file);
     }
   }
 
-  const isClean = statusLines.length === 0;
+  const isClean = stagedFiles.length === 0 && unstagedFiles.length === 0 && untrackedFiles.length === 0;
 
   const snapshot = {
     version: 2,
@@ -177,25 +194,34 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
 
   // Inspect current repo state non-destructively
   let currentHeadSha = "";
-  try {
-    currentHeadSha = git(["rev-parse", "HEAD"], { cwd: root, ignoreError: true }).trim();
-  } catch (_) {}
-
   let currentBranch = "";
-  try {
-    currentBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root, ignoreError: true }).trim();
-  } catch (_) {}
+  let gitQueryError = null;
+  let rawStatus = "";
 
-  let statusLines = [];
   try {
-    const rawStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root, ignoreError: true });
-    statusLines = rawStatus
-      ? rawStatus
-          .split(/\r?\n/)
-          .filter((l) => l.trim().length > 0)
-          .filter((l) => !isInternalRuntimePath(l.slice(3).trim()))
-      : [];
-  } catch (_) {}
+    currentHeadSha = git(["rev-parse", "HEAD"], { cwd: root }).trim();
+  } catch (err) {
+    gitQueryError = new Error(`Failed to determine current HEAD commit: ${err.message}`);
+  }
+
+  try {
+    currentBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root }).trim();
+  } catch (err) {
+    gitQueryError = gitQueryError || new Error(`Failed to determine current branch: ${err.message}`);
+  }
+
+  try {
+    rawStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root, raw: true });
+  } catch (err) {
+    gitQueryError = gitQueryError || new Error(`Failed to inspect repository status: ${err.message}`);
+  }
+
+  const statusLines = (rawStatus && !gitQueryError)
+    ? rawStatus
+        .split(/\r?\n/)
+        .map((l) => l.trimEnd())
+        .filter((l) => l.length > 0)
+    : [];
 
   const staged = [];
   const unstaged = [];
@@ -204,32 +230,48 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
     const code = line.slice(0, 2);
     const file = line.slice(3).trim();
     if (code === "??") {
-      untracked.push(file);
+      if (!isInternalRuntimePath(file)) {
+        untracked.push(file);
+      }
     } else {
       if (code[0] !== " ") staged.push(file);
       if (code[1] !== " ") unstaged.push(file);
     }
   }
 
-  const dirty = statusLines.length > 0;
+  const dirty = Boolean(gitQueryError) || staged.length > 0 || unstaged.length > 0 || untracked.length > 0;
   const refusalReasons = [];
 
-  // Check 1: Missing stored HEAD SHA
+  // Check 0: Git query failures or empty live values
+  if (gitQueryError) {
+    refusalReasons.push(gitQueryError.message);
+  }
+  if (!currentHeadSha) {
+    refusalReasons.push("Cannot determine current HEAD commit (empty SHA)");
+  }
+  if (!currentBranch) {
+    refusalReasons.push("Cannot determine current branch (empty name)");
+  }
+
+  // Check 1: Missing stored metadata
   if (!snapshot.headSha) {
     refusalReasons.push(`Checkpoint '${targetId}' is missing recorded HEAD SHA`);
   }
+  if (!snapshot.branch) {
+    refusalReasons.push(`Checkpoint '${targetId}' is missing recorded branch`);
+  }
 
   // Check 2: HEAD drift (new commit or history movement)
-  const headDrift = Boolean(snapshot.headSha && currentHeadSha && currentHeadSha !== snapshot.headSha);
-  if (headDrift) {
+  const headDrift = Boolean(!currentHeadSha || !snapshot.headSha || currentHeadSha !== snapshot.headSha);
+  if (snapshot.headSha && currentHeadSha && currentHeadSha !== snapshot.headSha) {
     refusalReasons.push(
       `HEAD has drifted from ${snapshot.headSha.slice(0, 8)} to ${currentHeadSha.slice(0, 8)} (refusing history rewrite)`
     );
   }
 
   // Check 3: Branch drift
-  const branchDrift = Boolean(snapshot.branch && currentBranch && currentBranch !== snapshot.branch);
-  if (branchDrift) {
+  const branchDrift = Boolean(!currentBranch || !snapshot.branch || currentBranch !== snapshot.branch);
+  if (snapshot.branch && currentBranch && currentBranch !== snapshot.branch) {
     refusalReasons.push(
       `Branch has drifted from '${snapshot.branch}' to '${currentBranch}'`
     );
@@ -256,8 +298,17 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
     );
   }
 
-  const alreadyAtCheckpoint = !headDrift && !branchDrift && !dirty && Boolean(snapshot.headSha);
-  const canRestore = !headDrift && !branchDrift && isLosslessPreflight && untracked.length === 0 && Boolean(snapshot.headSha);
+  const alreadyAtCheckpoint = !gitQueryError && !headDrift && !branchDrift && !dirty && Boolean(snapshot.headSha);
+  const canRestore =
+    !gitQueryError &&
+    Boolean(currentHeadSha) &&
+    Boolean(currentBranch) &&
+    Boolean(snapshot.headSha) &&
+    Boolean(snapshot.branch) &&
+    !headDrift &&
+    !branchDrift &&
+    isLosslessPreflight &&
+    untracked.length === 0;
 
   // Check 6: Explicit authorization
   const authorized = Boolean(options.force) && !options.checkOnly;
@@ -302,7 +353,7 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
   // Verify post-restore state
   let postStatus = "";
   try {
-    postStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root }).trim();
+    postStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root, raw: true });
   } catch (err) {
     throw new CheckpointError(`Failed to verify repository state after restore: ${err.message}`);
   }
@@ -310,8 +361,13 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
   const postLines = postStatus
     ? postStatus
         .split(/\r?\n/)
-        .filter((l) => l.trim().length > 0)
-        .filter((l) => !isInternalRuntimePath(l.slice(3).trim()))
+        .map((l) => l.trimEnd())
+        .filter((l) => l.length > 0)
+        .filter((l) => {
+          const code = l.slice(0, 2);
+          const file = l.slice(3).trim();
+          return !(code === "??" && isInternalRuntimePath(file));
+        })
     : [];
 
   if (postLines.length > 0) {
