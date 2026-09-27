@@ -51,6 +51,18 @@ export function getCheckpointDir(root = resolveRoot()) {
  * @param {object} options
  * @returns {object} Checkpoint metadata
  */
+function isInternalRuntimePath(file) {
+  const normalized = String(file || "").replace(/\\/g, "/");
+  return (
+    normalized === ".agent" ||
+    normalized === ".agent/" ||
+    normalized.startsWith(".agent/state/") ||
+    normalized === ".agent/state" ||
+    normalized.startsWith(".agent/handovers/") ||
+    normalized === ".agent/handovers"
+  );
+}
+
 export function createCheckpoint(sessionId = `session-${Date.now()}`, options = {}) {
   const safeId = assertSafeCheckpointId(sessionId);
   const root = options.root || resolveRoot();
@@ -69,14 +81,48 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
   const uncommittedFiles = changedFiles(root, branch || "main", "working-tree");
   const diffContent = diffText(root, branch || "main", "working-tree");
 
+  let statusLines = [];
+  try {
+    const rawStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root, ignoreError: true });
+    statusLines = rawStatus
+      ? rawStatus
+          .split(/\r?\n/)
+          .filter((l) => l.trim().length > 0)
+          .filter((l) => !isInternalRuntimePath(l.slice(3).trim()))
+      : [];
+  } catch (_) {}
+
+  const stagedFiles = [];
+  const unstagedFiles = [];
+  const untrackedFiles = [];
+  for (const line of statusLines) {
+    const code = line.slice(0, 2);
+    const file = line.slice(3).trim();
+    if (code === "??") {
+      untrackedFiles.push(file);
+    } else {
+      if (code[0] !== " ") stagedFiles.push(file);
+      if (code[1] !== " ") unstagedFiles.push(file);
+    }
+  }
+
+  const isClean = statusLines.length === 0;
+
   const snapshot = {
-    version: 1,
+    version: 2,
     id: safeId,
     timestamp: new Date().toISOString(),
     headSha,
     branch,
+    clean: isClean,
     uncommittedFiles,
     diffContent,
+    preflight: {
+      clean: isClean,
+      staged: stagedFiles,
+      unstaged: unstagedFiles,
+      untracked: untrackedFiles,
+    },
   };
 
   const snapshotPath = join(dir, `${safeId}.json`);
@@ -90,9 +136,15 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
 
 /**
  * Restores working tree and git state to a previously saved checkpoint.
+ * Defaults to a non-destructive inspection/preflight that fails closed.
+ * Destructive restoration requires explicit authorization via options.force.
+ *
  * @param {string} sessionId or '--latest'
  * @param {object} options
- * @returns {object} Restore result summary
+ * @param {string} [options.root]
+ * @param {boolean} [options.force=false]
+ * @param {boolean} [options.checkOnly=false]
+ * @returns {object} Restore result or preflight inspection summary
  */
 export function restoreCheckpoint(sessionId = "--latest", options = {}) {
   const root = options.root || resolveRoot();
@@ -123,23 +175,155 @@ export function restoreCheckpoint(sessionId = "--latest", options = {}) {
     throw new CheckpointError(`Corrupted checkpoint file '${targetId}.json': ${err.message}`);
   }
 
-  if (snapshot.headSha) {
-    try {
-      git(["reset", "--hard", snapshot.headSha], { cwd: root, ignoreError: true });
-    } catch (err) {
-      throw new CheckpointError(`Failed git reset --hard ${snapshot.headSha}: ${err.message}`);
+  // Inspect current repo state non-destructively
+  let currentHeadSha = "";
+  try {
+    currentHeadSha = git(["rev-parse", "HEAD"], { cwd: root, ignoreError: true }).trim();
+  } catch (_) {}
+
+  let currentBranch = "";
+  try {
+    currentBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root, ignoreError: true }).trim();
+  } catch (_) {}
+
+  let statusLines = [];
+  try {
+    const rawStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root, ignoreError: true });
+    statusLines = rawStatus
+      ? rawStatus
+          .split(/\r?\n/)
+          .filter((l) => l.trim().length > 0)
+          .filter((l) => !isInternalRuntimePath(l.slice(3).trim()))
+      : [];
+  } catch (_) {}
+
+  const staged = [];
+  const unstaged = [];
+  const untracked = [];
+  for (const line of statusLines) {
+    const code = line.slice(0, 2);
+    const file = line.slice(3).trim();
+    if (code === "??") {
+      untracked.push(file);
+    } else {
+      if (code[0] !== " ") staged.push(file);
+      if (code[1] !== " ") unstaged.push(file);
     }
   }
 
-  // Clean untracked files generated during session
+  const dirty = statusLines.length > 0;
+  const refusalReasons = [];
+
+  // Check 1: Missing stored HEAD SHA
+  if (!snapshot.headSha) {
+    refusalReasons.push(`Checkpoint '${targetId}' is missing recorded HEAD SHA`);
+  }
+
+  // Check 2: HEAD drift (new commit or history movement)
+  const headDrift = Boolean(snapshot.headSha && currentHeadSha && currentHeadSha !== snapshot.headSha);
+  if (headDrift) {
+    refusalReasons.push(
+      `HEAD has drifted from ${snapshot.headSha.slice(0, 8)} to ${currentHeadSha.slice(0, 8)} (refusing history rewrite)`
+    );
+  }
+
+  // Check 3: Branch drift
+  const branchDrift = Boolean(snapshot.branch && currentBranch && currentBranch !== snapshot.branch);
+  if (branchDrift) {
+    refusalReasons.push(
+      `Branch has drifted from '${snapshot.branch}' to '${currentBranch}'`
+    );
+  }
+
+  // Check 4: Checkpoint material sufficiency / legacy format
+  // Legacy v1 checkpoints or snapshots created on dirty trees lack complete lossless preflight state.
+  const isLosslessPreflight = Boolean(
+    snapshot.version >= 2 &&
+    (snapshot.clean === true || snapshot.preflight?.clean === true) &&
+    (!snapshot.uncommittedFiles || snapshot.uncommittedFiles.length === 0) &&
+    !snapshot.diffContent
+  );
+  if (!isLosslessPreflight) {
+    refusalReasons.push(
+      `Checkpoint '${targetId}' lacks complete lossless preflight state (fail-closed)`
+    );
+  }
+
+  // Check 5: Untracked files present in working tree
+  if (untracked.length > 0) {
+    refusalReasons.push(
+      `Untracked files are present (${untracked.slice(0, 5).join(", ")}${untracked.length > 5 ? ` and ${untracked.length - 5} more` : ""}); refusing destructive deletion of untracked work`
+    );
+  }
+
+  const alreadyAtCheckpoint = !headDrift && !branchDrift && !dirty && Boolean(snapshot.headSha);
+  const canRestore = !headDrift && !branchDrift && isLosslessPreflight && untracked.length === 0 && Boolean(snapshot.headSha);
+
+  // Check 6: Explicit authorization
+  const authorized = Boolean(options.force) && !options.checkOnly;
+  if (!authorized) {
+    refusalReasons.unshift("Destructive restore requires explicit authorization (--force)");
+  }
+
+  // If not authorized or cannot restore safely, refuse without mutating repository
+  if (!authorized || !canRestore) {
+    return {
+      ok: false,
+      status: "refused",
+      id: snapshot.id,
+      headSha: snapshot.headSha,
+      branch: snapshot.branch,
+      currentHeadSha,
+      currentBranch,
+      canRestore,
+      alreadyAtCheckpoint,
+      dirty,
+      staged,
+      unstaged,
+      untracked,
+      reason: refusalReasons.join("; "),
+      reasons: refusalReasons,
+    };
+  }
+
+  // Authorized and safe to restore:
+  // Preconditions met:
+  // - snapshot had verified clean preflight
+  // - currentHeadSha === snapshot.headSha (no commits lost)
+  // - currentBranch === snapshot.branch
+  // - untracked.length === 0 (no untracked files will be deleted)
+  // - only tracked files have modifications/staged changes
   try {
-    git(["clean", "-fd"], { cwd: root, ignoreError: true });
-  } catch (_) {}
+    git(["reset", "--hard", snapshot.headSha], { cwd: root });
+  } catch (err) {
+    throw new CheckpointError(`Failed git reset --hard ${snapshot.headSha}: ${err.message}`);
+  }
+
+  // Verify post-restore state
+  let postStatus = "";
+  try {
+    postStatus = git(["status", "--porcelain=v1", "-uall"], { cwd: root }).trim();
+  } catch (err) {
+    throw new CheckpointError(`Failed to verify repository state after restore: ${err.message}`);
+  }
+
+  const postLines = postStatus
+    ? postStatus
+        .split(/\r?\n/)
+        .filter((l) => l.trim().length > 0)
+        .filter((l) => !isInternalRuntimePath(l.slice(3).trim()))
+    : [];
+
+  if (postLines.length > 0) {
+    throw new CheckpointError(`Post-restore verification failed: working tree is still dirty (${postLines.join(", ")})`);
+  }
 
   return {
     ok: true,
+    status: "restored",
     id: snapshot.id,
     headSha: snapshot.headSha,
+    branch: snapshot.branch,
     restoredAt: new Date().toISOString(),
   };
 }
