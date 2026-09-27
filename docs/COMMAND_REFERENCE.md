@@ -55,7 +55,7 @@ Total commands: 55
 - [`agentctl ci init`](#ci) — Generate a stack-aware CI gate workflow
 - [`agentctl review-repair`](#review-repair) — Parse PR review comments and synthesize OODA repair tasks
 - [`agentctl scan`](#scan) — Scan codebase for TODO/FIXME task candidates
-- [`agentctl rollback`](#rollback) — Restore git state and working tree to atomic pre-flight checkpoint
+- [`agentctl rollback`](#rollback) — Inspect or restore git state and working tree to atomic pre-flight checkpoint. Defaults to non-destructive preflight; requires --force to restore.
 - [`agentctl resume`](#resume) — Resume warm session with human response
 - [`agentctl test-gen`](#test-gen) — Scaffold and run automated TDD Red-to-Green test cycle
 - [`agentctl mcp`](#mcp) — Start stdio MCP server or scaffold IDE integration config (mcp init)
@@ -1295,7 +1295,7 @@ agentctl scan
 
 **ID:** `rollback` · **Category:** Repair · **Risk:** HIGH · **Mutates:** yes
 
-Restore git state and working tree to atomic pre-flight checkpoint
+Inspect or restore git state and working tree to atomic pre-flight checkpoint. Defaults to non-destructive preflight; requires --force to restore.
 
 **Flags:**
 
@@ -1305,6 +1305,7 @@ Restore git state and working tree to atomic pre-flight checkpoint
 | `--intent` | string | Intent recorded in the handover (-i) |
 | `--handover` | boolean | Write a Baton Pass handover envelope (default: true) |
 | `--latest` | boolean | Restore the newest checkpoint explicitly |
+| `--force` | boolean | Authorize destructive restoration to pre-flight checkpoint state (-f) |
 | `--json` | boolean | Output structured JSON result (-j) |
 
 **Examples:**
@@ -1312,7 +1313,8 @@ Restore git state and working tree to atomic pre-flight checkpoint
 ```sh
 agentctl rollback --latest
 agentctl rollback <sessionId> --json
-agentctl rollback --latest --reason "bad deploy"
+agentctl rollback --latest --force
+agentctl rollback --latest --force --reason "bad deploy"
 ```
 
 ## `agentctl resume`

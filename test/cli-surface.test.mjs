@@ -997,7 +997,7 @@ describe("agentctl command surface — offline CLI coverage", () => {
     }
   });
 
-  it("rollback --latest --json restores the newest checkpoint and writes a handover", () => {
+  it("rollback --latest --json defaults to preflight and preserves uncommitted work", () => {
     const dir = offlineRepo("jok-cli-rollback-");
     try {
       createCheckpoint("session-a", { root: dir });
@@ -1008,18 +1008,26 @@ describe("agentctl command surface — offline CLI coverage", () => {
       const proc = runCli(dir, ["rollback", "--latest", "--json"]);
       assert.equal(proc.status, 0, proc.stderr);
       const out = JSON.parse(proc.stdout);
-      assert.equal(out.ok, true);
-      assert.equal(out.id, "session-b", "the newest checkpoint is restored");
-      assert.ok(out.restoredAt);
+      assert.equal(out.ok, false);
+      assert.equal(out.status, "refused");
+      assert.equal(out.id, "session-b", "the newest checkpoint is targeted");
       assert.ok(out.handover, "the rollback records a handover document");
       assert.equal(existsSync(out.handover), true);
-      assert.equal(existsSync(dirty), false, "restoring discards uncommitted work to the checkpoint state");
+      assert.equal(existsSync(dirty), true, "rollback defaults to preflight and preserves uncommitted work");
+
+      // Even with --force, untracked files are protected against silent deletion
+      const forceProc = runCli(dir, ["rollback", "--latest", "--force", "--json"]);
+      assert.equal(forceProc.status, 1);
+      const forceOut = JSON.parse(forceProc.stdout);
+      assert.equal(forceOut.ok, false);
+      assert.equal(forceOut.status, "refused");
+      assert.equal(existsSync(dirty), true, "authorized restore refuses destructive deletion of untracked files");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("rollback <sessionId> restores an explicitly named checkpoint", () => {
+  it("rollback <sessionId> targets an explicitly named checkpoint", () => {
     const dir = offlineRepo("jok-cli-rollback-id-");
     try {
       createCheckpoint("session-a", { root: dir });
@@ -1028,8 +1036,16 @@ describe("agentctl command surface — offline CLI coverage", () => {
       const proc = runCli(dir, ["rollback", "session-a", "--json"]);
       assert.equal(proc.status, 0, proc.stderr);
       const out = JSON.parse(proc.stdout);
-      assert.equal(out.ok, true);
       assert.equal(out.id, "session-a", "the positional id selects the checkpoint, not recency");
+      assert.equal(out.status, "refused");
+
+      // Authorized restore on clean repo succeeds
+      const authProc = runCli(dir, ["rollback", "session-a", "--force", "--json"]);
+      assert.equal(authProc.status, 0, authProc.stderr);
+      const authOut = JSON.parse(authProc.stdout);
+      assert.equal(authOut.ok, true);
+      assert.equal(authOut.status, "restored");
+      assert.equal(authOut.id, "session-a");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1048,10 +1064,22 @@ describe("agentctl command surface — offline CLI coverage", () => {
 
       const dirty = join(dir, "dirty.txt");
       writeFileSync(dirty, "discard me\n");
-      const restored = restoreCheckpoint("session-a", { root: dir });
+      const unauth = restoreCheckpoint("session-a", { root: dir });
+      assert.equal(unauth.ok, false);
+      assert.equal(unauth.status, "refused");
+      assert.equal(existsSync(dirty), true, "default restore does not delete untracked work");
+
+      const refusedForce = restoreCheckpoint("session-a", { root: dir, force: true });
+      assert.equal(refusedForce.ok, false);
+      assert.equal(refusedForce.status, "refused");
+      assert.equal(existsSync(dirty), true, "authorized restore refuses to silently delete untracked files");
+
+      rmSync(dirty, { force: true });
+      const restored = restoreCheckpoint("session-a", { root: dir, force: true });
       assert.equal(restored.id, "session-a");
+      assert.equal(restored.ok, true);
+      assert.equal(restored.status, "restored");
       assert.ok(restored.restoredAt);
-      assert.equal(existsSync(dirty), false, "restore rewinds the working tree to the checkpoint state");
 
       for (let i = 0; i < 12; i++) createCheckpoint(`session-${i}`, { root: dir });
       pruneCheckpoints(dir, 10);
