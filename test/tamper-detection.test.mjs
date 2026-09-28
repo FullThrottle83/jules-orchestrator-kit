@@ -736,6 +736,94 @@ describe("the flag reaches the gate", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("authorizes reviewed workflow changes with allow-p:<SHA> under base policy while keeping unapproved workflows and non-waivable forbidden paths denied", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-workflow-approval-"));
+    try {
+      const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      git(["config", "core.autocrlf", "false"]);
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "wf-test", version: "1.0.0", type: "module", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, ".gitignore"), ".agent/\n");
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      writeFileSync(
+        join(dir, ".agent", "jules.yml"),
+        "version: 2\ntest_cmd: \"node --test\"\nforbidden_paths:\n  - \".github/**\"\n  - \"**/secrets/**\"\n  - \"**/*.pem\"\n  - \"**/lock-manager/**\"\n"
+      );
+      writeFileSync(
+        join(dir, ".agent", "protected-paths.json"),
+        JSON.stringify({ protected: ["package.json", ".github/**"] })
+      );
+      mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+      writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "name: CI\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n");
+      mkdirSync(join(dir, "test"), { recursive: true });
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("noop", () => { assert.equal(1, 1); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+
+      git(["checkout", "-b", "feature"]);
+
+      // Modify a workflow file
+      writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "name: CI Updated\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n");
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "update workflow"]);
+
+      const headSha = git(["rev-parse", "HEAD"]).trim();
+      const auditScript = join(process.cwd(), "scripts", "jules-self-audit.mjs");
+      const runAudit = (labels = []) =>
+        spawnSync(process.execPath, [auditScript], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            CI: "true",
+            BASE_BRANCH: "main",
+            HEAD_SHA: headSha,
+            PR_LABELS: JSON.stringify(labels),
+          },
+        });
+
+      // 1. Without labels => fails closed with exit 3 (RESTRICTED FILE VIOLATION)
+      const noLabels = runAudit([]);
+      assert.equal(noLabels.status, 3, "unapproved workflow changes must fail closed with exit 3");
+
+      // 2. Stale waiver for another SHA => fails closed with exit 3
+      const staleWaiver = runAudit(["allow-p:0000000000000000000000000000000000000000"]);
+      assert.equal(staleWaiver.status, 3, "stale workflow waiver must fail closed with exit 3");
+
+      // 3. Unbound waiver (no commit SHA) => fails closed with exit 3
+      const unboundWaiver = runAudit(["allow-p"]);
+      assert.equal(unboundWaiver.status, 3, "unbound workflow waiver must fail closed with exit 3");
+
+      // 4. Exact matching SHA-bound allow-p:<HEAD_SHA> => authorizes the reviewed workflow change (exit 0)
+      const authorizedWaiver = runAudit([`allow-p:${headSha}`]);
+      assert.equal(authorizedWaiver.status, 0, "exact SHA-bound allow-p waiver must authorize reviewed workflow change");
+
+      // 5. Non-waivable forbidden path (e.g. secrets or pem file) must NEVER be bypassed even with allow-p
+      mkdirSync(join(dir, "secrets"), { recursive: true });
+      writeFileSync(join(dir, "secrets", "token.txt"), "forbidden secret data\n");
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "attempt to smuggle secret under allow-p"]);
+      const secretHeadSha = git(["rev-parse", "HEAD"]).trim();
+
+      const secretAttempt = spawnSync(process.execPath, [auditScript], {
+        cwd: dir,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          CI: "true",
+          BASE_BRANCH: "main",
+          HEAD_SHA: secretHeadSha,
+          PR_LABELS: JSON.stringify([`allow-p:${secretHeadSha}`]),
+        },
+      });
+      assert.equal(secretAttempt.status, 3, "unwaivable secret forbidden paths must fail closed even when commit SHA matches allow-p");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 }
 

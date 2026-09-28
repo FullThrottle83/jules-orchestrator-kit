@@ -458,6 +458,9 @@ export {
   ENV_TEMPLATE_BASENAMES,
   isEnvTemplateException,
   checkScope,
+  isProtectedWorkflowException,
+  UNWAIVABLE_DENY_PATTERNS,
+  isUnwaivableForbiddenPath,
 } from "./scope-guard.mjs";
 export {
   HIGH_CONFIDENCE_PATTERNS,

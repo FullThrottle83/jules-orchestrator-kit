@@ -34,7 +34,7 @@ const DEFAULTS = {
 // use: an identical exfiltration job placed in `.gitlab-ci.yml` was approved
 // where `.github/workflows/x.yml` was rejected. A safety gate that is only
 // safe on GitHub is not a safety gate.
-const CI_DEFINITIONS = [
+export const CI_DEFINITIONS = [
   ".github/**",
   ".gitlab-ci.yml",
   "**/.gitlab-ci.yml",
@@ -1019,9 +1019,11 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
 
   let trustedConfigRaw = null;
   let trustedJulesRaw = null;
+  let trustedProtectedRaw = null;
   try {
     trustedConfigRaw = showFromOrigin(root, base, ".agent/config.yml");
     trustedJulesRaw = showFromOrigin(root, base, ".agent/jules.yml");
+    trustedProtectedRaw = showFromOrigin(root, base, ".agent/protected-paths.json");
   } catch (_) {
     // If base branch cannot be resolved or show fails, let changedFiles report code 1
   }
@@ -1035,7 +1037,21 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
       if (raw) parsed = parseYaml(raw) || {};
     } catch (_) {}
 
+    let trustedProtectedPaths = [];
+    if (trustedProtectedRaw) {
+      try {
+        const parsedProtected = JSON.parse(trustedProtectedRaw);
+        if (Array.isArray(parsedProtected.protected)) {
+          trustedProtectedPaths = parsedProtected.protected.filter((p) => typeof p === "string" && p);
+        }
+      } catch (_) {}
+    }
+
     const trustedScope = normalizeScope(parsed);
+    if (trustedProtectedPaths.length > 0) {
+      trustedScope.protect = dedupe([...trustedScope.protect, ...trustedProtectedPaths]);
+      trustedScope.protectedPatterns = trustedProtectedPaths;
+    }
     const trustedDiffKb = Number(parsed.limits?.diff_kb || parsed.limits?.diffKb) || 75;
 
     const rawSetup = parsed.setup_cmd ?? parsed.verify?.setup;
@@ -1100,6 +1116,7 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
   // Inspect any proposed scaffold in this change (F06)
   let proposedConfig = null;
   let proposedJules = null;
+  let proposedProtectedPaths = [];
 
   try {
     if (mode === "committed") {
@@ -1107,11 +1124,29 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
       if (c) proposedConfig = parseYaml(c);
       const j = showFromOrigin(root, "HEAD", ".agent/jules.yml");
       if (j) proposedJules = parseYaml(j);
+      const p = showFromOrigin(root, "HEAD", ".agent/protected-paths.json");
+      if (p) {
+        try {
+          const parsedP = JSON.parse(p);
+          if (Array.isArray(parsedP.protected)) {
+            proposedProtectedPaths = parsedP.protected.filter((x) => typeof x === "string" && x);
+          }
+        } catch (_) {}
+      }
     } else {
       const configPath = join(root, ".agent/config.yml");
       if (existsSync(configPath)) proposedConfig = parseYaml(readFileSync(configPath, "utf-8"));
       const julesPath = join(root, ".agent/jules.yml");
       if (existsSync(julesPath)) proposedJules = parseYaml(readFileSync(julesPath, "utf-8"));
+      const protectedPath = join(root, ".agent/protected-paths.json");
+      if (existsSync(protectedPath)) {
+        try {
+          const parsedP = JSON.parse(readFileSync(protectedPath, "utf-8"));
+          if (Array.isArray(parsedP.protected)) {
+            proposedProtectedPaths = parsedP.protected.filter((x) => typeof x === "string" && x);
+          }
+        } catch (_) {}
+      }
     }
   } catch (_) {}
 
@@ -1182,6 +1217,10 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
 
   const stages = explicitStages ?? profilePlan?.stages ?? null;
   const trustedScope = normalizeScope(pConfig);
+  if (proposedProtectedPaths.length > 0) {
+    trustedScope.protect = dedupe([...trustedScope.protect, ...proposedProtectedPaths]);
+    trustedScope.protectedPatterns = proposedProtectedPaths;
+  }
   const trustedLimits = {
     diffKb: Number(pConfig.limits?.diff_kb || pConfig.limits?.diffKb) || 75,
   };

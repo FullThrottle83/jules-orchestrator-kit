@@ -207,6 +207,7 @@ export async function gate(opts = {}) {
       process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1" ||
       process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "true" ||
       process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1",
+    protectedPatterns: trustedScope.protectedPatterns,
   });
   // Report the violation against the link the change actually introduced, not
   // against a path the diff never names — the operator has to be able to find it.

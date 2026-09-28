@@ -12,6 +12,13 @@ import {
   BYPASS_LABEL,
   LEGACY_BYPASS_LABEL,
 } from "../scripts/ci-scope-guard.mjs";
+import {
+  checkScope,
+  isProtectedWorkflowException,
+  isUnwaivableForbiddenPath,
+  UNWAIVABLE_DENY_PATTERNS,
+} from "../src/security.mjs";
+import { BUILTIN_DENY, CI_DEFINITIONS } from "../src/config.mjs";
 
 const PATTERNS = [
   "package.json",
@@ -208,4 +215,69 @@ test("CI Agent Scope Guard", async (t) => {
       /Unable to read \.agent\/protected-paths\.json/
     );
   });
+
+  await t.test("checkScope allows CI workflow files when allowProtected is true, but rejects without it", () => {
+    const scope = {
+      deny: [...BUILTIN_DENY, "forbidden-custom/**"],
+      protect: ["package.json"],
+    };
+
+    // Unapproved => rejected (exit 3)
+    const unapproved = checkScope([".github/workflows/ci.yml"], scope, { allowProtected: false });
+    assert.equal(unapproved.ok, false);
+    assert.equal(unapproved.violations[0].rule, "deny");
+    assert.equal(unapproved.violations[0].pattern, ".github/**");
+
+    // Approved => authorized
+    const approved = checkScope([".github/workflows/ci.yml"], scope, { allowProtected: true });
+    assert.equal(approved.ok, true);
+    assert.equal(approved.violations.length, 0);
+
+    // Other forge definitions in CI_DEFINITIONS are also covered
+    assert.ok(CI_DEFINITIONS.includes(".github/**"));
+    const gitlabApproved = checkScope([".gitlab-ci.yml"], scope, { allowProtected: true });
+    assert.equal(gitlabApproved.ok, true);
+
+    // Non-CI forbidden path is NOT waivable
+    const customForbidden = checkScope(["forbidden-custom/script.sh"], scope, { allowProtected: true });
+    assert.equal(customForbidden.ok, false);
+    assert.equal(customForbidden.violations[0].rule, "deny");
+  });
+
+  await t.test("unwaivable deny patterns can never be bypassed even when allowProtected is true", () => {
+    assert.ok(Array.isArray(UNWAIVABLE_DENY_PATTERNS) && UNWAIVABLE_DENY_PATTERNS.length > 0);
+    const scope = {
+      deny: [...BUILTIN_DENY, "**/secrets/**", "**/lock-manager/**"],
+      protect: [".github/**"],
+    };
+
+    const unwaivableCases = [
+      ".env",
+      ".env.local",
+      "server.key",
+      "cert.pem",
+      "id_rsa",
+      "id_ed25519",
+      ".aws/credentials",
+      ".ssh/id_rsa",
+      "credentials.json",
+      "service-account.json",
+      "terraform.tfstate",
+      ".github/workflows/secrets.pem",
+      ".github/lock-manager/lock.json",
+      "secrets/token.txt",
+    ];
+
+    for (const file of unwaivableCases) {
+      const res = checkScope([file], scope, { allowProtected: true });
+      assert.equal(res.ok, false, `${file} must be denied even under allowProtected: true`);
+      assert.equal(res.violations[0].rule, "deny");
+      assert.equal(isUnwaivableForbiddenPath(file), true, `${file} must be detected as unwaivable`);
+      assert.equal(isProtectedWorkflowException(file, res.violations[0].pattern, { allowProtected: true }), false);
+    }
+
+    // Committed env template is an exception to .env deny
+    assert.equal(isUnwaivableForbiddenPath(".env.example"), false);
+  });
 });
+
