@@ -43,6 +43,7 @@ import {
 } from "../src/config.mjs";
 import { gate } from "../src/engine.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "../src/stack-detector.mjs";
+import { resolveTestWaiverFromLabels, parseLabels } from "../src/self-audit.mjs";
 import { parseCollectedTests } from "../src/ops/test-collection.mjs";
 import { materializeSnapshot, runCmd, changedFiles, diffText } from "../src/git.mjs";
 import { createCheckpoint, restoreCheckpoint, CheckpointError } from "../src/ops/checkpoint.mjs";
@@ -438,6 +439,146 @@ describe("the flag reaches the gate", () => {
       );
       const mixed = runAudit({ JULES_ALLOW_TEST_CHANGES: "expectation" });
       assert.equal(mixed.status, 6, "skip injection must fail even when expectation is approved");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("resolveTestWaiverFromLabels binds waivers to exact commit SHA and rejects unbound/stale labels", () => {
+    const headSha = "2f5c19b48c44e99fca0123456789abcdef012345";
+    const shortSha = "2f5c19b";
+
+    // 1. Valid short SHA matching HEAD_SHA
+    const matchShort = resolveTestWaiverFromLabels([`allow-test-expectation:${shortSha}`], headSha);
+    assert.deepEqual(matchShort.allowedKinds, ["expectation"]);
+    assert.equal(matchShort.rejected.length, 0);
+
+    // 2. Valid full SHA matching HEAD_SHA
+    const matchFull = resolveTestWaiverFromLabels([`allow-test-expectation:${headSha}`], headSha);
+    assert.deepEqual(matchFull.allowedKinds, ["expectation"]);
+    assert.equal(matchFull.rejected.length, 0);
+
+    // 3. Case-insensitive hex matching
+    const matchUpper = resolveTestWaiverFromLabels([`allow-test-expectation:${shortSha.toUpperCase()}`], headSha);
+    assert.deepEqual(matchUpper.allowedKinds, ["expectation"]);
+
+    // 4. Stale label with older/different commit SHA
+    const staleSha = "4484a4e1234567";
+    const stale = resolveTestWaiverFromLabels([`allow-test-expectation:${staleSha}`], headSha);
+    assert.deepEqual(stale.allowedKinds, []);
+    assert.equal(stale.rejected.length, 1);
+    assert.match(stale.rejected[0].reason, /Stale waiver/);
+
+    // 5. Unbound label (missing SHA)
+    const unbound = resolveTestWaiverFromLabels(["allow-test-expectation"], headSha);
+    assert.deepEqual(unbound.allowedKinds, []);
+    assert.equal(unbound.rejected.length, 1);
+    assert.match(unbound.rejected[0].reason, /Unbound waiver/);
+
+    // 6. Invalid SHA (< 7 chars or non-hex)
+    const tooShort = resolveTestWaiverFromLabels(["allow-test-expectation:abc"], headSha);
+    assert.deepEqual(tooShort.allowedKinds, []);
+    assert.match(tooShort.rejected[0].reason, /Invalid commit SHA/);
+
+    const nonHex = resolveTestWaiverFromLabels(["allow-test-expectation:xyz12345"], headSha);
+    assert.deepEqual(nonHex.allowedKinds, []);
+    assert.match(nonHex.rejected[0].reason, /Invalid commit SHA/);
+
+    // 7. Missing or empty HEAD_SHA
+    const missingHead = resolveTestWaiverFromLabels([`allow-test-expectation:${shortSha}`], "");
+    assert.deepEqual(missingHead.allowedKinds, []);
+    assert.match(missingHead.rejected[0].reason, /Cannot verify binding/);
+
+    // 8. Specific tamper kind: allow-test-change:deregistration:<SHA>
+    const specificKind = resolveTestWaiverFromLabels([`allow-test-change:deregistration:${shortSha}`], headSha);
+    assert.deepEqual(specificKind.allowedKinds, ["deregistration"]);
+
+    // 9. Input formats: accepts JSON string, comma-separated string, or array
+    assert.deepEqual(parseLabels('["foo", "bar"]'), ["foo", "bar"]);
+    assert.deepEqual(parseLabels("foo, bar"), ["foo", "bar"]);
+    const jsonInput = resolveTestWaiverFromLabels(JSON.stringify([`allow-test-expectation:${shortSha}`, "allow-protected-paths"]), headSha);
+    assert.deepEqual(jsonInput.allowedKinds, ["expectation"]);
+
+    const csvInput = resolveTestWaiverFromLabels(`allow-test-expectation:${shortSha}, allow-protected-paths`, headSha);
+    assert.deepEqual(csvInput.allowedKinds, ["expectation"]);
+  });
+
+  it("approve head A, push head B with another rewrite => unapproved/rejected; keep all other tamper checks on", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-tamper-sha-"));
+    try {
+      const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      git(["config", "core.autocrlf", "false"]);
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "v", version: "1.0.0", type: "module", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, ".gitignore"), ".agent/\n");
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a + b; }\n");
+      mkdirSync(join(dir, "test"), { recursive: true });
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), 3); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+
+      git(["checkout", "-b", "feature"]);
+
+      const auditScript = join(process.cwd(), "scripts", "jules-self-audit.mjs");
+      const runAudit = (env = {}) =>
+        spawnSync(process.execPath, [auditScript], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: { ...process.env, CI: "true", BASE_BRANCH: "main", ...env },
+        });
+
+      // Commit A: Rewrite expectation (3 -> -1) and update implementation
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a - b; }\n");
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), -1); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit A: update expectation"]);
+
+      const shaA = git(["rev-parse", "HEAD"]).trim();
+      const shortA = shaA.slice(0, 7);
+
+      // 1. Without approval label on Head A, fails with exit 6
+      const unapprovedA = runAudit({ HEAD_SHA: shaA, PR_LABELS: "[]" });
+      assert.equal(unapprovedA.status, 6, "unapproved expectation rewrite on head A must fail");
+
+      // 2. Unbound label without commit SHA (allow-test-expectation) is rejected
+      const unboundLabel = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify(["allow-test-expectation"]) });
+      assert.equal(unboundLabel.status, 6, "unbound label without SHA must fail closed");
+
+      // 3. Approved on Head A with SHA-bound label (allow-test-expectation:<shortA>)
+      const approvedA = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify([`allow-test-expectation:${shortA}`]) });
+      assert.equal(approvedA.status, 0, "expectation rewrite on head A must pass with SHA-bound label");
+
+      // Commit B: Push another expectation rewrite (-1 -> 42) on top of Commit A
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return 42; }\n");
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), 42); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit B: second expectation rewrite"]);
+
+      const shaB = git(["rev-parse", "HEAD"]).trim();
+      const shortB = shaB.slice(0, 7);
+
+      // 4. Stale approval from Head A does NOT approve Head B! (approve head A, push head B with another rewrite => unapproved/rejected)
+      const staleApprovalB = runAudit({ HEAD_SHA: shaB, PR_LABELS: JSON.stringify([`allow-test-expectation:${shortA}`]) });
+      assert.equal(staleApprovalB.status, 6, "stale approval for head A must not waive new commit B");
+
+      // 5. Updating the label to match Head B approves Head B
+      const approvedB = runAudit({ HEAD_SHA: shaB, PR_LABELS: JSON.stringify([`allow-test-expectation:${shortB}`]) });
+      assert.equal(approvedB.status, 0, "expectation rewrite on head B must pass when label is updated to head B SHA");
+
+      // 6. Even with matching Head B approval, an unrelated tamper check (e.g. skip injection) STILL FAILS
+      writeFileSync(
+        join(dir, "test", "index.test.js"),
+        'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest.skip("add", () => { assert.equal(add(1, 2), 42); });\n'
+      );
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit B2: skip injection"]);
+      const shaB2 = git(["rev-parse", "HEAD"]).trim();
+      const shortB2 = shaB2.slice(0, 7);
+
+      const mixedB2 = runAudit({ HEAD_SHA: shaB2, PR_LABELS: JSON.stringify([`allow-test-expectation:${shortB2}`]) });
+      assert.equal(mixedB2.status, 6, "skip injection must fail even when commit SHA matches expectation waiver");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

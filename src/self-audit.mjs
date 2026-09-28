@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { gate } from "./engine.mjs";
 import { loadConfig, parseYaml } from "./config.mjs";
-import { matchesGlob } from "./security.mjs";
+import { matchesGlob, TAMPER_KIND_NAMES } from "./security.mjs";
 
 /** Convenience wrapper kept for the historical `matchGlob` name. */
 export function matchGlob(filepath, globPattern) {
@@ -86,6 +86,130 @@ export function auditWorktrees(opts = {}) {
 }
 
 /**
+ * Parses the labels payload GitHub Actions exposes for a pull request.
+ * Accepts an array, raw `toJSON(...labels)` JSON string, or a plain comma-separated string.
+ *
+ * @param {string|Array} raw
+ * @returns {string[]}
+ */
+export function parseLabels(raw = "") {
+  if (Array.isArray(raw)) {
+    return raw.map((l) => (typeof l === "string" ? l : l && l.name) || "").filter(Boolean);
+  }
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed.map((l) => (typeof l === "string" ? l : l && l.name) || "").filter(Boolean);
+    }
+  } catch (_) {}
+  return text.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * Resolves tamper guard waivers from PR labels bound to the exact head SHA.
+ *
+ * Test expectation waivers MUST be explicitly bound to the reviewed commit SHA
+ * (e.g. `allow-test-expectation:<SHA>` or `allow-test-change:<kind>:<SHA>`).
+ * Unbound labels (without SHA) or stale labels (SHA mismatch) are rejected.
+ *
+ * @param {string|string[]} rawLabels - Array of labels, JSON string, or comma-separated string
+ * @param {string} headSha - Full or short commit SHA of the current PR head
+ * @returns {{ allowedKinds: string[], rejected: Array<{ label: string, reason: string }> }}
+ */
+export function resolveTestWaiverFromLabels(rawLabels = "", headSha = "") {
+  const labels = parseLabels(rawLabels);
+  const allowedKinds = new Set();
+  const rejected = [];
+  const normalizedHead = String(headSha || "").trim().toLowerCase();
+
+  for (const label of labels) {
+    const lower = label.trim().toLowerCase();
+
+    if (!lower.startsWith("allow-test-")) {
+      continue;
+    }
+
+    const parts = lower.split(":");
+    let kind = null;
+    let targetSha = null;
+
+    if (parts[0] === "allow-test-expectation") {
+      kind = "expectation";
+      if (parts.length > 1) {
+        targetSha = parts.slice(1).join(":");
+      }
+    } else if (parts[0] === "allow-test-change" || parts[0] === "allow-test-changes") {
+      if (parts.length === 2) {
+        if (TAMPER_KIND_NAMES.includes(parts[1])) {
+          kind = parts[1];
+        } else {
+          kind = "expectation";
+          targetSha = parts[1];
+        }
+      } else if (parts.length >= 3) {
+        kind = parts[1];
+        targetSha = parts.slice(2).join(":");
+      } else {
+        kind = "expectation";
+      }
+    } else {
+      continue;
+    }
+
+    if (!targetSha) {
+      rejected.push({
+        label,
+        reason: `Unbound waiver: label has no commit SHA. Must be formatted as "${parts[0]}:<SHA>" (min 7 hex characters).`,
+      });
+      continue;
+    }
+
+    if (targetSha.length < 7 || !/^[0-9a-f]+$/i.test(targetSha)) {
+      rejected.push({
+        label,
+        reason: `Invalid commit SHA "${targetSha}": must be at least 7 hexadecimal characters.`,
+      });
+      continue;
+    }
+
+    if (!normalizedHead || normalizedHead.length < 7 || !/^[0-9a-f]+$/i.test(normalizedHead)) {
+      rejected.push({
+        label,
+        reason: `Cannot verify binding: HEAD_SHA "${headSha}" is missing or invalid.`,
+      });
+      continue;
+    }
+
+    const matches =
+      normalizedHead.startsWith(targetSha) || targetSha.startsWith(normalizedHead);
+
+    if (!matches) {
+      rejected.push({
+        label,
+        reason: `Stale waiver: label SHA "${targetSha}" does not match current HEAD SHA "${normalizedHead}".`,
+      });
+      continue;
+    }
+
+    if (TAMPER_KIND_NAMES.includes(kind)) {
+      allowedKinds.add(kind);
+    } else {
+      rejected.push({
+        label,
+        reason: `Unknown tamper kind "${kind}". Valid kinds: ${TAMPER_KIND_NAMES.join(", ")}`,
+      });
+    }
+  }
+
+  return {
+    allowedKinds: Array.from(allowedKinds),
+    rejected,
+  };
+}
+
+/**
  * Audit gate rules (scope, payload governor, secret scanning, verification suite).
  */
 export async function auditGates(opts = {}) {
@@ -93,13 +217,39 @@ export async function auditGates(opts = {}) {
   const config = opts.config || loadConfig(root);
   const base = opts.base || process.env.BASE_BRANCH || config.baseBranch || "main";
 
+  let allowProtected =
+    opts.allowProtected ??
+    (process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true" ||
+      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1");
+
+  const rawLabels = opts.prLabels || process.env.PR_LABELS;
+  const headSha = opts.headSha || process.env.HEAD_SHA;
+
+  if (!allowProtected && rawLabels) {
+    const labels = parseLabels(rawLabels).map((l) => l.toLowerCase());
+    if (labels.includes("allow-protected-paths")) {
+      allowProtected = true;
+    }
+  }
+
+  let allowTestChanges = opts.allowTestChanges || process.env.JULES_ALLOW_TEST_CHANGES;
+  if (!allowTestChanges && rawLabels) {
+    const waiver = resolveTestWaiverFromLabels(rawLabels, headSha);
+    if (waiver.allowedKinds.length > 0) {
+      allowTestChanges = waiver.allowedKinds.join(",");
+    }
+    for (const rej of waiver.rejected) {
+      console.warn(`::warning::[tamper-waiver] ${rej.label}: ${rej.reason}`);
+    }
+  }
+
   return await gate({
     root,
     config,
     base,
     fix: process.env.ALLOW_AUTO_REPAIR === "true",
-    allowProtected: process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true",
-    allowTestChanges: process.env.JULES_ALLOW_TEST_CHANGES || opts.allowTestChanges,
+    allowProtected,
+    allowTestChanges,
   });
 }
 
