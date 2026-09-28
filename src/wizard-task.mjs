@@ -1,5 +1,5 @@
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 import { untrackedOnboardingArtifacts } from "./git.mjs";
 import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
@@ -220,33 +220,22 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
   const rawId = inputObj.id || `TASK-${Date.now().toString(36).toUpperCase()}`;
   const taskId = String(rawId).replace(/[^a-zA-Z0-9_-]/g, "_");
 
-  const hasAstro = existsSync(join(root, "astro.config.mjs")) || existsSync(join(root, "astro.config.ts"));
-  const hasWrangler =
-    existsSync(join(root, "wrangler.jsonc")) ||
-    existsSync(join(root, "wrangler.json")) ||
-    existsSync(join(root, "wrangler.toml"));
-
+  const configInvariants = Array.isArray(config.invariants) ? config.invariants : [];
   const autoInvariants = [
     "Preserve existing signatures, surrounding logic, and coding style.",
     "Do not modify files outside scope.allow.",
+    ...configInvariants,
   ];
-  if (hasAstro) {
-    autoInvariants.push("Zero-JS runtime-princip: skicka noll onödig klient-JS i src/ och använd plana <img> framför Astro <Image>.");
-  }
-  if (hasWrangler) {
-    autoInvariants.push("Edge runtime constraints: inga otillåtna Node-imports (t.ex. node:fs, node:path, sharp) i workerd runtime-kod.");
-  }
   const invariants = Array.isArray(inputObj.invariants) && inputObj.invariants.length > 0
     ? inputObj.invariants
     : autoInvariants;
 
-  const autoMcpDirectives = [];
-  if (hasAstro) autoMcpDirectives.push("astro-docs");
-  if (hasWrangler) autoMcpDirectives.push("cloudflare-docs");
-  if (existsSync(join(root, "emdash.config.ts"))) autoMcpDirectives.push("emdash-docs");
-  if (autoMcpDirectives.length > 0) autoMcpDirectives.push("context7");
-
-  const mcpDirectives = inputObj.mcpDirectives || inputObj.mcp_directives || (autoMcpDirectives.length > 0 ? autoMcpDirectives : undefined);
+  const configDirectives = Array.isArray(config.mcp_directives)
+    ? config.mcp_directives
+    : Array.isArray(config.mcpDirectives)
+      ? config.mcpDirectives
+      : [];
+  const mcpDirectives = inputObj.mcpDirectives || inputObj.mcp_directives || (configDirectives.length > 0 ? configDirectives : undefined);
   const mcpDirectiveLine = mcpDirectives && mcpDirectives.length > 0
     ? `MCP DIRECTIVE: Mandating pre-execution documentation lookup via [${mcpDirectives.join(" | ")}] before modifying code.\n\n`
     : "";

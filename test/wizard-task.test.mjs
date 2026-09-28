@@ -203,25 +203,23 @@ test("Guided Task Authoring Subsystem", async (t) => {
     }
   });
 
-  await t.test("planTaskCreate infers stack invariants and MCP directives for Astro and Wrangler projects", () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "jules-stack-invariants-"));
+  await t.test("planTaskCreate attaches custom invariants and MCP directives from configuration and options", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-invariants-test-"));
     try {
-      writeFileSync(join(tmpDir, "astro.config.mjs"), "export default {};");
-      writeFileSync(join(tmpDir, "wrangler.jsonc"), "{}");
-
       const plan = planTaskCreate(tmpDir, {
-        title: "Build landing hero",
-        prompt: "Create Hero component in Astro",
-        verifyCmd: "pnpm test",
+        title: "Implement feature",
+        prompt: "Add new endpoint",
+        verifyCmd: "npm test",
+        invariants: ["Custom invariant: keep handlers pure."],
+        mcpDirectives: ["docs-lookup", "context7"],
       });
 
-      assert.ok(plan.invariants.some((inv) => inv.includes("Zero-JS runtime-princip")));
-      assert.ok(plan.invariants.some((inv) => inv.includes("Edge runtime constraints")));
-      assert.deepEqual(plan.mcpDirectives, ["astro-docs", "cloudflare-docs", "context7"]);
-      assert.ok(plan.fullPrompt.includes("MCP DIRECTIVE: Mandating pre-execution documentation lookup via [astro-docs | cloudflare-docs | context7] before modifying code."));
+      assert.ok(plan.invariants.includes("Custom invariant: keep handlers pure."));
+      assert.deepEqual(plan.mcpDirectives, ["docs-lookup", "context7"]);
+      assert.ok(plan.fullPrompt.includes("MCP DIRECTIVE: Mandating pre-execution documentation lookup via [docs-lookup | context7] before modifying code."));
       assert.ok(plan.taskFileContent.includes("mcp_directives:"));
-      assert.ok(plan.taskFileContent.includes("  - astro-docs"));
-      assert.ok(plan.taskFileContent.includes("  - cloudflare-docs"));
+      assert.ok(plan.taskFileContent.includes("  - docs-lookup"));
+      assert.ok(plan.taskFileContent.includes("  - context7"));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

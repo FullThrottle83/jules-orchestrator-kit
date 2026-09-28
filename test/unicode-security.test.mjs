@@ -95,12 +95,12 @@ describe("Unicode security detection", () => {
 
   test("legitimate international strings/comments do not false-positive", () => {
     const samples = [
-      "// Lösenord är hemligt — Swedish comment",
+      "// La contraseña es secreta — Spanish comment",
       "// Passwort ändern — German comment",
       "// 日本語のコメントです",
       'const msg = "Привет мир";', // pure Cyrillic string
       'const msg = "Καλημέρα";', // pure Greek
-      'const city = "Göteborg";',
+      'const city = "München";',
       "const label = 'naïve café';",
     ];
     for (const line of samples) {

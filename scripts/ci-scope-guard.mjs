@@ -78,8 +78,8 @@ export function loadProtectedPatterns(opts = {}) {
  * Lists the paths a pull request changes.
  *
  * `-z` and `core.quotePath=false` matter here: without them git splits on
- * whitespace and octal-escapes non-ASCII names, so `docs/min plan.md` and
- * `säkerhet/nyckel.pem` arrive as tokens that match no pattern — a protected
+ * whitespace and octal-escapes non-ASCII names, so `docs/release plan.md` and
+ * `security/schlüssel.pem` arrive as tokens that match no pattern — a protected
  * file walking past the guard because of how it is spelled.
  *
  * @param {{ baseSha: string, headSha: string, root?: string }} opts
