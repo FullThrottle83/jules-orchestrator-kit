@@ -1361,3 +1361,108 @@ describe("P06: CLI case labels and registry descriptors stay in sync", () => {
     assert.equal(onDisk, rendered, "stale reference — run: node scripts/generate-command-reference.mjs");
   });
 });
+
+describe("CLI usability improvements: suggestions, protected scope bypass, dry-run previews", () => {
+  const CLI = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
+
+  it("suggests closest command on typos without dumping full help", () => {
+    const res = spawnSync("node", [CLI, "chek"], { encoding: "utf-8" });
+    assert.equal(res.status, 1);
+    const out = (res.stdout || "") + (res.stderr || "");
+    assert.match(out, /Unknown command: "chek"\. Did you mean "check"\?/);
+    assert.match(out, /Run 'agentctl --help' to see all available commands\./);
+    assert.doesNotMatch(out, /Usage: agentctl <command>/);
+  });
+
+  it("handles distant unknown command without dumping full help", () => {
+    const res = spawnSync("node", [CLI, "completelyunknowncmd"], { encoding: "utf-8" });
+    assert.equal(res.status, 1);
+    const out = (res.stdout || "") + (res.stderr || "");
+    assert.match(out, /Unknown command: "completelyunknowncmd"\./);
+    assert.doesNotMatch(out, /Did you mean/);
+    assert.match(out, /Run 'agentctl --help' to see all available commands\./);
+    assert.doesNotMatch(out, /Usage: agentctl <command>/);
+  });
+
+  it("task create names blocked paths and permits bypass with --allow-protected", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jules-task-protect-"));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+      execFileSync("git", ["config", "user.email", "t@e.com"], { cwd: dir });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "d", version: "1.0.0", type: "module", scripts: { test: "node --test" } }, null, 2),
+        "utf-8"
+      );
+      writeFileSync(join(dir, "index.js"), "export const a = 1;\n", "utf-8");
+      writeFileSync(join(dir, "index.test.mjs"), "import test from 'node:test'; test('ok', () => {});\n", "utf-8");
+      execFileSync("git", ["add", "-A"], { cwd: dir });
+      execFileSync("git", ["commit", "-qm", "initial"], { cwd: dir });
+
+      spawnSync("node", [CLI, "init", "--yes"], { cwd: dir, encoding: "utf-8" });
+      execFileSync("git", ["add", ".agent/config.yml", ".gitignore"], { cwd: dir });
+      execFileSync("git", ["commit", "-qm", "chore: add agent config"], { cwd: dir });
+
+      // Modify protected package.json
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "d", version: "1.0.1", type: "module", scripts: { test: "node --test" } }, null, 2),
+        "utf-8"
+      );
+
+      // Without --allow-protected
+      const failRes = spawnSync(
+        "node",
+        [CLI, "task", "create", "--title", "Bump", "--prompt", "Bump package version", "--dry-run"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(failRes.status, 1);
+      const failOut = (failRes.stdout || "") + (failRes.stderr || "");
+      assert.match(failOut, /Gate Preflight Rejected Task: Repository contains scope violations in protected\/denied paths: package\.json \(Exit 3\)\./);
+      assert.match(failOut, /To permit protected paths for this task, re-run with --allow-protected\./);
+
+      // With --allow-protected
+      const passRes = spawnSync(
+        "node",
+        [CLI, "task", "create", "--title", "Bump", "--prompt", "Bump package version", "--allow-protected", "--dry-run"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(passRes.status, 0);
+      const passOut = (passRes.stdout || "") + (passRes.stderr || "");
+      assert.match(passOut, /Dry run — envelope synthesized and validated/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("dispatch --dry-run displays task payload preview", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jules-dispatch-dry-"));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+      execFileSync("git", ["config", "user.email", "t@e.com"], { cwd: dir });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "d", version: "1.0.0", type: "module", scripts: { test: "node --test" } }, null, 2),
+        "utf-8"
+      );
+      writeFileSync(join(dir, "index.js"), "export const a = 1;\n", "utf-8");
+      execFileSync("git", ["add", "-A"], { cwd: dir });
+      execFileSync("git", ["commit", "-qm", "initial"], { cwd: dir });
+      spawnSync("node", [CLI, "init", "--yes"], { cwd: dir, encoding: "utf-8" });
+      execFileSync("git", ["add", ".agent/config.yml", ".gitignore"], { cwd: dir });
+      execFileSync("git", ["commit", "-qm", "chore: add agent config"], { cwd: dir });
+
+      const res = spawnSync("node", [CLI, "dispatch", "-p", "Verify dry run preview", "--dry-run"], { cwd: dir, encoding: "utf-8" });
+      assert.equal(res.status, 0);
+      const out = res.stdout || "";
+      assert.match(out, /Dry Run — nothing was dispatched/);
+      assert.match(out, /--- Task Payload Preview ---/);
+      assert.match(out, /Verify dry run preview/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+

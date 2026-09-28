@@ -476,7 +476,7 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
   });
 
   // Perform Gate Preflight
-  const gateRes = await gate({ root, mode: "working-tree" });
+  const gateRes = await gate({ root, mode: "working-tree", allowProtected: Boolean(options.allowProtected) });
   if (!gateRes.ok && (gateRes.code === 3 || gateRes.code === 6) && !options.allowGateFailure) {
     const scopeViolations = gateRes.phases[0]?.violations || [];
     // A cold-start repository has nothing committed yet: every path init just
@@ -491,7 +491,13 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
     const realViolations = scopeViolations.filter((v) => !v.file.startsWith(".agent/")) || [];
     const installArtifacts = new Set(untrackedOnboardingArtifacts(root, scopeViolations.map((v) => v.file)));
     const blockers = realViolations.filter((v) => !installArtifacts.has(v.file));
-    if (blockers.length > 0 || gateRes.code === 6) {
+    if (blockers.length > 0) {
+      const fileList = blockers.map((b) => b.file).join(", ");
+      throw new Error(
+        `Gate Preflight Rejected Task: Repository contains scope violations in protected/denied paths: ${fileList} (Exit 3).\n   To permit protected paths for this task, re-run with --allow-protected.`
+      );
+    }
+    if (gateRes.code === 6) {
       throw new Error(`Gate Preflight Rejected Task: Repository contains scope or secret violations (Exit ${gateRes.code}).`);
     }
   }

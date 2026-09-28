@@ -3,7 +3,7 @@
 > Auto-generated from `src/ops/command-registry.mjs`. Do not edit by hand —
 run `node scripts/generate-command-reference.mjs` to regenerate.
 
-Total commands: 55
+Total commands: 56
 
 ## Index
 
@@ -20,6 +20,7 @@ Total commands: 55
 - [`agentctl uninstall`](#uninstall) — Remove kit-owned configuration and gitignore entries from the repository
 - [`agentctl migrate`](#migrate) — Migrate legacy 0.x config and task envelopes to canonical v1 format
 - [`agentctl dashboard`](#dashboard) — Start local web dashboard server
+- [`agentctl menu`](#menu) — Launch interactive terminal navigation hub
 - [`agentctl budget`](#budget) — Show today's task budget, where its limit came from, and reconcile a wrong count
 - [`agentctl status`](#status) — Show operating status and health summary
 - [`agentctl escalate`](#escalate) — Dispatch or manage webhook escalation incidents with Silence Governor
@@ -216,6 +217,7 @@ Author a scoped, falsifiable task
 | `--no-interactive` | boolean | Alias for --non-interactive |
 | `--yes` | boolean | Accept default values non-interactively (-y) |
 | `--dry-run` | boolean | Simulate task envelope creation without queueing (-d) |
+| `--allow-protected` | boolean | Permit task creation on branches modifying protected paths |
 | `--json` | boolean | Output structured JSON envelope (-j) |
 
 **Examples:**
@@ -262,7 +264,7 @@ Score task prompt falsifiability and static path resolution
 
 | Flag | Type | Description |
 | :--- | :--- | :--- |
-| `--fix` | boolean | Synthesize optimized markdown task envelope (-f) |
+| `--fix` | boolean | Synthesize optimized markdown task prompt (-f) |
 | `--prompt` | string | Task prompt text to score (-p) |
 | `--prompt-file` | string | Read prompt from file |
 | `--file` | string | Alias for --prompt-file: path to text file containing task prompt |
@@ -397,6 +399,23 @@ Start local web dashboard server
 agentctl dashboard
 agentctl dashboard --port 3000
 agentctl dashboard 3000
+```
+
+## `agentctl menu`
+
+**ID:** `menu` · **Category:** Inspect · **Risk:** LOW · **Mutates:** no
+
+Launch interactive terminal navigation hub
+
+**Shortcuts:** `tui`, `ui`
+
+**Flags:** none.
+
+**Examples:**
+
+```sh
+agentctl menu
+agentctl tui
 ```
 
 ## `agentctl budget`
