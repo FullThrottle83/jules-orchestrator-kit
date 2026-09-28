@@ -111,6 +111,7 @@ For direct `agentctl` commands, install globally with
 
 | Goal | Command |
 | --- | --- |
+| Interactive terminal navigation | `agentctl menu` (or `agentctl -i`) |
 | Inspect provider setup | `agentctl providers` |
 | Create a scoped task | `agentctl task create` |
 | Preview queued work | `agentctl queue --dry-run` |
@@ -153,6 +154,7 @@ and [SDK/MCP integration](https://github.com/FullThrottle83/jules-orchestrator-k
 
 | Command | Description |
 | --- | --- |
+| `menu` | Interactive terminal navigation hub; browse commands and launch workflows without typing arguments. |
 | `dashboard` | Local telemetry viewer; default port 4100. Set another port with `--port <n>`. |
 
 

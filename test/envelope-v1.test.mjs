@@ -41,10 +41,10 @@ flags:
   requirePlanApproval: false
   repoless: false
 ---
-# Uppgift
+# Task Objective
 Fix the token expiration handler in auth controller.
 
-## Verifiering
+## Verification
 1. npm test
 `;
 
@@ -90,7 +90,7 @@ flags:
     ]);
     assert.strictEqual(parsed.metadata.flags.autoPr, true);
     assert.strictEqual(parsed.metadata.flags.requirePlanApproval, false);
-    assert.ok(parsed.body.includes("# Uppgift"));
+    assert.ok(parsed.body.includes("# Task Objective"));
     assert.ok(parsed.body.includes("Fix the token expiration handler"));
   });
 
@@ -185,21 +185,21 @@ Modify workflow
 kind: Task
 version: agentctl.task/v1
 id: JULES-502
-title: Astro Cloudflare Task
+title: API Service Task
 mcp_directives:
-  - astro-docs
-  - cloudflare-docs
+  - api-docs
+  - database-docs
 scope:
   allow:
-    - src/pages/index.astro
+    - src/routes/index.ts
 verification:
   commands:
-    - pnpm test
+    - npm test
 ---
-# Uppgift
+# Task Objective
 `;
     const parsed = parseEnvelopeHeader(v1WithMcp);
-    assert.deepStrictEqual(parsed.mcp_directives, ["astro-docs", "cloudflare-docs"]);
+    assert.deepStrictEqual(parsed.mcp_directives, ["api-docs", "database-docs"]);
 
     const valValid = validateEnvelope(parsed);
     assert.strictEqual(valValid.ok, true);
@@ -208,12 +208,12 @@ verification:
       kind: "Task",
       version: "agentctl.task/v1",
       id: "JULES-502",
-      title: "Astro Cloudflare Task",
-      mcp_directives: ["astro-docs", "cloudflare-docs"],
+      title: "API Service Task",
+      mcp_directives: ["api-docs", "database-docs"],
     });
     assert.ok(serialized.includes("mcp_directives:"));
-    assert.ok(serialized.includes("  - astro-docs"));
-    assert.ok(serialized.includes("  - cloudflare-docs"));
+    assert.ok(serialized.includes("  - api-docs"));
+    assert.ok(serialized.includes("  - database-docs"));
 
     const invalid = { ...parsed, mcp_directives: "not-an-array" };
     const valInvalid = validateEnvelope(invalid);
@@ -250,7 +250,7 @@ circuitBreaker:
   max_diff_lines: 200
   stop_if_same_failure_repeats: true
 ---
-# Uppgift
+# Task Objective
 `;
     const parsed = parseEnvelopeHeader(taxonomyMarkdown);
     assert.strictEqual(parsed.id, "fix-booking-idempotency");

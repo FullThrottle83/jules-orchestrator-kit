@@ -35,12 +35,13 @@ Any surface primitive that directly serves this chain is evaluated for `CORE_V1`
 
 ---
 
-## 1. CLI Command Inventory (55 Commands)
+## 1. CLI Command Inventory (56 Commands)
 
-Examines all 55 command descriptors registered in `src/ops/command-registry.mjs`.
+Examines all 56 command descriptors registered in `src/ops/command-registry.mjs`.
 
 | Command | Category | Proposed Classification | Rationale (Tied to Task → Dispatch → Gate → Evidence) |
 | --- | --- | --- | --- |
+| `agentctl menu` | Inspect | `ADVANCED_V1` | Interactive terminal navigation hub and command browser. |
 | `agentctl task` | Create | `CORE_V1` | Top-level command group for task envelope management. |
 | `agentctl task create` | Create | `CORE_V1` | Primary human-reviewable task authoring primitive (Task step). |
 | `agentctl task validate` | Inspect | `CORE_V1` | Pre-flight validation of task envelopes against versioned schema without dispatching. |

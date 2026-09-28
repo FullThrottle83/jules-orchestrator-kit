@@ -57,11 +57,11 @@ test("CI Agent Scope Guard", async (t) => {
   // `for FILE in $MODIFIED_FILES` word-split these into tokens that matched
   // nothing, which let a protected file through on its spelling alone.
   await t.test("matches paths containing spaces and non-ASCII characters", () => {
-    const res = evaluateScopeGuard([".github/workflows/min plan.yml"], PATTERNS);
+    const res = evaluateScopeGuard([".github/workflows/release plan.yml"], PATTERNS);
     assert.equal(res.ok, false);
 
-    const nordic = evaluateScopeGuard([".github/säkerhet/nyckel.yml"], PATTERNS);
-    assert.equal(nordic.ok, false);
+    const unicodePath = evaluateScopeGuard([".github/secrets/schlüssel.yml"], PATTERNS);
+    assert.equal(unicodePath.ok, false);
   });
 
   await t.test("reports every violating file, not just the first", () => {

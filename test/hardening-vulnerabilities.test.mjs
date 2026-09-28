@@ -10,7 +10,7 @@ import { normalizeScope, BUILTIN_PROTECT, BUILTIN_DENY } from "../src/config.mjs
 
 test("Vulnerabilities A-D Hardening Test Suite", async (t) => {
   // --------------------------------------------------------------------------
-  // Sårbarhet A: Borttagning av assertions detekteras inte (Test Deletion Bypass)
+  // Vulnerability A: Assertion removal is detected (Test Deletion Bypass)
   // --------------------------------------------------------------------------
   await t.test("A: checkTestTampering flags assertion removal as ASSERTION_REMOVAL", () => {
     const diff = [
@@ -52,7 +52,7 @@ test("Vulnerabilities A-D Hardening Test Suite", async (t) => {
   });
 
   // --------------------------------------------------------------------------
-  // Sårbarhet B: Diff Payload Governor kan manipuleras i --mode committed
+  // Vulnerability B: Diff Payload Governor enforces trusted base limits in committed mode
   // --------------------------------------------------------------------------
   await t.test("B: Diff Payload Governor binds strictly to trustedConfigRaw in committed mode", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "jules-payload-vuln-"));
@@ -103,7 +103,7 @@ test("Vulnerabilities A-D Hardening Test Suite", async (t) => {
   });
 
   // --------------------------------------------------------------------------
-  // Sårbarhet C: Onboarding Catch-22 vid PR mot origin/main
+  // Vulnerability C: Onboarding bootstrap on PR against origin/main via --allow-protected
   // --------------------------------------------------------------------------
   await t.test("C: .agent/config.yml is in BUILTIN_PROTECT and can be landed with --allow-protected", () => {
     assert.ok(BUILTIN_PROTECT.includes(".agent/config.yml"));
@@ -126,7 +126,7 @@ test("Vulnerabilities A-D Hardening Test Suite", async (t) => {
   });
 
   // --------------------------------------------------------------------------
-  // Sårbarhet D: Shannon-entropikontroll i diffscannern (HIGH_ENTROPY_TOKEN)
+  // Vulnerability D: Shannon entropy analysis in diff scanner (HIGH_ENTROPY_TOKEN)
   // --------------------------------------------------------------------------
   await t.test("D: scanDiff detects unstructured high-entropy secrets as HIGH_ENTROPY_TOKEN", () => {
     // 48-char random alphanumeric API token
