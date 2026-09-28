@@ -337,8 +337,18 @@ export async function gate(opts = {}) {
   // failures stop reaching the exit code — the gate then sees exit 0 and
   // approves a change whose tests failed. src/perf.mjs already strips these for
   // the same reason; the gate, which is the one that decides, did not.
+  // Ambient PR waiver labels and HEAD_SHA must also be stripped so verification
+  // suites and child audits run hermetically without inherited waivers.
   for (const key of Object.keys(testEnv)) {
-    if (key.startsWith("NODE_TEST_") || key.startsWith("NODE_CHANNEL_")) delete testEnv[key];
+    if (
+      key.startsWith("NODE_TEST_") ||
+      key.startsWith("NODE_CHANNEL_") ||
+      key === "PR_LABELS" ||
+      key === "HEAD_SHA" ||
+      key.startsWith("JULES_ALLOW_")
+    ) {
+      delete testEnv[key];
+    }
   }
 
   let flakyVerdictResult = null;

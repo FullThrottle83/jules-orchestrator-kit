@@ -98,6 +98,8 @@ describe("Integration Test Harness: End-to-End Execution", () => {
 
       const auditScript = path.join(scriptsDir, "jules-self-audit.mjs");
       const env = { ...process.env, BASE_BRANCH: "main", CI: "true", JULES_PROJECT_ROOT: repoDir };
+      delete env.PR_LABELS;
+      delete env.HEAD_SHA;
 
       const out = execFileSync("node", [auditScript], { cwd: repoDir, env, encoding: "utf-8" });
       assert.ok(out.includes("PASSED") || out.includes("Audit Complete"));
@@ -120,6 +122,8 @@ describe("Integration Test Harness: End-to-End Execution", () => {
 
       const auditScript = path.join(scriptsDir, "jules-self-audit.mjs");
       const env = { ...process.env, BASE_BRANCH: "main", CI: "true", JULES_PROJECT_ROOT: repoDir };
+      delete env.PR_LABELS;
+      delete env.HEAD_SHA;
 
       try {
         execFileSync("node", [auditScript], { cwd: repoDir, env, encoding: "utf-8", stdio: "pipe" });
