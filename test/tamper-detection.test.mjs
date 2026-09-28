@@ -759,7 +759,7 @@ describe("the flag reaches the gate", () => {
       mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
       writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "name: CI\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n");
       mkdirSync(join(dir, "test"), { recursive: true });
-      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("noop", () => { assert.equal(1, 1); });\n');
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("noop", () => { assert.strictEqual(typeof test, "function"); });\n');
       git(["add", "-A"]);
       git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
 
