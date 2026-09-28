@@ -210,16 +210,20 @@ test("Guided Task Authoring Subsystem", async (t) => {
         title: "Implement feature",
         prompt: "Add new endpoint",
         verifyCmd: "npm test",
-        invariants: ["Custom invariant: keep handlers pure."],
-        mcpDirectives: ["docs-lookup", "context7"],
+        invariants: [
+          "Custom invariant 1: keep handlers pure.",
+          "Custom invariant 2: validate input schemas.",
+        ],
+        mcpDirectives: ["docs-lookup", "api-docs", "context7"],
       });
 
-      assert.ok(plan.invariants.includes("Custom invariant: keep handlers pure."));
-      assert.deepEqual(plan.mcpDirectives, ["docs-lookup", "context7"]);
-      assert.ok(plan.fullPrompt.includes("MCP DIRECTIVE: Mandating pre-execution documentation lookup via [docs-lookup | context7] before modifying code."));
+      assert.ok(plan.invariants.some((inv) => inv.includes("Custom invariant 1: keep handlers pure.")));
+      assert.ok(plan.invariants.some((inv) => inv.includes("Custom invariant 2: validate input schemas.")));
+      assert.deepEqual(plan.mcpDirectives, ["docs-lookup", "api-docs", "context7"]);
+      assert.ok(plan.fullPrompt.includes("MCP DIRECTIVE: Mandating pre-execution documentation lookup via [docs-lookup | api-docs | context7] before modifying code."));
       assert.ok(plan.taskFileContent.includes("mcp_directives:"));
       assert.ok(plan.taskFileContent.includes("  - docs-lookup"));
-      assert.ok(plan.taskFileContent.includes("  - context7"));
+      assert.ok(plan.taskFileContent.includes("  - api-docs"));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
