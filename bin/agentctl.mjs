@@ -270,6 +270,11 @@ async function main() {
   // tool; a newcomer cannot tell which entry is step one, and guessing wrong
   // costs them a confusing failure instead of a hint.
   if (!command) {
+    if (args.includes("-i") || args.includes("--interactive")) {
+      const { runTuiMenu } = await import("../src/ops/tui-menu.mjs");
+      await runTuiMenu(resolveRoot());
+      process.exit(0);
+    }
     const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
     const cwd = process.cwd();
     let budgetLine = "";
@@ -433,8 +438,15 @@ async function main() {
             console.log(`   Title       : ${task.title}`);
             console.log(`   Provider    : ${session.provider || config.provider || "jules"}`);
             if (task.role) console.log(`   Role        : ${task.role}`);
+            if (task.branch) console.log(`   Branch      : ${task.branch}`);
+            if (task.verifyCmd) console.log(`   Verify Cmd  : ${task.verifyCmd}`);
             if (session._routeTier) {
               console.log(`   Router Tier : ${session._routeTier} (${session._routeReason || "n/a"})`);
+            }
+            if (task.prompt) {
+              console.log(`\n--- Task Payload Preview ---`);
+              console.log(String(task.prompt).trim());
+              console.log(`----------------------------`);
             }
             console.log(`\n   Re-run without --dry-run to dispatch for real.`);
           } else {
@@ -1999,6 +2011,15 @@ async function main() {
       break;
     }
 
+    case "menu":
+    case "tui":
+    case "ui": {
+      const { runTuiMenu } = await import("../src/ops/tui-menu.mjs");
+      await runTuiMenu(root);
+      process.exit(0);
+      break;
+    }
+
     case "init": {
       const { values } = parseArgs({
         args: args.slice(1),
@@ -2177,6 +2198,7 @@ async function main() {
             yes: { type: "boolean", short: "y" },
             json: { type: "boolean", short: "j" },
             "dry-run": { type: "boolean", short: "d" },
+            "allow-protected": { type: "boolean" },
           },
           allowPositionals: true,
         });
@@ -2207,6 +2229,7 @@ async function main() {
           repoless: values.repoless,
           interactive: isInteractive,
           dryRun: values["dry-run"],
+          allowProtected: Boolean(values["allow-protected"]),
         });
 
         if (values.json) {
@@ -3639,10 +3662,32 @@ async function main() {
       break;
     }
 
-    default:
-      console.error(`Unknown command: ${command}`);
-      printHelp();
+    default: {
+      const knownTopCommands = [
+        ...new Set(
+          COMMAND_REGISTRY.flatMap((c) => [c.path[0], ...(c.shortcuts || [])]).filter(Boolean)
+        ),
+        "help",
+        "version",
+      ];
+      const { levenshteinDistance } = await import("../src/task-optimizer.mjs");
+      let closest = null;
+      let minDistance = Infinity;
+      for (const known of knownTopCommands) {
+        const dist = levenshteinDistance(command.toLowerCase(), known.toLowerCase());
+        if (dist < minDistance) {
+          minDistance = dist;
+          closest = known;
+        }
+      }
+      if (closest && minDistance <= 3) {
+        console.error(`Unknown command: "${command}". Did you mean "${closest}"?`);
+      } else {
+        console.error(`Unknown command: "${command}".`);
+      }
+      console.error(`Run 'agentctl --help' to see all available commands.`);
       process.exit(1);
+    }
   }
 }
 

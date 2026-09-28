@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isTTY, styleText, select, multiSelect, input, confirm, secretInput, spinner, ANSI, WizardCancelledError } from "../src/tui.mjs";
+import { runTuiMenu } from "../src/ops/tui-menu.mjs";
 import { createKeyDecoder } from "../src/key-decoder.mjs";
 import { PassThrough } from "node:stream";
 
@@ -251,5 +252,39 @@ test("Native Terminal UI (TUI) Engine", async (t) => {
     const completed = decoder.push(emoji.subarray(1));
     assert.equal(completed.length, 1);
     assert.equal(completed[0].text, "😀");
+  });
+
+  await t.test("runTuiMenu non-TTY returns headless fallback message", async () => {
+    const mockStdin = new PassThrough();
+    const mockStdout = new PassThrough();
+    let out = "";
+    mockStdout.on("data", (d) => (out += d.toString()));
+
+    const res = await runTuiMenu(process.cwd(), { stdin: mockStdin, stdout: mockStdout });
+    assert.equal(res.ok, true);
+    assert.equal(res.headless, true);
+    assert.match(out, /Interactive terminal menu requires a TTY terminal/);
+  });
+
+  await t.test("runTuiMenu interactive exit action terminates cleanly", async () => {
+    const mockStdin = new PassThrough();
+    const mockStdout = new PassThrough();
+    mockStdin.isTTY = true;
+    mockStdout.isTTY = true;
+    let out = "";
+    mockStdout.on("data", (d) => (out += d.toString()));
+
+    // Press '0' (for 10th item 'Exit') then Enter
+    const menuPromise = runTuiMenu(process.cwd(), { stdin: mockStdin, stdout: mockStdout, singleAction: true });
+    // In our select(), 1-9 select items 0-8. For item 9 (10th item), press Up then Enter
+    setTimeout(() => {
+      mockStdin.write("\u001b[A\r"); // Up wraps to last item ('Exit') then Enter
+    }, 10);
+
+    const res = await menuPromise;
+    assert.equal(res.ok, true);
+    assert.equal(res.action, "exit");
+    assert.match(out, /Interactive Terminal Hub/);
+    assert.match(out, /Bye!/);
   });
 });
