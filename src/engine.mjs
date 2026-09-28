@@ -207,6 +207,7 @@ export async function gate(opts = {}) {
       process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1" ||
       process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "true" ||
       process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1",
+    protectedPatterns: trustedScope.protectedPatterns,
   });
   // Report the violation against the link the change actually introduced, not
   // against a path the diff never names — the operator has to be able to find it.
@@ -336,8 +337,18 @@ export async function gate(opts = {}) {
   // failures stop reaching the exit code — the gate then sees exit 0 and
   // approves a change whose tests failed. src/perf.mjs already strips these for
   // the same reason; the gate, which is the one that decides, did not.
+  // Ambient PR waiver labels and HEAD_SHA must also be stripped so verification
+  // suites and child audits run hermetically without inherited waivers.
   for (const key of Object.keys(testEnv)) {
-    if (key.startsWith("NODE_TEST_") || key.startsWith("NODE_CHANNEL_")) delete testEnv[key];
+    if (
+      key.startsWith("NODE_TEST_") ||
+      key.startsWith("NODE_CHANNEL_") ||
+      key === "PR_LABELS" ||
+      key === "HEAD_SHA" ||
+      key.startsWith("JULES_ALLOW_")
+    ) {
+      delete testEnv[key];
+    }
   }
 
   let flakyVerdictResult = null;

@@ -43,6 +43,7 @@ import {
 } from "../src/config.mjs";
 import { gate } from "../src/engine.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "../src/stack-detector.mjs";
+import { resolveTestWaiverFromLabels, resolveProtectedWaiverFromLabels, parseLabels } from "../src/self-audit.mjs";
 import { parseCollectedTests } from "../src/ops/test-collection.mjs";
 import { materializeSnapshot, runCmd, changedFiles, diffText } from "../src/git.mjs";
 import { createCheckpoint, restoreCheckpoint, CheckpointError } from "../src/ops/checkpoint.mjs";
@@ -390,6 +391,435 @@ describe("the flag reaches the gate", () => {
       assert.equal(run([]).status, 6, "the rewrite must be rejected without a flag");
       assert.equal(run(["--allow-test-change", "expectation"]).status, 0);
       assert.equal(run(["--allow-test-change", "removal"]).status, 6, "the wrong kind must not silence it");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("JULES_ALLOW_TEST_CHANGES env var allows only specified kind and preserves other checks", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-tamper-env-"));
+    try {
+      const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      git(["config", "core.autocrlf", "false"]);
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "v", version: "1.0.0", type: "module", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, ".gitignore"), ".agent/\n");
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a + b; }\n");
+      mkdirSync(join(dir, "test"), { recursive: true });
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), 3); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+
+      // Rewrite expectation: 3 -> -1 and update implementation so test passes
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a - b; }\n");
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), -1); });\n');
+
+      const auditScript = join(process.cwd(), "scripts", "jules-self-audit.mjs");
+      const runAudit = (env = {}) =>
+        spawnSync(process.execPath, [auditScript], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: { ...process.env, CI: "true", BASE_BRANCH: "main", ...env },
+        });
+
+      // 1. Without JULES_ALLOW_TEST_CHANGES, expectation rewrite fails with code 6
+      const unapproved = runAudit({});
+      assert.equal(unapproved.status, 6, "expectation rewrite must fail without approval");
+
+      // 2. With JULES_ALLOW_TEST_CHANGES=expectation, expectation rewrite passes
+      const approved = runAudit({ JULES_ALLOW_TEST_CHANGES: "expectation" });
+      assert.equal(approved.status, 0, "expectation rewrite must pass with expectation approval");
+
+      // 3. With JULES_ALLOW_TEST_CHANGES=expectation, an unrelated tamper check (e.g. skip injection) STILL FAILS
+      writeFileSync(
+        join(dir, "test", "index.test.js"),
+        'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest.skip("add", () => { assert.equal(add(1, 2), -1); });\n'
+      );
+      const mixed = runAudit({ JULES_ALLOW_TEST_CHANGES: "expectation" });
+      assert.equal(mixed.status, 6, "skip injection must fail even when expectation is approved");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("approval labels conform to GitHub 50-character maximum name limit", () => {
+    const GITHUB_LABEL_MAX_LENGTH = 50;
+    const dummySha = "0123456789abcdef0123456789abcdef01234567";
+
+    const testLabel = `allow-e:${dummySha}`;
+    assert.equal(testLabel.length, 48);
+    assert.ok(testLabel.length <= GITHUB_LABEL_MAX_LENGTH);
+
+    const pathLabel = `allow-p:${dummySha}`;
+    assert.equal(pathLabel.length, 48);
+    assert.ok(pathLabel.length <= GITHUB_LABEL_MAX_LENGTH);
+
+    // Document why verbose labels cannot be created with full commit SHA on GitHub
+    const longTestLabel = `allow-test-expectation:${dummySha}`;
+    assert.equal(longTestLabel.length, 63);
+    assert.ok(longTestLabel.length > GITHUB_LABEL_MAX_LENGTH, "verbose test label exceeds provider limit");
+
+    const longPathLabel = `allow-protected-paths:${dummySha}`;
+    assert.equal(longPathLabel.length, 62);
+    assert.ok(longPathLabel.length > GITHUB_LABEL_MAX_LENGTH, "verbose path label exceeds provider limit");
+  });
+
+  it("resolveTestWaiverFromLabels binds waivers to exact 40-character commit SHA and rejects unbound/stale/prefix labels", () => {
+    const headSha = "2f5c19b48c44e99fca0123456789abcdef012345";
+    const shortSha = "2f5c19b";
+
+    // 1. Valid exact 40-character SHA matching HEAD_SHA with canonical short label allow-e
+    const matchShort = resolveTestWaiverFromLabels([`allow-e:${headSha}`], headSha);
+    assert.deepEqual(matchShort.allowedKinds, ["expectation"]);
+    assert.equal(matchShort.rejected.length, 0);
+
+    // 2. Backward compatibility with verbose label allow-test-expectation
+    const matchFull = resolveTestWaiverFromLabels([`allow-test-expectation:${headSha}`], headSha);
+    assert.deepEqual(matchFull.allowedKinds, ["expectation"]);
+    assert.equal(matchFull.rejected.length, 0);
+
+    // 3. Case-insensitive hex matching for 40-character SHA
+    const matchUpper = resolveTestWaiverFromLabels([`allow-e:${headSha.toUpperCase()}`], headSha);
+    assert.deepEqual(matchUpper.allowedKinds, ["expectation"]);
+
+    // 4. Short SHA prefix (< 40 chars) is strictly rejected (no prefix matching permitted)
+    const prefixReject = resolveTestWaiverFromLabels([`allow-e:${shortSha}`], headSha);
+    assert.deepEqual(prefixReject.allowedKinds, []);
+    assert.equal(prefixReject.rejected.length, 1);
+    assert.match(prefixReject.rejected[0].reason, /Prefix matching is not permitted/);
+
+    // 5. Regression: two different 40-character SHAs with the same first seven hex digits must NOT share approval
+    const shaA = "2f5c19b111111111111111111111111111111111";
+    const shaB = "2f5c19b222222222222222222222222222222222";
+    const waiverA = resolveTestWaiverFromLabels([`allow-e:${shaA}`], shaA);
+    assert.deepEqual(waiverA.allowedKinds, ["expectation"]);
+
+    const waiverBWithLabelA = resolveTestWaiverFromLabels([`allow-e:${shaA}`], shaB);
+    assert.deepEqual(waiverBWithLabelA.allowedKinds, [], "different 40-char SHA sharing 7-char prefix must not share approval");
+    assert.equal(waiverBWithLabelA.rejected.length, 1);
+    assert.match(waiverBWithLabelA.rejected[0].reason, /Stale waiver/);
+
+    // 6. Stale label with older/different 40-character commit SHA
+    const staleSha = "4484a4e0123456789abcdef0123456789abcdef0";
+    const stale = resolveTestWaiverFromLabels([`allow-e:${staleSha}`], headSha);
+    assert.deepEqual(stale.allowedKinds, []);
+    assert.equal(stale.rejected.length, 1);
+    assert.match(stale.rejected[0].reason, /Stale waiver/);
+
+    // 7. Unbound label (missing SHA)
+    const unbound = resolveTestWaiverFromLabels(["allow-e"], headSha);
+    assert.deepEqual(unbound.allowedKinds, []);
+    assert.equal(unbound.rejected.length, 1);
+    assert.match(unbound.rejected[0].reason, /Unbound waiver/);
+
+    // 8. Invalid SHA (non-hex or incorrect length)
+    const tooShort = resolveTestWaiverFromLabels(["allow-e:abc"], headSha);
+    assert.deepEqual(tooShort.allowedKinds, []);
+    assert.match(tooShort.rejected[0].reason, /Invalid commit SHA/);
+
+    const nonHex = resolveTestWaiverFromLabels(["allow-e:xyz123456789abcdef0123456789abcdef012345"], headSha);
+    assert.deepEqual(nonHex.allowedKinds, []);
+    assert.match(nonHex.rejected[0].reason, /Invalid commit SHA/);
+
+    // 9. Missing or empty HEAD_SHA
+    const missingHead = resolveTestWaiverFromLabels([`allow-e:${headSha}`], "");
+    assert.deepEqual(missingHead.allowedKinds, []);
+    assert.match(missingHead.rejected[0].reason, /Cannot verify binding/);
+
+    // 10. Specific tamper kind: allow-test-change:deregistration:<40-hex-SHA>
+    const specificKind = resolveTestWaiverFromLabels([`allow-test-change:deregistration:${headSha}`], headSha);
+    assert.deepEqual(specificKind.allowedKinds, ["deregistration"]);
+
+    // 11. Input formats: accepts JSON string, comma-separated string, or array
+    assert.deepEqual(parseLabels('["foo", "bar"]'), ["foo", "bar"]);
+    assert.deepEqual(parseLabels("foo, bar"), ["foo", "bar"]);
+    const jsonInput = resolveTestWaiverFromLabels(JSON.stringify([`allow-e:${headSha}`, `allow-p:${headSha}`]), headSha);
+    assert.deepEqual(jsonInput.allowedKinds, ["expectation"]);
+
+    const csvInput = resolveTestWaiverFromLabels(`allow-e:${headSha}, allow-p:${headSha}`, headSha);
+    assert.deepEqual(csvInput.allowedKinds, ["expectation"]);
+  });
+
+  it("resolveProtectedWaiverFromLabels binds protected-path waivers to exact 40-character commit SHA", () => {
+    const headSha = "3f1a0f0a25a6758552326fc6d0bf69354d83b262";
+    const otherSha = "3f1a0f0a25a6758552326fc6d0bf69354d83b999";
+
+    // 1. Valid exact 40-char SHA with canonical short label allow-p
+    const valid = resolveProtectedWaiverFromLabels([`allow-p:${headSha}`], headSha);
+    assert.equal(valid.ok, true);
+    assert.equal(valid.boundSha, headSha);
+
+    // 2. Backward compatibility with verbose label allow-protected-paths
+    const validVerbose = resolveProtectedWaiverFromLabels([`allow-protected-paths:${headSha}`], headSha);
+    assert.equal(validVerbose.ok, true);
+    assert.equal(validVerbose.boundSha, headSha);
+
+    // 3. Prefix (< 40 chars) rejected
+    const prefix = resolveProtectedWaiverFromLabels([`allow-p:${headSha.slice(0, 7)}`], headSha);
+    assert.equal(prefix.ok, false);
+
+    // 4. Two different 40-char SHAs sharing the first 7 hex digits do NOT share approval
+    const sharedPrefix = resolveProtectedWaiverFromLabels([`allow-p:${headSha}`], otherSha);
+    assert.equal(sharedPrefix.ok, false);
+
+    // 5. Unbound label without commit SHA rejected
+    const unbound = resolveProtectedWaiverFromLabels(["allow-p"], headSha);
+    assert.equal(unbound.ok, false);
+
+    const unboundVerbose = resolveProtectedWaiverFromLabels(["allow-protected-paths"], headSha);
+    assert.equal(unboundVerbose.ok, false);
+
+    // 6. Bootstrap scenario: both unbound legacy label (for base) and valid short SHA-bound label present
+    const bootstrap = resolveProtectedWaiverFromLabels(["allow-protected-paths", `allow-p:${headSha}`], headSha);
+    assert.equal(bootstrap.ok, true);
+    assert.equal(bootstrap.boundSha, headSha);
+  });
+
+  it("approve head A, push head B with another rewrite => unapproved/rejected; keep all other tamper checks on", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-tamper-sha-"));
+    try {
+      const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      git(["config", "core.autocrlf", "false"]);
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "v", version: "1.0.0", type: "module", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, ".gitignore"), ".agent/\n");
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a + b; }\n");
+      mkdirSync(join(dir, "test"), { recursive: true });
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), 3); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+
+      git(["checkout", "-b", "feature"]);
+
+      const auditScript = join(process.cwd(), "scripts", "jules-self-audit.mjs");
+      const runAudit = (env = {}) =>
+        spawnSync(process.execPath, [auditScript], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: { ...process.env, CI: "true", BASE_BRANCH: "main", ...env },
+        });
+
+      // Commit A: Rewrite expectation (3 -> -1) and update implementation
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a - b; }\n");
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), -1); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit A: update expectation"]);
+
+      const shaA = git(["rev-parse", "HEAD"]).trim();
+
+      // 1. Without approval label on Head A, fails with exit 6
+      const unapprovedA = runAudit({ HEAD_SHA: shaA, PR_LABELS: "[]" });
+      assert.equal(unapprovedA.status, 6, "unapproved expectation rewrite on head A must fail");
+
+      // 2. Unbound label without commit SHA (allow-e) is rejected
+      const unboundLabel = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify(["allow-e"]) });
+      assert.equal(unboundLabel.status, 6, "unbound label without SHA must fail closed");
+
+      // 3. 7-character prefix label (allow-e:<shortA>) is rejected (exact 40-char SHA required)
+      const prefixLabel = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify([`allow-e:${shaA.slice(0, 7)}`]) });
+      assert.equal(prefixLabel.status, 6, "prefix label must fail closed");
+
+      // 4. Approved on Head A with exact 40-character SHA label (allow-e:<shaA>)
+      const approvedA = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify([`allow-e:${shaA}`]) });
+      assert.equal(approvedA.status, 0, "expectation rewrite on head A must pass with exact 40-char SHA label");
+
+      // Commit B: Push another expectation rewrite (-1 -> 42) on top of Commit A
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return 42; }\n");
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), 42); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit B: second expectation rewrite"]);
+
+      const shaB = git(["rev-parse", "HEAD"]).trim();
+
+      // 5. Stale approval from Head A does NOT approve Head B! (approve head A, push head B with another rewrite => unapproved/rejected)
+      const staleApprovalB = runAudit({ HEAD_SHA: shaB, PR_LABELS: JSON.stringify([`allow-e:${shaA}`]) });
+      assert.equal(staleApprovalB.status, 6, "stale approval for head A must not waive new commit B");
+
+      // 6. Updating the label to match exact Head B SHA approves Head B
+      const approvedB = runAudit({ HEAD_SHA: shaB, PR_LABELS: JSON.stringify([`allow-e:${shaB}`]) });
+      assert.equal(approvedB.status, 0, "expectation rewrite on head B must pass when label is updated to head B SHA");
+
+      // 7. Even with matching Head B approval, an unrelated tamper check (e.g. skip injection) STILL FAILS
+      writeFileSync(
+        join(dir, "test", "index.test.js"),
+        'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest.skip("add", () => { assert.equal(add(1, 2), 42); });\n'
+      );
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit B2: skip injection"]);
+      const shaB2 = git(["rev-parse", "HEAD"]).trim();
+
+      const mixedB2 = runAudit({ HEAD_SHA: shaB2, PR_LABELS: JSON.stringify([`allow-e:${shaB2}`]) });
+      assert.equal(mixedB2.status, 6, "skip injection must fail even when commit SHA matches expectation waiver");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("matching pair of scope/audit approval labels (allow-p and allow-e) simultaneously authorizes protected paths and test expectations", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-matching-pair-"));
+    try {
+      const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      git(["config", "core.autocrlf", "false"]);
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "pair-test", version: "1.0.0", type: "module", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, ".gitignore"), ".agent/\n");
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      writeFileSync(join(dir, ".agent", "jules.yml"), "version: 1\n");
+      writeFileSync(join(dir, ".agent", "protected-paths.json"), JSON.stringify({ protected: ["package.json"] }));
+      writeFileSync(join(dir, "index.js"), "export function calc(a, b) { return a + b; }\n");
+      mkdirSync(join(dir, "test"), { recursive: true });
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { calc } from "../index.js";\ntest("calc", () => { assert.equal(calc(10, 20), 30); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+
+      git(["checkout", "-b", "feature"]);
+
+      // Modify BOTH a protected file (package.json) AND a test expectation (30 -> 100)
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "pair-test", version: "1.1.0", type: "module", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, "index.js"), "export function calc(a, b) { return 100; }\n");
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { calc } from "../index.js";\ntest("calc", () => { assert.equal(calc(10, 20), 100); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "touch protected path and change expectation"]);
+
+      const headSha = git(["rev-parse", "HEAD"]).trim();
+      const otherSha = "0000000000000000000000000000000000000000";
+
+      const auditScript = join(process.cwd(), "scripts", "jules-self-audit.mjs");
+      const runAudit = (labels = []) =>
+        spawnSync(process.execPath, [auditScript], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            CI: "true",
+            BASE_BRANCH: "main",
+            HEAD_SHA: headSha,
+            PR_LABELS: JSON.stringify(labels),
+          },
+        });
+
+      // 1. Without any labels => fails closed (RESTRICTED FILE VIOLATION, exit 3)
+      const noLabels = runAudit([]);
+      assert.equal(noLabels.status, 3, "must fail closed without approval labels");
+
+      // 2. With ONLY allow-p (protected path approved) => fails on test tamper (exit 6)
+      const onlyPath = runAudit([`allow-p:${headSha}`]);
+      assert.equal(onlyPath.status, 6, "must fail with exit 6 when only protected path is approved");
+
+      // 3. With ONLY allow-e (test expectation approved) => fails on protected path (exit 3)
+      const onlyTest = runAudit([`allow-e:${headSha}`]);
+      assert.equal(onlyTest.status, 3, "must fail with exit 3 when only test expectation is approved");
+
+      // 4. With BOTH allow-p and allow-e matching headSha => passes completely (exit 0)
+      const bothMatching = runAudit([`allow-p:${headSha}`, `allow-e:${headSha}`]);
+      assert.equal(bothMatching.status, 0, "matching pair of approval labels must pass the audit");
+
+      // 5. One-time bootstrap scenario: legacy unbound allow-protected-paths alongside matching pair
+      const bootstrap = runAudit(["allow-protected-paths", `allow-p:${headSha}`, `allow-e:${headSha}`]);
+      assert.equal(bootstrap.status, 0, "legacy base label alongside matching pair must pass the audit");
+
+      // 6. Stale label for another commit SHA => fails closed
+      const stalePair = runAudit([`allow-p:${otherSha}`, `allow-e:${otherSha}`]);
+      assert.notEqual(stalePair.status, 0, "stale approval labels must fail closed");
+
+      // 7. Sharing 7-char prefix with a different SHA => fails closed
+      const sharedPrefixSha = headSha.slice(0, 7) + "9".repeat(33);
+      const sharedPrefixPair = runAudit([`allow-p:${sharedPrefixSha}`, `allow-e:${sharedPrefixSha}`]);
+      assert.notEqual(sharedPrefixPair.status, 0, "prefix-sharing different SHA must fail closed");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("authorizes reviewed workflow changes with allow-p:<SHA> under base policy while keeping unapproved workflows and non-waivable forbidden paths denied", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-workflow-approval-"));
+    try {
+      const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      git(["config", "core.autocrlf", "false"]);
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "wf-test", version: "1.0.0", type: "module", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, ".gitignore"), ".agent/\n");
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      writeFileSync(
+        join(dir, ".agent", "jules.yml"),
+        "version: 2\ntest_cmd: \"node --test\"\nforbidden_paths:\n  - \".github/**\"\n  - \"**/secrets/**\"\n  - \"**/*.pem\"\n  - \"**/lock-manager/**\"\n"
+      );
+      writeFileSync(
+        join(dir, ".agent", "protected-paths.json"),
+        JSON.stringify({ protected: ["package.json", ".github/**"] })
+      );
+      mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+      writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "name: CI\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n");
+      mkdirSync(join(dir, "test"), { recursive: true });
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("noop", () => { assert.strictEqual(typeof test, "function"); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+
+      git(["checkout", "-b", "feature"]);
+
+      // Modify a workflow file
+      writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "name: CI Updated\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n");
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "update workflow"]);
+
+      const headSha = git(["rev-parse", "HEAD"]).trim();
+      const auditScript = join(process.cwd(), "scripts", "jules-self-audit.mjs");
+      const runAudit = (labels = []) =>
+        spawnSync(process.execPath, [auditScript], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            CI: "true",
+            BASE_BRANCH: "main",
+            HEAD_SHA: headSha,
+            PR_LABELS: JSON.stringify(labels),
+          },
+        });
+
+      // 1. Without labels => fails closed with exit 3 (RESTRICTED FILE VIOLATION)
+      const noLabels = runAudit([]);
+      assert.equal(noLabels.status, 3, "unapproved workflow changes must fail closed with exit 3");
+
+      // 2. Stale waiver for another SHA => fails closed with exit 3
+      const staleWaiver = runAudit(["allow-p:0000000000000000000000000000000000000000"]);
+      assert.equal(staleWaiver.status, 3, "stale workflow waiver must fail closed with exit 3");
+
+      // 3. Unbound waiver (no commit SHA) => fails closed with exit 3
+      const unboundWaiver = runAudit(["allow-p"]);
+      assert.equal(unboundWaiver.status, 3, "unbound workflow waiver must fail closed with exit 3");
+
+      // 4. Exact matching SHA-bound allow-p:<HEAD_SHA> => authorizes the reviewed workflow change (exit 0)
+      const authorizedWaiver = runAudit([`allow-p:${headSha}`]);
+      assert.equal(authorizedWaiver.status, 0, "exact SHA-bound allow-p waiver must authorize reviewed workflow change");
+
+      // 5. Non-waivable forbidden path (e.g. secrets or pem file) must NEVER be bypassed even with allow-p
+      mkdirSync(join(dir, "secrets"), { recursive: true });
+      writeFileSync(join(dir, "secrets", "token.txt"), "forbidden secret data\n");
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "attempt to smuggle secret under allow-p"]);
+      const secretHeadSha = git(["rev-parse", "HEAD"]).trim();
+
+      const secretAttempt = spawnSync(process.execPath, [auditScript], {
+        cwd: dir,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          CI: "true",
+          BASE_BRANCH: "main",
+          HEAD_SHA: secretHeadSha,
+          PR_LABELS: JSON.stringify([`allow-p:${secretHeadSha}`]),
+        },
+      });
+      assert.equal(secretAttempt.status, 3, "unwaivable secret forbidden paths must fail closed even when commit SHA matches allow-p");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

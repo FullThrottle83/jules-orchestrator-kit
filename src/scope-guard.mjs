@@ -9,7 +9,7 @@
  */
 
 import { basename } from "node:path";
-import { canonicalizePath, isWindowsAbsolutePath } from "./config.mjs";
+import { canonicalizePath, isWindowsAbsolutePath, CI_DEFINITIONS } from "./config.mjs";
 
 /**
  * Glob matcher.
@@ -178,13 +178,77 @@ export const ENV_TEMPLATE_BASENAMES = new Set([
  * @param {string} pattern - the deny pattern that matched
  * @returns {boolean}
  */
-export function isEnvTemplateException(file, pattern) {
-  if (!BUILTIN_ENV_DENY_PATTERNS.has(pattern)) return false;
+export function isEnvTemplateException(file, pattern = "") {
+  if (pattern && !BUILTIN_ENV_DENY_PATTERNS.has(pattern)) return false;
   const name = basename(file).toLowerCase();
   if (ENV_TEMPLATE_BASENAMES.has(name)) return true;
   // `.env.production.example`, `.env.test.sample`, ... — the documented-template
   // suffix is what matters, not how many environment segments precede it.
   return /^\.env\..+\.(example|sample|template|dist|defaults)$/.test(name);
+}
+
+/**
+ * Patterns in deny that are strictly non-waivable under any circumstances.
+ * Credentials, private keys, cloud auth configurations, lock-manager files,
+ * and secret roots must NEVER be permitted by a workflow or protected-path waiver.
+ */
+export const UNWAIVABLE_DENY_PATTERNS = [
+  ".git/**",
+  "**/.env",
+  "**/.env.*",
+  "**/*.pem",
+  "**/*.key",
+  "**/id_rsa*",
+  ".agent/jules-queue/**",
+  "**/.envrc",
+  "**/.git-credentials",
+  "**/.aws/**",
+  "**/.ssh/**",
+  "**/.kube/**",
+  "**/kubeconfig*",
+  "**/.docker/config.json",
+  "**/*.p12",
+  "**/*.pfx",
+  "**/*.p8",
+  "**/id_ed25519*",
+  "**/credentials.json",
+  "**/service-account*.json",
+  "**/*.tfstate",
+  "**/*.tfstate.*",
+  "**/secrets/**",
+  "**/lock-manager/**",
+];
+
+export function isUnwaivableForbiddenPath(file, pattern = "") {
+  const normFile = canonicalizePath(file);
+  if (isEnvTemplateException(normFile, pattern)) return false;
+  if (pattern && UNWAIVABLE_DENY_PATTERNS.some((pat) => matchesGlob(pattern, pat, { caseInsensitive: true }))) {
+    return true;
+  }
+  return UNWAIVABLE_DENY_PATTERNS.some((pat) =>
+    matchesGlob(normFile, pat, { caseInsensitive: true })
+  );
+}
+
+/**
+ * True when a deny hit is a forge CI workflow definition (e.g. .github/**)
+ * being modified under an active maintainer-approved waiver (opts.allowProtected === true).
+ * Unwaivable credentials and non-CI forbidden paths are never exempt.
+ *
+ * @param {string} file - canonicalised repo-relative path
+ * @param {string} pattern - the deny pattern that matched
+ * @param {{ allowProtected?: boolean }} [opts]
+ * @returns {boolean}
+ */
+export function isProtectedWorkflowException(file, pattern = "", opts = {}) {
+  if (!opts.allowProtected) return false;
+  if (isUnwaivableForbiddenPath(file, pattern)) return false;
+
+  const normFile = canonicalizePath(file);
+  const isCiDefinition = CI_DEFINITIONS.some((ciPat) =>
+    matchesGlob(normFile, ciPat, { caseInsensitive: true })
+  );
+  return isCiDefinition;
 }
 
 export function checkScope(files = [], scope = {}, opts = {}) {
@@ -220,8 +284,12 @@ export function checkScope(files = [], scope = {}, opts = {}) {
     // directory as ".github/", so a case-sensitive deny is bypassable there.
     const matchedDeny = deny.find((pat) => matchesGlob(file, pat, { caseInsensitive: true }));
     if (matchedDeny && !isEnvTemplateException(file, matchedDeny)) {
-      violations.push({ file, reason: `Forbidden path restriction matched pattern "${matchedDeny}"`, rule: "deny", pattern: matchedDeny });
-      continue;
+      if (opts.allowProtected && isProtectedWorkflowException(file, matchedDeny, opts)) {
+        // Human-reviewed and SHA-bound waiver explicitly authorizes this CI workflow definition.
+      } else {
+        violations.push({ file, reason: `Forbidden path restriction matched pattern "${matchedDeny}"`, rule: "deny", pattern: matchedDeny });
+        continue;
+      }
     }
 
     // Allow stays case-sensitive on purpose: a case mismatch here yields "not
