@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-09-28
+
+### Added
+- **Interactive Terminal Navigation Hub (`src/ops/tui-menu.mjs`)**: Added zero-external-dependency terminal UI hub accessible via `agentctl menu`, `tui`, `ui`, or `-i`, using Node.js ESM built-ins (`readline`, ANSI cursor escape sequences). Supports arrow-key navigation, hotkey selection, command preview, contextual execution, and direct handoff to interactive wizards.
+- **Fuzzy Typo Correction & Suggestions (`bin/agentctl.mjs`)**: Implemented Levenshtein-distance suggestion engine for unrecognized CLI commands, surfacing closest matches (e.g. `agentctl dsipatch` suggests `dispatch`).
+- **Actionable Scope Diagnostics & Protected Scope Flag (`src/wizard-task.mjs`)**: Added `--allow-protected` flag to `agentctl task create` alongside detailed diagnostic breakdowns of which paths are protected (e.g. `package.json`, `.agent/protected-paths.json`) when task objectives touch sensitive repository infrastructure.
+- **Task Payload Preview on Dry-Run (`bin/agentctl.mjs`, `src/engine.mjs`)**: `agentctl dispatch --dry-run` now prints formatted task payloads, verification commands, and risk tier assignments before execution.
+- **Maintainer Approval Path for Test Changes (`.github/workflows/agent-scope-guard.yml`, `scripts/ci-scope-guard.mjs`)**: Established narrow maintainer approval protocol (`allow-p:<HEAD_SHA>`, `allow-e:<HEAD_SHA>`) allowing verified modifications to test expectations or protected paths under explicit commit-bound review.
+
+### Fixed
+- **Goal Evidence Enforcement (`src/engine.mjs`)**: Disallowed silent early termination on goal tasks lacking explicit verification evidence.
+- **Test Environment Variable Bleed (`src/engine.mjs`)**: Sanitized test execution environment to prevent PR label bypass tokens from leaking into child test runs during gate evaluation.
+
 ## [0.74.0] - 2026-09-19
 
 ### Added
