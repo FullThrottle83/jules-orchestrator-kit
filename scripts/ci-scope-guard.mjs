@@ -22,8 +22,12 @@ import { normalizePath } from "../src/config.mjs";
 const EXIT_SCOPE_VIOLATION = 3;
 const EXIT_ERROR = 1;
 
-/** Label that lets a human consciously land a protected-path change. */
-export const BYPASS_LABEL = "allow-protected-paths";
+/**
+ * Primary label prefix that lets a human consciously land a protected-path change bound to commit SHA.
+ * Conforms to GitHub's 50-character maximum label limit: "allow-p:<40-hex-SHA>" is 48 characters.
+ */
+export const BYPASS_LABEL = "allow-p";
+export const LEGACY_BYPASS_LABEL = "allow-protected-paths";
 
 function gitShow(ref, path, cwd) {
   return execFileSync("git", ["show", `${ref}:${path}`], {
@@ -107,10 +111,11 @@ export function evaluateScopeGuard(files = [], patterns = [], opts = {}) {
   if (headSha) {
     if (/^[0-9a-f]{40}$/i.test(headSha)) {
       const boundLabel = `${BYPASS_LABEL}:${headSha}`;
-      bypassed = labels.includes(boundLabel);
+      const legacyBoundLabel = `${LEGACY_BYPASS_LABEL}:${headSha}`;
+      bypassed = labels.includes(boundLabel) || labels.includes(legacyBoundLabel);
     }
   } else {
-    bypassed = labels.includes(BYPASS_LABEL);
+    bypassed = labels.includes(BYPASS_LABEL) || labels.includes(LEGACY_BYPASS_LABEL);
   }
 
   // Matching always runs at full strength; the label only decides whether a
@@ -169,12 +174,18 @@ function main() {
   for (const f of files) console.log(`  ${f}`);
 
   const labelName = headSha ? `${BYPASS_LABEL}:${headSha}` : BYPASS_LABEL;
+  const legacyLabelName = headSha ? `${LEGACY_BYPASS_LABEL}:${headSha}` : LEGACY_BYPASS_LABEL;
+  const activeLabel = labels.includes(labelName)
+    ? labelName
+    : labels.includes(legacyLabelName)
+      ? legacyLabelName
+      : labelName;
 
   if (result.bypassed && result.violations.length > 0) {
     for (const v of result.violations) {
-      console.log(`::warning file=${v.file}::Protected path modified under "${labelName}": ${v.reason}`);
+      console.log(`::warning file=${v.file}::Protected path modified under "${activeLabel}": ${v.reason}`);
     }
-    console.log(`\nLabel "${labelName}" is present — ${result.violations.length} protected-path match(es) allowed by human review.`);
+    console.log(`\nLabel "${activeLabel}" is present — ${result.violations.length} protected-path match(es) allowed by human review.`);
     process.exit(0);
   }
 

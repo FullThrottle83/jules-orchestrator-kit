@@ -111,11 +111,12 @@ export function parseLabels(raw = "") {
  * Resolves tamper guard waivers from PR labels bound to the exact head SHA.
  *
  * Test expectation waivers MUST be explicitly bound to the reviewed commit SHA
- * (e.g. `allow-test-expectation:<SHA>` or `allow-test-change:<kind>:<SHA>`).
+ * (e.g. `allow-e:<40-hex-SHA>` or legacy `allow-test-expectation:<SHA>`).
+ * Short label `allow-e:<40-hex-SHA>` is 48 characters, fitting GitHub's 50-character limit.
  * Unbound labels (without SHA) or stale labels (SHA mismatch) are rejected.
  *
  * @param {string|string[]} rawLabels - Array of labels, JSON string, or comma-separated string
- * @param {string} headSha - Full or short commit SHA of the current PR head
+ * @param {string} headSha - Full 40-character commit SHA of the current PR head
  * @returns {{ allowedKinds: string[], rejected: Array<{ label: string, reason: string }> }}
  */
 export function resolveTestWaiverFromLabels(rawLabels = "", headSha = "") {
@@ -127,7 +128,7 @@ export function resolveTestWaiverFromLabels(rawLabels = "", headSha = "") {
   for (const label of labels) {
     const lower = label.trim().toLowerCase();
 
-    if (!lower.startsWith("allow-test-")) {
+    if (!lower.startsWith("allow-test-") && !lower.startsWith("allow-e:") && lower !== "allow-e") {
       continue;
     }
 
@@ -135,7 +136,12 @@ export function resolveTestWaiverFromLabels(rawLabels = "", headSha = "") {
     let kind = null;
     let targetSha = null;
 
-    if (parts[0] === "allow-test-expectation") {
+    if (parts[0] === "allow-e") {
+      kind = "expectation";
+      if (parts.length > 1) {
+        targetSha = parts.slice(1).join(":");
+      }
+    } else if (parts[0] === "allow-test-expectation") {
       kind = "expectation";
       if (parts.length > 1) {
         targetSha = parts.slice(1).join(":");
@@ -159,9 +165,12 @@ export function resolveTestWaiverFromLabels(rawLabels = "", headSha = "") {
     }
 
     if (!targetSha) {
+      const canonicalFmt = parts[0] === "allow-e" || parts[0] === "allow-test-expectation"
+        ? "allow-e:<40-hex-SHA>"
+        : `${parts[0]}:<40-hex-SHA>`;
       rejected.push({
         label,
-        reason: `Unbound waiver: label has no commit SHA. Must be formatted as "${parts[0]}:<40-hex-SHA>".`,
+        reason: `Unbound waiver: label has no commit SHA. Must be formatted as "${canonicalFmt}".`,
       });
       continue;
     }
@@ -210,7 +219,8 @@ export function resolveTestWaiverFromLabels(rawLabels = "", headSha = "") {
  * Resolves protected-path bypass waivers from PR labels bound to the exact head SHA.
  *
  * Protected path waivers MUST be explicitly bound to the reviewed commit SHA
- * (e.g. `allow-protected-paths:<40-hex-SHA>`).
+ * (e.g. `allow-p:<40-hex-SHA>` or legacy `allow-protected-paths:<40-hex-SHA>`).
+ * Short label `allow-p:<40-hex-SHA>` is 48 characters, fitting GitHub's 50-character limit.
  * Unbound labels (without SHA), prefix matching, or stale labels (SHA mismatch) are rejected.
  *
  * @param {string|string[]} rawLabels - Array of labels, JSON string, or comma-separated string
@@ -221,16 +231,17 @@ export function resolveProtectedWaiverFromLabels(rawLabels = "", headSha = "") {
   const labels = parseLabels(rawLabels);
   const normalizedHead = String(headSha || "").trim().toLowerCase();
   const rejected = [];
+  let foundValid = false;
 
   for (const label of labels) {
     const lower = label.trim().toLowerCase();
-    if (!lower.startsWith("allow-protected-paths")) continue;
+    if (!lower.startsWith("allow-protected-paths") && !lower.startsWith("allow-p:") && lower !== "allow-p") continue;
 
     const parts = lower.split(":");
     if (parts.length === 1) {
       rejected.push({
         label,
-        reason: 'Unbound waiver: label has no commit SHA. Must be formatted as "allow-protected-paths:<40-hex-SHA>".',
+        reason: 'Unbound waiver: label has no commit SHA. Must be formatted as "allow-p:<40-hex-SHA>".',
       });
       continue;
     }
@@ -260,6 +271,10 @@ export function resolveProtectedWaiverFromLabels(rawLabels = "", headSha = "") {
       continue;
     }
 
+    foundValid = true;
+  }
+
+  if (foundValid) {
     return { ok: true, boundSha: normalizedHead, rejected };
   }
 

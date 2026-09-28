@@ -10,6 +10,7 @@ import {
   loadProtectedPatterns,
   listChangedFiles,
   BYPASS_LABEL,
+  LEGACY_BYPASS_LABEL,
 } from "../scripts/ci-scope-guard.mjs";
 
 const PATTERNS = [
@@ -62,11 +63,31 @@ test("CI Agent Scope Guard", async (t) => {
     assert.equal(res.violations.length, 2);
   });
 
+  await t.test("canonical SHA-bound bypass label conforms to GitHub 50-character maximum name limit", () => {
+    const GITHUB_LABEL_MAX_LENGTH = 50;
+    const dummySha = "0123456789abcdef0123456789abcdef01234567";
+    const boundLabel = `${BYPASS_LABEL}:${dummySha}`;
+    assert.equal(boundLabel.length, 48);
+    assert.ok(
+      boundLabel.length <= GITHUB_LABEL_MAX_LENGTH,
+      `Label "${boundLabel}" (${boundLabel.length} chars) exceeds GitHub limit of ${GITHUB_LABEL_MAX_LENGTH} characters`
+    );
+
+    // Document why the legacy label cannot be created with full SHA on GitHub
+    const legacyBoundLabel = `${LEGACY_BYPASS_LABEL}:${dummySha}`;
+    assert.equal(legacyBoundLabel.length, 62);
+    assert.ok(legacyBoundLabel.length > GITHUB_LABEL_MAX_LENGTH, "legacy label with SHA exceeds provider limit");
+  });
+
   await t.test("bypass label permits the merge but still records the matches", () => {
     const res = evaluateScopeGuard(["package.json"], PATTERNS, { labels: [BYPASS_LABEL] });
     assert.equal(res.ok, true);
     assert.equal(res.bypassed, true);
     assert.equal(res.violations.length, 1, "a waved-through violation must stay in the job log");
+
+    const legacyRes = evaluateScopeGuard(["package.json"], PATTERNS, { labels: [LEGACY_BYPASS_LABEL] });
+    assert.equal(legacyRes.ok, true);
+    assert.equal(legacyRes.bypassed, true);
   });
 
   await t.test("an unrelated label does not bypass", () => {
@@ -83,6 +104,13 @@ test("CI Agent Scope Guard", async (t) => {
     });
     assert.equal(res.ok, true);
     assert.equal(res.bypassed, true);
+
+    const legacyRes = evaluateScopeGuard(["package.json"], PATTERNS, {
+      labels: [`${LEGACY_BYPASS_LABEL}:${shaA}`],
+      headSha: shaA,
+    });
+    assert.equal(legacyRes.ok, true);
+    assert.equal(legacyRes.bypassed, true);
   });
 
   await t.test("stale SHA-bound bypass label rejects new headSha", () => {
@@ -115,12 +143,20 @@ test("CI Agent Scope Guard", async (t) => {
     });
     assert.equal(res.ok, false);
     assert.equal(res.bypassed, false);
+
+    const legacyRes = evaluateScopeGuard(["package.json"], PATTERNS, {
+      labels: [LEGACY_BYPASS_LABEL],
+      headSha: shaA,
+    });
+    assert.equal(legacyRes.ok, false);
+    assert.equal(legacyRes.bypassed, false);
   });
 
   await t.test("parseLabels accepts the toJSON array and a plain list", () => {
-    assert.deepEqual(parseLabels('["bug","allow-protected-paths"]'), ["bug", BYPASS_LABEL]);
+    assert.deepEqual(parseLabels('["bug","allow-p"]'), ["bug", BYPASS_LABEL]);
     assert.deepEqual(parseLabels('[{"name":"bug"}]'), ["bug"]);
-    assert.deepEqual(parseLabels("bug, allow-protected-paths"), ["bug", BYPASS_LABEL]);
+    assert.deepEqual(parseLabels("bug, allow-p"), ["bug", BYPASS_LABEL]);
+    assert.deepEqual(parseLabels("bug, allow-protected-paths"), ["bug", LEGACY_BYPASS_LABEL]);
     assert.deepEqual(parseLabels(""), []);
   });
 
