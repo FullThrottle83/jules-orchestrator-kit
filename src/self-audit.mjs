@@ -161,31 +161,28 @@ export function resolveTestWaiverFromLabels(rawLabels = "", headSha = "") {
     if (!targetSha) {
       rejected.push({
         label,
-        reason: `Unbound waiver: label has no commit SHA. Must be formatted as "${parts[0]}:<SHA>" (min 7 hex characters).`,
+        reason: `Unbound waiver: label has no commit SHA. Must be formatted as "${parts[0]}:<40-hex-SHA>".`,
       });
       continue;
     }
 
-    if (targetSha.length < 7 || !/^[0-9a-f]+$/i.test(targetSha)) {
+    if (!/^[0-9a-f]{40}$/i.test(targetSha)) {
       rejected.push({
         label,
-        reason: `Invalid commit SHA "${targetSha}": must be at least 7 hexadecimal characters.`,
+        reason: `Invalid commit SHA "${targetSha}": must be exact 40 hexadecimal characters. Prefix matching is not permitted.`,
       });
       continue;
     }
 
-    if (!normalizedHead || normalizedHead.length < 7 || !/^[0-9a-f]+$/i.test(normalizedHead)) {
+    if (!normalizedHead || !/^[0-9a-f]{40}$/i.test(normalizedHead)) {
       rejected.push({
         label,
-        reason: `Cannot verify binding: HEAD_SHA "${headSha}" is missing or invalid.`,
+        reason: `Cannot verify binding: HEAD_SHA "${headSha}" is missing or not a valid 40-character commit SHA.`,
       });
       continue;
     }
 
-    const matches =
-      normalizedHead.startsWith(targetSha) || targetSha.startsWith(normalizedHead);
-
-    if (!matches) {
+    if (targetSha.toLowerCase() !== normalizedHead) {
       rejected.push({
         label,
         reason: `Stale waiver: label SHA "${targetSha}" does not match current HEAD SHA "${normalizedHead}".`,
@@ -210,6 +207,66 @@ export function resolveTestWaiverFromLabels(rawLabels = "", headSha = "") {
 }
 
 /**
+ * Resolves protected-path bypass waivers from PR labels bound to the exact head SHA.
+ *
+ * Protected path waivers MUST be explicitly bound to the reviewed commit SHA
+ * (e.g. `allow-protected-paths:<40-hex-SHA>`).
+ * Unbound labels (without SHA), prefix matching, or stale labels (SHA mismatch) are rejected.
+ *
+ * @param {string|string[]} rawLabels - Array of labels, JSON string, or comma-separated string
+ * @param {string} headSha - Full 40-character commit SHA of the current PR head
+ * @returns {{ ok: boolean, boundSha?: string, rejected: Array<{ label: string, reason: string }> }}
+ */
+export function resolveProtectedWaiverFromLabels(rawLabels = "", headSha = "") {
+  const labels = parseLabels(rawLabels);
+  const normalizedHead = String(headSha || "").trim().toLowerCase();
+  const rejected = [];
+
+  for (const label of labels) {
+    const lower = label.trim().toLowerCase();
+    if (!lower.startsWith("allow-protected-paths")) continue;
+
+    const parts = lower.split(":");
+    if (parts.length === 1) {
+      rejected.push({
+        label,
+        reason: 'Unbound waiver: label has no commit SHA. Must be formatted as "allow-protected-paths:<40-hex-SHA>".',
+      });
+      continue;
+    }
+
+    const targetSha = parts.slice(1).join(":");
+    if (!/^[0-9a-f]{40}$/i.test(targetSha)) {
+      rejected.push({
+        label,
+        reason: `Invalid commit SHA "${targetSha}": must be exact 40 hexadecimal characters. Prefix matching is not permitted.`,
+      });
+      continue;
+    }
+
+    if (!normalizedHead || !/^[0-9a-f]{40}$/i.test(normalizedHead)) {
+      rejected.push({
+        label,
+        reason: `Cannot verify binding: HEAD_SHA "${headSha}" is missing or not a valid 40-character commit SHA.`,
+      });
+      continue;
+    }
+
+    if (targetSha.toLowerCase() !== normalizedHead) {
+      rejected.push({
+        label,
+        reason: `Stale waiver: label SHA "${targetSha}" does not match current HEAD SHA "${normalizedHead}".`,
+      });
+      continue;
+    }
+
+    return { ok: true, boundSha: normalizedHead, rejected };
+  }
+
+  return { ok: false, rejected };
+}
+
+/**
  * Audit gate rules (scope, payload governor, secret scanning, verification suite).
  */
 export async function auditGates(opts = {}) {
@@ -226,9 +283,12 @@ export async function auditGates(opts = {}) {
   const headSha = opts.headSha || process.env.HEAD_SHA;
 
   if (!allowProtected && rawLabels) {
-    const labels = parseLabels(rawLabels).map((l) => l.toLowerCase());
-    if (labels.includes("allow-protected-paths")) {
+    const waiver = resolveProtectedWaiverFromLabels(rawLabels, headSha);
+    if (waiver.ok) {
       allowProtected = true;
+    }
+    for (const rej of waiver.rejected || []) {
+      console.warn(`::warning::[scope-waiver] ${rej.label}: ${rej.reason}`);
     }
   }
 

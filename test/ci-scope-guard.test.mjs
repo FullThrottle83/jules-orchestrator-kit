@@ -75,6 +75,48 @@ test("CI Agent Scope Guard", async (t) => {
     assert.equal(res.bypassed, false);
   });
 
+  await t.test("SHA-bound bypass label permits the merge when headSha matches", () => {
+    const shaA = "2f5c19b111111111111111111111111111111111";
+    const res = evaluateScopeGuard(["package.json"], PATTERNS, {
+      labels: [`${BYPASS_LABEL}:${shaA}`],
+      headSha: shaA,
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.bypassed, true);
+  });
+
+  await t.test("stale SHA-bound bypass label rejects new headSha", () => {
+    const shaA = "2f5c19b111111111111111111111111111111111";
+    const shaB = "3a8d9e1222222222222222222222222222222222";
+    const res = evaluateScopeGuard(["package.json"], PATTERNS, {
+      labels: [`${BYPASS_LABEL}:${shaA}`],
+      headSha: shaB,
+    });
+    assert.equal(res.ok, false);
+    assert.equal(res.bypassed, false);
+  });
+
+  await t.test("two different 40-char SHAs sharing the first 7 hex digits do NOT share approval", () => {
+    const shaA = "2f5c19b111111111111111111111111111111111";
+    const shaB = "2f5c19b222222222222222222222222222222222";
+    const res = evaluateScopeGuard(["package.json"], PATTERNS, {
+      labels: [`${BYPASS_LABEL}:${shaA}`],
+      headSha: shaB,
+    });
+    assert.equal(res.ok, false);
+    assert.equal(res.bypassed, false);
+  });
+
+  await t.test("unbound bypass label is rejected when headSha is provided", () => {
+    const shaA = "2f5c19b111111111111111111111111111111111";
+    const res = evaluateScopeGuard(["package.json"], PATTERNS, {
+      labels: [BYPASS_LABEL],
+      headSha: shaA,
+    });
+    assert.equal(res.ok, false);
+    assert.equal(res.bypassed, false);
+  });
+
   await t.test("parseLabels accepts the toJSON array and a plain list", () => {
     assert.deepEqual(parseLabels('["bug","allow-protected-paths"]'), ["bug", BYPASS_LABEL]);
     assert.deepEqual(parseLabels('[{"name":"bug"}]'), ["bug"]);

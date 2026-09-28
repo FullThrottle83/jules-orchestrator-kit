@@ -101,7 +101,17 @@ export function listChangedFiles(opts = {}) {
  */
 export function evaluateScopeGuard(files = [], patterns = [], opts = {}) {
   const labels = (opts.labels || []).map((l) => String(l).toLowerCase().trim());
-  const bypassed = labels.includes(BYPASS_LABEL);
+  const headSha = String(opts.headSha || "").trim().toLowerCase();
+
+  let bypassed = false;
+  if (headSha) {
+    if (/^[0-9a-f]{40}$/i.test(headSha)) {
+      const boundLabel = `${BYPASS_LABEL}:${headSha}`;
+      bypassed = labels.includes(boundLabel);
+    }
+  } else {
+    bypassed = labels.includes(BYPASS_LABEL);
+  }
 
   // Matching always runs at full strength; the label only decides whether a
   // match blocks. Passing `allowProtected` into checkScope instead would make
@@ -152,17 +162,19 @@ function main() {
   }
 
   const labels = parseLabels(process.env.PR_LABELS);
-  const result = evaluateScopeGuard(files, patterns, { labels });
+  const result = evaluateScopeGuard(files, patterns, { labels, headSha });
 
   console.log(`Protected patterns (${patterns.length}): ${patterns.join(", ")}`);
   console.log(`Changed files (${files.length}):`);
   for (const f of files) console.log(`  ${f}`);
 
+  const labelName = headSha ? `${BYPASS_LABEL}:${headSha}` : BYPASS_LABEL;
+
   if (result.bypassed && result.violations.length > 0) {
     for (const v of result.violations) {
-      console.log(`::warning file=${v.file}::Protected path modified under "${BYPASS_LABEL}": ${v.reason}`);
+      console.log(`::warning file=${v.file}::Protected path modified under "${labelName}": ${v.reason}`);
     }
-    console.log(`\nLabel "${BYPASS_LABEL}" is present — ${result.violations.length} protected-path match(es) allowed by human review.`);
+    console.log(`\nLabel "${labelName}" is present — ${result.violations.length} protected-path match(es) allowed by human review.`);
     process.exit(0);
   }
 
@@ -176,7 +188,7 @@ function main() {
   }
   console.error(
     `::error::PR modifies ${result.violations.length} protected file(s). ` +
-      `Apply the "${BYPASS_LABEL}" label after human review to land this intentionally.`
+      `Apply the "${labelName}" label after human review to land this intentionally.`
   );
   process.exit(EXIT_SCOPE_VIOLATION);
 }

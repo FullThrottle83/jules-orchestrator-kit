@@ -73,7 +73,6 @@ jobs:
           BASE_BRANCH: "main"
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-          JULES_ALLOW_COMMAND_FILE_CHANGES: ${{ contains(github.event.pull_request.labels.*.name, 'allow-protected-paths') }}
 
   # The same gate `release.mjs` blocks on at step 1b. It was previously only
   # ever run by hand, which is how a stale README test count and an unchecked

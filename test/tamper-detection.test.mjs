@@ -43,7 +43,7 @@ import {
 } from "../src/config.mjs";
 import { gate } from "../src/engine.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "../src/stack-detector.mjs";
-import { resolveTestWaiverFromLabels, parseLabels } from "../src/self-audit.mjs";
+import { resolveTestWaiverFromLabels, resolveProtectedWaiverFromLabels, parseLabels } from "../src/self-audit.mjs";
 import { parseCollectedTests } from "../src/ops/test-collection.mjs";
 import { materializeSnapshot, runCmd, changedFiles, diffText } from "../src/git.mjs";
 import { createCheckpoint, restoreCheckpoint, CheckpointError } from "../src/ops/checkpoint.mjs";
@@ -444,63 +444,97 @@ describe("the flag reaches the gate", () => {
     }
   });
 
-  it("resolveTestWaiverFromLabels binds waivers to exact commit SHA and rejects unbound/stale labels", () => {
+  it("resolveTestWaiverFromLabels binds waivers to exact 40-character commit SHA and rejects unbound/stale/prefix labels", () => {
     const headSha = "2f5c19b48c44e99fca0123456789abcdef012345";
     const shortSha = "2f5c19b";
 
-    // 1. Valid short SHA matching HEAD_SHA
-    const matchShort = resolveTestWaiverFromLabels([`allow-test-expectation:${shortSha}`], headSha);
-    assert.deepEqual(matchShort.allowedKinds, ["expectation"]);
-    assert.equal(matchShort.rejected.length, 0);
-
-    // 2. Valid full SHA matching HEAD_SHA
+    // 1. Valid exact 40-character SHA matching HEAD_SHA
     const matchFull = resolveTestWaiverFromLabels([`allow-test-expectation:${headSha}`], headSha);
     assert.deepEqual(matchFull.allowedKinds, ["expectation"]);
     assert.equal(matchFull.rejected.length, 0);
 
-    // 3. Case-insensitive hex matching
-    const matchUpper = resolveTestWaiverFromLabels([`allow-test-expectation:${shortSha.toUpperCase()}`], headSha);
+    // 2. Case-insensitive hex matching for 40-character SHA
+    const matchUpper = resolveTestWaiverFromLabels([`allow-test-expectation:${headSha.toUpperCase()}`], headSha);
     assert.deepEqual(matchUpper.allowedKinds, ["expectation"]);
 
-    // 4. Stale label with older/different commit SHA
-    const staleSha = "4484a4e1234567";
+    // 3. Short SHA prefix (< 40 chars) is strictly rejected (no prefix matching permitted)
+    const prefixReject = resolveTestWaiverFromLabels([`allow-test-expectation:${shortSha}`], headSha);
+    assert.deepEqual(prefixReject.allowedKinds, []);
+    assert.equal(prefixReject.rejected.length, 1);
+    assert.match(prefixReject.rejected[0].reason, /Prefix matching is not permitted/);
+
+    // 4. Regression: two different 40-character SHAs with the same first seven hex digits must NOT share approval
+    const shaA = "2f5c19b111111111111111111111111111111111";
+    const shaB = "2f5c19b222222222222222222222222222222222";
+    const waiverA = resolveTestWaiverFromLabels([`allow-test-expectation:${shaA}`], shaA);
+    assert.deepEqual(waiverA.allowedKinds, ["expectation"]);
+
+    const waiverBWithLabelA = resolveTestWaiverFromLabels([`allow-test-expectation:${shaA}`], shaB);
+    assert.deepEqual(waiverBWithLabelA.allowedKinds, [], "different 40-char SHA sharing 7-char prefix must not share approval");
+    assert.equal(waiverBWithLabelA.rejected.length, 1);
+    assert.match(waiverBWithLabelA.rejected[0].reason, /Stale waiver/);
+
+    // 5. Stale label with older/different 40-character commit SHA
+    const staleSha = "4484a4e0123456789abcdef0123456789abcdef0";
     const stale = resolveTestWaiverFromLabels([`allow-test-expectation:${staleSha}`], headSha);
     assert.deepEqual(stale.allowedKinds, []);
     assert.equal(stale.rejected.length, 1);
     assert.match(stale.rejected[0].reason, /Stale waiver/);
 
-    // 5. Unbound label (missing SHA)
+    // 6. Unbound label (missing SHA)
     const unbound = resolveTestWaiverFromLabels(["allow-test-expectation"], headSha);
     assert.deepEqual(unbound.allowedKinds, []);
     assert.equal(unbound.rejected.length, 1);
     assert.match(unbound.rejected[0].reason, /Unbound waiver/);
 
-    // 6. Invalid SHA (< 7 chars or non-hex)
+    // 7. Invalid SHA (non-hex or incorrect length)
     const tooShort = resolveTestWaiverFromLabels(["allow-test-expectation:abc"], headSha);
     assert.deepEqual(tooShort.allowedKinds, []);
     assert.match(tooShort.rejected[0].reason, /Invalid commit SHA/);
 
-    const nonHex = resolveTestWaiverFromLabels(["allow-test-expectation:xyz12345"], headSha);
+    const nonHex = resolveTestWaiverFromLabels(["allow-test-expectation:xyz123456789abcdef0123456789abcdef012345"], headSha);
     assert.deepEqual(nonHex.allowedKinds, []);
     assert.match(nonHex.rejected[0].reason, /Invalid commit SHA/);
 
-    // 7. Missing or empty HEAD_SHA
-    const missingHead = resolveTestWaiverFromLabels([`allow-test-expectation:${shortSha}`], "");
+    // 8. Missing or empty HEAD_SHA
+    const missingHead = resolveTestWaiverFromLabels([`allow-test-expectation:${headSha}`], "");
     assert.deepEqual(missingHead.allowedKinds, []);
     assert.match(missingHead.rejected[0].reason, /Cannot verify binding/);
 
-    // 8. Specific tamper kind: allow-test-change:deregistration:<SHA>
-    const specificKind = resolveTestWaiverFromLabels([`allow-test-change:deregistration:${shortSha}`], headSha);
+    // 9. Specific tamper kind: allow-test-change:deregistration:<40-hex-SHA>
+    const specificKind = resolveTestWaiverFromLabels([`allow-test-change:deregistration:${headSha}`], headSha);
     assert.deepEqual(specificKind.allowedKinds, ["deregistration"]);
 
-    // 9. Input formats: accepts JSON string, comma-separated string, or array
+    // 10. Input formats: accepts JSON string, comma-separated string, or array
     assert.deepEqual(parseLabels('["foo", "bar"]'), ["foo", "bar"]);
     assert.deepEqual(parseLabels("foo, bar"), ["foo", "bar"]);
-    const jsonInput = resolveTestWaiverFromLabels(JSON.stringify([`allow-test-expectation:${shortSha}`, "allow-protected-paths"]), headSha);
+    const jsonInput = resolveTestWaiverFromLabels(JSON.stringify([`allow-test-expectation:${headSha}`, `allow-protected-paths:${headSha}`]), headSha);
     assert.deepEqual(jsonInput.allowedKinds, ["expectation"]);
 
-    const csvInput = resolveTestWaiverFromLabels(`allow-test-expectation:${shortSha}, allow-protected-paths`, headSha);
+    const csvInput = resolveTestWaiverFromLabels(`allow-test-expectation:${headSha}, allow-protected-paths:${headSha}`, headSha);
     assert.deepEqual(csvInput.allowedKinds, ["expectation"]);
+  });
+
+  it("resolveProtectedWaiverFromLabels binds protected-path waivers to exact 40-character commit SHA", () => {
+    const headSha = "3f1a0f0a25a6758552326fc6d0bf69354d83b262";
+    const otherSha = "3f1a0f0a25a6758552326fc6d0bf69354d83b999";
+
+    // 1. Valid exact 40-char SHA
+    const valid = resolveProtectedWaiverFromLabels([`allow-protected-paths:${headSha}`], headSha);
+    assert.equal(valid.ok, true);
+    assert.equal(valid.boundSha, headSha);
+
+    // 2. Prefix (< 40 chars) rejected
+    const prefix = resolveProtectedWaiverFromLabels([`allow-protected-paths:${headSha.slice(0, 7)}`], headSha);
+    assert.equal(prefix.ok, false);
+
+    // 3. Two different 40-char SHAs sharing the first 7 hex digits do NOT share approval
+    const sharedPrefix = resolveProtectedWaiverFromLabels([`allow-protected-paths:${headSha}`], otherSha);
+    assert.equal(sharedPrefix.ok, false);
+
+    // 4. Unbound label without commit SHA rejected
+    const unbound = resolveProtectedWaiverFromLabels(["allow-protected-paths"], headSha);
+    assert.equal(unbound.ok, false);
   });
 
   it("approve head A, push head B with another rewrite => unapproved/rejected; keep all other tamper checks on", () => {
@@ -536,7 +570,6 @@ describe("the flag reaches the gate", () => {
       git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit A: update expectation"]);
 
       const shaA = git(["rev-parse", "HEAD"]).trim();
-      const shortA = shaA.slice(0, 7);
 
       // 1. Without approval label on Head A, fails with exit 6
       const unapprovedA = runAudit({ HEAD_SHA: shaA, PR_LABELS: "[]" });
@@ -546,9 +579,13 @@ describe("the flag reaches the gate", () => {
       const unboundLabel = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify(["allow-test-expectation"]) });
       assert.equal(unboundLabel.status, 6, "unbound label without SHA must fail closed");
 
-      // 3. Approved on Head A with SHA-bound label (allow-test-expectation:<shortA>)
-      const approvedA = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify([`allow-test-expectation:${shortA}`]) });
-      assert.equal(approvedA.status, 0, "expectation rewrite on head A must pass with SHA-bound label");
+      // 3. 7-character prefix label (allow-test-expectation:<shortA>) is rejected (exact 40-char SHA required)
+      const prefixLabel = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify([`allow-test-expectation:${shaA.slice(0, 7)}`]) });
+      assert.equal(prefixLabel.status, 6, "prefix label must fail closed");
+
+      // 4. Approved on Head A with exact 40-character SHA label (allow-test-expectation:<shaA>)
+      const approvedA = runAudit({ HEAD_SHA: shaA, PR_LABELS: JSON.stringify([`allow-test-expectation:${shaA}`]) });
+      assert.equal(approvedA.status, 0, "expectation rewrite on head A must pass with exact 40-char SHA label");
 
       // Commit B: Push another expectation rewrite (-1 -> 42) on top of Commit A
       writeFileSync(join(dir, "index.js"), "export function add(a, b) { return 42; }\n");
@@ -557,17 +594,16 @@ describe("the flag reaches the gate", () => {
       git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit B: second expectation rewrite"]);
 
       const shaB = git(["rev-parse", "HEAD"]).trim();
-      const shortB = shaB.slice(0, 7);
 
-      // 4. Stale approval from Head A does NOT approve Head B! (approve head A, push head B with another rewrite => unapproved/rejected)
-      const staleApprovalB = runAudit({ HEAD_SHA: shaB, PR_LABELS: JSON.stringify([`allow-test-expectation:${shortA}`]) });
+      // 5. Stale approval from Head A does NOT approve Head B! (approve head A, push head B with another rewrite => unapproved/rejected)
+      const staleApprovalB = runAudit({ HEAD_SHA: shaB, PR_LABELS: JSON.stringify([`allow-test-expectation:${shaA}`]) });
       assert.equal(staleApprovalB.status, 6, "stale approval for head A must not waive new commit B");
 
-      // 5. Updating the label to match Head B approves Head B
-      const approvedB = runAudit({ HEAD_SHA: shaB, PR_LABELS: JSON.stringify([`allow-test-expectation:${shortB}`]) });
+      // 6. Updating the label to match exact Head B SHA approves Head B
+      const approvedB = runAudit({ HEAD_SHA: shaB, PR_LABELS: JSON.stringify([`allow-test-expectation:${shaB}`]) });
       assert.equal(approvedB.status, 0, "expectation rewrite on head B must pass when label is updated to head B SHA");
 
-      // 6. Even with matching Head B approval, an unrelated tamper check (e.g. skip injection) STILL FAILS
+      // 7. Even with matching Head B approval, an unrelated tamper check (e.g. skip injection) STILL FAILS
       writeFileSync(
         join(dir, "test", "index.test.js"),
         'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest.skip("add", () => { assert.equal(add(1, 2), 42); });\n'
@@ -575,9 +611,8 @@ describe("the flag reaches the gate", () => {
       git(["add", "-A"]);
       git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "commit B2: skip injection"]);
       const shaB2 = git(["rev-parse", "HEAD"]).trim();
-      const shortB2 = shaB2.slice(0, 7);
 
-      const mixedB2 = runAudit({ HEAD_SHA: shaB2, PR_LABELS: JSON.stringify([`allow-test-expectation:${shortB2}`]) });
+      const mixedB2 = runAudit({ HEAD_SHA: shaB2, PR_LABELS: JSON.stringify([`allow-test-expectation:${shaB2}`]) });
       assert.equal(mixedB2.status, 6, "skip injection must fail even when commit SHA matches expectation waiver");
     } finally {
       rmSync(dir, { recursive: true, force: true });
