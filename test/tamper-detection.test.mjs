@@ -394,6 +394,54 @@ describe("the flag reaches the gate", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("JULES_ALLOW_TEST_CHANGES env var allows only specified kind and preserves other checks", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-tamper-env-"));
+    try {
+      const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.email", "t@t"]);
+      git(["config", "user.name", "t"]);
+      git(["config", "core.autocrlf", "false"]);
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "v", version: "1.0.0", type: "module", scripts: { test: "node --test" } }));
+      writeFileSync(join(dir, ".gitignore"), ".agent/\n");
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a + b; }\n");
+      mkdirSync(join(dir, "test"), { recursive: true });
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), 3); });\n');
+      git(["add", "-A"]);
+      git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+
+      // Rewrite expectation: 3 -> -1 and update implementation so test passes
+      writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a - b; }\n");
+      writeFileSync(join(dir, "test", "index.test.js"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest("add", () => { assert.equal(add(1, 2), -1); });\n');
+
+      const auditScript = join(process.cwd(), "scripts", "jules-self-audit.mjs");
+      const runAudit = (env = {}) =>
+        spawnSync(process.execPath, [auditScript], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: { ...process.env, CI: "true", BASE_BRANCH: "main", ...env },
+        });
+
+      // 1. Without JULES_ALLOW_TEST_CHANGES, expectation rewrite fails with code 6
+      const unapproved = runAudit({});
+      assert.equal(unapproved.status, 6, "expectation rewrite must fail without approval");
+
+      // 2. With JULES_ALLOW_TEST_CHANGES=expectation, expectation rewrite passes
+      const approved = runAudit({ JULES_ALLOW_TEST_CHANGES: "expectation" });
+      assert.equal(approved.status, 0, "expectation rewrite must pass with expectation approval");
+
+      // 3. With JULES_ALLOW_TEST_CHANGES=expectation, an unrelated tamper check (e.g. skip injection) STILL FAILS
+      writeFileSync(
+        join(dir, "test", "index.test.js"),
+        'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../index.js";\ntest.skip("add", () => { assert.equal(add(1, 2), -1); });\n'
+      );
+      const mixed = runAudit({ JULES_ALLOW_TEST_CHANGES: "expectation" });
+      assert.equal(mixed.status, 6, "skip injection must fail even when expectation is approved");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 }
 

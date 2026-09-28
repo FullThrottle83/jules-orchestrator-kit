@@ -4,6 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches: [ main ]
 
 permissions:
@@ -65,12 +66,13 @@ jobs:
         run: npm test --if-present
 
       - name: Run Jules PR Self-Audit Gatekeeper
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x' && github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'allow-protected-paths')
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x' && github.event_name == 'pull_request'
         run: node scripts/jules-self-audit.mjs
         env:
           CI: "true"
           BASE_BRANCH: "main"
           JULES_ALLOW_COMMAND_FILE_CHANGES: "false"
+          JULES_ALLOW_TEST_CHANGES: ${{ contains(github.event.pull_request.labels.*.name, 'allow-test-expectation') && 'expectation' || '' }}
 
   # The same gate `release.mjs` blocks on at step 1b. It was previously only
   # ever run by hand, which is how a stale README test count and an unchecked
