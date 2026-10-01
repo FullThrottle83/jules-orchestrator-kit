@@ -193,6 +193,9 @@ export function getSlotPartitionDirective(slotIndex = 0, totalSlots = 1) {
   return `[PARALLEL SWARM SLOT ${idx} of ${total}] Range: ${getAlphaRange(idx, total)} (Partition Focus)`;
 }
 
+/**
+ * @deprecated Legacy wrapper around core 'dispatch'. Use 'dispatch' directly.
+ */
 export async function dispatchTask(opts = {}) {
   const root = process.env.JULES_PROJECT_ROOT || process.cwd();
   const config = loadConfig(root);

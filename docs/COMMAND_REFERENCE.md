@@ -27,15 +27,15 @@ Total commands: 56
 - [`agentctl flaky`](#flaky) — Manage Wilson-quarantined tests and dispatch healing swarm
 - [`agentctl handover`](#handover) — Inspect or generate Baton Pass session handover envelopes
 - [`agentctl mutate`](#mutate) — Run zero-dependency diff mutation testing harness
-- [`agentctl mutation`](#mutation) — Alias of mutate: run zero-dependency diff mutation testing harness
+- [`agentctl mutation`](#mutation) — Alias of mutate: run zero-dependency diff mutation testing harness *(deprecated: use `mutate`)*
 - [`agentctl coverage`](#coverage) — Run native zero-dependency V8 diff coverage check
 - [`agentctl gate`](#gate) — Run CI security, rules, and stack verification gate
-- [`agentctl check`](#check) — Alias of gate: run all-in-one CI security, rules, and stack verification gate
-- [`agentctl audit`](#audit) — Alias of gate: run CI security and verification gate against current branch
+- [`agentctl check`](#check) — Alias of gate: run all-in-one CI security, rules, and stack verification gate *(deprecated: use `gate`)*
+- [`agentctl audit`](#audit) — Alias of gate: run CI security and verification gate against current branch *(deprecated: use `gate`)*
 - [`agentctl probe`](#probe) — Run test flakiness stability probe across N repetitions
-- [`agentctl stability`](#stability) — Alias of probe: run test flakiness stability probe across N repetitions
+- [`agentctl stability`](#stability) — Alias of probe: run test flakiness stability probe across N repetitions *(deprecated: use `probe`)*
 - [`agentctl perf`](#perf) — Monitor Node.js event loop delay and Big-O performance lag
-- [`agentctl event-loop`](#event-loop) — Alias of perf: monitor Node.js event loop delay and Big-O performance lag
+- [`agentctl event-loop`](#event-loop) — Alias of perf: monitor Node.js event loop delay and Big-O performance lag *(deprecated: use `perf`)*
 - [`agentctl dispatch`](#dispatch) — Dispatch a single task to an AI agent
 - [`agentctl bootstrap`](#bootstrap) — Bootstrap zero-test repository with verification oracle
 - [`agentctl pr harvest`](#pr-harvest) — Scan, audit and auto-merge verified agent pull requests
@@ -587,6 +587,8 @@ agentctl mutate --max-mutants 20 --cmd "npm test"
 
 ## `agentctl mutation`
 
+> **Deprecated**: `agentctl mutation` is deprecated in favor of [`agentctl mutate`](#mutate).
+
 **ID:** `mutation` · **Category:** Inspect · **Risk:** LOW · **Mutates:** no
 
 Alias of mutate: run zero-dependency diff mutation testing harness
@@ -674,6 +676,8 @@ agentctl gate --json
 
 ## `agentctl check`
 
+> **Deprecated**: `agentctl check` is deprecated in favor of [`agentctl gate`](#gate).
+
 **ID:** `check` · **Category:** Inspect · **Risk:** LOW · **Mutates:** no
 
 Alias of gate: run all-in-one CI security, rules, and stack verification gate
@@ -706,6 +710,8 @@ agentctl check --json
 ```
 
 ## `agentctl audit`
+
+> **Deprecated**: `agentctl audit` is deprecated in favor of [`agentctl gate`](#gate).
 
 **ID:** `audit` · **Category:** Inspect · **Risk:** LOW · **Mutates:** no
 
@@ -768,6 +774,8 @@ agentctl probe --repeat 5 --cmd "pytest"
 
 ## `agentctl stability`
 
+> **Deprecated**: `agentctl stability` is deprecated in favor of [`agentctl probe`](#probe).
+
 **ID:** `stability` · **Category:** Inspect · **Risk:** LOW · **Mutates:** no
 
 Alias of probe: run test flakiness stability probe across N repetitions
@@ -819,6 +827,8 @@ agentctl perf --max-ms 50 --cmd "npm test"
 ```
 
 ## `agentctl event-loop`
+
+> **Deprecated**: `agentctl event-loop` is deprecated in favor of [`agentctl perf`](#perf).
 
 **ID:** `event-loop` · **Category:** Inspect · **Risk:** LOW · **Mutates:** no
 
