@@ -15,6 +15,28 @@ Plan approval can pause an unattended session. The CLI supports
 approval is intended. Review the consequences before enabling it; this flag does
 not replace local verification or PR review.
 
+## Jules Remote Session Lifecycle
+
+Jules operates as a hosted, asynchronous HTTP provider (`type: "http"` in `src/provider.mjs`). Dispatches and follow-ups follow an explicit remote session lifecycle:
+
+```text
+POST /v1alpha/sessions (dispatch)
+  ↓
+Session State: AWAITING_PLAN_APPROVAL | ACTIVE
+  ↓ (optional)
+POST /v1alpha/sessions/{id}:approvePlan (plan approval)
+  ↓
+Session State: COMPLETED / IN_PROGRESS
+  ↓ (follow-up)
+POST /v1alpha/sessions/{id}:sendMessage (warm resumption)
+```
+
+1. **Source Context Requirement**: Dispatches require a connected GitHub repository source (`sources/github/<owner>/<repo>`), resolved from `JULES_REPO`, `source` in config, or `git remote origin`.
+2. **Server-Side PR Creation**: When `autoPr: true` (or `--auto-pr`) is passed, the dispatch payload includes `automationMode: "AUTO_CREATE_PR"`. Jules executes server-side on Google Cloud and opens the PR directly.
+3. **Plan Approval**: If `requirePlanApproval: true` is configured, the session pauses at `AWAITING_PLAN_APPROVAL`. Resume execution via `agentctl plan approve <sessionId>` or MCP tool `agent_approve_plan`.
+4. **Warm Resumption (`resume`)**: Send follow-up prompts or steering to active sessions via `agentctl resume <sessionId> --response "..."` (`POST /v1alpha/sessions/{id}:sendMessage`). If the remote session is expired or closed (HTTP 400/404), the kit fails soft and falls back to a cold dispatch.
+5. **Session Management**: Programmatically inspect or prune sessions using `agentctl session get`, `agentctl session list`, and `agentctl session prune` (or corresponding MCP `agent_*_session` tools).
+
 ## Google-first Jules workflow
 
 The Google-first Jules workflow uses GitHub issues labeled with `jules` as native task-start triggers. Jules processes structured task contracts in issues, generates implementation branches, and opens pull requests. Independent read-only CI and gatekeeper checks validate PR diffs and scope boundaries. Any targeted follow-up uses `@Jules` comments in Reactive Mode, subject to a bounded two-round repair budget.
