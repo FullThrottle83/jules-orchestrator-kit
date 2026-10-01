@@ -64,3 +64,13 @@ signing conventions in [CONTRIBUTING.md](CONTRIBUTING.md). Include verification
 evidence and compatibility risks. Release steps live in
 [docs/releasing.md](docs/releasing.md); a documentation change does not require a
 version bump or release.
+
+
+## Safe handoff for this repository
+
+- Check worktree status and preserve other work. Derive checks and dependencies from manifests and CI; check uncertain platform APIs against installed types or version-matched documentation.
+- Stop editing a persistent failure after two repair cycles and report the exact evidence, changes tried and next action. Do not soften verification to force a pass.
+- Never enable auto-merge, remove `hold`, delete branches or deploy without Jonas's separate explicit approval. Keep rollout PRs draft with `hold`; do not merge them.
+- Do not put personnummer or customer data into code, prompts, fixtures, logs or PR text. Use synthetic data.
+- Start the Swedish status report with one sentence stating klart, delvis or blockerat and the one next action Jonas needs, if any. Mark factual claims VERIFIERAT or ANTAGET and list exact checks, results and unverified work.
+- This section is repo-specific and sits outside `SYNC-CORE`; keep the shared block byte-identical to `JULES_RULES_TEMPLATE.md`.
