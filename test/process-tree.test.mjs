@@ -51,6 +51,68 @@ describe("killProcessTree", () => {
     assert.doesNotThrow(() => killProcessTree(-1));
     assert.doesNotThrow(() => killProcessTree("not-a-pid"));
     assert.doesNotThrow(() => killProcessTree(undefined));
+    assert.doesNotThrow(() => killProcessTree(2_147_483_647, { graceMs: 50 }));
+  });
+
+  it("escalates to SIGKILL if SIGTERM is ignored during graceMs", async () => {
+    if (process.platform === "win32") return;
+
+    const dir = mkdtempSync(join(tmpdir(), "kit-ptree-sigterm-"));
+    const pidFile = join(dir, "pids.json");
+    const script = join(dir, "stubborn.mjs");
+
+    writeFileSync(
+      script,
+      `
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+
+process.on("SIGTERM", () => {
+  // Ignore SIGTERM
+});
+
+const watcher = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 200);"], {
+  stdio: "ignore",
+});
+
+writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify({
+  parent: process.pid,
+  watcher: watcher.pid,
+}));
+
+setInterval(() => {}, 200);
+`
+    );
+
+    let parentProc;
+    const tracked = [];
+    try {
+      parentProc = spawn(process.execPath, [script], { stdio: "ignore" });
+      tracked.push(parentProc.pid);
+
+      await waitUntil(() => existsSync(pidFile), 3000, "pid file written");
+      const pids = JSON.parse(readFileSync(pidFile, "utf-8"));
+      tracked.push(pids.parent, pids.watcher);
+
+      assert.ok(isAlive(pids.parent), "parent should be alive");
+      assert.ok(isAlive(pids.watcher), "watcher should be alive");
+
+      killProcessTree(pids.parent, { graceMs: 150, signal: "SIGTERM", forceSignal: "SIGKILL" });
+
+      await waitUntil(() => !isAlive(pids.parent), 3000, "stubborn parent dead");
+      await waitUntil(() => !isAlive(pids.watcher), 3000, "stubborn watcher dead");
+      assert.equal(isAlive(pids.parent), false, "stubborn parent killed by SIGKILL escalation");
+      assert.equal(isAlive(pids.watcher), false, "stubborn watcher killed by SIGKILL escalation");
+    } finally {
+      for (const pid of tracked) {
+        try {
+          killProcessTree(pid, "SIGKILL");
+        } catch {}
+      }
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
+    }
   });
 
   it("kills parent and spawned child workers", async () => {
