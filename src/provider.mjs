@@ -60,14 +60,15 @@ export const DEFAULT_JULES_SESSIONS_URL = "https://jules.googleapis.com/v1alpha/
 
 /**
  * Resolves the sessions base URL for Jules API dispatches.
- * Resolution order: explicit provider spec URL first; for the builtin Jules preset allow process.env.JULES_API_URL; otherwise default sessions URL.
+ * Explicit provider objects always win. The builtin/default Jules preset may
+ * use process.env.JULES_API_URL; otherwise the official sessions URL is used.
  */
 export function resolveJulesSessionsUrl(spec) {
-  const isJulesPreset = !spec || spec === "jules" || spec.name === "jules" || spec === JULES_PRESET;
-  if (isJulesPreset) {
-    if (typeof spec === "object" && spec.url && spec.url !== DEFAULT_JULES_SESSIONS_URL) {
-      return spec.url;
-    }
+  const isBuiltinJulesPreset = !spec || spec === "jules" || spec === JULES_PRESET;
+  if (typeof spec === "object" && spec !== JULES_PRESET && spec.url) {
+    return spec.url;
+  }
+  if (isBuiltinJulesPreset) {
     const envUrl = process.env.JULES_API_URL;
     if (envUrl && envUrl.trim()) {
       return envUrl.trim();
