@@ -11,6 +11,11 @@ import {
   parseEnvelopeHeader,
   validateEnvelope,
 } from "../src/envelope.mjs";
+import {
+  DEFAULT_JULES_SESSIONS_URL,
+  JULES_PRESET,
+  resolveJulesSessionsUrl,
+} from "../src/provider.mjs";
 
 test("agentctl.task/v1 Frontmatter Specification & Parser", async (t) => {
   const sampleV1Markdown = `---
@@ -111,15 +116,89 @@ flags:
     assert.strictEqual(meta.flags.requirePlanApproval, false);
   });
 
+  await t.test("task create emits canonical intent.outcome in frontmatter", async () => {
+    const { planTaskCreate } = await import("../src/wizard-task.mjs");
+    const plan = planTaskCreate(process.cwd(), {
+      title: "Fix auth controller",
+      prompt: "Add token refresh retry mechanism",
+      verifyCmd: "npm test",
+    });
+
+    assert.ok(plan.taskFileContent.includes("intent:"));
+    assert.ok(plan.taskFileContent.includes("outcome: Add token refresh retry mechanism"));
+
+    const parsed = parseTaskFrontmatter(plan.taskFileContent);
+    assert.ok(parsed);
+    assert.strictEqual(parsed.metadata.intent.outcome, "Add token refresh retry mechanism");
+
+    const header = parseEnvelopeHeader(plan.taskFileContent);
+    assert.ok(header);
+    assert.strictEqual(header.intent.outcome, "Add token refresh retry mechanism");
+
+    const val = validateEnvelope(header);
+    assert.strictEqual(val.ok, true);
+
+    // Builtin Jules may honor the env override, but an explicit provider
+    // object must always keep its own URL — even when that URL equals the
+    // official default string.
+    const previousJulesApiUrl = process.env.JULES_API_URL;
+    process.env.JULES_API_URL = "https://staging.example.test/v1alpha/sessions";
+    try {
+      assert.strictEqual(resolveJulesSessionsUrl(JULES_PRESET), process.env.JULES_API_URL);
+      assert.strictEqual(
+        resolveJulesSessionsUrl({
+          name: "jules",
+          type: "http",
+          url: DEFAULT_JULES_SESSIONS_URL,
+        }),
+        DEFAULT_JULES_SESSIONS_URL
+      );
+    } finally {
+      if (previousJulesApiUrl === undefined) delete process.env.JULES_API_URL;
+      else process.env.JULES_API_URL = previousJulesApiUrl;
+    }
+  });
+
+  await t.test("legacy envelopes without explicit intent.outcome still validate as before", () => {
+    const legacyEnvelopeMarkdown = `---
+kind: Task
+version: agentctl.task/v1
+id: JULES-LEGACY-1
+title: Legacy task without explicit intent
+scope:
+  allow:
+    - src/engine.mjs
+verification:
+  commands:
+    - npm test
+---
+# Legacy Task Objective
+Fix something in engine.
+`;
+    const header = parseEnvelopeHeader(legacyEnvelopeMarkdown);
+    assert.ok(header);
+    assert.strictEqual(header.intent, undefined);
+    assert.strictEqual(header.title, "Legacy task without explicit intent");
+
+    const val = validateEnvelope(header);
+    assert.strictEqual(val.ok, true);
+  });
+
   await t.test("serializeTaskFrontmatter produces round-trippable frontmatter", () => {
+    const multilineOutcome = "Ship the change\n---\nwithout truncating metadata";
     const originalMeta = {
       kind: "Task",
       version: "agentctl.task/v1",
       id: "JULES-999",
       title: "Round-trip Test Task",
+      intent: { outcome: multilineOutcome },
       role: "performance",
       tier: "fast",
       baseCommit: "main",
+      risk: {
+        lane: "amber",
+        require_plan_approval: true,
+      },
       dependsOn: ["DEP-1", "DEP-2"],
       scope: {
         allow: ["src/engine.mjs", "src/envelope.mjs"],
@@ -140,9 +219,12 @@ flags:
     assert.ok(roundTrip);
     assert.strictEqual(roundTrip.metadata.id, originalMeta.id);
     assert.strictEqual(roundTrip.metadata.title, originalMeta.title);
+    assert.strictEqual(roundTrip.metadata.intent.outcome, multilineOutcome);
     assert.strictEqual(roundTrip.metadata.role, originalMeta.role);
     assert.strictEqual(roundTrip.metadata.tier, originalMeta.tier);
     assert.strictEqual(roundTrip.metadata.base_commit, originalMeta.baseCommit);
+    assert.strictEqual(roundTrip.metadata.risk.lane, originalMeta.risk.lane);
+    assert.strictEqual(roundTrip.metadata.risk.require_plan_approval, true);
     assert.deepStrictEqual(roundTrip.metadata.dependsOn, originalMeta.dependsOn);
     assert.deepStrictEqual(roundTrip.metadata.scope.allow, originalMeta.scope.allow);
     assert.deepStrictEqual(roundTrip.metadata.scope.deny, originalMeta.scope.deny);

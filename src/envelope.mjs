@@ -1,6 +1,6 @@
 import { git, runCmd, resolveBase } from "./git.mjs";
 import { checkScope } from "./security.mjs";
-import { normalizeScope } from "./config.mjs";
+import { normalizeScope, yamlScalar } from "./config.mjs";
 import { existsSync } from "node:fs";
 import { resolve, relative, isAbsolute } from "node:path";
 
@@ -213,7 +213,14 @@ export function parseYamlSubset(yamlText) {
     if (trimmed === "false") return false;
     if (trimmed === "null" || trimmed === "~") return null;
     if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return trimmed.slice(1, -1);
+      }
+    }
+    if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
       return trimmed.slice(1, -1);
     }
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
@@ -326,6 +333,11 @@ export function parseTaskFrontmatter(content) {
   }
 }
 
+function taskYamlScalar(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[\r\n]/.test(text) ? JSON.stringify(text) : yamlScalar(text);
+}
+
 /**
  * Serializes task metadata into a canonical `agentctl.task/v1` YAML frontmatter block.
  *
@@ -340,6 +352,15 @@ export function serializeTaskFrontmatter(meta = {}) {
   ];
   if (meta.id) lines.push(`id: ${meta.id}`);
   if (meta.title) lines.push(`title: ${meta.title}`);
+
+  const rawOutcome = typeof meta.intent === "object" && meta.intent !== null
+    ? meta.intent.outcome
+    : (meta.intent || meta.outcome);
+  if (rawOutcome) {
+    lines.push("intent:");
+    lines.push(`  outcome: ${taskYamlScalar(rawOutcome)}`);
+  }
+
   if (meta.role) lines.push(`role: ${meta.role}`);
   if (meta.tier) lines.push(`tier: ${meta.tier}`);
   const base = meta.baseCommit || meta.base_commit || meta.baseSha || meta.base_sha;
@@ -533,4 +554,3 @@ export function parseEnvelopeHeader(content) {
 
   return null;
 }
-

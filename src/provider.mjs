@@ -56,10 +56,50 @@ function findSyntaxError(root, files) {
   return null;
 }
 
+export const DEFAULT_JULES_SESSIONS_URL = "https://jules.googleapis.com/v1alpha/sessions";
+
+/**
+ * Resolves the sessions base URL for Jules API dispatches.
+ * Explicit provider objects always win. The builtin/default Jules preset may
+ * use process.env.JULES_API_URL; otherwise the official sessions URL is used.
+ */
+export function resolveJulesSessionsUrl(spec) {
+  const isBuiltinJulesPreset = !spec || spec === "jules" || spec === JULES_PRESET;
+  if (typeof spec === "object" && spec !== JULES_PRESET && spec.url) {
+    return spec.url;
+  }
+  if (isBuiltinJulesPreset) {
+    const envUrl = process.env.JULES_API_URL;
+    if (envUrl && envUrl.trim()) {
+      return envUrl.trim();
+    }
+  }
+  if (typeof spec === "object" && spec.url) {
+    return spec.url;
+  }
+  return DEFAULT_JULES_SESSIONS_URL;
+}
+
+/**
+ * Derives the Jules /sources collection URL from a sessions base URL safely.
+ */
+export function resolveJulesSourcesUrl(sessionsUrl) {
+  try {
+    const urlObj = new URL(sessionsUrl);
+    if (urlObj.pathname.endsWith("/sessions") || urlObj.pathname.endsWith("/sessions/")) {
+      urlObj.pathname = urlObj.pathname.replace(/\/sessions\/?$/, "/sources");
+      return urlObj.toString();
+    }
+    return new URL("../sources", urlObj).toString();
+  } catch (_) {
+    return "https://jules.googleapis.com/v1alpha/sources";
+  }
+}
+
 export const JULES_PRESET = {
   name: "jules",
   type: "http",
-  url: "https://jules.googleapis.com/v1alpha/sessions",
+  url: DEFAULT_JULES_SESSIONS_URL,
   headers: {
     "X-Goog-Api-Key": "{token}",
     "Content-Type": "application/json",
@@ -320,12 +360,17 @@ export function createProvider(spec = "jules", config = {}) {
     throw new TypeError("Provider specification must be a string or object");
   }
 
+  const sessionsBaseUrl = resolveJulesSessionsUrl(providerSpec);
+
   if (providerSpec.type === "http") {
     if (typeof providerSpec.url === "string" && providerSpec.url.includes("{token}")) {
       throw new Error("CRITICAL: Insecure token interpolation in provider URL template. API tokens must be passed via headers, not URL paths or query params.");
     }
     if (typeof providerSpec.sendMessageUrl === "string" && providerSpec.sendMessageUrl.includes("{token}")) {
       throw new Error("CRITICAL: Insecure token interpolation in provider sendMessageUrl template. API tokens must be passed via headers, not URL paths or query params.");
+    }
+    if (typeof sessionsBaseUrl === "string" && sessionsBaseUrl.includes("{token}")) {
+      throw new Error("CRITICAL: Insecure token interpolation in provider URL template. API tokens must be passed via headers, not URL paths or query params.");
     }
   }
 
@@ -392,7 +437,8 @@ export function createProvider(spec = "jules", config = {}) {
           }
 
           const urlData = { ...data };
-          const url = interpolateString(providerSpec.url, urlData);
+          const targetUrl = providerSpec.name === "jules" ? sessionsBaseUrl : (providerSpec.url || sessionsBaseUrl);
+          const url = interpolateString(targetUrl, urlData);
           const headerData = { ...urlData, token: rawToken };
           const headers = {};
           for (const [k, v] of Object.entries(providerSpec.headers || {})) {
@@ -619,7 +665,7 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       if (providerSpec.type === "http") {
-        const sendMessageUrlTemplate = providerSpec.sendMessageUrl || `${providerSpec.url}/${sessionId}:sendMessage`;
+        const sendMessageUrlTemplate = providerSpec.sendMessageUrl || `${sessionsBaseUrl}/${sessionId}:sendMessage`;
         const urlData = { sessionId, ...ctx };
         const url = interpolateString(sendMessageUrlTemplate, urlData);
 
@@ -744,7 +790,7 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       if (providerSpec.type === "http") {
-        const getSessionUrlTemplate = ctx.customUrl || providerSpec.getSessionUrl || `${providerSpec.url}/${sessionId}`;
+        const getSessionUrlTemplate = ctx.customUrl || providerSpec.getSessionUrl || `${sessionsBaseUrl}/${sessionId}`;
         const urlData = { sessionId, ...ctx };
         const url = ctx.customUrl || interpolateString(getSessionUrlTemplate, urlData);
 
@@ -870,7 +916,7 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       if (providerSpec.type === "http") {
-        const approvePlanUrlTemplate = ctx.customUrl || providerSpec.approvePlanUrl || `${providerSpec.url}/${sessionId}:approvePlan`;
+        const approvePlanUrlTemplate = ctx.customUrl || providerSpec.approvePlanUrl || `${sessionsBaseUrl}/${sessionId}:approvePlan`;
         const urlData = { sessionId, ...ctx };
         const url = ctx.customUrl || interpolateString(approvePlanUrlTemplate, urlData);
 
@@ -977,7 +1023,7 @@ export function createProvider(spec = "jules", config = {}) {
       if (!ctx || typeof ctx !== "object") ctx = {};
       if (ctx.dryRun) return { sessions: [], raw: {} };
       if (providerSpec.type === "http") {
-        const baseUrl = providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions";
+        const baseUrl = sessionsBaseUrl;
         const params = new URLSearchParams();
         if (ctx.pageSize) params.set("pageSize", String(ctx.pageSize));
         if (ctx.pageToken) params.set("pageToken", String(ctx.pageToken));
@@ -999,10 +1045,11 @@ export function createProvider(spec = "jules", config = {}) {
       if (!ctx || typeof ctx !== "object") ctx = {};
       if (ctx.dryRun) return { activities: [], raw: {} };
       if (providerSpec.type === "http") {
-        const baseUrl = `${providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions"}/${sessionId}/activities`;
+        const baseUrl = `${sessionsBaseUrl}/${sessionId}/activities`;
         const params = new URLSearchParams();
         if (ctx.pageSize) params.set("pageSize", String(ctx.pageSize));
         if (ctx.pageToken) params.set("pageToken", String(ctx.pageToken));
+        if (ctx.createTime) params.set("createTime", String(ctx.createTime));
         const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
         const res = await this.getSession(sessionId, { ...ctx, customUrl: url });
         return {
@@ -1021,7 +1068,7 @@ export function createProvider(spec = "jules", config = {}) {
       if (!ctx || typeof ctx !== "object") ctx = {};
       if (ctx.dryRun) return { id: sessionId, archived: true, raw: {} };
       if (providerSpec.type === "http") {
-        const url = `${providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions"}/${sessionId}:archive`;
+        const url = `${sessionsBaseUrl}/${sessionId}:archive`;
         const res = await this.approvePlan(sessionId, { ...ctx, customUrl: url });
         return { id: sessionId, archived: true, raw: res?.raw || {} };
       }
@@ -1035,7 +1082,7 @@ export function createProvider(spec = "jules", config = {}) {
       if (!ctx || typeof ctx !== "object") ctx = {};
       if (ctx.dryRun) return { id: sessionId, deleted: true, raw: {} };
       if (providerSpec.type === "http") {
-        const url = `${providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions"}/${sessionId}`;
+        const url = `${sessionsBaseUrl}/${sessionId}`;
         const res = await this.getSession("", { ...ctx, customUrl: url, method: "DELETE" });
         return { id: sessionId, deleted: true, raw: res?.raw || {} };
       }
@@ -1046,7 +1093,7 @@ export function createProvider(spec = "jules", config = {}) {
       if (!ctx || typeof ctx !== "object") ctx = {};
       if (ctx.dryRun) return { sources: [], raw: {} };
       if (providerSpec.type === "http") {
-        const baseUrl = "https://jules.googleapis.com/v1alpha/sources";
+        const baseUrl = resolveJulesSourcesUrl(sessionsBaseUrl);
         const params = new URLSearchParams();
         if (ctx.pageSize) params.set("pageSize", String(ctx.pageSize));
         if (ctx.pageToken) params.set("pageToken", String(ctx.pageToken));
