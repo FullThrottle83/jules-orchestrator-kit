@@ -213,7 +213,14 @@ export function parseYamlSubset(yamlText) {
     if (trimmed === "false") return false;
     if (trimmed === "null" || trimmed === "~") return null;
     if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return trimmed.slice(1, -1);
+      }
+    }
+    if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
       return trimmed.slice(1, -1);
     }
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
@@ -326,6 +333,11 @@ export function parseTaskFrontmatter(content) {
   }
 }
 
+function taskYamlScalar(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[\r\n]/.test(text) ? JSON.stringify(text) : yamlScalar(text);
+}
+
 /**
  * Serializes task metadata into a canonical `agentctl.task/v1` YAML frontmatter block.
  *
@@ -346,7 +358,7 @@ export function serializeTaskFrontmatter(meta = {}) {
     : (meta.intent || meta.outcome);
   if (rawOutcome) {
     lines.push("intent:");
-    lines.push(`  outcome: ${yamlScalar(rawOutcome)}`);
+    lines.push(`  outcome: ${taskYamlScalar(rawOutcome)}`);
   }
 
   if (meta.role) lines.push(`role: ${meta.role}`);
@@ -542,4 +554,3 @@ export function parseEnvelopeHeader(content) {
 
   return null;
 }
-
