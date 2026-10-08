@@ -11,6 +11,11 @@ import {
   parseEnvelopeHeader,
   validateEnvelope,
 } from "../src/envelope.mjs";
+import {
+  DEFAULT_JULES_SESSIONS_URL,
+  JULES_PRESET,
+  resolveJulesSessionsUrl,
+} from "../src/provider.mjs";
 
 test("agentctl.task/v1 Frontmatter Specification & Parser", async (t) => {
   const sampleV1Markdown = `---
@@ -132,6 +137,26 @@ flags:
 
     const val = validateEnvelope(header);
     assert.strictEqual(val.ok, true);
+
+    // Builtin Jules may honor the env override, but an explicit provider
+    // object must always keep its own URL — even when that URL equals the
+    // official default string.
+    const previousJulesApiUrl = process.env.JULES_API_URL;
+    process.env.JULES_API_URL = "https://staging.example.test/v1alpha/sessions";
+    try {
+      assert.strictEqual(resolveJulesSessionsUrl(JULES_PRESET), process.env.JULES_API_URL);
+      assert.strictEqual(
+        resolveJulesSessionsUrl({
+          name: "jules",
+          type: "http",
+          url: DEFAULT_JULES_SESSIONS_URL,
+        }),
+        DEFAULT_JULES_SESSIONS_URL
+      );
+    } finally {
+      if (previousJulesApiUrl === undefined) delete process.env.JULES_API_URL;
+      else process.env.JULES_API_URL = previousJulesApiUrl;
+    }
   });
 
   await t.test("legacy envelopes without explicit intent.outcome still validate as before", () => {
