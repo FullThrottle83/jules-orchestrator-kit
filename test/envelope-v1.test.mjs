@@ -160,14 +160,20 @@ Fix something in engine.
   });
 
   await t.test("serializeTaskFrontmatter produces round-trippable frontmatter", () => {
+    const multilineOutcome = "Ship the change\n---\nwithout truncating metadata";
     const originalMeta = {
       kind: "Task",
       version: "agentctl.task/v1",
       id: "JULES-999",
       title: "Round-trip Test Task",
+      intent: { outcome: multilineOutcome },
       role: "performance",
       tier: "fast",
       baseCommit: "main",
+      risk: {
+        lane: "amber",
+        require_plan_approval: true,
+      },
       dependsOn: ["DEP-1", "DEP-2"],
       scope: {
         allow: ["src/engine.mjs", "src/envelope.mjs"],
@@ -188,9 +194,12 @@ Fix something in engine.
     assert.ok(roundTrip);
     assert.strictEqual(roundTrip.metadata.id, originalMeta.id);
     assert.strictEqual(roundTrip.metadata.title, originalMeta.title);
+    assert.strictEqual(roundTrip.metadata.intent.outcome, multilineOutcome);
     assert.strictEqual(roundTrip.metadata.role, originalMeta.role);
     assert.strictEqual(roundTrip.metadata.tier, originalMeta.tier);
     assert.strictEqual(roundTrip.metadata.base_commit, originalMeta.baseCommit);
+    assert.strictEqual(roundTrip.metadata.risk.lane, originalMeta.risk.lane);
+    assert.strictEqual(roundTrip.metadata.risk.require_plan_approval, true);
     assert.deepStrictEqual(roundTrip.metadata.dependsOn, originalMeta.dependsOn);
     assert.deepStrictEqual(roundTrip.metadata.scope.allow, originalMeta.scope.allow);
     assert.deepStrictEqual(roundTrip.metadata.scope.deny, originalMeta.scope.deny);
