@@ -1,6 +1,6 @@
 import { git, runCmd, resolveBase } from "./git.mjs";
 import { checkScope } from "./security.mjs";
-import { normalizeScope } from "./config.mjs";
+import { normalizeScope, yamlScalar } from "./config.mjs";
 import { existsSync } from "node:fs";
 import { resolve, relative, isAbsolute } from "node:path";
 
@@ -340,6 +340,15 @@ export function serializeTaskFrontmatter(meta = {}) {
   ];
   if (meta.id) lines.push(`id: ${meta.id}`);
   if (meta.title) lines.push(`title: ${meta.title}`);
+
+  const rawOutcome = typeof meta.intent === "object" && meta.intent !== null
+    ? meta.intent.outcome
+    : (meta.intent || meta.outcome);
+  if (rawOutcome) {
+    lines.push("intent:");
+    lines.push(`  outcome: ${yamlScalar(rawOutcome)}`);
+  }
+
   if (meta.role) lines.push(`role: ${meta.role}`);
   if (meta.tier) lines.push(`tier: ${meta.tier}`);
   const base = meta.baseCommit || meta.base_commit || meta.baseSha || meta.base_sha;

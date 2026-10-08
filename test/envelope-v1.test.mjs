@@ -111,6 +111,54 @@ flags:
     assert.strictEqual(meta.flags.requirePlanApproval, false);
   });
 
+  await t.test("task create emits canonical intent.outcome in frontmatter", async () => {
+    const { planTaskCreate } = await import("../src/wizard-task.mjs");
+    const plan = planTaskCreate(process.cwd(), {
+      title: "Fix auth controller",
+      prompt: "Add token refresh retry mechanism",
+      verifyCmd: "npm test",
+    });
+
+    assert.ok(plan.taskFileContent.includes("intent:"));
+    assert.ok(plan.taskFileContent.includes("outcome: Add token refresh retry mechanism"));
+
+    const parsed = parseTaskFrontmatter(plan.taskFileContent);
+    assert.ok(parsed);
+    assert.strictEqual(parsed.metadata.intent.outcome, "Add token refresh retry mechanism");
+
+    const header = parseEnvelopeHeader(plan.taskFileContent);
+    assert.ok(header);
+    assert.strictEqual(header.intent.outcome, "Add token refresh retry mechanism");
+
+    const val = validateEnvelope(header);
+    assert.strictEqual(val.ok, true);
+  });
+
+  await t.test("legacy envelopes without explicit intent.outcome still validate as before", () => {
+    const legacyEnvelopeMarkdown = `---
+kind: Task
+version: agentctl.task/v1
+id: JULES-LEGACY-1
+title: Legacy task without explicit intent
+scope:
+  allow:
+    - src/engine.mjs
+verification:
+  commands:
+    - npm test
+---
+# Legacy Task Objective
+Fix something in engine.
+`;
+    const header = parseEnvelopeHeader(legacyEnvelopeMarkdown);
+    assert.ok(header);
+    assert.strictEqual(header.intent, undefined);
+    assert.strictEqual(header.title, "Legacy task without explicit intent");
+
+    const val = validateEnvelope(header);
+    assert.strictEqual(val.ok, true);
+  });
+
   await t.test("serializeTaskFrontmatter produces round-trippable frontmatter", () => {
     const originalMeta = {
       kind: "Task",

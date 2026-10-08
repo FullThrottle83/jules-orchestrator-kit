@@ -28,9 +28,10 @@ API mirrors.
 
 ## Shipped Milestones (v0.66.0 – v0.75.0)
 
-Recent releases improved test-tamper detection, session-state handling, verification
-isolation, CLI onboarding and command documentation. v0.73.0 split the security
-module while preserving its public exports and consolidated specialist role aliases.
+Recent releases introduced canonical `agentctl.task/v1` task envelope frontmatter and migration,
+improved test-tamper detection, session-state handling, verification isolation, CLI onboarding and
+command documentation. v0.73.0 split the security module while preserving its public exports and
+consolidated specialist role aliases.
 
 Release details, including earlier milestone summaries, are in
 [CHANGELOG.md](CHANGELOG.md).
@@ -60,8 +61,10 @@ Release details, including earlier milestone summaries, are in
 
 ## P1 — before v1
 
-- **Version the task-envelope contract.** Tasks may narrow trusted repository scope and
-  add verification, but must never widen policy or remove required verification.
+- **Task-envelope contract (Shipped `agentctl.task/v1`).** Tasks may narrow trusted repository scope and
+  add verification, but must never widen policy or remove required verification. `agentctl.task/v1`
+  frontmatter with explicit `intent.outcome`, parser/serializer, migration tooling and tests are current
+  contract work shipped in production.
 - **Move ephemeral runtime state out of the working tree** where practical so normal
   execution does not require an expanding `.gitignore` ownership footprint.
 - **Define the provider lifecycle contract.** Model local synchronous completion and

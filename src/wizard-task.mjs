@@ -329,6 +329,9 @@ ${buildGuardrailFooter(config, { allowedPaths: targetFiles, baseBranch: flags.st
     version: "agentctl.task/v1",
     id: taskId,
     title,
+    intent: {
+      outcome: (typeof inputObj.intent === "object" && inputObj.intent !== null ? inputObj.intent?.outcome : inputObj.intent) || inputObj.outcome || rawPrompt,
+    },
     role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
     tier,
     risk,

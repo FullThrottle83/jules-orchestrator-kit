@@ -573,6 +573,153 @@ test("Provider Failure Domain Taxonomy & Hardening", async (t) => {
     }
   });
 });
+
+describe("Jules API URL override & listActivities createTime cursor", () => {
+  it("honors process.env.JULES_API_URL override and derives /sources safely", async () => {
+    const oldKey = process.env.JULES_API_KEY;
+    const oldUrl = process.env.JULES_API_URL;
+    process.env.JULES_API_KEY = "test-override-key";
+
+    let server;
+    const receivedRequests = [];
+    try {
+      server = createServer((req, res) => {
+        receivedRequests.push({
+          method: req.method,
+          url: req.url,
+          headers: req.headers,
+        });
+        if (req.url.includes("/sources")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ sources: [{ name: "sources/github/owner/repo" }] }));
+        } else {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ id: "sess-override", state: "ACTIVE", sessions: [] }));
+        }
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+      process.env.JULES_API_URL = `http://127.0.0.1:${port}/v1alpha/sessions`;
+
+      const provider = createProvider("jules");
+
+      // 1. Dispatch
+      const dispatchRes = await provider.dispatch(
+        { prompt: "test prompt", source: "owner/repo" },
+        { root: process.cwd() }
+      );
+      assert.equal(dispatchRes.id, "sess-override");
+
+      // 2. listSources
+      const sourcesRes = await provider.listSources({ pageSize: 10 });
+      assert.equal(sourcesRes.sources.length, 1);
+
+      // Verify requests hit local server at expected endpoints
+      assert.ok(receivedRequests.length >= 2);
+      assert.equal(receivedRequests[0].url, "/v1alpha/sessions");
+      assert.equal(receivedRequests[0].headers["x-goog-api-key"], "test-override-key");
+      assert.equal(receivedRequests[1].url, "/v1alpha/sources?pageSize=10");
+      assert.equal(receivedRequests[1].headers["x-goog-api-key"], "test-override-key");
+
+      // Check token is in header only, not URL
+      assert.ok(!receivedRequests[0].url.includes("test-override-key"));
+      assert.ok(!receivedRequests[1].url.includes("test-override-key"));
+    } finally {
+      if (server) server.close();
+      if (oldKey === undefined) delete process.env.JULES_API_KEY;
+      else process.env.JULES_API_KEY = oldKey;
+      if (oldUrl === undefined) delete process.env.JULES_API_URL;
+      else process.env.JULES_API_URL = oldUrl;
+    }
+  });
+
+  it("explicit provider spec URL overrides process.env.JULES_API_URL", async () => {
+    const oldKey = process.env.JULES_API_KEY;
+    const oldUrl = process.env.JULES_API_URL;
+    process.env.JULES_API_KEY = "test-override-key";
+
+    let server1, server2;
+    const hits = { server1: 0, server2: 0 };
+    try {
+      server1 = createServer((req, res) => {
+        hits.server1++;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ id: "server1-sess" }));
+      });
+      server2 = createServer((req, res) => {
+        hits.server2++;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ id: "server2-sess" }));
+      });
+      await new Promise((resolve) => server1.listen(0, "127.0.0.1", resolve));
+      await new Promise((resolve) => server2.listen(0, "127.0.0.1", resolve));
+
+      process.env.JULES_API_URL = `http://127.0.0.1:${server1.address().port}/v1alpha/sessions`;
+
+      // Explicit spec with different URL
+      const explicitProvider = createProvider({
+        name: "jules",
+        type: "http",
+        url: `http://127.0.0.1:${server2.address().port}/custom/sessions`,
+        headers: { "X-Goog-Api-Key": "{token}", "Content-Type": "application/json" },
+      });
+
+      const res = await explicitProvider.dispatch({ prompt: "hello", source: "owner/repo" });
+      assert.equal(res.id, "server2-sess");
+      assert.equal(hits.server1, 0);
+      assert.equal(hits.server2, 1);
+    } finally {
+      if (server1) server1.close();
+      if (server2) server2.close();
+      if (oldKey === undefined) delete process.env.JULES_API_KEY;
+      else process.env.JULES_API_KEY = oldKey;
+      if (oldUrl === undefined) delete process.env.JULES_API_URL;
+      else process.env.JULES_API_URL = oldUrl;
+    }
+  });
+
+  it("listActivities supports createTime parameter along with pageSize and pageToken", async () => {
+    const oldKey = process.env.JULES_API_KEY;
+    process.env.JULES_API_KEY = "test-key";
+
+    let server;
+    let requestedUrl = "";
+    try {
+      server = createServer((req, res) => {
+        requestedUrl = req.url;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ activities: [{ id: "act-1" }], nextPageToken: "token-next" }));
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+      const provider = createProvider({
+        name: "jules",
+        type: "http",
+        url: `http://127.0.0.1:${server.address().port}/v1alpha/sessions`,
+        headers: { "X-Goog-Api-Key": "{token}", "Content-Type": "application/json" },
+      });
+
+      const res = await provider.listActivities("sess-123", {
+        pageSize: 15,
+        pageToken: "token-abc",
+        createTime: "2026-03-31T12:00:00Z",
+      });
+
+      assert.equal(res.activities.length, 1);
+      assert.equal(res.nextPageToken, "token-next");
+
+      const urlObj = new URL(requestedUrl, `http://127.0.0.1:${server.address().port}`);
+      assert.equal(urlObj.pathname, "/v1alpha/sessions/sess-123/activities");
+      assert.equal(urlObj.searchParams.get("pageSize"), "15");
+      assert.equal(urlObj.searchParams.get("pageToken"), "token-abc");
+      assert.equal(urlObj.searchParams.get("createTime"), "2026-03-31T12:00:00Z");
+    } finally {
+      if (server) server.close();
+      if (oldKey === undefined) delete process.env.JULES_API_KEY;
+      else process.env.JULES_API_KEY = oldKey;
+    }
+  });
+});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
