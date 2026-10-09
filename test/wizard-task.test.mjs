@@ -249,6 +249,24 @@ test("Guided Task Authoring Subsystem", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("planTaskCreate accepts explicit lane override and preserves envelope comment without false secret alert", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-lane-test-"));
+    try {
+      const plan = planTaskCreate(tmpDir, {
+        title: "Explicit Amber Task",
+        prompt: "Refactor core logic\n<!-- JULES_TASK_ENVELOPE: {\"version\":1,\"id\":\"TASK-TEST1234567890ABCDEF\",\"risk\":{\"lane\":\"green\"}} -->",
+        verifyCmd: "npm test",
+        lane: "amber",
+      });
+
+      assert.strictEqual(plan.risk.lane, "amber");
+      assert.strictEqual(plan.risk.require_plan_approval, true);
+      assert.ok(plan.taskFileContent.includes("lane: amber"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 

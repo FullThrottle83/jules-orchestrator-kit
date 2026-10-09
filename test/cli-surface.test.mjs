@@ -1478,5 +1478,52 @@ describe("CLI usability improvements: suggestions, protected scope bypass, dry-r
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("task new accepts --oracle and --lane, and does not ingest existing queue files for template", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jules-task-oracle-"));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+      execFileSync("git", ["config", "user.email", "t@e.com"], { cwd: dir });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "d", version: "1.0.0", type: "module", scripts: { test: "node --test" } }, null, 2),
+        "utf-8"
+      );
+      execFileSync("git", ["add", "-A"], { cwd: dir });
+      execFileSync("git", ["commit", "-qm", "initial"], { cwd: dir });
+      spawnSync("node", [CLI, "init", "--yes"], { cwd: dir, encoding: "utf-8" });
+      execFileSync("git", ["add", ".agent/config.yml", ".gitignore"], { cwd: dir });
+      execFileSync("git", ["commit", "-qm", "chore: add agent config"], { cwd: dir });
+
+      // 1. Test --oracle and --lane on task new
+      const res1 = spawnSync(
+        "node",
+        [CLI, "task", "new", "--prompt", "Fix bug", "--oracle", "node --test", "--lane", "amber", "--dry-run"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(res1.status, 0, res1.stderr);
+      assert.match(res1.stdout, /Dry run — envelope synthesized and validated/);
+
+      // Write task to queue
+      const resWrite = spawnSync(
+        "node",
+        [CLI, "task", "new", "--prompt", "First queued task", "--oracle", "node --test", "--yes"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(resWrite.status, 0, resWrite.stderr);
+
+      // 2. Create template task without --prompt while queue has pending tasks
+      const res2 = spawnSync(
+        "node",
+        [CLI, "task", "new", "--template", "web-cwv", "--oracle", "node --test", "--dry-run"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(res2.status, 0, res2.stderr);
+      assert.match(res2.stdout, /Dry run — envelope synthesized and validated/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 

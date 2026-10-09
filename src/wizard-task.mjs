@@ -186,11 +186,14 @@ export function planTaskCreate(root = process.cwd(), inputObj = {}) {
     if (/[/\\][a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+(:\d+(:\d+)?)?$/.test(clean)) return true;
     return false;
   };
-  const hasHighEntropyToken = rawPrompt
+  const promptForEntropy = rawPrompt
+    .replace(/<!--\s*JULES_TASK_ENVELOPE:[\s\S]*?-->/gi, " ")
+    .replace(/^---\s*[\s\S]*?---\s*/m, " ");
+  const hasHighEntropyToken = promptForEntropy
     .split(/\s+/)
     .some((token) => !isPathOrUrlToken(token) && token.length >= 20 && shannonEntropy(token) > 4.3);
   const isShortHighEntropy =
-    rawPrompt.length <= 120 && !isPathOrUrlToken(rawPrompt.trim()) && shannonEntropy(rawPrompt) > 4.5;
+    promptForEntropy.length <= 120 && !isPathOrUrlToken(promptForEntropy.trim()) && shannonEntropy(promptForEntropy) > 4.5;
   if ((hasHighEntropyToken || isShortHighEntropy) && !inputObj.allowHighEntropy) {
     secretFindings.push({ id: "HIGH_ENTROPY_PROMPT", line: 1 });
   }
