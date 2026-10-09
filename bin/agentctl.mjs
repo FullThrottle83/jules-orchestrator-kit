@@ -127,7 +127,7 @@ export function printHelp() {
  * @param {string} [root] Repository root.
  * @returns {{ content: string, sourceFile: string | null }}
  */
-function resolvePromptDetails(values, positionals = [], root = process.cwd()) {
+function resolvePromptDetails(values, positionals = [], root = process.cwd(), { allowQueueFallback = true } = {}) {
   const file = values["prompt-file"] || values.file;
   if (file) {
     if (!existsSync(file)) {
@@ -157,7 +157,7 @@ function resolvePromptDetails(values, positionals = [], root = process.cwd()) {
     }
   }
 
-  if (positionals.length === 0) {
+  if (allowQueueFallback && positionals.length === 0) {
     const queueDir = getQueueDir(root);
     if (existsSync(queueDir)) {
       const candidates = readdirSync(queueDir)
@@ -176,8 +176,8 @@ function resolvePromptDetails(values, positionals = [], root = process.cwd()) {
   return { content: positionals.join(" ").trim(), sourceFile: null };
 }
 
-function resolvePromptInput(values, positionals = [], root = process.cwd()) {
-  return resolvePromptDetails(values, positionals, root).content;
+function resolvePromptInput(values, positionals = [], root = process.cwd(), options = {}) {
+  return resolvePromptDetails(values, positionals, root, options).content;
 }
 
 /**
@@ -350,6 +350,7 @@ async function main() {
           author: { type: "string" },
           "verify-cmd": { type: "string", short: "v" },
           verify: { type: "string" },
+          oracle: { type: "string" },
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
         },
@@ -368,7 +369,7 @@ async function main() {
         values.title = values.title || envelopeMeta.title;
         values.role = values.role || envelopeMeta.role;
         values.tier = values.tier || envelopeMeta.tier;
-        values["verify-cmd"] = values["verify-cmd"] || values.verify || envelopeMeta.verifyCmd;
+        values["verify-cmd"] = values.oracle || values["verify-cmd"] || values.verify || envelopeMeta.verifyCmd;
         if (values["auto-pr"] === undefined && envelopeMeta.flags?.autoPr !== undefined) {
           values["auto-pr"] = envelopeMeta.flags.autoPr;
         }
@@ -413,7 +414,7 @@ async function main() {
         checkPremise: values["check-premise"] || values.idempotent,
         goalCheck: values["goal-check"],
         author: values.author,
-        verifyCmd: values["verify-cmd"] || values.verify,
+        verifyCmd: values.oracle || values["verify-cmd"] || values.verify,
       };
 
       try {
@@ -2217,6 +2218,9 @@ async function main() {
             "depends-on": { type: "string" },
             verify: { type: "string" },
             "verify-cmd": { type: "string", short: "v" },
+            oracle: { type: "string" },
+            lane: { type: "string" },
+            "risk-lane": { type: "string" },
             "auto-pr": { type: "boolean" },
             "require-plan-approval": { type: "boolean" },
             repoless: { type: "boolean" },
@@ -2240,18 +2244,19 @@ async function main() {
           isTTY: Boolean(process.stdin.isTTY),
           // A title and a prompt together state the whole task; there is
           // nothing left for the wizard to ask.
-          fullySpecified: Boolean(values.title && resolvePromptInput(values, positionals)),
+          fullySpecified: Boolean(values.title && resolvePromptInput(values, positionals, root, { allowQueueFallback: false })),
         });
 
         const { runTaskCreateWizard } = await import("../src/wizard-task.mjs");
         const res = await runTaskCreateWizard(root, {
           title: values.title,
-          prompt: resolvePromptInput(values, positionals),
+          prompt: resolvePromptInput(values, positionals, root, { allowQueueFallback: false }),
           role: values.role,
           tier: values.tier,
           template: values.template,
+          lane: values.lane || values["risk-lane"],
           dependsOn: values["depends-on"] || values.depends,
-          verifyCmd: values["verify-cmd"] || values.verify,
+          verifyCmd: values.oracle || values["verify-cmd"] || values.verify,
           autoPr: values["auto-pr"],
           requirePlanApproval: values["require-plan-approval"],
           repoless: values.repoless,
@@ -2284,6 +2289,7 @@ async function main() {
             json: { type: "boolean", short: "j" },
             verify: { type: "string" },
             "verify-cmd": { type: "string", short: "v" },
+            oracle: { type: "string" },
             "dry-run": { type: "boolean", short: "d" },
           },
           allowPositionals: true,
@@ -2316,7 +2322,7 @@ async function main() {
           process.exit(1);
         }
 
-        const envelope = synthesizeWebEnvelope(templateName, {}, { verifyCmd: values["verify-cmd"] || values.verify });
+        const envelope = synthesizeWebEnvelope(templateName, {}, { verifyCmd: values.oracle || values["verify-cmd"] || values.verify });
         if (values.json) {
           console.log(JSON.stringify({ ok: true, ...envelope }, null, 2));
         } else {

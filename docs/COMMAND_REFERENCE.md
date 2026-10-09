@@ -209,6 +209,9 @@ Author a scoped, falsifiable task
 | `--depends` | string | Alias for --depends-on |
 | `--verify-cmd` | string | Verification command override (-v) |
 | `--verify` | string | Alias for --verify-cmd |
+| `--oracle` | string | Alias for --verify-cmd |
+| `--lane` | string | Risk lane assignment (green | amber | orange | red) |
+| `--risk-lane` | string | Alias for --lane |
 | `--auto-pr` | boolean | Automatically create GitHub PR upon completion |
 | `--require-plan-approval` | boolean | Require approval of agent plan before execution |
 | `--repoless` | boolean | Execute in repoless sandbox mode |
@@ -242,6 +245,7 @@ List and synthesize web task template envelopes
 | `--list` | boolean | List available task templates (-l) |
 | `--verify-cmd` | string | Verification command override (-v) |
 | `--verify` | string | Alias for --verify-cmd |
+| `--oracle` | string | Alias for --verify-cmd |
 | `--dry-run` | boolean | Simulate envelope synthesis (-d) |
 | `--json` | boolean | Output structured JSON envelope (-j) |
 
@@ -863,6 +867,7 @@ Dispatch a single task to an AI agent
 | `--author` | string | Attribution author for the dispatch |
 | `--verify-cmd` | string | Verification command override (-v) |
 | `--verify` | string | Alias for --verify-cmd |
+| `--oracle` | string | Alias for --verify-cmd |
 | `--source` | string | Jules repository source identifier (-s) |
 | `--branch` | string | Starting branch for task execution (-b) |
 | `--repoless` | boolean | Dispatch task in repoless execution mode |

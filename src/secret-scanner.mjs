@@ -49,7 +49,7 @@ export const LOW_CONFIDENCE_PATTERNS = [
   /Bearer\s+[A-Za-z0-9._~+/-]{10,255}/gi,
   /Authorization:\s*Bearer\s+[A-Za-z0-9._~+/-]{10,255}/gi,
   /\bsk_test_[0-9a-zA-Z]{24,99}\b/g,
-  /(?:api[_-]?key|secret|password|passwd|token|auth[_-]?token)\s*[:=]\s*(?:['"`]([^'"`\n]{8,128})['"`]|([A-Za-z0-9._~+/-]{16,128}))/gi,
+  /(?:["'`]|\b)(?:api[_-]?key|secret|password|passwd|token|auth[_-]?token)(?:["'`]|\b)\s*[:=]\s*(?:['"`]([^'"`\n]{8,128})['"`]|([A-Za-z0-9._~+/-]{16,128}))/gi,
 ];
 
 export function shannonEntropy(str) {
@@ -499,7 +499,10 @@ export function hasHighEntropyToken(text = "", file = null) {
     return false;
   }
 
-  const lines = text.split("\n");
+  const sanitizedText = text
+    .replace(/<!--\s*JULES_TASK_ENVELOPE:[\s\S]*?-->/gi, " ")
+    .replace(/^---\s*[\s\S]*?---\s*/m, " ");
+  const lines = sanitizedText.split("\n");
   for (const rawLine of lines) {
     const line = stripEntropyNoise(rawLine);
 
