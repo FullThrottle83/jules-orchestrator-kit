@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.1] - 2026-10-09
+
+### Added
+- **Auto-Merge CI Workflow Template (`src/ci-templates.mjs`, `bin/agentctl.mjs`)**: Added `buildAutoMergeWorkflow` and `--with-automerge` flag to `agentctl ci init`. Generates `.github/workflows/agent-automerge.yml` operating on `workflow_run` strictly from `ref: main`, enforcing secure bot actor validation (`google-labs-jules[bot]`, `github-actions[bot]`), untrusted commit data fetching, and base-branch gate verification before automated squash-merging.
+- **Quiet-Run Invariant (`AGENTS.md`, `JULES_RULES_TEMPLATE.md`)**: Enforced explicit invariant prohibiting cosmetic refactors and fabricated changes when scheduled or automated runs discover all constraints already satisfied.
+- **Automated SYNC-CORE Byte Parity Test (`test/cli-surface.test.mjs`)**: Added test verifying byte-level identity between `AGENTS.md` and `JULES_RULES_TEMPLATE.md` core rule blocks.
+
+### Security
+- **Symlink & Mode Inspection Hardening (`scripts/ci-scope-guard.mjs`)**: Replaced `--name-only` diff inspection with null-delimited raw diff parsing (`git diff --raw -z --no-renames`). Inspects blob modes, rejects symlinks (`mode 120000`) resolving to protected paths or escaping repository root via `git cat-file blob <dstSha>` without local checkout, rejects git submodules (`mode 160000`), and fails closed on unreadable symlink targets.
+
 ## [0.75.0] - 2026-09-28
 
 ### Added

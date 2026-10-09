@@ -254,6 +254,11 @@ export function secretScanVariants(addedLines) {
   // Collapse method concatenations like .concat("...") or .join("")
   dejoined = dejoined.replace(/\.concat\(\s*["'`]/g, "").replace(/\.join\(\s*["'`]{2}\s*\)/g, "");
 
+  // Collapse array elements like ["A", "B"]
+  dejoined = dejoined.replace(/["'`]\s*,\s*["'`]/g, "");
+  // Collapse split variables across newlines (e.g. const a = "AKIA"; const b = "...")
+  dejoined = dejoined.replace(/["'`]\s*[,;+]*\s*[\r\n]+\s*(?:(?:export\s+)?(?:const|let|var)\s+[A-Za-z0-9_]+\s*=\s*)?["'`]/g, "");
+
   // Collapse whitespace/newlines between adjacent base64 characters (including line-wrapped PEM/base64, template literals, and quoted string chunks)
   const base64Dejoined = stripped
     .replace(/([A-Za-z0-9+/=_-])\s*[\r\n]+\s*(?=[A-Za-z0-9+/=_-])/g, "$1")
@@ -266,9 +271,16 @@ export function secretScanVariants(addedLines) {
   // source-level join AND spelled with homoglyphs still surfaces.
   const confusable = normalizeSecretText(stripped);
   const confusableDejoined = normalizeSecretText(dejoined);
+  const uniDecoded = dejoined
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+  const stringLiteralsCollapsed = (stripped.match(/(["'`])(?:(?!\1)[^\n])*\1/g) || [])
+    .map(s => s.slice(1, -1))
+    .join('');
 
   return {
-    all: [...new Set([addedLines, stripped, dejoined, base64Dejoined, hexDecoded, pctDecoded, confusable, confusableDejoined])],
+    all: [...new Set([addedLines, stripped, dejoined, base64Dejoined, hexDecoded, pctDecoded, confusable, confusableDejoined, uniDecoded, stringLiteralsCollapsed])],
     normalized: dejoined,
     base64Normalized: base64Dejoined,
   };

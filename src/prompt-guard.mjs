@@ -5,6 +5,10 @@
  * Strips zero-width unicode, bidi control characters, and ANSI escape sequences, normalizes UTF-8,
  * neutralizes LLM control role markers and prompt injection patterns, and wraps inputs in strict tags.
  */
+import { BIDI_CONTROL_REGEX, INVISIBLE_OBFUSCATION_REGEX } from "./bidi-guard.mjs";
+import { CONFUSABLE_TO_ASCII } from "./secret-scanner.mjs";
+
+const CONFUSABLE_REGEX = new RegExp([...CONFUSABLE_TO_ASCII.keys()].join("|"), "g");
 
 const ZERO_WIDTH_AND_BIDI_REGEX = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]|[\u{E0000}-\u{E007F}]/gu;
 const ANSI_ESCAPE_REGEX = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
@@ -100,8 +104,13 @@ export function sanitizeUntrustedData(input, sourceName = "untrusted") {
   // 1. Normalize UTF-8 string (NFKC)
   let text = input.normalize("NFKC");
 
+  // 1.5 Convert confusables to ASCII (transliterate Cyrillic/Greek lookalikes)
+  text = text.replace(CONFUSABLE_REGEX, (m) => CONFUSABLE_TO_ASCII.get(m));
+
   // 2. Strip zero-width Unicode and bidi control characters
   text = text.replace(ZERO_WIDTH_AND_BIDI_REGEX, "");
+  text = text.replace(BIDI_CONTROL_REGEX, "");
+  text = text.replace(INVISIBLE_OBFUSCATION_REGEX, "");
 
   // 3. Strip ANSI terminal control sequences
   text = text.replace(ANSI_ESCAPE_REGEX, "");

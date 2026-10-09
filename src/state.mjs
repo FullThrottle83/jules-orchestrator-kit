@@ -233,9 +233,28 @@ export function withVfsMutex(mutexDir, fn, opts = {}) {
   const maxRetries = opts.maxRetries || 200;
   const retryDelayMs = opts.retryDelayMs || 10;
 
+  const staleMs = opts.staleMs || 2000;
+
   for (let i = 0; i < maxRetries; i++) {
+    let acquired = false;
     try {
       mkdirSync(mutexDir);
+      acquired = true;
+    } catch (err) {
+      if (err.code === "EEXIST") {
+        try {
+          if (Date.now() - statSync(mutexDir).mtimeMs > staleMs) {
+            rmdirSync(mutexDir);
+          }
+        } catch (_) {}
+        const deadline = Date.now() + retryDelayMs;
+        while (Date.now() < deadline) {}
+        continue;
+      }
+      throw err;
+    }
+    
+    if (acquired) {
       try {
         return fn();
       } finally {
@@ -243,13 +262,6 @@ export function withVfsMutex(mutexDir, fn, opts = {}) {
           rmdirSync(mutexDir);
         } catch (_) {}
       }
-    } catch (err) {
-      if (err.code === "EEXIST") {
-        const deadline = Date.now() + retryDelayMs;
-        while (Date.now() < deadline) {}
-        continue;
-      }
-      throw err;
     }
   }
   throw new MutexTimeoutError(`Failed to acquire VFS mutex lock at ${mutexDir} after ${maxRetries} retries`);
@@ -634,9 +646,10 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
   const root = typeof rootOrOpts === "string" ? rootOrOpts : (rootOrOpts?.root || resolveRoot());
   const branch = (typeof rootOrOpts === "object" && rootOrOpts?.branch) || opts?.branch || process.env.JULES_BRANCH || process.env.BRANCH_NAME || "";
   const lockDir = getLockDir(root);
-  const lockFile = join(lockDir, `${taskId}.json`);
+  return withVfsMutex(join(lockDir, ".acquire.mutex"), () => {
+    const lockFile = join(lockDir, `${taskId}.json`);
 
-  if (existsSync(lockFile)) {
+    if (existsSync(lockFile)) {
     try {
       const existing = JSON.parse(readFileSync(lockFile, "utf-8"));
       if (isLockLive(existing)) {
@@ -740,6 +753,7 @@ export function acquireLock(agentName, taskId, files = [], rootOrOpts = resolveR
       try { closeSync(fd); } catch (_) {}
     }
   }
+  });
 }
 
 export function releaseLock(taskId, rootOrOpts = resolveRoot()) {

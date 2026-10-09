@@ -167,6 +167,10 @@ function splitDiffByFile(diffText) {
       current.lines.push({ text: line.slice(1), no: lineNo });
       if (lineNo !== null) lineNo++;
     } else if (lineNo !== null && !line.startsWith("-") && !line.startsWith("\\")) {
+      if (line.startsWith(" ")) {
+        if (!current) select(null);
+        current.lines.push({ text: line.slice(1), no: lineNo });
+      }
       lineNo++; // A context line advances the post-image just as an added one does.
     }
   }

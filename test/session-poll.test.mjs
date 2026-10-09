@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   pollSessionState,
+  buildAutoReplyPrompt,
   TERMINAL_SESSION_STATES,
   BLOCKING_SESSION_STATES,
 } from "../src/engine.mjs";
@@ -26,9 +27,13 @@ function providerOverStates(states, hooks = {}) {
   let i = 0;
   const seen = [];
   const approvePlanCalls = [];
+  const sendMessageCalls = [];
+  const resumeCalls = [];
   return {
     seen,
     approvePlanCalls,
+    sendMessageCalls,
+    resumeCalls,
     async getSession(id) {
       seen.push(id);
       const state = states[Math.min(i, states.length - 1)];
@@ -39,6 +44,20 @@ function providerOverStates(states, hooks = {}) {
       approvePlanCalls.push(args);
       if (hooks.approvePlanThrows) throw new Error("approvePlan refused: quota");
       return {};
+    },
+    async sendMessage(...args) {
+      sendMessageCalls.push(args);
+      if (hooks.sendMessageThrows) throw new Error("sendMessage refused: network error");
+      return {};
+    },
+    async resume(...args) {
+      resumeCalls.push(args);
+      if (hooks.resumeThrows) throw new Error("resume refused: network error");
+      return {};
+    },
+    async listActivities(...args) {
+      if (typeof hooks.listActivities === "function") return hooks.listActivities(...args);
+      return { activities: hooks.activities || [] };
     },
   };
 }
@@ -249,5 +268,91 @@ test("Session state polling never reports an unfinished session as COMPLETED", a
     });
     assert.equal(res.timedOut, true);
     assert.ok(Date.now() - started < 2000, "the wall clock, not the attempt count, ended the loop");
+  });
+
+  await t.test("buildAutoReplyPrompt formats scope, invariants, objective and clarifications", () => {
+    const prompt = buildAutoReplyPrompt({
+      scope: { allow: ["src/foo.mjs", "src/bar.mjs"] },
+      invariants: ["No network calls", "Preserve ESM imports"],
+      objective: "Add authentication middleware",
+      clarifications: {
+        database: "Use PostgreSQL connection pool",
+        auth: "Expect standard authorization header",
+      },
+    }, "Should I use postgres or sqlite for database?");
+
+    assert.match(prompt, /Autonomous execution directive:/);
+    assert.match(prompt, /Scope constraint: modify only files matching src\/foo\.mjs, src\/bar\.mjs\./);
+    assert.match(prompt, /Invariants: No network calls; Preserve ESM imports\./);
+    assert.match(prompt, /Objective: Add authentication middleware\./);
+    assert.match(prompt, /Pre-approved clarification \(database\): Use PostgreSQL connection pool/);
+    assert.doesNotMatch(prompt, /Pre-approved clarification \(auth\)/);
+  });
+
+  await t.test("AWAITING_USER_FEEDBACK is resolved in-session when autoReply was requested", async () => {
+    const provider = providerOverStates(["AWAITING_USER_FEEDBACK", "COMPLETED"]);
+    const res = await pollSessionState(provider, { id: "s1" }, { ...FAST, autoReply: true });
+    assert.equal(res.status, "COMPLETED");
+    assert.equal(res.terminal, true);
+    assert.equal(provider.sendMessageCalls.length, 1);
+    assert.equal(provider.sendMessageCalls[0][0], "s1");
+    assert.match(provider.sendMessageCalls[0][1], /Autonomous execution directive:/);
+  });
+
+  await t.test("autoReply honors maxAutoReplies and stops when limit is reached", async () => {
+    const provider = providerOverStates(["AWAITING_USER_FEEDBACK"]);
+    const res = await pollSessionState(provider, { id: "s1" }, { ...FAST, autoReply: true, maxAutoReplies: 2 });
+    assert.equal(res.status, "AWAITING_USER_FEEDBACK");
+    assert.equal(res.terminal, false);
+    assert.equal(res.blockedOn, "AWAITING_USER_FEEDBACK");
+    assert.equal(res.autoReplyLimitExceeded, true);
+    assert.equal(res.autoReplies, 2);
+    assert.equal(provider.sendMessageCalls.length, 2);
+  });
+
+  await t.test("autoReply prevents sending duplicate replies on the same activityId (idempotency)", async () => {
+    const provider = providerOverStates(
+      ["AWAITING_USER_FEEDBACK", "AWAITING_USER_FEEDBACK", "COMPLETED"],
+      { activities: [{ name: "sessions/s1/activities/act-dup", agentMessaged: { agentMessage: "Which directory?" } }] }
+    );
+    const res = await pollSessionState(provider, { id: "s1" }, { ...FAST, autoReply: true, maxPollAttempts: 6 });
+    assert.equal(res.status, "COMPLETED");
+    assert.equal(res.terminal, true);
+    assert.equal(provider.sendMessageCalls.length, 1, "identical activityId must not trigger duplicate sendMessage calls");
+  });
+
+  await t.test("a refused autoReply sendMessage is reported, not swallowed", async () => {
+    const provider = providerOverStates(["AWAITING_USER_FEEDBACK"], { sendMessageThrows: true });
+    const res = await pollSessionState(provider, { id: "s1" }, { ...FAST, autoReply: true });
+    assert.equal(res.status, "AWAITING_USER_FEEDBACK");
+    assert.equal(res.terminal, false);
+    assert.equal(res.blockedOn, "AWAITING_USER_FEEDBACK");
+    assert.match(res.autoReplyError, /network error/);
+  });
+
+  await t.test("autoReply supports custom autoReplyFn", async () => {
+    const provider = providerOverStates(
+      ["AWAITING_USER_FEEDBACK", "COMPLETED"],
+      { activities: [{ name: "act-1", agentMessaged: { agentMessage: "Format as JSON?" } }] }
+    );
+    const res = await pollSessionState(provider, { id: "s1" }, {
+      ...FAST,
+      autoReply: true,
+      autoReplyFn: async ({ question }) => `Custom response for "${question}": yes, format as JSON.`,
+    });
+    assert.equal(res.status, "COMPLETED");
+    assert.equal(res.terminal, true);
+    assert.equal(provider.sendMessageCalls.length, 1);
+    assert.equal(provider.sendMessageCalls[0][1], 'Custom response for "Format as JSON?": yes, format as JSON.');
+  });
+
+  await t.test("autoReply falls back to provider.resume when sendMessage is absent", async () => {
+    const provider = providerOverStates(["AWAITING_USER_FEEDBACK", "COMPLETED"]);
+    delete provider.sendMessage;
+    const res = await pollSessionState(provider, { id: "s1" }, { ...FAST, autoReply: true });
+    assert.equal(res.status, "COMPLETED");
+    assert.equal(res.terminal, true);
+    assert.equal(provider.resumeCalls.length, 1);
+    assert.equal(provider.resumeCalls[0][0], "s1");
   });
 });

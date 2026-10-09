@@ -135,13 +135,20 @@ export function computeDirectoryHash(root, options = {}) {
     // The named directories stay as a fast path; when they yield nothing, walk
     // the repository and let the shared predicate decide. The walk already
     // skips node_modules, vendor, target and the build caches.
-    const targetDirs = options.directories || ["test", "tests", "__tests__", "spec", "specs", "src"];
+    const targetDirs = options.directories || ["test", "tests", "__tests__", "spec", "specs", "src", "scripts", "bin"];
     for (const dirName of targetDirs) {
       const dirPath = join(root, dirName);
       if (existsSync(dirPath)) {
-        const found = findFilesRecursively(dirPath, root);
-        fileList.push(...found);
+        if (statSync(dirPath).isFile()) {
+          fileList.push(normalizePath(dirName));
+        } else {
+          const found = findFilesRecursively(dirPath, root);
+          fileList.push(...found);
+        }
       }
+    }
+    if (existsSync(join(root, "package.json"))) {
+      fileList.push("package.json");
     }
     if (options.testOnly && !fileList.some((f) => isTestPath(f))) {
       for (const f of findFilesRecursively(root, root)) {
@@ -191,7 +198,8 @@ export function computeDirectoryHash(root, options = {}) {
     }
   }
 
-  const treeHash = "sha256:" + sha256(hashLines.join("\n"));
+  // Join with null byte to prevent path delimiter injection (F-03)
+  const treeHash = "sha256:" + sha256(hashLines.join("\0"));
   return {
     treeHash,
     fileCount: hashLines.length,
@@ -511,9 +519,18 @@ export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "m
     return { ok: false, reason: "Evidence manifest hash signature mismatch (tampered file)" };
   }
 
+  // 1.5 Verify recorded execution outcome (F-08)
+  if (manifest.status && !["passed", "success", "ok"].includes(manifest.status)) {
+    return { ok: false, reason: `Evidence manifest records failed execution outcome: ${manifest.status}` };
+  }
+
   // 2. Verify test integrity / No test weakening
   const currentTestState = computeDirectoryHash(root, { testOnly: true });
-  if (manifest.testIntegrity?.tamperDetected) {
+  if (!manifest.testIntegrity?.postTestHash) {
+    return { ok: false, reason: "Evidence manifest is missing test integrity baseline (empty shell)" };
+  }
+
+  if (manifest.testIntegrity.tamperDetected) {
     return {
       ok: false,
       reason: "Test suite tampering detected in evidence manifest",

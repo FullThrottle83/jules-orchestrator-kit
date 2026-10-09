@@ -947,6 +947,11 @@ export async function repair(failure, opts = {}) {
         dryRun: opts.dryRun,
         pollIntervalMs: opts.pollIntervalMs,
         maxPollAttempts: opts.maxPollAttempts,
+        autoApprovePlan: opts.autoApprovePlan || opts.autoApprove,
+        autoReply: opts.autoReply,
+        maxAutoReplies: opts.maxAutoReplies,
+        autoReplyFn: opts.autoReplyFn,
+        task: opts.task || { id: `repair-${n}`, title: `OODA Auto-Repair Attempt ${n}`, prompt: repairPrompt },
       });
 
       // The gate below is the authority on whether the change works, so it runs
@@ -1140,6 +1145,54 @@ export const TERMINAL_SESSION_STATES = new Set(["COMPLETED", "FAILED"]);
 export const BLOCKING_SESSION_STATES = new Set(["AWAITING_PLAN_APPROVAL", "AWAITING_USER_FEEDBACK", "PAUSED"]);
 
 /**
+ * Synthesizes an autonomous, envelope-grounded reply directive when Jules halts
+ * in AWAITING_USER_FEEDBACK during unattended execution.
+ *
+ * @param {object|null} task - Task envelope or task definition object.
+ * @param {string} [question] - Extracted question text from the agent.
+ * @returns {string} Deterministic directive for the agent to continue.
+ */
+export function buildAutoReplyPrompt(task = null, question = "") {
+  const parts = [];
+  parts.push("Autonomous execution directive:");
+
+  if (task && typeof task === "object") {
+    const scope = task.scope?.allow || task.allowedFiles || task.targetFiles;
+    if (Array.isArray(scope) && scope.length > 0) {
+      parts.push(`- Scope constraint: modify only files matching ${scope.join(", ")}.`);
+    }
+
+    const invariants = Array.isArray(task.invariants) ? task.invariants : [];
+    if (invariants.length > 0) {
+      parts.push(`- Invariants: ${invariants.slice(0, 5).join("; ")}.`);
+    }
+
+    if (task.title || task.objective) {
+      parts.push(`- Objective: ${task.title || task.objective}.`);
+    }
+
+    if (task.clarifications && typeof task.clarifications === "object") {
+      const entries = Object.entries(task.clarifications);
+      if (entries.length > 0) {
+        const qLower = String(question || "").toLowerCase();
+        for (const [k, v] of entries) {
+          if (qLower.includes(k.toLowerCase())) {
+            parts.push(`- Pre-approved clarification (${k}): ${v}`);
+          }
+        }
+      }
+    }
+  }
+
+  parts.push(
+    "- Decision rule: Make reasonable engineering assumptions that satisfy tests and maintain existing API contracts.",
+    "- Do not pause for human confirmation or additional feedback. Proceed with implementation, verification, and completion."
+  );
+
+  return parts.join("\n");
+}
+
+/**
  * Polls the provider until the session reaches a terminal state, blocks on an
  * actor, or the poll budget runs out.
  *
@@ -1180,6 +1233,8 @@ export async function pollSessionState(provider, session, opts = {}) {
   const startTime = Date.now();
   let lastStatus = "";
   let polls = 0;
+  const repliedActivityIds = new Set();
+  let autoRepliesCount = 0;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (Date.now() - startTime > timeoutMs) break;
@@ -1230,6 +1285,102 @@ export async function pollSessionState(provider, session, opts = {}) {
             terminal: false,
             blockedOn: status,
             approvePlanError: err && err.message ? err.message : String(err),
+            polls,
+          };
+        }
+      }
+
+      // Autonomously answer clarifying questions if requested
+      const isUserFeedback = status === "AWAITING_USER_FEEDBACK";
+      const wantsAutoReply = Boolean(opts.autoReply || session.autoReply);
+      const canSend = provider && (typeof provider.sendMessage === "function" || typeof provider.resume === "function");
+      if (isUserFeedback && wantsAutoReply && canSend) {
+        const maxAutoReplies = Number(opts.maxAutoReplies ?? session.maxAutoReplies ?? 3);
+        if (autoRepliesCount >= maxAutoReplies) {
+          return {
+            ...currentSession,
+            status,
+            terminal: false,
+            blockedOn: status,
+            autoReplyLimitExceeded: true,
+            autoReplies: autoRepliesCount,
+            polls,
+          };
+        }
+
+        let question = "";
+        let activityId = null;
+        if (typeof provider.listActivities === "function") {
+          try {
+            const actRes = await provider.listActivities(session.id, opts);
+            const activities = Array.isArray(actRes?.activities) ? actRes.activities : [];
+            for (let i = activities.length - 1; i >= 0; i--) {
+              const act = activities[i];
+              const msg = act.agentMessaged?.agentMessage || act.message;
+              if (msg) {
+                question = String(msg).trim();
+                activityId = act.name || act.id || null;
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Idempotency: If this activity was already answered, wait for the agent to advance rather than duplicate
+        if (activityId && repliedActivityIds.has(activityId)) {
+          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          continue;
+        }
+
+        let reply = "";
+        const taskContext = opts.task || session.task || null;
+        if (typeof opts.autoReplyFn === "function") {
+          try {
+            reply = await opts.autoReplyFn({ session: currentSession, question, activityId, task: taskContext });
+          } catch (err) {
+            return {
+              ...currentSession,
+              status,
+              terminal: false,
+              blockedOn: status,
+              autoReplyError: `autoReplyFn failed: ${err.message}`,
+              autoReplies: autoRepliesCount,
+              polls,
+            };
+          }
+        } else {
+          reply = buildAutoReplyPrompt(taskContext, question);
+        }
+
+        if (activityId) {
+          repliedActivityIds.add(activityId);
+        }
+
+        try {
+          const sendFn = typeof provider.sendMessage === "function"
+            ? provider.sendMessage.bind(provider)
+            : provider.resume.bind(provider);
+          await sendFn(session.id, reply, opts);
+          autoRepliesCount += 1;
+          if (opts.root) {
+            appendTelemetry(opts.root, "session_auto_reply", {
+              sessionId: session.id,
+              question: question ? question.slice(0, 300) : null,
+              reply: reply ? reply.slice(0, 300) : null,
+              replyCount: autoRepliesCount,
+              activityId,
+            });
+          }
+          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          continue;
+        } catch (err) {
+          return {
+            ...currentSession,
+            status,
+            terminal: false,
+            blockedOn: status,
+            autoReplyError: err && err.message ? err.message : String(err),
+            autoReplies: autoRepliesCount,
             polls,
           };
         }
@@ -1745,7 +1896,13 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
         if (isWin) {
           spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
         } else {
-          process.kill(-child.pid, "SIGTERM");
+          const pgid = -child.pid;
+          process.kill(pgid, "SIGTERM");
+          setTimeout(() => {
+            try {
+              process.kill(pgid, "SIGKILL");
+            } catch (_) {}
+          }, 2000).unref();
         }
       } catch (_) {}
     }

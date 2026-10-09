@@ -31,6 +31,9 @@ below and keep existing project instructions when adopting this template.
   affected checks if the base changes.
 - Report what changed, commands run, results and remaining limitations. Do not
   claim a check passed if it was skipped or could not run.
+- Do not invent changes or perform cosmetic refactors when no substantive work
+  is needed. If the assigned task or verification demonstrates that state is already
+  correct, report the finding and leave files unmodified.
 
 <!-- SYNC-CORE:END -->
 

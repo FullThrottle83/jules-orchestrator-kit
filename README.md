@@ -17,7 +17,7 @@ You can also run local checks without connecting an agent provider.
 `agentctl repair` explicitly for repair workflows. Provider output and passing
 checks still need review before merging.
 
-The current release is **v0.75.0**, a pre-1.0 release. A long-term stability policy is a
+The current release is **v0.75.1**, a pre-1.0 release. A long-term stability policy is a
 [v1.0 goal](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/ROADMAP_V1.md).
 
 ## Quickstart
@@ -176,7 +176,7 @@ npm run package-integrity
 npm run guard-reach
 ```
 
-The recorded baseline is **1650 unit tests across 210 suites**. Doc-sync compares
+The recorded baseline is **1667 unit tests across 210 suites**. Doc-sync compares
 that count with an actual run. Counts do not establish correctness for every
 provider or project. See
 [contributing](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTING.md)

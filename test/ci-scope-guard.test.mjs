@@ -9,6 +9,8 @@ import {
   parseLabels,
   loadProtectedPatterns,
   listChangedFiles,
+  listChangedEntries,
+  resolveLinkTarget,
   BYPASS_LABEL,
   LEGACY_BYPASS_LABEL,
 } from "../scripts/ci-scope-guard.mjs";
@@ -278,6 +280,144 @@ test("CI Agent Scope Guard", async (t) => {
 
     // Committed env template is an exception to .env deny
     assert.equal(isUnwaivableForbiddenPath(".env.example"), false);
+  });
+
+  await t.test("blocks symlinks whose target matches a protected pattern", () => {
+    const res = evaluateScopeGuard(
+      [
+        {
+          file: "src/innocent.js",
+          dstMode: "120000",
+          symlinkTarget: ".github/workflows/deploy.yml",
+        },
+      ],
+      PATTERNS
+    );
+    assert.equal(res.ok, false);
+    assert.equal(res.violations.length, 1);
+    assert.equal(res.violations[0].file, "src/innocent.js");
+    assert.equal(res.violations[0].target, ".github/workflows/deploy.yml");
+    assert.match(res.violations[0].reason, /Symlink "src\/innocent\.js" -> "\.github\/workflows\/deploy\.yml"/);
+  });
+
+  await t.test("blocks symlinks whose target escapes repository root via traversal or absolute path", () => {
+    const traversalRes = evaluateScopeGuard(
+      [
+        {
+          file: "notes.md",
+          dstMode: "120000",
+          symlinkTarget: "../../etc/passwd",
+        },
+      ],
+      PATTERNS
+    );
+    assert.equal(traversalRes.ok, false);
+    assert.equal(traversalRes.violations[0].file, "notes.md");
+    assert.match(traversalRes.violations[0].reason, /Path escapes the repository root/);
+
+    const absRes = evaluateScopeGuard(
+      [
+        {
+          file: "leak.txt",
+          dstMode: "120000",
+          symlinkTarget: "/etc/os-release",
+        },
+      ],
+      PATTERNS
+    );
+    assert.equal(absRes.ok, false);
+    assert.equal(absRes.violations[0].file, "leak.txt");
+    assert.match(absRes.violations[0].reason, /Path escapes the repository root/);
+  });
+
+  await t.test("blocks Git submodules (mode 160000)", () => {
+    const res = evaluateScopeGuard(
+      [
+        {
+          file: "vendor/external-repo",
+          dstMode: "160000",
+        },
+      ],
+      PATTERNS
+    );
+    assert.equal(res.ok, false);
+    assert.equal(res.violations.length, 1);
+    assert.equal(res.violations[0].file, "vendor/external-repo");
+    assert.equal(res.violations[0].pattern, "<submodule>");
+    assert.match(res.violations[0].reason, /Git submodule \(mode 160000\) is forbidden/);
+  });
+
+  await t.test("fails closed on unreadable or empty symlink targets", () => {
+    const res = evaluateScopeGuard(
+      [
+        {
+          file: "broken-link",
+          dstMode: "120000",
+          symlinkUnreadable: true,
+        },
+      ],
+      PATTERNS
+    );
+    assert.equal(res.ok, false);
+    assert.equal(res.violations.length, 1);
+    assert.equal(res.violations[0].file, "broken-link");
+    assert.equal(res.violations[0].pattern, "<unreadable-symlink>");
+    assert.match(res.violations[0].reason, /Unreadable or empty symlink target cannot be verified/);
+  });
+
+  await t.test("resolves relative symlink target cleanly via resolveLinkTarget", () => {
+    assert.equal(resolveLinkTarget("src/sub/link.js", "../other.js"), "src/other.js");
+    assert.equal(resolveLinkTarget("src/sub/link.js", "../../.github/ci.yml"), ".github/ci.yml");
+    assert.equal(resolveLinkTarget("link.js", "/etc/passwd"), "/etc/passwd");
+  });
+
+  await t.test("detects and blocks committed symlinks pointing to protected files in a real git repository", () => {
+    const repo = mkdtempSync(join(tmpdir(), "jules-symlink-guard-"));
+    t.after(() => rmSync(repo, { recursive: true, force: true }));
+
+    const g = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+    g("init", "-q", "-b", "main");
+    g("config", "user.email", "test@example.com");
+    g("config", "user.name", "test");
+
+    mkdirSync(join(repo, ".agent"), { recursive: true });
+    writeFileSync(join(repo, ".agent", "protected-paths.json"), JSON.stringify({ protected: [".github/**", "package.json"] }));
+    mkdirSync(join(repo, ".github"), { recursive: true });
+    writeFileSync(join(repo, ".github", "ci.yml"), "name: CI\n");
+    writeFileSync(join(repo, "README.md"), "base\n");
+    g("add", "-A");
+    g("commit", "-qm", "base");
+    const baseSha = g("rev-parse", "HEAD").trim();
+
+    // Commit a symlink under src/ pointing at protected .github/ci.yml
+    // Writing mode 120000 directly into the index works portably across all platforms
+    // (including Windows, where filesystem symlinks require elevated privileges).
+    const target = "../.github/ci.yml";
+    const sha = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+      cwd: repo,
+      input: target,
+      encoding: "utf-8",
+    }).trim();
+    g("update-index", "--add", "--cacheinfo", `120000,${sha},src/helper.js`);
+    g("commit", "-qm", "add symlink pointing to protected path");
+    const headSha = g("rev-parse", "HEAD").trim();
+
+    const patterns = loadProtectedPatterns({ baseSha, root: repo });
+    const entries = listChangedEntries({ baseSha, headSha, root: repo });
+    const files = listChangedFiles({ baseSha, headSha, root: repo });
+
+    assert.ok(files.includes("src/helper.js"));
+    const linkEntry = entries.find((e) => e.file === "src/helper.js");
+    assert.ok(linkEntry);
+    assert.equal(linkEntry.dstMode, "120000");
+    assert.equal(linkEntry.symlinkTarget, ".github/ci.yml");
+
+    const res = evaluateScopeGuard(entries, patterns);
+    assert.equal(res.ok, false);
+    assert.equal(res.violations.length, 1);
+    assert.equal(res.violations[0].file, "src/helper.js");
+    assert.equal(res.violations[0].target, ".github/ci.yml");
+    assert.match(res.violations[0].reason, /Symlink "src\/helper\.js" -> "\.github\/ci\.yml"/);
   });
 });
 

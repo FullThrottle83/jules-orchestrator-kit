@@ -101,18 +101,22 @@ function reap(signal = "SIGKILL") {
 
 // Ctrl-C, a CI cancellation and a harness teardown all arrive as signals; each
 // must take the tree with it rather than detaching it from its parent.
+let shuttingDown = false;
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     reap("SIGTERM");
     // Give the group a moment to unwind, then make sure.
     setTimeout(() => {
       reap("SIGKILL");
-      process.exit(130);
+      process.exit(sig === "SIGINT" ? 130 : 143);
     }, 2000).unref();
   });
 }
 
 child.on("exit", (code, signal) => {
+  if (shuttingDown) return;
   // Stragglers outlive a clean exit too: a test that spawned a server and
   // failed before its teardown leaves it running.
   reap("SIGKILL");
