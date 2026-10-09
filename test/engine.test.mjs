@@ -221,4 +221,52 @@ describe("src/engine.mjs", () => {
       /Task prompt exceeds maximum payload limit of 1 KB/
     );
   });
+
+  it("gate in committed mode materializes target HEAD commit and catches failing test", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "jok-gate-committed-fail-"));
+    try {
+      const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+      git("init", "-b", "main");
+      git("config", "user.email", "test@example.com");
+      git("config", "user.name", "Test");
+      mkdirSync(join(repo, ".agent"), { recursive: true });
+      writeFileSync(
+        join(repo, ".agent", "config.yml"),
+        "version: 1\nscope:\n  allow:\n    - '**'\nverify:\n  commands:\n    - node test.js\n"
+      );
+      writeFileSync(join(repo, "test.js"), "process.exit(0);\n");
+      git("add", ".");
+      git("commit", "-m", "initial clean main");
+
+      // Switch to feature branch and introduce a failing test commit
+      git("checkout", "-b", "feature");
+      writeFileSync(join(repo, "test.js"), "process.exit(1);\n");
+      git("add", "test.js");
+      git("commit", "-m", "introduce broken test");
+
+      // Running gate in committed mode against base main MUST fail on HEAD
+      const res = await gate({ root: repo, mode: "committed", base: "main" });
+      assert.equal(res.ok, false);
+      assert.equal(res.code, 4, "Must fail with exit code 4 (VERIFY phase failure)");
+      const verifyPhase = res.phases.find((p) => p.phase === "verify");
+      assert.ok(verifyPhase, "Must have verify phase");
+      assert.equal(verifyPhase.ok, false, "Verify phase must fail");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("dispatch rejects prompts with unredacted high-confidence secrets", async () => {
+    const mockToken = ["g", "h", "p", "_"].join("") + Array(36).fill("1").join("");
+    const task = {
+      title: "Secret Task",
+      prompt: `Deploy with ${mockToken} token`,
+    };
+    await assert.rejects(
+      async () => {
+        await dispatch(task, { dryRun: true });
+      },
+      /Pre-Dispatch Secret Leak Blocked/
+    );
+  });
 });

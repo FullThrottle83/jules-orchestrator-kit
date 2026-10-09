@@ -1,5 +1,5 @@
 import { git, runCmd, resolveBase } from "./git.mjs";
-import { checkScope } from "./security.mjs";
+import { checkScope, scanDiff } from "./security.mjs";
 import { normalizeScope } from "./config.mjs";
 import { existsSync } from "node:fs";
 import { resolve, relative, isAbsolute } from "node:path";
@@ -182,6 +182,22 @@ export function validateEnvelope(envelope = {}, opts = {}) {
       if (cb.stop_if_same_failure_repeats !== undefined && typeof cb.stop_if_same_failure_repeats !== "boolean") {
         errors.push("circuitBreaker.stop_if_same_failure_repeats must be a boolean when provided.");
       }
+    }
+  }
+
+  // 11. Secret Leak Scrubbing Preflight
+  const textToScan = [
+    typeof envelope.prompt === "string" ? envelope.prompt : "",
+    typeof envelope.intent === "string" ? envelope.intent : (envelope.intent?.outcome || ""),
+    typeof envelope.instructions === "string" ? envelope.instructions : "",
+  ].filter(Boolean).join("\n");
+
+  if (textToScan && !opts.allowSecrets) {
+    const multilineDiff = textToScan.split("\n").map((line) => `+${line}`).join("\n");
+    const secretScan = scanDiff(multilineDiff);
+    if (!secretScan.ok && secretScan.findings.length > 0) {
+      const types = secretScan.findings.map((f) => f.type || "SECRET_DETECTED").join(", ");
+      errors.push(`Secret leak detected in envelope prompt/intent (${types}). Scrub credentials before validation.`);
     }
   }
 

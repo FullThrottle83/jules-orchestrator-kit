@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.2] - 2026-10-09
+
+### Fixed
+- **Committed Mode Snapshot Target (`src/engine.mjs`)**: Pointed `materializeSnapshot` to target commit `opts.head` (defaults to `HEAD`) instead of base commit when evaluating in committed mode.
+- **Auto-Merge CI PR Head Checkout (`src/ci-templates.mjs`)**: Detached checkout to fetched PR head (`git checkout --detach refs/pr-head`) before gate evaluation so PR verification tests candidate changes rather than base.
+- **TUI Interactive Fallback on Headless CI (`src/ops/tui-menu.mjs`)**: Allowed interactive terminal UI menu execution when custom mock streams are explicitly provided even if `process.env.CI` is defined.
+- **Pure JSON Output in Task Queue (`bin/agentctl.mjs`)**: Suppressed decorative informational messages during `agentctl queue --json` execution for uncorrupted machine consumption.
+
+### Added
+- **CLI Navigation Aliases & Gate Flags (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Added `hub` alias for `menu`, `task new` alias for `task create`, and forwarded `--head` to `agentctl check` and verification gate.
+
+### Security
+- **Task Envelope & Pre-Dispatch Secret Prevention (`src/envelope.mjs`, `src/engine.mjs`)**: Rejected prompts and task intents containing unredacted high-confidence credentials before queuing or agent dispatch.
+
 ## [0.75.1] - 2026-10-09
 
 ### Added

@@ -933,6 +933,8 @@ describe("agentctl command surface — offline CLI coverage", () => {
 
       const proc = runCli(dir, ["queue", "--dry-run", "--json"]);
       assert.equal(proc.status, 0, proc.stderr);
+      assert.doesNotMatch(proc.stdout, /^Found \d+ queued task/);
+      assert.doesNotThrow(() => JSON.parse(proc.stdout.trim()), "stdout must be strictly parseable as JSON without banner lines");
       const out = jsonOut(proc);
       assert.equal(out.processed, 1);
       assert.equal(out.results[0].file, "TASK-01.md");

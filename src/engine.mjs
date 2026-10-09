@@ -2,7 +2,7 @@ import { loadConfig, resolveTrustedPolicy, normalizePath } from "./config.mjs";
 import { isTestPath } from "./test-paths.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
-import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets } from "./security.mjs";
+import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets, hasHighConfidenceSecret } from "./security.mjs";
 import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd, materializeSnapshot } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
@@ -306,7 +306,7 @@ export async function gate(opts = {}) {
   let snapshot = { cwd: root, cleanup: () => {}, mode };
   try {
     if (mode === "staged" || mode === "committed") {
-      snapshot = materializeSnapshot(root, mode, base);
+      snapshot = materializeSnapshot(root, mode, opts.head || "HEAD");
     }
   } catch (snapErr) {
     phases.push({ phase: "verify", ok: false, error: snapErr.message });
@@ -1482,8 +1482,14 @@ export async function dispatch(task = {}, opts = {}) {
     };
   }
 
+  // Pre-dispatch secret leak prevention (unless explicitly allowed)
+  const rawPrompt = task.prompt || "";
+  if (!opts.allowSecrets && hasHighConfidenceSecret(rawPrompt)) {
+    throw new Error("Pre-Dispatch Secret Leak Blocked: Task prompt contains unredacted high-confidence credentials.");
+  }
+
   // Redact secrets in prompt before dispatching
-  let cleanPrompt = redactSecrets(task.prompt || "");
+  let cleanPrompt = redactSecrets(rawPrompt);
 
   // Specialist Role resolution (if role is set and not already present in prompt)
   if (task.role) {

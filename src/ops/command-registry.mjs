@@ -373,9 +373,10 @@ export const COMMAND_REGISTRY = [
     risk: "low",
     interactive: "always",
     requiresRepository: true,
-    shortcuts: ["tui", "ui"],
+    shortcuts: ["hub", "tui", "ui"],
     examples: [
       "agentctl menu",
+      "agentctl hub",
       "agentctl tui",
     ],
     flags: [],
