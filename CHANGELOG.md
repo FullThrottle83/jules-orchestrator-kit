@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.3] - 2026-10-09
+
+### Added
+- **`--oracle` Verification Alias (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Added `--oracle` alias for `--verify` / `--verify-cmd` across `agentctl task create`, `task new`, `task template`, and `dispatch`, aligning CLI flags with prompt template terminology.
+- **Explicit Lane Flag on Task Creation (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Added `--lane` and `--risk-lane` flags to `agentctl task create` and `task new` to specify risk level directly (`green|amber|orange|red`) without manual frontmatter edits.
+
+### Fixed
+- **Queue Fallback Isolation (`bin/agentctl.mjs`)**: Prevented automatic pending queue file selection during `task create` / `task new`, ensuring queue auto-selection is restricted to `dispatch` and `run`.
+- **Envelope Comment Stripping in Entropy Scanner (`src/wizard-task.mjs`, `src/secret-scanner.mjs`)**: Stripped `<!-- JULES_TASK_ENVELOPE: ... -->` comments and YAML frontmatter prior to Shannon entropy calculation to prevent false-positive secret leak blocks on tasks carrying envelope metadata.
+- **Word Boundaries on Credential Keywords (`src/secret-scanner.mjs`)**: Added word boundary assertions around credential keywords in `LOW_CONFIDENCE_PATTERNS` so identifiers like `hasHighEntropyToken` are not flagged as secret leaks.
+
 ## [0.75.2] - 2026-10-09
 
 ### Fixed
