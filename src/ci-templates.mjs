@@ -259,6 +259,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags origin "+$HEAD_SHA:refs/pr-head"
+          git checkout --detach refs/pr-head
 
       - name: Set up Node.js
         if: steps.pr.outputs.found == 'true'

@@ -60,5 +60,18 @@ test("Task Envelope Premise & Scope Validation", async (t) => {
     assert.equal(res.ok, false);
     assert.match(res.errors[0], /concurrency_group must be a non-empty string/);
   });
+
+  await t.test("detects unredacted secret leak in envelope prompt/intent", () => {
+    const mockToken = ["g", "h", "p", "_"].join("") + Array(36).fill("1").join("");
+    const env = {
+      task_id: "TASK-004",
+      intent: `Deploy with ${mockToken} token`,
+      referenced_paths: ["package.json"],
+      acceptance_criteria: ["Done"],
+    };
+    const res = validateEnvelope(env);
+    assert.equal(res.ok, false);
+    assert.match(res.errors[0], /Secret leak detected in envelope prompt\/intent/);
+  });
 });
 

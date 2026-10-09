@@ -364,6 +364,7 @@ describe("generated CI belongs to the repository it is generated for", () => {
     assert.match(auto.content, /workflows: \["Agent Safety Gate"\]/);
     assert.match(auto.content, /ref: main/);
     assert.match(auto.content, /google-labs-jules\[bot\]/);
+    assert.match(auto.content, /git checkout --detach refs\/pr-head/);
     assert.match(auto.content, /gh pr merge --squash --delete-branch/);
   });
 

@@ -272,8 +272,8 @@ async function main() {
   if (!command) {
     if (args.includes("-i") || args.includes("--interactive")) {
       const { runTuiMenu } = await import("../src/ops/tui-menu.mjs");
-      await runTuiMenu(resolveRoot());
-      process.exit(0);
+      const res = await runTuiMenu(resolveRoot());
+      process.exit(res?.code || (res?.headless ? 1 : 0));
     }
     const { resolveNextStep, renderNextStep } = await import("../src/ops/next-step.mjs");
     const cwd = process.cwd();
@@ -497,6 +497,7 @@ async function main() {
         args: args.slice(1),
         options: {
           base: { type: "string", short: "b" },
+          head: { type: "string" },
           mode: { type: "string", short: "m", default: "working-tree" },
           "working-tree": { type: "boolean" },
           staged: { type: "boolean" },
@@ -532,6 +533,7 @@ async function main() {
         root,
         config,
         base: values.base,
+        head: values.head,
         mode: selectedMode,
         fix: values.fix,
         allowProtected: values["allow-protected"],
@@ -1402,24 +1404,29 @@ async function main() {
       } else {
         files = queueEntries.filter((f) => isTaskFile(f, queueDir));
       }
-      console.log(`Found ${files.length} queued task(s) in .agent/jules-queue/`);
-      if (files.length > 0) {
-        const concurrency = values.concurrency ? Number(values.concurrency) : undefined;
-        const results = await run(null, {
-          root,
-          config,
-          dag: values.dag,
-          concurrency,
-          dryRun: values["dry-run"],
-        });
-        if (values.json) {
-          console.log(JSON.stringify(results, null, 2));
-          const anyFailed = (results.results || []).some((r) => r && r.ok === false);
-          process.exit(anyFailed ? 1 : 0);
-        }
-        process.exit(reportRunOutcome(results));
+      if (!values.json) {
+        console.log(`Found ${files.length} queued task(s) in .agent/jules-queue/`);
       }
-      process.exit(0);
+      if (files.length === 0) {
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, processed: 0, results: [], dryRun: Boolean(values["dry-run"]) }, null, 2));
+        }
+        process.exit(0);
+      }
+      const concurrency = values.concurrency ? Number(values.concurrency) : undefined;
+      const results = await run(null, {
+        root,
+        config,
+        dag: values.dag,
+        concurrency,
+        dryRun: values["dry-run"],
+      });
+      if (values.json) {
+        console.log(JSON.stringify(results, null, 2));
+        const anyFailed = (results.results || []).some((r) => r && r.ok === false);
+        process.exit(anyFailed ? 1 : 0);
+      }
+      process.exit(reportRunOutcome(results));
       break;
     }
 
@@ -2031,12 +2038,13 @@ async function main() {
       break;
     }
 
+    case "hub":
     case "menu":
     case "tui":
     case "ui": {
       const { runTuiMenu } = await import("../src/ops/tui-menu.mjs");
-      await runTuiMenu(root);
-      process.exit(0);
+      const res = await runTuiMenu(root);
+      process.exit(res?.code || (res?.headless ? 1 : 0));
       break;
     }
 
@@ -2195,7 +2203,7 @@ async function main() {
 
     case "task": {
       const subCommand = args[1] || "create";
-      if (subCommand === "create") {
+      if (subCommand === "create" || subCommand === "new") {
         const { values, positionals } = parseArgs({
           args: args.slice(2),
           options: {
@@ -2456,7 +2464,7 @@ async function main() {
 
         process.exit(result.ok ? 0 : 1);
       } else {
-        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create, agentctl task optimize, agentctl task template, agentctl task validate`);
+        console.error(`Unknown task subcommand '${subCommand}'. Supported: agentctl task create (or task new), agentctl task optimize, agentctl task template, agentctl task validate`);
         process.exit(1);
       }
       break;

@@ -27,9 +27,11 @@ export async function runTuiMenu(root = process.cwd(), options = {}) {
   const stdin = options.stdin || process.stdin;
   const stdout = options.stdout || process.stdout;
 
-  if (!isTTY(stdin) && !options.allowHeadless) {
+  const hasCustomStreams = Boolean(options.stdin || options.stdout);
+  const isInteractive = isTTY(stdin) && isTTY(stdout) && (!process.env.CI || hasCustomStreams || options.allowInteractive);
+  if (!isInteractive && !options.allowHeadless) {
     stdout.write("Interactive terminal menu requires a TTY terminal. Use 'agentctl --help' for CLI commands.\n");
-    return { ok: true, headless: true };
+    return { ok: true, headless: true, code: 1 };
   }
 
   while (true) {

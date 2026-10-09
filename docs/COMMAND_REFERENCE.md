@@ -407,7 +407,7 @@ agentctl dashboard 3000
 
 Launch interactive terminal navigation hub
 
-**Shortcuts:** `tui`, `ui`
+**Shortcuts:** `hub`, `tui`, `ui`
 
 **Flags:** none.
 
@@ -415,6 +415,7 @@ Launch interactive terminal navigation hub
 
 ```sh
 agentctl menu
+agentctl hub
 agentctl tui
 ```
 
