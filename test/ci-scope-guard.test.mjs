@@ -390,15 +390,15 @@ test("CI Agent Scope Guard", async (t) => {
     const baseSha = g("rev-parse", "HEAD").trim();
 
     // Commit a symlink under src/ pointing at protected .github/ci.yml
-    mkdirSync(join(repo, "src"), { recursive: true });
-    try {
-      execFileSync("ln", ["-s", "../.github/ci.yml", join(repo, "src", "helper.js")]);
-    } catch (_) {
-      // Skip if OS/filesystem cannot create symlinks
-      return;
-    }
-
-    g("add", "-A");
+    // Writing mode 120000 directly into the index works portably across all platforms
+    // (including Windows, where filesystem symlinks require elevated privileges).
+    const target = "../.github/ci.yml";
+    const sha = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+      cwd: repo,
+      input: target,
+      encoding: "utf-8",
+    }).trim();
+    g("update-index", "--add", "--cacheinfo", `120000,${sha},src/helper.js`);
     g("commit", "-qm", "add symlink pointing to protected path");
     const headSha = g("rev-parse", "HEAD").trim();
 

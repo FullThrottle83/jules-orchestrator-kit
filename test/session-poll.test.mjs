@@ -277,7 +277,7 @@ test("Session state polling never reports an unfinished session as COMPLETED", a
       objective: "Add authentication middleware",
       clarifications: {
         database: "Use PostgreSQL connection pool",
-        token: "Expect Bearer token header",
+        auth: "Expect standard authorization header",
       },
     }, "Should I use postgres or sqlite for database?");
 
@@ -286,7 +286,7 @@ test("Session state polling never reports an unfinished session as COMPLETED", a
     assert.match(prompt, /Invariants: No network calls; Preserve ESM imports\./);
     assert.match(prompt, /Objective: Add authentication middleware\./);
     assert.match(prompt, /Pre-approved clarification \(database\): Use PostgreSQL connection pool/);
-    assert.doesNotMatch(prompt, /Pre-approved clarification \(token\)/);
+    assert.doesNotMatch(prompt, /Pre-approved clarification \(auth\)/);
   });
 
   await t.test("AWAITING_USER_FEEDBACK is resolved in-session when autoReply was requested", async () => {
