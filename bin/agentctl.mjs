@@ -343,6 +343,7 @@ async function main() {
           "require-plan-approval": { type: "boolean" },
           "auto-approve-plans": { type: "boolean" },
           "auto-approve": { type: "boolean" },
+          "auto-reply": { type: "boolean" },
           "check-premise": { type: "boolean" },
           "goal-check": { type: "string" },
           idempotent: { type: "boolean" },
@@ -396,6 +397,7 @@ async function main() {
       }
 
       const autoApprove = Boolean(values["auto-approve-plans"] || values["auto-approve"]);
+      const autoReply = Boolean(values["auto-reply"] || values.autoReply);
       const task = {
         title: values.title || "CLI Dispatch Task",
         prompt: promptContent,
@@ -406,6 +408,8 @@ async function main() {
         repoless: values.repoless,
         autoPr: values["auto-pr"],
         requirePlanApproval: autoApprove ? false : values["require-plan-approval"],
+        autoApprovePlan: autoApprove,
+        autoReply,
         checkPremise: values["check-premise"] || values.idempotent,
         goalCheck: values["goal-check"],
         author: values.author,
@@ -421,6 +425,8 @@ async function main() {
           source: values.source,
           branch: values.branch,
           checkPremise: values["check-premise"] || values.idempotent,
+          autoApprovePlan: autoApprove,
+          autoReply,
         });
         if (values.json) {
           console.log(JSON.stringify({ ok: true, session }, null, 2));
@@ -1018,6 +1024,8 @@ async function main() {
           cmd: { type: "string", short: "c" },
           task: { type: "boolean", short: "t" },
           author: { type: "string" },
+          "auto-approve": { type: "boolean" },
+          "auto-reply": { type: "boolean" },
           json: { type: "boolean", short: "j" },
           "dry-run": { type: "boolean" },
         },
@@ -1069,7 +1077,13 @@ async function main() {
         }
         const repairRes = await repair(
           { stderr: cleanTrace, command: values.cmd || "verify" },
-          { root, dryRun: values["dry-run"], author: values.author }
+          {
+            root,
+            dryRun: values["dry-run"],
+            author: values.author,
+            autoApprove: values["auto-approve"],
+            autoReply: values["auto-reply"],
+          }
         );
 
         if (values.json) {
@@ -1881,7 +1895,7 @@ async function main() {
     case "ci": {
       const sub = args[1];
       if (sub !== "init") {
-        console.error(`❌ Unknown 'ci' action '${sub || ""}'. Usage: agentctl ci init [--target github|gitlab] [--force]`);
+        console.error(`❌ Unknown 'ci' action '${sub || ""}'. Usage: agentctl ci init [--target github|gitlab] [--force] [--with-automerge]`);
         process.exit(2);
       }
       const { values } = parseArgs({
@@ -1891,6 +1905,7 @@ async function main() {
           force: { type: "boolean", short: "f" },
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
+          "with-automerge": { type: "boolean" },
         },
         allowPositionals: true,
       });
@@ -1902,6 +1917,7 @@ async function main() {
         config,
         version: VERSION,
         stack: detectStack(root),
+        withAutomerge: values["with-automerge"],
       });
 
       if (values.json) {
@@ -1912,9 +1928,13 @@ async function main() {
         console.error(`❌ ${res.error}`);
         process.exit(1);
       }
-      console.log(`✅ ${res.written ? "Wrote" : "Would write"} ${res.file}`);
+      const filesDesc = Array.isArray(res.files) ? res.files.join(", ") : res.file;
+      console.log(`✅ ${res.written ? "Wrote" : "Would write"} ${filesDesc}`);
       console.log(`   Stack: ${res.stack} · runtime setup: ${res.setupSummary}`);
       console.log(`   The workflow runs: agentctl check --mode committed`);
+      if (values["with-automerge"]) {
+        console.log(`   Auto-merge: enabled for authorized agent pull requests via workflow_run`);
+      }
       if (!res.written && !values["dry-run"]) {
         console.log(`   (unchanged — pass --force to overwrite)`);
       }

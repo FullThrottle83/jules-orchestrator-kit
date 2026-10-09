@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,7 +15,7 @@ import {
 import { ENV_ALIASES, applyEnvAliases, describeEnvVar } from "../src/env-aliases.mjs";
 import { PROFILE_NAMES, buildProfileStages, buildDefaultStages, describeProfilePlan } from "../src/profiles.mjs";
 import { setVerificationProfile } from "../src/config-edit.mjs";
-import { buildCiWorkflow, writeCiWorkflow, CI_TARGETS } from "../src/ci-templates.mjs";
+import { buildCiWorkflow, buildAutoMergeWorkflow, writeCiWorkflow, CI_TARGETS } from "../src/ci-templates.mjs";
 import { loadConfig, BUILTIN_DENY } from "../src/config.mjs";
 import { checkScope, isEnvTemplateException } from "../src/security.mjs";
 
@@ -354,6 +354,39 @@ describe("generated CI belongs to the repository it is generated for", () => {
     const res = writeCiWorkflow(mkdtempSync(join(tmpdir(), "jok-ci-bad-")), { target: "jenkins" });
     assert.equal(res.ok, false);
     assert.match(res.error, new RegExp(CI_TARGETS.join("|")));
+  });
+
+  it("buildAutoMergeWorkflow generates a secure workflow_run auto-merge workflow targeting the configured base branch", () => {
+    const auto = buildAutoMergeWorkflow({ config: { baseBranch: "main" }, version: "0.75.0" });
+    assert.equal(auto.file, ".github/workflows/agent-automerge.yml");
+    assert.match(auto.content, /name: Agent Auto-Merge/);
+    assert.match(auto.content, /workflow_run:/);
+    assert.match(auto.content, /workflows: \["Agent Safety Gate"\]/);
+    assert.match(auto.content, /ref: main/);
+    assert.match(auto.content, /google-labs-jules\[bot\]/);
+    assert.match(auto.content, /gh pr merge --squash --delete-branch/);
+  });
+
+  it("writeCiWorkflow with withAutomerge writes both agent-gate.yml and agent-automerge.yml", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-ci-automerge-"));
+    try {
+      const res = writeCiWorkflow(dir, { target: "github", stack: { stack: "node" }, withAutomerge: true });
+      assert.equal(res.ok, true);
+      assert.equal(res.written, true);
+      assert.deepEqual(res.files, [".github/workflows/agent-gate.yml", ".github/workflows/agent-automerge.yml"]);
+
+      assert.ok(existsSync(join(dir, ".github/workflows/agent-gate.yml")));
+      assert.ok(existsSync(join(dir, ".github/workflows/agent-automerge.yml")));
+      assert.match(readFileSync(join(dir, ".github/workflows/agent-automerge.yml"), "utf-8"), /Agent Auto-Merge/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("writeCiWorkflow with withAutomerge rejects non-GitHub targets cleanly", () => {
+    const res = writeCiWorkflow(mkdtempSync(join(tmpdir(), "jok-ci-gl-automerge-")), { target: "gitlab", withAutomerge: true });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /only supported for GitHub Actions/i);
   });
 });
 

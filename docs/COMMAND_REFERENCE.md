@@ -1273,11 +1273,13 @@ Generate a stack-aware CI gate workflow
 | `--force` | boolean | Overwrite existing workflow file (-f) |
 | `--dry-run` | boolean | Report what would be written (-d) |
 | `--json` | boolean | Output structured JSON result (-j) |
+| `--with-automerge` | boolean | Also generate a workflow_run auto-merge workflow |
 
 **Examples:**
 
 ```sh
 agentctl ci init
+agentctl ci init --with-automerge
 agentctl ci init --target gitlab --force
 agentctl ci init --dry-run --json
 ```

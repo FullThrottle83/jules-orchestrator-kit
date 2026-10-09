@@ -716,6 +716,10 @@ export function createProvider(spec = "jules", config = {}) {
       throw new Error(`Unsupported provider type: ${providerSpec.type}`);
     },
 
+    async sendMessage(sessionId, prompt = "", ctx = {}, task = null) {
+      return this.resume(sessionId, prompt, ctx, task);
+    },
+
     async getSession(sessionId, ctx = {}) {
       if (!ctx || typeof ctx !== "object") ctx = {};
       // `listSources()` reuses this method purely as an authenticated GET, and
@@ -1126,6 +1130,10 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
       }
     },
 
+    async sendMessage(sessionId, prompt, ctx = {}, task = null) {
+      return this.resume(sessionId, prompt, ctx, task);
+    },
+
     async getSession(sessionId, ctx = {}) {
       const errors = [];
       for (let i = 0; i < providerList.length; i++) {
@@ -1261,6 +1269,12 @@ export function createSyntaxVerifiedProvider(fastProvider, complexProvider, conf
 
     resume(...args) {
       return fastProvider.resume(...args);
+    },
+
+    sendMessage(...args) {
+      return typeof fastProvider.sendMessage === "function"
+        ? fastProvider.sendMessage(...args)
+        : fastProvider.resume(...args);
     },
 
     getSession(...args) {

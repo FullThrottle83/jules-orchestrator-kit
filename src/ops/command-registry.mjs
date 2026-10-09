@@ -1210,6 +1210,7 @@ export const COMMAND_REGISTRY = [
     shortcuts: ["ci-init"],
     examples: [
       "agentctl ci init",
+      "agentctl ci init --with-automerge",
       "agentctl ci init --target gitlab --force",
       "agentctl ci init --dry-run --json",
     ],
@@ -1218,6 +1219,7 @@ export const COMMAND_REGISTRY = [
       { name: "force", type: "boolean", description: "Overwrite existing workflow file (-f)" },
       { name: "dry-run", type: "boolean", description: "Report what would be written (-d)" },
       { name: "json", type: "boolean", description: "Output structured JSON result (-j)" },
+      { name: "with-automerge", type: "boolean", description: "Also generate a workflow_run auto-merge workflow" },
     ],
   },
   {

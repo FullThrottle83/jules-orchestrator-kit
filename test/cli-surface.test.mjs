@@ -325,6 +325,18 @@ describe("F13 — Markdown EOF hygiene", () => {
     assert.ok(content.endsWith("\n"), "file must end with a newline");
     assert.ok(!content.endsWith("\n\n"), "file must not end with trailing blank lines");
   });
+
+  it("shared SYNC-CORE block is byte-identical in AGENTS.md and JULES_RULES_TEMPLATE.md", () => {
+    const agents = readFileSync(join(ROOT, "AGENTS.md"), "utf-8");
+    const template = readFileSync(join(ROOT, "JULES_RULES_TEMPLATE.md"), "utf-8");
+    const extractCore = (text) => {
+      const match = text.match(/<!-- SYNC-CORE:BEGIN -->([\s\S]*?)<!-- SYNC-CORE:END -->/);
+      return match ? match[1] : null;
+    };
+    assert.ok(extractCore(agents), "AGENTS.md must contain SYNC-CORE block");
+    assert.ok(extractCore(template), "JULES_RULES_TEMPLATE.md must contain SYNC-CORE block");
+    assert.strictEqual(extractCore(agents), extractCore(template), "SYNC-CORE blocks must be byte-identical");
+  });
 });
 
 describe("F14 — Cargo lint oracle defaults without -D warnings", () => {
