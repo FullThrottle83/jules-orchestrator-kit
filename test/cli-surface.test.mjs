@@ -218,6 +218,38 @@ test("every command that takes a prompt takes it the same three ways", async (t)
     }
   });
 
+  await t.test("task optimize accepts -f as --prompt-file without activating --fix", () => {
+    const dir = repoWithFailingTest("unused");
+    try {
+      const promptPath = join(dir, "prompt.txt");
+      writeFileSync(promptPath, "Fix JWT token expiry in src/auth.js. Run npm test.", "utf-8");
+      const res = run(dir, ["task", "optimize", "-f", promptPath, "--json"]);
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      const parsed = JSON.parse(res.stdout);
+      assert.ok(parsed.isFalsifiable, "Expected analysis object with isFalsifiable: true");
+      assert.ok(typeof parsed.score === "number");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("task new --template synthesizes envelope without interactive TTY prompt", () => {
+    const dir = repoWithFailingTest("unused");
+    try {
+      const res = run(dir, ["task", "new", "--template", "web-cwv", "--oracle", "npm test", "--json"]);
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      const parsed = JSON.parse(res.stdout);
+      assert.equal(parsed.ok, true);
+      assert.ok(parsed.taskFile);
+      assert.ok(existsSync(parsed.taskFile));
+      const content = readFileSync(parsed.taskFile, "utf-8");
+      assert.match(content, /Core Web Vitals/);
+      assert.match(content, /npm test/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   await t.test("dispatch accepts --verify-cmd and --verify flags in dry-run", () => {
     const dir = repoWithFailingTest("unused");
     try {

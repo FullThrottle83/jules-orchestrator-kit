@@ -1668,5 +1668,46 @@ test("P0-05: Working Tree & Untracked File Gate Mode", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("gate() in committed mode respects opts.head to inspect non-active branch", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-gate-head-e2e-"));
+    try {
+      runCmd("git init -b main", { cwd: tmpDir });
+      runCmd('git config user.name "Test"', { cwd: tmpDir });
+      runCmd('git config user.email "test@example.com"', { cwd: tmpDir });
+
+      mkdirSync(join(tmpDir, "test"), { recursive: true });
+      writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ type: "module", scripts: { test: "node --test" } }) + "\n");
+      writeFileSync(
+        join(tmpDir, "test", "index.test.mjs"),
+        'import assert from "node:assert/strict";\nconst val = 1;\nassert.strictEqual(val, 1);\n'
+      );
+      runCmd("git add .", { cwd: tmpDir });
+      runCmd('git commit -m "Initial commit on main"', { cwd: tmpDir });
+
+      // Create branch with tampered test
+      runCmd("git checkout -b feat/tamper-branch", { cwd: tmpDir });
+      writeFileSync(
+        join(tmpDir, "test", "index.test.mjs"),
+        'import assert from "node:assert/strict";\nconst val = 1;\n' + "// " + 'assert.strictEqual(val, 1);\n'
+      );
+      runCmd("git add .", { cwd: tmpDir });
+      runCmd('git commit -m "Tamper test on branch"', { cwd: tmpDir });
+
+      // Switch back to main branch
+      runCmd("git checkout main", { cwd: tmpDir });
+
+      // Run gate explicitly specifying head as feat/tamper-branch while active branch is main
+      const resTamper = await gate({ root: tmpDir, base: "main", head: "feat/tamper-branch", mode: "committed" });
+      assert.equal(resTamper.ok, false);
+      assert.equal(resTamper.code, 6);
+      const secretPhase = resTamper.phases.find((p) => p.phase === "secrets");
+      assert.ok(secretPhase);
+      assert.equal(secretPhase.ok, false);
+      assert.ok(secretPhase.findings.some((f) => f.type === "TEST_TAMPERING_DETECTED"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 }

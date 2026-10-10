@@ -400,7 +400,9 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
   // never asks. That is the same defect the flag itself has: one rule, two
   // paths, and only the path nobody was watching kept the old answer. Making
   // `-p` mean the headless path everywhere makes the two agree by construction.
-  const promptSupplied = typeof options.prompt === "string" && options.prompt.trim() !== "";
+  const promptSupplied =
+    (typeof options.prompt === "string" && options.prompt.trim() !== "") ||
+    Boolean(options.template);
   const interactive = options.interactive !== false && !promptSupplied && isTTY(options.stdin || process.stdin);
 
   let title = options.title;
