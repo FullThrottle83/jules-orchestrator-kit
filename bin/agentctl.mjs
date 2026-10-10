@@ -87,7 +87,7 @@ export function printHelp() {
   lines.push("Options:");
   lines.push("  --prompt, -p          Task prompt text — dispatch, task create and task optimize");
   lines.push("                        also accept it as a positional argument");
-  lines.push("  --prompt-file, -f     Read the prompt from a file (-f is --fix on task optimize)");
+  lines.push("  --prompt-file, -f     Read the prompt from a file");
   lines.push("  --role, -r            Specify specialist agent role (auditor | performance | security | hygiene | resilience | types | debugger | testing | e2e | database | docs | a11y)");
   lines.push("  --tier                Force routing tier when router.enabled (fast | complex) — see .agent/config.yml router:");
   lines.push("  --check-premise       Skip only when an explicit --goal-check proves the task complete");
@@ -2298,8 +2298,11 @@ async function main() {
           ci: Boolean(process.env.CI),
           isTTY: Boolean(process.stdin.isTTY),
           // A title and a prompt together state the whole task; there is
-          // nothing left for the wizard to ask.
-          fullySpecified: Boolean(values.title && resolvePromptInput(values, positionals, root, { allowQueueFallback: false })),
+          // nothing left for the wizard to ask. A template also supplies the title and prompt.
+          fullySpecified: Boolean(
+            (values.title || values.template) &&
+            (resolvePromptInput(values, positionals, root, { allowQueueFallback: false }) || values.template)
+          ),
         });
 
         const { runTaskCreateWizard } = await import("../src/wizard-task.mjs");
@@ -2321,7 +2324,11 @@ async function main() {
         });
 
         if (values.json) {
-          console.log(JSON.stringify(res, null, 2));
+          process.stdout.write(JSON.stringify(res, null, 2) + "\n", () => {
+            process.exit(0);
+          });
+          setTimeout(() => process.exit(0), 1000).unref();
+          return;
         } else {
           console.log(
             res.dryRun
@@ -2388,13 +2395,9 @@ async function main() {
         const { values, positionals } = parseArgs({
           args: args.slice(2),
           options: {
-            fix: { type: "boolean", short: "f" },
+            fix: { type: "boolean" },
             prompt: { type: "string", short: "p" },
-            // No short form here: `-f` is already --fix on this subcommand, and
-            // silently meaning two different things would be worse than one
-            // command having a flag short of full parity. `--file` predates
-            // `--prompt-file` and stays as an alias.
-            "prompt-file": { type: "string" },
+            "prompt-file": { type: "string", short: "f" },
             file: { type: "string" },
             dir: { type: "string", short: "d" },
             web: { type: "boolean", short: "w" },

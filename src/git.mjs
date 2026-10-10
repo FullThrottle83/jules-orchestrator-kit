@@ -407,9 +407,9 @@ export function resolveBase(root = process.cwd(), baseRef = "main") {
   );
 }
 
-export function getHeadCommit(root = process.cwd()) {
+export function getCommitSha(root = process.cwd(), ref = "HEAD") {
   try {
-    const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], {
+    const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
       cwd: root,
       encoding: "utf-8",
       shell: false,
@@ -419,31 +419,40 @@ export function getHeadCommit(root = process.cwd()) {
   } catch (_) {
     return null;
   }
+}
+
+export function getCommitParent(root = process.cwd(), ref = "HEAD") {
+  try {
+    const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}~1^{commit}`], {
+      cwd: root,
+      encoding: "utf-8",
+      shell: false,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return res && res.trim() ? res.trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+export function getHeadCommit(root = process.cwd()) {
+  return getCommitSha(root, "HEAD");
 }
 
 export function getHeadParent(root = process.cwd()) {
-  try {
-    const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"], {
-      cwd: root,
-      encoding: "utf-8",
-      shell: false,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return res && res.trim() ? res.trim() : null;
-  } catch (_) {
-    return null;
-  }
+  return getCommitParent(root, "HEAD");
 }
 
-export function changedFiles(root = process.cwd(), base = "main", mode = "committed") {
+export function changedFiles(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
+  const targetHead = head || "HEAD";
   const resolvedRef = resolveBase(root, base);
-  const headCommit = getHeadCommit(root);
-  const isHeadRef = typeof base === "string" && (base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
+  const headCommit = getCommitSha(root, targetHead);
+  const isHeadRef = typeof base === "string" && (base === targetHead || base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
   const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
 
   if (mode === "working-tree" || mode === "working") {
-    const committedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
-    const uncommittedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", "HEAD"], { cwd: root, raw: true, ignoreError: true }) || "";
+    const committedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true, ignoreError: true }) || "";
+    const uncommittedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", targetHead], { cwd: root, raw: true, ignoreError: true }) || "";
     const untrackedRaw = git(["-c", "core.quotePath=false", "ls-files", "-z", "--others", "--exclude-standard"], { cwd: root, raw: true, ignoreError: true }) || "";
 
     const set = new Set([
@@ -457,29 +466,30 @@ export function changedFiles(root = process.cwd(), base = "main", mode = "commit
     return raw.split("\0").map(normalizePath).filter(Boolean);
   } else {
     if (isBaseAtHead) {
-      const headParent = getHeadParent(root);
+      const headParent = getCommitParent(root, targetHead);
       if (headParent) {
-        const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${headParent}...HEAD`], { cwd: root, raw: true });
+        const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${headParent}...${targetHead}`], { cwd: root, raw: true });
         return raw.split("\0").map(normalizePath).filter(Boolean);
       } else {
         const raw = git(["-c", "core.quotePath=false", "diff-tree", "--root", "--no-commit-id", "-r", "-z", "--name-only", headCommit], { cwd: root, raw: true });
         return raw.split("\0").map(normalizePath).filter(Boolean);
       }
     }
-    const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
+    const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true });
     return raw.split("\0").map(normalizePath).filter(Boolean);
   }
 }
 
-export function diffText(root = process.cwd(), base = "main", mode = "committed") {
+export function diffText(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
+  const targetHead = head || "HEAD";
   const resolvedRef = resolveBase(root, base);
-  const headCommit = getHeadCommit(root);
-  const isHeadRef = typeof base === "string" && (base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
+  const headCommit = getCommitSha(root, targetHead);
+  const isHeadRef = typeof base === "string" && (base === targetHead || base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
   const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
 
   if (mode === "working-tree" || mode === "working") {
-    const committed = git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
-    const uncommitted = git(["diff", "HEAD"], { cwd: root, raw: true, ignoreError: true }) || "";
+    const committed = git(["diff", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true, ignoreError: true }) || "";
+    const uncommitted = git(["diff", targetHead], { cwd: root, raw: true, ignoreError: true }) || "";
 
     const untrackedRaw = git(["-c", "core.quotePath=false", "ls-files", "-z", "--others", "--exclude-standard"], { cwd: root, raw: true, ignoreError: true }) || "";
     const untrackedFiles = untrackedRaw.split("\0").map(normalizePath).filter(Boolean);
@@ -528,14 +538,14 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
   }
 
   if (isBaseAtHead) {
-    const headParent = getHeadParent(root);
+    const headParent = getCommitParent(root, targetHead);
     if (headParent) {
-      return git(["diff", `${headParent}...HEAD`], { cwd: root, raw: true });
+      return git(["diff", `${headParent}...${targetHead}`], { cwd: root, raw: true });
     } else {
       return git(["diff-tree", "-p", "--no-commit-id", "--root", headCommit], { cwd: root, raw: true });
     }
   }
-  return git(["diff", `${resolvedRef}...HEAD`], { cwd: root, raw: true });
+  return git(["diff", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true });
 }
 
 /**
@@ -577,15 +587,16 @@ function parseRawDiffOutput(raw, out) {
   }
 }
 
-export function parseRawDiff(root = process.cwd(), base = "main", mode = "committed") {
+export function parseRawDiff(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
+  const targetHead = head || "HEAD";
   const resolvedRef = resolveBase(root, base);
-  const headCommit = getHeadCommit(root);
-  const isHeadRef = typeof base === "string" && (base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
+  const headCommit = getCommitSha(root, targetHead);
+  const isHeadRef = typeof base === "string" && (base === targetHead || base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
   const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
 
   const out = [];
   if (mode === "working-tree" || mode === "working") {
-    for (const range of [[`${resolvedRef}...HEAD`], ["HEAD"]]) {
+    for (const range of [[`${resolvedRef}...${targetHead}`], [targetHead]]) {
       let raw = "";
       try {
         raw = git(["diff", "--raw", "--no-renames", "-z", ...range], { cwd: root, raw: true, ignoreError: true }) || "";
@@ -602,11 +613,11 @@ export function parseRawDiff(root = process.cwd(), base = "main", mode = "commit
     parseRawDiffOutput(raw, out);
   } else {
     if (isBaseAtHead) {
-      const headParent = getHeadParent(root);
+      const headParent = getCommitParent(root, targetHead);
       if (headParent) {
         let raw = "";
         try {
-          raw = git(["diff", "--raw", "--no-renames", "-z", `${headParent}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
+          raw = git(["diff", "--raw", "--no-renames", "-z", `${headParent}...${targetHead}`], { cwd: root, raw: true, ignoreError: true }) || "";
         } catch (_) {}
         parseRawDiffOutput(raw, out);
       } else {
@@ -619,7 +630,7 @@ export function parseRawDiff(root = process.cwd(), base = "main", mode = "commit
     } else {
       let raw = "";
       try {
-        raw = git(["diff", "--raw", "--no-renames", "-z", `${resolvedRef}...HEAD`], { cwd: root, raw: true, ignoreError: true }) || "";
+        raw = git(["diff", "--raw", "--no-renames", "-z", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true, ignoreError: true }) || "";
       } catch (_) {}
       parseRawDiffOutput(raw, out);
     }
@@ -646,12 +657,12 @@ export function parseRawDiff(root = process.cwd(), base = "main", mode = "commit
  * @param {string} mode
  * @returns {Array<{ link: string, target: string }>}
  */
-export function symlinkChanges(root = process.cwd(), base = "main", mode = "committed") {
+export function symlinkChanges(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
   const SYMLINK_MODE = "120000";
   const results = [];
   const seen = new Set();
 
-  for (const entry of parseRawDiff(root, base, mode)) {
+  for (const entry of parseRawDiff(root, base, mode, head)) {
     if (entry.status === "D") continue;
     if (entry.dstMode !== SYMLINK_MODE) continue;
     if (seen.has(entry.file)) continue;
@@ -713,9 +724,9 @@ function resolveLinkTarget(link, target) {
     : canonicalizePath(linkDir ? `${linkDir}/${target}` : target);
 }
 
-export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "committed") {
+export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
   const entries = new Map();
-  for (const entry of parseRawDiff(root, base, mode)) {
+  for (const entry of parseRawDiff(root, base, mode, head)) {
     if (entry.status === "D") continue;
     const { file, dstSha } = entry;
 
@@ -740,7 +751,7 @@ export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "c
   // Only the paths git itself refused to render as text are relevant; a file
   // that diffed normally is already counted in the diff text.
   const binaryPaths = new Set();
-  const text = diffText(root, base, mode);
+  const text = diffText(root, base, mode, head);
   for (const line of text.split("\n")) {
     const m = line.match(/^Binary files (?:a\/(.+) and )?(?:b\/(.+)|\/dev\/null) differ$/);
     if (m) binaryPaths.add(normalizePath(m[2] || m[1] || ""));
@@ -760,11 +771,11 @@ export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "c
  * Without the second term the payload governor could be walked straight past
  * with a committed binary of any size.
  */
-export function diffBytes(root = process.cwd(), base = "main", mode = "committed") {
-  const text = diffText(root, base, mode);
+export function diffBytes(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
+  const text = diffText(root, base, mode, head);
   let bytes = Buffer.byteLength(text, "utf-8");
   try {
-    for (const entry of binaryDiffEntries(root, base, mode)) bytes += entry.bytes;
+    for (const entry of binaryDiffEntries(root, base, mode, head)) bytes += entry.bytes;
   } catch (_) {
     // A payload figure that is too low is the dangerous direction, but throwing
     // here would break every gate on a repo git cannot describe. The text-only

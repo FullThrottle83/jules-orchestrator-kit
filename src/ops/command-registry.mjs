@@ -261,9 +261,9 @@ export const COMMAND_REGISTRY = [
       'agentctl task optimize --file prompt.txt --json',
     ],
     flags: [
-      { name: "fix", type: "boolean", description: "Synthesize optimized markdown task prompt (-f)" },
+      { name: "fix", type: "boolean", description: "Synthesize optimized markdown task prompt" },
       { name: "prompt", type: "string", description: "Task prompt text to score (-p)" },
-      { name: "prompt-file", type: "string", description: "Read prompt from file" },
+      { name: "prompt-file", type: "string", description: "Read prompt from file (-f)" },
       { name: "file", type: "string", description: "Alias for --prompt-file: path to text file containing task prompt" },
       { name: "dir", type: "string", description: "Target repository directory root (-d)" },
       { name: "web", type: "boolean", description: "Enable web-intent detection and optimization (-w)" },

@@ -291,9 +291,9 @@ Score task prompt falsifiability and static path resolution
 
 | Flag | Type | Description |
 | :--- | :--- | :--- |
-| `--fix` | boolean | Synthesize optimized markdown task prompt (-f) |
+| `--fix` | boolean | Synthesize optimized markdown task prompt |
 | `--prompt` | string | Task prompt text to score (-p) |
-| `--prompt-file` | string | Read prompt from file |
+| `--prompt-file` | string | Read prompt from file (-f) |
 | `--file` | string | Alias for --prompt-file: path to text file containing task prompt |
 | `--dir` | string | Target repository directory root (-d) |
 | `--web` | boolean | Enable web-intent detection and optimization (-w) |

@@ -169,16 +169,18 @@ export async function gate(opts = {}) {
   const trustedDiffKb = policy.limits?.diffKb || 75;
   const trustedEvidence = policy.evidence || { strictTestLock: true };
 
-  appendTelemetry(root, "gate_started", { base, mode });
+  const head = opts.head || "HEAD";
+
+  appendTelemetry(root, "gate_started", { base, mode, head });
 
   let files = [];
   let bytes = 0;
   let diffStr = "";
 
   try {
-    files = changedFiles(root, base, mode);
-    bytes = diffBytes(root, base, mode);
-    diffStr = diffText(root, base, mode);
+    files = changedFiles(root, base, mode, head);
+    bytes = diffBytes(root, base, mode, head);
+    diffStr = diffText(root, base, mode, head);
   } catch (err) {
     phases.push({ phase: "git_resolution", ok: false, error: err.message });
     appendTelemetry(root, "gate_finished", { ok: false, code: 1, error: err.message });
@@ -188,7 +190,7 @@ export async function gate(opts = {}) {
   // Phase 1: Scope Guard
   let symlinks = [];
   try {
-    symlinks = symlinkChanges(root, base, mode);
+    symlinks = symlinkChanges(root, base, mode, head);
   } catch (_) {
     // Scope must still be enforced on the ordinary file list if git cannot describe the links.
   }
@@ -284,7 +286,7 @@ export async function gate(opts = {}) {
   // Inspect those files directly and fold the verdict in.
   let binaryFindings = [];
   try {
-    binaryFindings = scanBinaryPayloads(binaryDiffEntries(root, base, mode), root);
+    binaryFindings = scanBinaryPayloads(binaryDiffEntries(root, base, mode, head), root);
   } catch (_) {
     // Never let the extra pass break a gate that would otherwise have run; the
     // text scan above has already been applied.
@@ -306,7 +308,7 @@ export async function gate(opts = {}) {
   let snapshot = { cwd: root, cleanup: () => {}, mode };
   try {
     if (mode === "staged" || mode === "committed") {
-      snapshot = materializeSnapshot(root, mode, opts.head || "HEAD");
+      snapshot = materializeSnapshot(root, mode, head);
     }
   } catch (snapErr) {
     phases.push({ phase: "verify", ok: false, error: snapErr.message });

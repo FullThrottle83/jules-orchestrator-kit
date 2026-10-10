@@ -5,6 +5,7 @@ import { detectStackOracles } from "./wizard-oracle.mjs";
 import { loadConfig } from "./config.mjs";
 import { sanitizePromptVocabulary } from "./prompt-guard.mjs";
 import { buildGuardrailFooter } from "./wizard-task.mjs";
+import { parseEnvelopeHeader } from "./envelope.mjs";
 
 /**
  * Calculates Levenshtein distance between two strings.
@@ -133,6 +134,77 @@ const VAGUE_BUZZWORDS = [
 const TRIVIAL_VERIFY_CMDS = ["true", "echo", ":", "false", "exit 0"];
 
 /**
+ * Unwraps an envelope or task file to extract the core task instructions,
+ * stripping YAML frontmatter, envelope comments, verification sections, and guardrail footers.
+ * This prevents guardrail paths (like .agent/config.yml in scope.deny or HARD CONSTRAINTS)
+ * from being falsely flagged as scope violations during prompt scoring.
+ */
+export function unwrapEnvelopePrompt(content) {
+  if (!content || typeof content !== "string") {
+    return { prompt: "", verifyCmd: null, isEnvelope: false };
+  }
+  const raw = content.trim();
+  const isEnvelope =
+    raw.startsWith("---") ||
+    raw.includes("<!-- JULES_TASK_ENVELOPE:") ||
+    raw.includes("[TASK INSTRUCTIONS]") ||
+    raw.includes("HARD CONSTRAINTS:");
+
+  if (!isEnvelope) {
+    return { prompt: raw, verifyCmd: null, isEnvelope: false };
+  }
+
+  let verifyCmd = null;
+  const header = parseEnvelopeHeader(raw);
+  if (header?.verifyCmd) {
+    verifyCmd = header.verifyCmd;
+  }
+
+  let text = raw;
+
+  // 1. Strip YAML frontmatter if present
+  const fmMatch = text.match(/^---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/);
+  if (fmMatch) {
+    text = text.slice(fmMatch[0].length);
+  }
+
+  // 2. Strip JULES_TASK_ENVELOPE comment
+  text = text.replace(/<!--\s*JULES_TASK_ENVELOPE:[\s\S]*?-->/g, "");
+
+  // 3. Extract [VERIFICATION ORACLE] if verifyCmd wasn't found in frontmatter
+  if (!verifyCmd) {
+    const oracleMatch = text.match(/\[VERIFICATION ORACLE\]\s*\n(?:Test\/Verification Command:\s*)?([^\n]+)/i);
+    if (oracleMatch && oracleMatch[1].trim() && oracleMatch[1].trim() !== "(None)") {
+      verifyCmd = oracleMatch[1].trim();
+    }
+  }
+
+  // 4. Strip HARD CONSTRAINTS and standard guardrail footer
+  text = text.replace(/(?:^|\n)---\s*\nHARD CONSTRAINTS:[\s\S]*$/i, "");
+  text = text.replace(/(?:^|\n)HARD CONSTRAINTS:[\s\S]*$/i, "");
+  text = text.replace(/(?:^|\n)## Standard Guardrails[\s\S]*$/i, "");
+
+  // 5. Extract instructions if [TASK INSTRUCTIONS] block exists
+  const taskInstrMatch = text.match(/\[TASK INSTRUCTIONS\]\s*\n([\s\S]*?)(?=\n\[VERIFICATION ORACLE\]|\n---|\n## Standard Guardrails|$)/i);
+  if (taskInstrMatch && taskInstrMatch[1].trim()) {
+    text = taskInstrMatch[1].trim();
+  } else {
+    // If no explicit [TASK INSTRUCTIONS], strip [VERIFICATION ORACLE] section if present
+    text = text.replace(/\[VERIFICATION ORACLE\][\s\S]*?(?=\n---|\n## Standard Guardrails|$)/i);
+  }
+
+  // 6. Strip leading markdown headers like # Title, # Task ID: ..., # Auto-PR: ...
+  text = text.replace(/^#\s*(?:Task ID|Auto-PR|Plan Approval)[^\n]*\n?/gim, "");
+  text = text.replace(/^#[^#\n][^\n]*\n+/g, "");
+
+  return {
+    prompt: text.trim() || raw,
+    verifyCmd,
+    isEnvelope: true,
+  };
+}
+
+/**
  * Scores task prompt falsifiability, scope compliance, path validity, and oracle readiness.
  */
 export function scorePromptFalsifiability(promptText, options = {}) {
@@ -157,14 +229,17 @@ export function scorePromptFalsifiability(promptText, options = {}) {
     };
   }
 
+  const unwrapInfo = unwrapEnvelopePrompt(rawPrompt);
+  const taskPrompt = unwrapInfo.prompt;
+
   // 1. Length & Buzzword Analysis
-  if (rawPrompt.length < 15) {
+  if (taskPrompt.length < 15) {
     score -= 25;
     issues.push({ type: "SHORT_PROMPT", message: "Prompt is under 15 characters long.", penalty: 25 });
     suggestions.push("Expand prompt with context, affected symbols, or expected output behavior.");
   }
 
-  const promptLower = rawPrompt.toLowerCase();
+  const promptLower = taskPrompt.toLowerCase();
   for (const bw of VAGUE_BUZZWORDS) {
     if (promptLower.includes(bw.term)) {
       score -= bw.penalty;
@@ -173,9 +248,9 @@ export function scorePromptFalsifiability(promptText, options = {}) {
   }
 
   // 2. Concrete Evidence Indicators (Bonus/Protection)
-  const hasErrorTrace = /(?:error|exception|fail|failed|stack|traceback|line\s+\d+|exit\s+code)/i.test(rawPrompt);
-  const hasSymbolRef = /(?:`[^`]+`|\b[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\b|\b[a-zA-Z0-9_]+\(\))/i.test(rawPrompt);
-  const hasExplicitCheck = /(?:verify|assert|should|must|returns?|expect|< \d+|>= \d+)/i.test(rawPrompt);
+  const hasErrorTrace = /(?:error|exception|fail|failed|stack|traceback|line\s+\d+|exit\s+code)/i.test(taskPrompt);
+  const hasSymbolRef = /(?:`[^`]+`|\b[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\b|\b[a-zA-Z0-9_]+\(\))/i.test(taskPrompt);
+  const hasExplicitCheck = /(?:verify|assert|should|must|returns?|expect|< \d+|>= \d+)/i.test(taskPrompt);
 
   if (hasErrorTrace || hasSymbolRef || hasExplicitCheck) {
     score = Math.min(100, score + 10);
@@ -186,7 +261,7 @@ export function scorePromptFalsifiability(promptText, options = {}) {
   }
 
   // 3. Static Path & Scope Verification
-  const extractedPaths = extractPathTokens(rawPrompt);
+  const extractedPaths = extractPathTokens(taskPrompt);
   const repoFiles = harvestRepoFiles(rootDir);
   const pathResults = [];
   let missingCount = 0;
@@ -240,28 +315,28 @@ export function scorePromptFalsifiability(promptText, options = {}) {
   }
 
   // 4. Web Domain Intent Detection
-  const webIntent = detectWebIntent(rawPrompt);
+  const webIntent = detectWebIntent(taskPrompt);
   if (webIntent.isWeb && webIntent.categories.length > 0) {
     suggestions.push(`Web domain detected (${webIntent.categories.join(", ")}). Consider incorporating exploration budget and critic agent checks.`);
   }
 
   // 5. Positive Boundary / Negative Restriction Linting ("Pink Elephant" Principle)
-  const negativeMatches = rawPrompt.match(/\b(do not|never|don't|forbidden|must not)\b/gi) || [];
-  const positiveScopeMatch = /\b(only modify|strictly scoped to|scoped to|confined to)\b/i.test(rawPrompt);
+  const negativeMatches = taskPrompt.match(/\b(do not|never|don't|forbidden|must not)\b/gi) || [];
+  const positiveScopeMatch = /\b(only modify|strictly scoped to|scoped to|confined to)\b/i.test(taskPrompt);
   if (negativeMatches.length >= 3 && !positiveScopeMatch) {
     suggestions.push("Multiple negative constraints detected. Consider defining Airtight Positive Enclosures (e.g. 'ONLY modify [Target]') to prevent attention-drift.");
   }
 
   // 6. Headless Remote VM & Dead Code Linting
-  if (/\b(?:playwright|e2e|screenshot|browser)\b/i.test(rawPrompt) && !/\b(?:headless|mock)\b/i.test(rawPrompt)) {
+  if (/\b(?:playwright|e2e|screenshot|browser)\b/i.test(taskPrompt) && !/\b(?:headless|mock)\b/i.test(taskPrompt)) {
     suggestions.push("E2E / Browser testing detected. Ensure Playwright runs specify '--headless' to prevent display-server crashes in headless Jules VMs.");
   }
-  if (/\b(?:knip|dead code|unused exports?|remove unused)\b/i.test(rawPrompt) && !/\b(?:report|audit|audit-first)\b/i.test(rawPrompt)) {
+  if (/\b(?:knip|dead code|unused exports?|remove unused)\b/i.test(taskPrompt) && !/\b(?:report|audit|audit-first)\b/i.test(taskPrompt)) {
     suggestions.push("Dead code cleanup detected. Consider adopting the Audit-First principle (generate .agent/reports/dead-code-audit.md before deleting files) to avoid removing dynamic runtime imports.");
   }
 
   // 7. Stack Oracle Detection
-  let verifyCmd = options.verifyCmd || null;
+  let verifyCmd = options.verifyCmd || unwrapInfo.verifyCmd || null;
   let autoDetected = false;
   let isTrivial = false;
 
@@ -329,7 +404,8 @@ export function scorePromptFalsifiability(promptText, options = {}) {
  */
 export function optimizeTaskPrompt(promptText, options = {}) {
   const analysis = scorePromptFalsifiability(promptText, options);
-  const rawPrompt = (promptText || "").trim();
+  const unwrapInfo = unwrapEnvelopePrompt(promptText);
+  const rawPrompt = (unwrapInfo.prompt || promptText || "").trim();
 
   if (!rawPrompt) {
     return {

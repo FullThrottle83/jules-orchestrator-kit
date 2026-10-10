@@ -8,7 +8,8 @@ import {
   extractPathTokens,
   detectWebIntent,
   scorePromptFalsifiability,
-  optimizeTaskPrompt
+  optimizeTaskPrompt,
+  unwrapEnvelopePrompt,
 } from "../src/task-optimizer.mjs";
 import { handleMcpRequest } from "../src/mcp.mjs";
 
@@ -151,3 +152,65 @@ test("optimizeTaskPrompt does not fabricate npm test when oracle is absent", () 
     rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("unwrapEnvelopePrompt extracts core instructions, oracle and strips protected paths from guardrail footers", () => {
+  const envelope = `---
+kind: Task
+version: agentctl.task/v1
+id: TASK-TEST1234
+title: Optimize Core Web Vitals (LCP & CLS)
+scope:
+  allow: []
+  deny:
+    - .agent/config.yml
+    - .agent/jules.yml
+    - .agent/rules/**
+    - .agent/SYSTEM_LEARNINGS.md
+    - .agent/knowledge/**
+verification:
+  commands:
+    - npm test
+---
+<!-- JULES_TASK_ENVELOPE: {"version":1,"id":"TASK-TEST1234"} -->
+# Optimize Core Web Vitals (LCP & CLS)
+# Task ID: TASK-TEST1234
+# Auto-PR: true | Plan Approval: false | Repoless: false
+
+[TASK INSTRUCTIONS]
+## Phase 1: Discovery & Symbol Tracing
+Trace LCP hero image and verify aspect ratio.
+
+## Phase 2: Oracle & Test Formulation
+Execute \`npm test\` to confirm baseline.
+
+## Phase 3: Implementation & Verification
+Add fetchpriority="high" to hero image.
+
+[VERIFICATION ORACLE]
+Test/Verification Command: npm test
+
+---
+HARD CONSTRAINTS:
+- Do NOT modify these protected paths: .agent/config.yml, .agent/jules.yml, .agent/rules/**.
+- Diff Payload Governor: Keep total diff payload under 75 KB.
+`;
+
+  const unwrap = unwrapEnvelopePrompt(envelope);
+  assert.equal(unwrap.isEnvelope, true);
+  assert.equal(unwrap.verifyCmd, "npm test");
+  assert.ok(unwrap.prompt.includes("Phase 1: Discovery & Symbol Tracing"));
+  assert.ok(unwrap.prompt.includes("Phase 3: Implementation & Verification"));
+  assert.ok(!unwrap.prompt.includes("HARD CONSTRAINTS"));
+  assert.ok(!unwrap.prompt.includes(".agent/config.yml"));
+  assert.ok(!unwrap.prompt.includes("agentctl.task/v1"));
+
+  // Now verify scorePromptFalsifiability on this envelope
+  const scoreResult = scorePromptFalsifiability(envelope, { rootDir: process.cwd() });
+  assert.equal(scoreResult.isFalsifiable, true);
+  assert.ok(scoreResult.score >= 90, `Expected score >= 90 but got ${scoreResult.score}`);
+  assert.equal(scoreResult.oracle.command, "npm test");
+  // Confirm NO false scope violations were triggered by the envelope's own guardrails
+  const scopeViolations = scoreResult.issues.filter((i) => i.type === "SCOPE_VIOLATION");
+  assert.equal(scopeViolations.length, 0, `Expected 0 scope violations, got: ${JSON.stringify(scopeViolations)}`);
+});
+
