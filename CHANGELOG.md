@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.4] - 2026-10-10
+
+### Added
+- **Passive Queue Inspection Subcommand (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Added `agentctl queue list` (alias: `ls`) with `--json` support to inspect pending task envelopes without dispatching to providers or consuming quota.
+- **Registered `--head` Flag (`src/ops/command-registry.mjs`, `docs/COMMAND_REFERENCE.md`)**: Registered `--head` across `agentctl gate`, `check`, and `audit` command definitions for committed mode evaluation.
+
+### Fixed
+- **TTY Interactivity on Dry-Run Init (`bin/agentctl.mjs`)**: Prevented `agentctl init --dry-run` from triggering interactive wizard prompts in TTY terminals unless `--interactive` is explicitly requested.
+- **Early Fail-Fast Profile Validation (`src/wizard-init.mjs`, `bin/agentctl.mjs`)**: Validated `--profile` immediately at CLI startup and at the beginning of `runInitWizard` before running test oracle probes.
+
 ## [0.75.3] - 2026-10-09
 
 ### Added
