@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.5] - 2026-10-10
+
+### Fixed
+- **Target Head Propagation in Engine and Git Diff (`src/engine.mjs`, `src/git.mjs`)**: Propagated `--head` / `opts.head` into `changedFiles`, `diffBytes`, `diffText`, `symlinkChanges`, `binaryDiffEntries`, and `materializeSnapshot`, allowing gates, checks, and audits to inspect target branches and commit snapshots deterministically without requiring a working tree checkout.
+- **Envelope Markdown Stripping in Task Optimizer (`src/task-optimizer.mjs`)**: Added and wired `unwrapEnvelopePrompt` to isolate pure task instructions and verification commands from queued envelope markdown, eliminating false-positive self-referential scope violations caused by `scope.deny` patterns and standard guardrail footers.
+- **Headless Task Creation with Templates (`bin/agentctl.mjs`, `src/wizard-task.mjs`)**: Supported `agentctl task new --template <tpl>` non-interactively without prompting for TTY input when required task fields are supplied.
+- **CLI Flag Collision on Task Optimize (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Reassigned `-f` on `agentctl task optimize` to `--prompt-file` instead of `--fix`, standardizing `-f` as the file input flag across `task create`, `task new`, `task optimize`, and `dispatch`.
+- **JSON Stdout Drain on Task Creation (`bin/agentctl.mjs`)**: Flushed stdout before process exit in `agentctl task new --json`, preventing truncated JSON payloads across cross-platform OS pipe buffers.
+
 ## [0.75.4] - 2026-10-10
 
 ### Added
