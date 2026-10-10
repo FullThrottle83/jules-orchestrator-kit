@@ -1521,6 +1521,60 @@ describe("CLI usability improvements: suggestions, protected scope bypass, dry-r
       );
       assert.equal(res2.status, 0, res2.stderr);
       assert.match(res2.stdout, /Dry run — envelope synthesized and validated/);
+
+      // 3. Test queue list (passive inspection)
+      const resList = spawnSync(
+        "node",
+        [CLI, "queue", "list"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(resList.status, 0, resList.stderr);
+      assert.match(resList.stdout, /Queued Tasks in \.agent\/jules-queue\/ \(1 pending\)/);
+      assert.match(resList.stdout, /First queued task/);
+
+      const resListJson = spawnSync(
+        "node",
+        [CLI, "queue", "list", "--json"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(resListJson.status, 0, resListJson.stderr);
+      const parsed = JSON.parse(resListJson.stdout);
+      assert.equal(parsed.ok, true);
+      assert.equal(parsed.count, 1);
+      assert.equal(parsed.tasks[0].title, "First queued task");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("agentctl init validates profile early and dry-run stays non-interactive", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jules-init-cli-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: dir });
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "d", version: "1.0.0", type: "module", scripts: { test: "node --test" } }, null, 2),
+        "utf-8"
+      );
+
+      // Early profile validation fails fast
+      const resBadProfile = spawnSync(
+        "node",
+        [CLI, "init", "--profile", "bogus"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(resBadProfile.status, 1);
+      assert.match(resBadProfile.stderr, /❌ Invalid profile "bogus"\. Valid profiles: minimal, standard, max\./);
+
+      // Dry run does not start interactive wizard or touch disk
+      const resDry = spawnSync(
+        "node",
+        [CLI, "init", "--dry-run"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      assert.equal(resDry.status, 0, resDry.stderr);
+      assert.match(resDry.stdout, /Dry run — no files written/);
+      assert.equal(existsSync(join(dir, ".agent")), false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -103,12 +103,7 @@ export const BUILTIN_PRESETS = [
  *   julesYaml: string
  * }}
  */
-export function planInit(root = process.cwd(), options = {}) {
-  const oracle = detectStackOracles(root);
-  // Scaffolding `pro` for a caller who never stated a plan hands a free account
-  // a 100-task budget and 8 concurrent workers it does not have. The same
-  // reasoning makes FALLBACK_TIER conservative in loadConfig(); the wizard has
-  // to agree with it or the manifest guards a ceiling the runtime does not.
+export function validateTierAndProfile(options = {}) {
   const validTiers = Object.keys(TIER_PRESETS);
   if (options.tier && !validTiers.includes(String(options.tier).toLowerCase())) {
     const rawTier = String(options.tier).toLowerCase();
@@ -117,14 +112,7 @@ export function planInit(root = process.cwd(), options = {}) {
     }
     throw new Error(`Invalid tier "${options.tier}". Valid tiers: ${validTiers.join(", ")}.`);
   }
-  const tierName = options.tier || FALLBACK_TIER;
-  // An unrecognised name resolves the same way loadConfig() resolves it, so the
-  // scaffolded limits always match what the runtime will later enforce.
-  const tierPresetLimits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
 
-  // Same fail-closed rule as tier: an explicit `--profile` that is not one of
-  // PROFILE_NAMES must not silently become `standard`. Guessing wrong used to
-  // scaffold the everyday gate under a name the operator never chose.
   if (options.profile && !PROFILE_NAMES.includes(String(options.profile).toLowerCase())) {
     const rawProfile = String(options.profile).toLowerCase();
     if (validTiers.includes(rawProfile)) {
@@ -132,6 +120,19 @@ export function planInit(root = process.cwd(), options = {}) {
     }
     throw new Error(`Invalid profile "${options.profile}". Valid profiles: ${PROFILE_NAMES.join(", ")}.`);
   }
+}
+
+export function planInit(root = process.cwd(), options = {}) {
+  const oracle = detectStackOracles(root);
+  // Scaffolding `pro` for a caller who never stated a plan hands a free account
+  // a 100-task budget and 8 concurrent workers it does not have. The same
+  // reasoning makes FALLBACK_TIER conservative in loadConfig(); the wizard has
+  // to agree with it or the manifest guards a ceiling the runtime does not.
+  validateTierAndProfile(options);
+  const tierName = options.tier || FALLBACK_TIER;
+  // An unrecognised name resolves the same way loadConfig() resolves it, so the
+  // scaffolded limits always match what the runtime will later enforce.
+  const tierPresetLimits = TIER_PROFILES[tierName] || TIER_PROFILES[FALLBACK_TIER];
 
   // Preserve existing config if present (ignored when pristine requested)
   let existingConfig = {};
@@ -434,6 +435,7 @@ async function resolveRunnableOracle(root, testCmd, options = {}) {
 }
 
 export async function runInitWizard(root = process.cwd(), options = {}) {
+  validateTierAndProfile(options);
   const interactive = options.interactive !== false && isTTY(options.stdin || process.stdin);
 
   // Preserve existing config if present

@@ -281,4 +281,18 @@ test("Interactive Onboarding & Presets Engine", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("runInitWizard rejects invalid profile fail-fast before probe", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-init-early-profile-"));
+    try {
+      await assert.rejects(
+        async () => {
+          await runInitWizard(tmpDir, { profile: "invalid-prof", interactive: false });
+        },
+        /Invalid profile "invalid-prof"/
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
