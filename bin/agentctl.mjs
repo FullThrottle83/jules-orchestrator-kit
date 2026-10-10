@@ -1370,7 +1370,7 @@ async function main() {
     }
 
     case "queue": {
-      const { values } = parseArgs({
+      const { values, positionals } = parseArgs({
         args: args.slice(1),
         options: {
           dag: { type: "boolean" },
@@ -1404,6 +1404,46 @@ async function main() {
         });
       } else {
         files = queueEntries.filter((f) => isTaskFile(f, queueDir));
+      }
+
+      const subAction = positionals[0]?.toLowerCase();
+      if (subAction === "list" || subAction === "ls") {
+        const { parseEnvelopeHeader } = await import("../src/envelope.mjs");
+        const tasks = files.map((fileName) => {
+          let content = "";
+          try {
+            content = readFileSync(join(queueDir, fileName), "utf-8");
+          } catch (_) {}
+          const header = parseEnvelopeHeader(content) || {};
+          const id = header.id || fileName.replace(/\.(md|json|task)$/, "");
+          let title = header.title;
+          if (!title || title === "Agent Task") {
+            const promptMatch = content.match(/\[TASK INSTRUCTIONS\]\s*\r?\n+([^\r\n]+)/);
+            if (promptMatch && promptMatch[1]?.trim()) {
+              title = promptMatch[1].trim();
+            } else {
+              title = title || (content.match(/^#\s+(.+)$/m)?.[1]) || fileName;
+            }
+          }
+          const lane = header.lane || header.risk?.lane || "green";
+          const verify = header.verifyCmd || header.verify || "";
+          return { file: fileName, id, title, lane, verify };
+        });
+
+        if (values.json) {
+          console.log(JSON.stringify({ ok: true, count: tasks.length, tasks }, null, 2));
+          process.exit(0);
+        }
+
+        console.log(`📋 Queued Tasks in .agent/jules-queue/ (${tasks.length} pending):`);
+        if (tasks.length === 0) {
+          console.log("   (no tasks in queue)");
+        } else {
+          for (const t of tasks) {
+            console.log(`   • [${t.lane.toUpperCase().padEnd(6)}] ${t.id} — ${t.title}`);
+          }
+        }
+        process.exit(0);
       }
       if (!values.json) {
         console.log(`Found ${files.length} queued task(s) in .agent/jules-queue/`);
@@ -2080,6 +2120,20 @@ async function main() {
         }
       }
 
+      if (values.profile) {
+        const { PROFILE_NAMES } = await import("../src/profiles.mjs");
+        const lowerProfile = values.profile.toLowerCase();
+        if (!PROFILE_NAMES.includes(lowerProfile)) {
+          const validTiers = ["free", "pro", "ultra", "enterprise"];
+          if (validTiers.includes(lowerProfile)) {
+            console.error(`❌ Invalid profile "${values.profile}". Valid profiles: ${PROFILE_NAMES.join(", ")}. Did you mean '--tier ${values.profile}'?`);
+          } else {
+            console.error(`❌ Invalid profile "${values.profile}". Valid profiles: ${PROFILE_NAMES.join(", ")}.`);
+          }
+          process.exit(1);
+        }
+      }
+
       const isInteractive =
         values.interactive === true ||
         (values.interactive !== false &&
@@ -2087,7 +2141,8 @@ async function main() {
           !process.env.CI &&
           !values["non-interactive"] &&
           !values["no-interactive"] &&
-          !values.yes);
+          !values.yes &&
+          !values["dry-run"]);
 
       const { runInitWizard } = await import("../src/wizard-init.mjs");
       const res = await runInitWizard(root, {

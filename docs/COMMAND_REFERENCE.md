@@ -3,13 +3,14 @@
 > Auto-generated from `src/ops/command-registry.mjs`. Do not edit by hand —
 run `node scripts/generate-command-reference.mjs` to regenerate.
 
-Total commands: 56
+Total commands: 57
 
 ## Index
 
 - [`agentctl assert`](#assert) — Run declarative zero-dependency verification assertion primitives
 - [`agentctl doctor`](#doctor) — Run repository diagnostics and guided fixes
-- [`agentctl queue`](#queue) — Execute pending task envelopes: dispatches each to the provider and moves it out of the queue
+- [`agentctl queue`](#queue) — Execute pending task envelopes: dispatches each to the provider and moves it out of the queue (or inspect passively with 'agentctl queue list')
+- [`agentctl queue list`](#queue-list) — Passively inspect and list pending task envelopes in the queue without dispatching
 - [`agentctl swarm`](#swarm) — Dispatch every queued task in parallel across worker slots
 - [`agentctl task`](#task) — Manage task envelopes: create, template, optimize, or validate (see task create | task template | task optimize | task validate)
 - [`agentctl task create`](#task-create) — Author a scoped, falsifiable task
@@ -125,7 +126,7 @@ agentctl doctor --json
 
 **ID:** `queue` · **Category:** Operate · **Risk:** MODERATE · **Mutates:** yes
 
-Execute pending task envelopes: dispatches each to the provider and moves it out of the queue
+Execute pending task envelopes: dispatches each to the provider and moves it out of the queue (or inspect passively with 'agentctl queue list')
 
 **Shortcuts:** `q`
 
@@ -141,10 +142,32 @@ Execute pending task envelopes: dispatches each to the provider and moves it out
 **Examples:**
 
 ```sh
+agentctl queue list
 agentctl queue --dry-run
 agentctl queue
 agentctl queue --dag --concurrency 3
 agentctl queue --json
+```
+
+## `agentctl queue list`
+
+**ID:** `queue-list` · **Category:** Inspect · **Risk:** LOW · **Mutates:** no
+
+Passively inspect and list pending task envelopes in the queue without dispatching
+
+**Shortcuts:** `queue ls`
+
+**Flags:**
+
+| Flag | Type | Description |
+| :--- | :--- | :--- |
+| `--json` | boolean | Output structured JSON queue snapshot (-j) |
+
+**Examples:**
+
+```sh
+agentctl queue list
+agentctl queue list --json
 ```
 
 ## `agentctl swarm`
@@ -660,6 +683,7 @@ Run CI security, rules, and stack verification gate
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
 | `--committed` | boolean | Evaluate committed changes |
+| `--head` | string | Target commit or ref for committed mode (default: HEAD) |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
@@ -692,6 +716,7 @@ Alias of gate: run all-in-one CI security, rules, and stack verification gate
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
 | `--committed` | boolean | Evaluate committed changes |
+| `--head` | string | Target commit or ref for committed mode (default: HEAD) |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
@@ -725,6 +750,7 @@ Alias of gate: run CI security and verification gate against current branch
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
 | `--committed` | boolean | Evaluate committed changes |
+| `--head` | string | Target commit or ref for committed mode (default: HEAD) |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
