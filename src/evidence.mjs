@@ -535,7 +535,9 @@ export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "m
     try {
       snapshot = materializeSnapshot(root, "committed", options.head);
       targetDir = snapshot.cwd;
-    } catch (_) {}
+    } catch (snapErr) {
+      return { ok: false, reason: `Snapshot materialization failed for ref ${options.head}: ${snapErr.message}` };
+    }
   }
 
   try {
