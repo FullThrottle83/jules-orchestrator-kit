@@ -267,6 +267,49 @@ test("Guided Task Authoring Subsystem", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("runTaskCreateWizard exposes taskId at root of result in both normal and dryRun modes", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-task-id-"));
+    const mockStdin = new PassThrough();
+    const mockStdout = new PassThrough();
+    try {
+      runCmd("git init", { cwd: tmpDir });
+      runCmd('git config user.name "Test"', { cwd: tmpDir });
+      runCmd('git config user.email "test@example.com"', { cwd: tmpDir });
+      writeFileSync(join(tmpDir, "README.md"), "# Initial\n");
+      runCmd("git add README.md", { cwd: tmpDir });
+      runCmd('git commit -m "Initial commit"', { cwd: tmpDir });
+
+      const dryRes = await runTaskCreateWizard(tmpDir, {
+        interactive: false,
+        title: "Dry run task",
+        prompt: "Check dry run taskId",
+        verifyCmd: "npm test",
+        dryRun: true,
+        stdin: mockStdin,
+        stdout: mockStdout,
+      });
+      assert.equal(dryRes.ok, true);
+      assert.equal(typeof dryRes.taskId, "string");
+      assert.ok(dryRes.taskId.startsWith("TASK-"));
+
+      const liveRes = await runTaskCreateWizard(tmpDir, {
+        interactive: false,
+        title: "Live task",
+        prompt: "Check live taskId",
+        verifyCmd: "npm test",
+        dryRun: false,
+        stdin: mockStdin,
+        stdout: mockStdout,
+      });
+      assert.equal(liveRes.ok, true);
+      assert.equal(typeof liveRes.taskId, "string");
+      assert.ok(liveRes.taskId.startsWith("TASK-"));
+      assert.equal(liveRes.taskId, liveRes.plan.taskId);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 

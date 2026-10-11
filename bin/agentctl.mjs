@@ -10,7 +10,7 @@ import { loadConfig, resolveRoot, detectStack, bootstrapZeroTestRepo } from "../
 import { gate, dispatch, run, isTaskFile } from "../src/engine.mjs";
 import { acquireLock, releaseLock, reapStaleLocks, lockStatus, getQueueDir } from "../src/state.mjs";
 import { parseEnvelopeHeader, validateEnvelope } from "../src/envelope.mjs";
-import { worktreePrune } from "../src/git.mjs";
+import { worktreePrune, materializeSnapshot } from "../src/git.mjs";
 import { reapOrphanedIntents, reapStaleMutexDirs } from "../src/journal.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
 import { budgetStatus, listOpenReservations, releaseOpenReservations, resolveConcurrency } from "../src/budget.mjs";
@@ -891,33 +891,53 @@ async function main() {
       // so `agentctl coverage` alone died on "Cannot resolve base reference
       // main" in any repository not on `main`.
       const coverageBase = values.base || config.baseBranch || "main";
-      const diffStr = diffText(root, coverageBase, values.mode || "working-tree", values.head || "HEAD");
+      const selectedMode = values.mode || "working-tree";
+      const headRef = values.head || "HEAD";
+      const diffStr = diffText(root, coverageBase, selectedMode, headRef);
 
-      const covRes = runV8Coverage(values.cmd, { root });
-      const report = calculateDiffCoverage(covRes.coverageByFile, diffStr, { root, minCoverage });
-
-      if (values.json) {
-        console.log(JSON.stringify({ ...report, testPass: covRes.ok }, null, 2));
-      } else {
-        console.log(`\n📊 V8 Native Diff Coverage Report (Base: ${coverageBase}${values.head ? `, Head: ${values.head}` : ""})`);
-        console.log(`------------------------------------------------------------------`);
-        console.log(`  Target Min Coverage : ${report.minCoverage}%`);
-        console.log(`  Achieved Coverage   : ${report.score}%`);
-        console.log(`  Covered Added Lines : ${report.coveredLines} / ${report.totalLines}`);
-        console.log(`  Missed Lines Count  : ${report.missedLines}`);
-
-        if (report.missedLines > 0) {
-          console.log(`\n❌ Uncovered Added Lines by File:`);
-          for (const [file, lines] of Object.entries(report.missedByFile)) {
-            console.log(`  - ${file}: lines ${lines.join(", ")}`);
-          }
+      let snapshot = { cwd: root, cleanup: () => {} };
+      try {
+        if (selectedMode === "committed" || selectedMode === "staged") {
+          snapshot = materializeSnapshot(root, selectedMode, headRef);
         }
-
-        console.log(`------------------------------------------------------------------`);
-        console.log(`Overall Result: ${report.ok && covRes.ok ? "APPROVED (Exit 0)" : "REJECTED (Coverage below threshold — Exit 1)"}\n`);
+      } catch (snapErr) {
+        if (values.json) {
+          console.log(JSON.stringify({ ok: false, error: snapErr.message }, null, 2));
+        } else {
+          console.error(`❌ Snapshot materialization failed: ${snapErr.message}`);
+        }
+        process.exit(1);
       }
 
-      process.exit(report.ok && covRes.ok ? 0 : 1);
+      try {
+        const covRes = runV8Coverage(values.cmd, { root: snapshot.cwd });
+        const report = calculateDiffCoverage(covRes.coverageByFile, diffStr, { root: snapshot.cwd, minCoverage });
+
+        if (values.json) {
+          console.log(JSON.stringify({ ...report, testPass: covRes.ok }, null, 2));
+        } else {
+          console.log(`\n📊 V8 Native Diff Coverage Report (Base: ${coverageBase}${values.head ? `, Head: ${values.head}` : ""})`);
+          console.log(`------------------------------------------------------------------`);
+          console.log(`  Target Min Coverage : ${report.minCoverage}%`);
+          console.log(`  Achieved Coverage   : ${report.score}%`);
+          console.log(`  Covered Added Lines : ${report.coveredLines} / ${report.totalLines}`);
+          console.log(`  Missed Lines Count  : ${report.missedLines}`);
+
+          if (report.missedLines > 0) {
+            console.log(`\n❌ Uncovered Added Lines by File:`);
+            for (const [file, lines] of Object.entries(report.missedByFile)) {
+              console.log(`  - ${file}: lines ${lines.join(", ")}`);
+            }
+          }
+
+          console.log(`------------------------------------------------------------------`);
+          console.log(`Overall Result: ${report.ok && covRes.ok ? "APPROVED (Exit 0)" : "REJECTED (Coverage below threshold — Exit 1)"}\n`);
+        }
+
+        process.exit(report.ok && covRes.ok ? 0 : 1);
+      } finally {
+        snapshot.cleanup();
+      }
       break;
     }
 
@@ -3466,6 +3486,7 @@ async function main() {
         options: {
           output: { type: "string", short: "o" },
           manifest: { type: "string", short: "m" },
+          head: { type: "string" },
           markdown: { type: "string" },
           json: { type: "boolean", short: "j" },
           "dry-run": { type: "boolean", short: "d" },
@@ -3499,6 +3520,7 @@ async function main() {
       } else if (subAction === "verify" || subAction === "check") {
         const res = planEvidenceVerify(root, {
           manifest: values.manifest,
+          head: values.head,
         });
         if (values.json) {
           console.log(JSON.stringify(res, null, 2));

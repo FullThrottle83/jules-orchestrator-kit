@@ -258,6 +258,7 @@ diff --git a/src/math.js b/src/math.js
       assert.equal(res.status, 0);
       const parsed = JSON.parse(res.stdout);
       assert.ok(parsed.totalMutants > 0, "committed branch must yield mutants for added line");
+      assert.equal(parsed.errorMutants, 0, "no mutant should error due to missing branch files on disk");
       assert.equal(typeof parsed.mutationScore, "number");
     } finally {
       rmSync(dir, { recursive: true, force: true });

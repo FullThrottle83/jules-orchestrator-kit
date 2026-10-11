@@ -12,6 +12,7 @@ import { execSync } from "node:child_process";
 import { isTestPath } from "./test-paths.mjs";
 import { safeAtomicWrite } from "./security.mjs";
 import { normalizePath } from "./config.mjs";
+import { materializeSnapshot } from "./git.mjs";
 
 // normalizePath is the single shared implementation in src/config.mjs (the
 // copy that used to live here differed only by not guarding non-strings).
@@ -528,59 +529,71 @@ export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "m
     return { ok: false, reason: `Evidence manifest records failed execution outcome: ${manifest.status}` };
   }
 
-  // 2. Verify test integrity / No test weakening
-  const targetDir = options.dir || options.targetDir || root;
-  const currentTestState = options.testState || computeDirectoryHash(targetDir, { testOnly: true });
-  if (!manifest.testIntegrity?.postTestHash) {
-    return { ok: false, reason: "Evidence manifest is missing test integrity baseline (empty shell)" };
+  let snapshot = null;
+  let targetDir = options.dir || options.targetDir || root;
+  if (!options.dir && !options.targetDir && options.head) {
+    try {
+      snapshot = materializeSnapshot(root, "committed", options.head);
+      targetDir = snapshot.cwd;
+    } catch (_) {}
   }
 
-  if (manifest.testIntegrity.tamperDetected) {
-    return {
-      ok: false,
-      reason: "Test suite tampering detected in evidence manifest",
-      details: { preTestHash: manifest.testIntegrity.preTestHash, postTestHash: manifest.testIntegrity.postTestHash },
-    };
-  }
+  try {
+    // 2. Verify test integrity / No test weakening
+    const currentTestState = options.testState || computeDirectoryHash(targetDir, { testOnly: true });
+    if (!manifest.testIntegrity?.postTestHash) {
+      return { ok: false, reason: "Evidence manifest is missing test integrity baseline (empty shell)" };
+    }
 
-  if (manifest.testIntegrity?.postTestHash && currentTestState.treeHash !== manifest.testIntegrity.postTestHash) {
-    return {
-      ok: false,
-      reason: `Current test suite tree hash (${currentTestState.treeHash}) does not match manifest evidence (${manifest.testIntegrity.postTestHash})`,
-      details: { currentHash: currentTestState.treeHash, manifestHash: manifest.testIntegrity.postTestHash },
-    };
-  }
-
-  // 3. Verify the code the manifest attests to still is that code.
-  //
-  // Without this the manifest proved only that the *tests* had not changed,
-  // so `evidence generate` followed by rewriting src/ and committing left
-  // verification reporting PASSED over an implementation nobody had checked.
-  if (manifest.sourceIntegrity?.treeHash) {
-    const currentSourceState = options.sourceState || computeDirectoryHash(targetDir);
-    if (currentSourceState.treeHash !== manifest.sourceIntegrity.treeHash) {
+    if (manifest.testIntegrity.tamperDetected) {
       return {
         ok: false,
-        reason: `Source tree has changed since this evidence was generated (${manifest.sourceIntegrity.treeHash.slice(0, 12)} → ${currentSourceState.treeHash.slice(0, 12)}); the manifest no longer attests to what is on disk`,
-        details: {
-          currentHash: currentSourceState.treeHash,
-          manifestHash: manifest.sourceIntegrity.treeHash,
-          manifestCommit: manifest.provenance?.commitSha || null,
-          currentCommit: getGitProvenance(root, { head: options.head }).commitSha,
-        },
+        reason: "Test suite tampering detected in evidence manifest",
+        details: { preTestHash: manifest.testIntegrity.preTestHash, postTestHash: manifest.testIntegrity.postTestHash },
       };
     }
-  }
 
-  // 4. Verify security checks
-  if (manifest.securityChecks?.secretScanOk === false) {
-    return { ok: false, reason: "Evidence manifest records secret scanning failure" };
-  }
-  if (manifest.securityChecks?.protectedScopeOk === false) {
-    return { ok: false, reason: "Evidence manifest records protected scope violation" };
-  }
+    if (manifest.testIntegrity?.postTestHash && currentTestState.treeHash !== manifest.testIntegrity.postTestHash) {
+      return {
+        ok: false,
+        reason: `Current test suite tree hash (${currentTestState.treeHash}) does not match manifest evidence (${manifest.testIntegrity.postTestHash})`,
+        details: { currentHash: currentTestState.treeHash, manifestHash: manifest.testIntegrity.postTestHash },
+      };
+    }
 
-  return { ok: true, manifestId: manifest.manifestId, evidenceHash: manifest.evidenceHash };
+    // 3. Verify the code the manifest attests to still is that code.
+    //
+    // Without this the manifest proved only that the *tests* had not changed,
+    // so `evidence generate` followed by rewriting src/ and committing left
+    // verification reporting PASSED over an implementation nobody had checked.
+    if (manifest.sourceIntegrity?.treeHash) {
+      const currentSourceState = options.sourceState || computeDirectoryHash(targetDir);
+      if (currentSourceState.treeHash !== manifest.sourceIntegrity.treeHash) {
+        return {
+          ok: false,
+          reason: `Source tree has changed since this evidence was generated (${manifest.sourceIntegrity.treeHash.slice(0, 12)} → ${currentSourceState.treeHash.slice(0, 12)}); the manifest no longer attests to what is on disk`,
+          details: {
+            currentHash: currentSourceState.treeHash,
+            manifestHash: manifest.sourceIntegrity.treeHash,
+            manifestCommit: manifest.provenance?.commitSha || null,
+            currentCommit: getGitProvenance(root, { head: options.head }).commitSha,
+          },
+        };
+      }
+    }
+
+    // 4. Verify security checks
+    if (manifest.securityChecks?.secretScanOk === false) {
+      return { ok: false, reason: "Evidence manifest records secret scanning failure" };
+    }
+    if (manifest.securityChecks?.protectedScopeOk === false) {
+      return { ok: false, reason: "Evidence manifest records protected scope violation" };
+    }
+
+    return { ok: true, manifestId: manifest.manifestId, evidenceHash: manifest.evidenceHash };
+  } finally {
+    if (snapshot) snapshot.cleanup();
+  }
 }
 
 /**
