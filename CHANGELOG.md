@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.7] - 2026-10-11
+
+### Fixed
+- **Snapshot Materialization for Committed Mode Mutate and Coverage (`bin/agentctl.mjs`, `src/mutation.mjs`)**: Materialized isolated git snapshot worktrees when `agentctl mutate` and `agentctl coverage` evaluate `--mode committed` or `--mode staged` against `--head <ref>` from another branch, preventing mutant out-of-range errors and 0% coverage reports on un-checked-out files.
+- **Evidence Verification against Target Head (`bin/agentctl.mjs`, `src/evidence.mjs`, `src/ops/command-registry.mjs`, `docs/COMMAND_REFERENCE.md`)**: Supported `--head <ref>` in `agentctl evidence verify` to validate archived manifests against git commit snapshots, returning explicit errors if snapshot materialization fails.
+- **Root-Level Task Identifier in Task Creation Wizard (`src/wizard-task.mjs`)**: Exposed `taskId` directly at the top level of JSON output in `agentctl task new` and `agentctl task create` in both normal and dry-run modes.
+- **Process Tree Cleanup Test Stability (`test/process-tree.test.mjs`, `test/evidence.test.mjs`)**: Increased child process timeout in process-tree test to eliminate parallel load races and enforced portable `core.autocrlf false` in evidence tests.
+
 ## [0.75.6] - 2026-10-11
 
 ### Fixed
