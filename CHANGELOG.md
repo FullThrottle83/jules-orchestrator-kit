@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.6] - 2026-10-11
+
+### Fixed
+- **Committed Mode Evidence Hash Desync (`src/engine.mjs`, `src/evidence.mjs`, `src/ops/evidence-actions.mjs`)**: Retained snapshot-derived test and source directory hashes during committed gate execution, ensuring evidence manifests accurately reflect snapshot verification and preventing false-positive test tampering rejection when target branches add or modify test files.
+- **Diff Coverage Clean State Reasons (`src/coverage.mjs`)**: Omitted spurious failure reasons and unobserved file lists in diff coverage reports when line coverage score reaches 100%.
+- **Event Loop Delay Sentinel Bounds (`src/perf.mjs`)**: Guarded empty histogram metrics against uint64 sentinel underflow/overflow, returning 0ms for `minMs` instead of ~9 trillion ms when no loop delay samples are recorded.
+- **Flag Parity for `--head` across Inspection Tools (`bin/agentctl.mjs`, `src/mutation.mjs`, `src/ops/command-registry.mjs`, `docs/COMMAND_REFERENCE.md`)**: Supported `--head` in `agentctl mutate` and `agentctl coverage`, enabling mutation testing and V8 diff coverage against committed branches and commit ranges.
+- **Rules CLI Parser Robustness (`bin/agentctl.mjs`, `src/ops/command-registry.mjs`)**: Relaxed strict flag parsing in `agentctl rules check` and `agentctl rules compile` and added `--dry-run` (`-d`) support to simulate compilation without disk writes.
+
 ## [0.75.5] - 2026-10-10
 
 ### Fixed
