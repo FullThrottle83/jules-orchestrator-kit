@@ -580,6 +580,7 @@ export const COMMAND_REGISTRY = [
     ],
     flags: [
       { name: "base", type: "string", description: "Base comparison branch (default: main or config base_branch) (-b)" },
+      { name: "head", type: "string", description: "Target comparison commit or branch (default: HEAD)" },
       { name: "mode", type: "string", description: "Evaluation mode (working-tree | committed | staged) (-m)" },
       { name: "working-tree", type: "boolean", description: "Evaluate the working tree (default mode)" },
       { name: "staged", type: "boolean", description: "Evaluate staged changes" },
@@ -611,6 +612,7 @@ export const COMMAND_REGISTRY = [
       { name: "min-coverage", type: "string", description: "Alias for --min" },
       { name: "cmd", type: "string", description: "Test command override to run with V8 coverage (-c)" },
       { name: "base", type: "string", description: "Base comparison branch (default: main or config base_branch) (-b)" },
+      { name: "head", type: "string", description: "Target comparison commit or branch (default: HEAD)" },
       { name: "mode", type: "string", description: "Evaluation mode (working-tree | committed | staged)" },
       { name: "json", type: "boolean", description: "Output structured JSON coverage report (-j)" },
     ],
@@ -1427,6 +1429,7 @@ export const COMMAND_REGISTRY = [
       { name: "max-chars", type: "string", description: "Override max characters per file for check" },
       { name: "max-lines", type: "string", description: "Override max lines per file for check" },
       { name: "out", type: "string", description: "Write compiled rules to file for compile (-o)" },
+      { name: "dry-run", type: "boolean", description: "Simulate execution without modifying files (-d)" },
       { name: "json", type: "boolean", description: "Output structured JSON result (-j)" },
     ],
   },

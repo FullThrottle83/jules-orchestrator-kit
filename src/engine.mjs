@@ -394,6 +394,8 @@ export async function gate(opts = {}) {
   const preTestHashResult = computeDirectoryHash(snapshot.cwd, { testOnly: true });
   let preTestHash = preTestHashResult.treeHash;
   let postTestHash = preTestHash;
+  let postTestHashResult = preTestHashResult;
+  let postSourceHashResult = null;
   const executionRecords = [];
   let testTampered = false;
 
@@ -521,8 +523,9 @@ export async function gate(opts = {}) {
     }
 
     // Post-verification test integrity check (No Test Weakening Invariant)
-    const postTestHashResult = computeDirectoryHash(snapshot.cwd, { testOnly: true });
+    postTestHashResult = computeDirectoryHash(snapshot.cwd, { testOnly: true });
     postTestHash = postTestHashResult.treeHash;
+    postSourceHashResult = computeDirectoryHash(snapshot.cwd);
     if (trustedEvidence.strictTestLock && !opts.allowTestModifications && preTestHashResult.fileCount > 0) {
       const changedTestFile = files.find((f) => isTestPath(f));
       if (changedTestFile && preTestHash !== postTestHash) {
@@ -666,6 +669,11 @@ export async function gate(opts = {}) {
   const evidenceManifest = generateEvidenceManifest(root, {
     taskId: opts.taskId,
     preTestHash,
+    postTestHash,
+    testState: postTestHashResult,
+    sourceState: postSourceHashResult,
+    tamperDetected: testTampered,
+    head: opts.head || "HEAD",
     executionRecords,
     secretScanOk: secretResult.ok,
     diffKb: Math.round(bytes / 1024),

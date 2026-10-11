@@ -99,4 +99,12 @@ test("Node.js Event Loop Delay & Big-O Lag Monitor", async (t) => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  await t.test("measureEventLoopDelay bounds minMs to realistic value (no uint64 sentinel overflow)", () => {
+    const res = measureEventLoopDelay(() => { const v = 42; return v; }, { maxDelayMs: 50 });
+    assert.equal(res.ok, true);
+    assert.ok(typeof res.minMs === "number");
+    assert.ok(res.minMs < 1000, `minMs was ${res.minMs}, expected < 1000ms`);
+    assert.ok(res.minMs >= 0);
+  });
 });

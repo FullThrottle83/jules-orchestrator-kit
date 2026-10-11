@@ -77,6 +77,38 @@ test("agentctl rules check and compile CLI commands", async (t) => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  await t.test("agentctl rules check accepts --dry-run without crashing", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, "AGENTS.md"), "# Standard Rules\nShort rule file.");
+      const res = spawnSync(process.execPath, [CLI, "rules", "check", "--dry-run"], {
+        cwd: dir,
+        encoding: "utf-8",
+      });
+      assert.equal(res.status, 0);
+      assert.match(res.stdout, /All agent rule files are within safe character/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl rules compile --dry-run does not write file to disk", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, "AGENTS.md"), "# Core Directives\nStrict zero-dep invariant.");
+      const outPath = "COMPILED_RULES_DRY.md";
+      const res = spawnSync(process.execPath, [CLI, "rules", "compile", "--out", outPath, "--dry-run"], {
+        cwd: dir,
+        encoding: "utf-8",
+      });
+      assert.equal(res.status, 0);
+      assert.equal(existsSync(join(dir, outPath)), false, "Dry run must not write to disk");
+      assert.match(res.stdout, /\[DRY-RUN\] Compiled/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 test("Stack-tailored contract scaffolding (SPEC.md, CONSTRAINTS.md, DESIGN.md)", async (t) => {

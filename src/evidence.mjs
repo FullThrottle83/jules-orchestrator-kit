@@ -238,13 +238,18 @@ export function computeEvidenceHash(manifest) {
  * @param {string} root
  * @returns {object}
  */
-export function getGitProvenance(root = process.cwd()) {
+export function getGitProvenance(root = process.cwd(), options = {}) {
   try {
-    const commitSha = execSync("git rev-parse HEAD", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const targetHead = options.head || "HEAD";
+    const commitSha = execSync(`git rev-parse ${targetHead}`, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     let branch = "";
-    try {
-      branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    } catch (_) {}
+    if (targetHead !== "HEAD") {
+      branch = targetHead;
+    } else {
+      try {
+        branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      } catch (_) {}
+    }
 
     let statusOutput = "";
     try {
@@ -253,7 +258,7 @@ export function getGitProvenance(root = process.cwd()) {
 
     return {
       commitSha,
-      branch: branch || "HEAD",
+      branch: branch || targetHead,
       dirty: statusOutput.length > 0,
     };
   } catch (_) {
@@ -274,18 +279,17 @@ export function getGitProvenance(root = process.cwd()) {
 export function generateEvidenceManifest(root = process.cwd(), options = {}) {
   const manifestId = options.manifestId || `EVD-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const generatedAt = new Date().toISOString();
-  const gitInfo = getGitProvenance(root);
+  const gitInfo = getGitProvenance(root, { head: options.head });
 
   // Compute test tree integrity
   const preTestHash = options.preTestHash || null;
-  const currentTestState = computeDirectoryHash(root, { testOnly: true });
-  const currentSourceState = computeDirectoryHash(root);
-  const postTestHash = currentTestState.treeHash;
+  const currentTestState = options.testState || computeDirectoryHash(options.testDir || root, { testOnly: true });
+  const currentSourceState = options.sourceState || computeDirectoryHash(options.sourceDir || root);
+  const postTestHash = options.postTestHash || currentTestState.treeHash;
 
-  let tamperDetected = false;
-  if (preTestHash && preTestHash !== postTestHash) {
-    tamperDetected = true;
-  }
+  let tamperDetected = options.tamperDetected !== undefined
+    ? Boolean(options.tamperDetected)
+    : Boolean(preTestHash && postTestHash && preTestHash !== postTestHash);
 
   // Intent metadata
   const taskPrompt = options.prompt || options.task?.prompt || "";
@@ -501,7 +505,7 @@ export function loadEvidenceManifest(root, manifestIdOrPath = "manifest.v1.json"
  * @param {object | string} manifestOrPath
  * @returns {{ ok: boolean, reason?: string, details?: object }}
  */
-export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "manifest.v1.json") {
+export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "manifest.v1.json", options = {}) {
   let manifest;
   try {
     manifest = typeof manifestOrPath === "object" && manifestOrPath !== null
@@ -525,7 +529,8 @@ export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "m
   }
 
   // 2. Verify test integrity / No test weakening
-  const currentTestState = computeDirectoryHash(root, { testOnly: true });
+  const targetDir = options.dir || options.targetDir || root;
+  const currentTestState = options.testState || computeDirectoryHash(targetDir, { testOnly: true });
   if (!manifest.testIntegrity?.postTestHash) {
     return { ok: false, reason: "Evidence manifest is missing test integrity baseline (empty shell)" };
   }
@@ -552,7 +557,7 @@ export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "m
   // so `evidence generate` followed by rewriting src/ and committing left
   // verification reporting PASSED over an implementation nobody had checked.
   if (manifest.sourceIntegrity?.treeHash) {
-    const currentSourceState = computeDirectoryHash(root);
+    const currentSourceState = options.sourceState || computeDirectoryHash(targetDir);
     if (currentSourceState.treeHash !== manifest.sourceIntegrity.treeHash) {
       return {
         ok: false,
@@ -561,7 +566,7 @@ export function verifyEvidenceManifest(root = process.cwd(), manifestOrPath = "m
           currentHash: currentSourceState.treeHash,
           manifestHash: manifest.sourceIntegrity.treeHash,
           manifestCommit: manifest.provenance?.commitSha || null,
-          currentCommit: getGitProvenance(root).commitSha,
+          currentCommit: getGitProvenance(root, { head: options.head }).commitSha,
         },
       };
     }

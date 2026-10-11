@@ -383,16 +383,25 @@ export function calculateDiffCoverage(coverageByFile, diffStr = "", options = {}
   const notApplicable = !scored && !measuredNothingExecutable;
   const ok = notApplicable ? true : score >= minCoverage;
 
+  let reasonObj = {};
+  if (notApplicable) {
+    reasonObj = { reason: "No added executable lines were measurable — V8 coverage only observes code Node itself ran, so nothing was scored." };
+  } else if (unobservedExecutableFiles.length > 0) {
+    reasonObj = {
+      reason: `Added executable code was never executed by the test run (unobserved: ${unobservedExecutableFiles.join(", ")}) — V8 coverage saw no execution of it, so it counts as uncovered.`,
+      unobservedFiles: unobservedExecutableFiles,
+    };
+  } else if (!ok) {
+    reasonObj = {
+      reason: `Diff coverage of ${score}% does not meet required minimum of ${minCoverage}%.`,
+    };
+  }
+
   return {
     ok,
     score: notApplicable ? null : score,
     scored,
-    ...(notApplicable
-      ? { reason: "No added executable lines were measurable — V8 coverage only observes code Node itself ran, so nothing was scored." }
-      : {
-          reason: `Added executable code was never executed by the test run (unobserved: ${unobservedExecutableFiles.join(", ")}) — V8 coverage saw no execution of it, so it counts as uncovered.`,
-          unobservedFiles: unobservedExecutableFiles,
-        }),
+    ...reasonObj,
     minCoverage,
     totalLines,
     coveredLines,
