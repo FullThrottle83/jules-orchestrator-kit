@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { isTestPath } from "./test-paths.mjs";
 import { resolve, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
-import { diffText, runCmd } from "./git.mjs";
+import { diffText, runCmd, materializeSnapshot } from "./git.mjs";
 
 /**
  * @typedef {Object} MutationCandidate
@@ -644,50 +644,21 @@ export function runMutationTest(options = {}) {
 
   const startTime = Date.now();
 
-  let candidates = [];
-  if (Array.isArray(options.files) && options.files.length > 0) {
-    for (const relFile of options.files) {
-      const abs = resolve(root, relFile);
-      if (existsSync(abs)) {
-        const content = readFileSync(abs, "utf-8");
-        candidates.push(...generateMutants(content, relFile));
-      }
+  let snapshot = { cwd: root, cleanup: () => {} };
+  try {
+    if (mode === "committed" || mode === "staged") {
+      snapshot = materializeSnapshot(root, mode, head);
     }
-  } else {
-    let diffContent = options.diffStr;
-    if (!diffContent) {
-      try {
-        diffContent = diffText(root, base, mode, head);
-      } catch (_) {
-        diffContent = "";
-      }
-    }
-    if (diffContent) {
-      candidates = generateDiffMutants(diffContent, root);
-    }
-  }
-
-  // Cap candidates to maxMutants
-  const selectedMutants = candidates.slice(0, maxMutants);
-
-  if (selectedMutants.length === 0) {
-    // A diff with no mutable operators yields no mutants, and reporting that as
-    // "100%" told operators their untested code had a perfect score — the exact
-    // false confidence the harness exists to remove. There is no score to
-    // report, so there is none: `mutationScore` is null and `reason` says why.
-    //
-    // `ok` stays true. Nothing was falsifiable, so nothing failed to be
-    // falsified; failing here would block every diff that only adds imports,
-    // constants or markdown, and a gate that cries wolf gets switched off.
+  } catch (snapErr) {
     return {
-      ok: true,
+      ok: false,
       totalMutants: 0,
       killedMutants: 0,
       survivedMutants: 0,
       errorMutants: 0,
       mutationScore: null,
       scored: false,
-      reason: "No mutable operators in the added lines — nothing to falsify, so no score was computed.",
+      reason: `Snapshot materialization failed: ${snapErr.message}`,
       minScore,
       results: [],
       survivors: [],
@@ -695,44 +666,101 @@ export function runMutationTest(options = {}) {
     };
   }
 
-  const results = [];
-  let killedCount = 0;
-  let survivedCount = 0;
-  let errorCount = 0;
+  try {
+    const targetDir = snapshot.cwd;
 
-  for (const mutant of selectedMutants) {
-    const res = executeMutant(mutant, {
-      root,
-      testCmd,
-      timeoutMs: options.timeoutMs,
-      executor: options.executor,
-    });
-
-    results.push(res);
-    if (res.status === "KILLED") {
-      killedCount++;
-    } else if (res.status === "SURVIVED") {
-      survivedCount++;
+    let candidates = [];
+    if (Array.isArray(options.files) && options.files.length > 0) {
+      for (const relFile of options.files) {
+        const abs = resolve(targetDir, relFile);
+        if (existsSync(abs)) {
+          const content = readFileSync(abs, "utf-8");
+          candidates.push(...generateMutants(content, relFile));
+        }
+      }
     } else {
-      errorCount++;
+      let diffContent = options.diffStr;
+      if (!diffContent) {
+        try {
+          diffContent = diffText(root, base, mode, head);
+        } catch (_) {
+          diffContent = "";
+        }
+      }
+      if (diffContent) {
+        candidates = generateDiffMutants(diffContent, targetDir);
+      }
     }
+
+    // Cap candidates to maxMutants
+    const selectedMutants = candidates.slice(0, maxMutants);
+
+    if (selectedMutants.length === 0) {
+      // A diff with no mutable operators yields no mutants, and reporting that as
+      // "100%" told operators their untested code had a perfect score — the exact
+      // false confidence the harness exists to remove. There is no score to
+      // report, so there is none: `mutationScore` is null and `reason` says why.
+      //
+      // `ok` stays true. Nothing was falsifiable, so nothing failed to be
+      // falsified; failing here would block every diff that only adds imports,
+      // constants or markdown, and a gate that cries wolf gets switched off.
+      return {
+        ok: true,
+        totalMutants: 0,
+        killedMutants: 0,
+        survivedMutants: 0,
+        errorMutants: 0,
+        mutationScore: null,
+        scored: false,
+        reason: "No mutable operators in the added lines — nothing to falsify, so no score was computed.",
+        minScore,
+        results: [],
+        survivors: [],
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    const results = [];
+    let killedCount = 0;
+    let survivedCount = 0;
+    let errorCount = 0;
+
+    for (const mutant of selectedMutants) {
+      const res = executeMutant(mutant, {
+        root: targetDir,
+        testCmd,
+        timeoutMs: options.timeoutMs,
+        executor: options.executor,
+      });
+
+      results.push(res);
+      if (res.status === "KILLED") {
+        killedCount++;
+      } else if (res.status === "SURVIVED") {
+        survivedCount++;
+      } else {
+        errorCount++;
+      }
+    }
+
+    const evaluatedCount = killedCount + survivedCount;
+    const mutationScore = evaluatedCount > 0 ? Math.round((killedCount / evaluatedCount) * 100) : 100;
+    const ok = mutationScore >= minScore;
+    const survivors = results.filter((r) => r.status === "SURVIVED");
+
+    return {
+      ok,
+      totalMutants: selectedMutants.length,
+      killedMutants: killedCount,
+      survivedMutants: survivedCount,
+      errorMutants: errorCount,
+      mutationScore,
+      minScore,
+      results,
+      survivors,
+      durationMs: Date.now() - startTime,
+    };
+  } finally {
+    snapshot.cleanup();
   }
-
-  const evaluatedCount = killedCount + survivedCount;
-  const mutationScore = evaluatedCount > 0 ? Math.round((killedCount / evaluatedCount) * 100) : 100;
-  const ok = mutationScore >= minScore;
-  const survivors = results.filter((r) => r.status === "SURVIVED");
-
-  return {
-    ok,
-    totalMutants: selectedMutants.length,
-    killedMutants: killedCount,
-    survivedMutants: survivedCount,
-    errorMutants: errorCount,
-    mutationScore,
-    minScore,
-    results,
-    survivors,
-    durationMs: Date.now() - startTime,
-  };
 }

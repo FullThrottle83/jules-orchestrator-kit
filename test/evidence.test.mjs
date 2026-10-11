@@ -20,6 +20,7 @@ import { pruneTelemetry } from "../src/telemetry.mjs";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
   it("computeFileHash returns null for non-existent files and valid sha256 for real files", () => {
@@ -203,6 +204,47 @@ describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
       const showRes = planEvidenceShow(tmp);
       assert.equal(showRes.ok, true);
       assert.ok(showRes.markdown.includes("Autonomous Verification & Evidence Proof"));
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("verifyEvidenceManifest supports --head <ref> to verify archived manifest against branch snapshot", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "evd-head-test-"));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: tmp });
+      execFileSync("git", ["config", "user.email", "t@e.com"], { cwd: tmp });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: tmp });
+      execFileSync("git", ["config", "core.autocrlf", "false"], { cwd: tmp });
+      writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "pkg", version: "1.0.0" }));
+      execFileSync("git", ["add", "."], { cwd: tmp });
+      execFileSync("git", ["commit", "-q", "-m", "initial commit"], { cwd: tmp });
+
+      execFileSync("git", ["checkout", "-q", "-b", "feat/evd-branch"], { cwd: tmp });
+      mkdirSync(join(tmp, "src"), { recursive: true });
+      mkdirSync(join(tmp, "test"), { recursive: true });
+      writeFileSync(join(tmp, "src", "math.js"), "export function mul(a, b) { return a * b; }\n");
+      writeFileSync(join(tmp, "test", "math.test.js"), "test('mul', () => {});\n");
+      execFileSync("git", ["add", "."], { cwd: tmp });
+      execFileSync("git", ["commit", "-q", "-m", "feat: math"], { cwd: tmp });
+
+      const manifest = generateEvidenceManifest(tmp, {
+        taskId: "TASK-HEAD-1",
+        title: "Feature branch test",
+      });
+      writeEvidenceManifest(tmp, manifest);
+
+      execFileSync("git", ["checkout", "-q", "main"], { cwd: tmp });
+
+      const resWithoutHead = verifyEvidenceManifest(tmp, manifest);
+      assert.equal(resWithoutHead.ok, false);
+
+      const resWithHead = verifyEvidenceManifest(tmp, manifest, { head: "feat/evd-branch" });
+      assert.equal(resWithHead.ok, true, resWithHead.reason);
+      assert.equal(resWithHead.manifestId, manifest.manifestId);
+
+      const planRes = planEvidenceVerify(tmp, { manifest: manifest.manifestId, head: "feat/evd-branch" });
+      assert.equal(planRes.ok, true, planRes.reason);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

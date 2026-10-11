@@ -1046,6 +1046,7 @@ export const COMMAND_REGISTRY = [
     flags: [
       { name: "output", type: "string", description: "Output path for generate (-o)" },
       { name: "manifest", type: "string", description: "Manifest path for verify or show (-m)" },
+      { name: "head", type: "string", description: "Target comparison commit or branch for verify (default: HEAD)" },
       { name: "markdown", type: "string", description: "Markdown output path for generate" },
       { name: "dry-run", type: "boolean", description: "Simulate without writing (-d)" },
       { name: "json", type: "boolean", description: "Output structured JSON result (-j)" },

@@ -510,6 +510,7 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
   if (options.dryRun) {
     return {
       ok: true,
+      taskId: plan.taskId,
       dryRun: true,
       taskFile,
       written: false,
@@ -525,6 +526,7 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
 
   return {
     ok: true,
+    taskId: plan.taskId,
     dryRun: false,
     taskFile,
     written: true,

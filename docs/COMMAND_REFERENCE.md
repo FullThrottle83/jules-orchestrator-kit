@@ -1102,6 +1102,7 @@ Manage cryptographic audit evidence (generate | verify | show)
 | :--- | :--- | :--- |
 | `--output` | string | Output path for generate (-o) |
 | `--manifest` | string | Manifest path for verify or show (-m) |
+| `--head` | string | Target comparison commit or branch for verify (default: HEAD) |
 | `--markdown` | string | Markdown output path for generate |
 | `--dry-run` | boolean | Simulate without writing (-d) |
 | `--json` | boolean | Output structured JSON result (-j) |

@@ -376,6 +376,7 @@ test("Native V8 Diff Coverage Engine", async (t) => {
       );
       execFileSync("git", ["add", "."], { cwd: root });
       execFileSync("git", ["commit", "-q", "-m", "feat: greet"], { cwd: root });
+      execFileSync("git", ["checkout", "-q", "main"], { cwd: root });
 
       const proc = spawnSync(
         process.execPath,
@@ -387,6 +388,7 @@ test("Native V8 Diff Coverage Engine", async (t) => {
       const parsed = JSON.parse(proc.stdout);
       assert.equal(parsed.ok, true);
       assert.equal(parsed.score, 100);
+      assert.equal(parsed.coveredLines, 1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

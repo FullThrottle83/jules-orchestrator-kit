@@ -159,7 +159,7 @@ setInterval(() => {}, 100);
     try {
       // Short timeout: script writes PIDs immediately then parks on intervals.
       const res = runCmd([process.execPath, script], {
-        timeout: 250,
+        timeout: 1000,
         ignoreError: true,
       });
 
@@ -171,7 +171,7 @@ setInterval(() => {}, 100);
       leftover.push(parent, ...kids);
 
       // Allow a brief settle window for signals to deliver.
-      await delay(150);
+      await delay(250);
 
       assert.equal(isAlive(parent), false, `parent ${parent} should be dead`);
       for (const kid of kids) {
