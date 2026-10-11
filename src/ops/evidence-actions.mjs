@@ -45,7 +45,7 @@ export function planEvidenceGenerate(root = resolveRoot(), options = {}) {
  */
 export function planEvidenceVerify(root = resolveRoot(), options = {}) {
   const manifestTarget = options.manifest || "manifest.v1.json";
-  const result = verifyEvidenceManifest(root, manifestTarget);
+  const result = verifyEvidenceManifest(root, manifestTarget, options);
   return result;
 }
 

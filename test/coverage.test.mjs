@@ -331,4 +331,64 @@ test("Native V8 Diff Coverage Engine", async (t) => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  await t.test("calculateDiffCoverage omits reason when coverage is 100%", () => {
+    const root = tempRepo();
+    try {
+      const code = "export function run() { const v = 1; return v; }\n";
+      const file = join(root, "run.mjs");
+      writeFileSync(file, code);
+      const diff = [
+        "diff --git a/run.mjs b/run.mjs",
+        "--- /dev/null",
+        "+++ b/run.mjs",
+        "@@ -0,0 +1,1 @@",
+        "+export function run() { const v = 1; return v; }",
+      ].join("\n");
+
+      const coverageMap = new Map();
+      coverageMap.set("run.mjs", [{
+        functionName: "run",
+        ranges: [{ startOffset: 0, endOffset: code.length, count: 1 }],
+      }]);
+
+      const report = calculateDiffCoverage(coverageMap, diff, { root, minCoverage: 100 });
+      assert.equal(report.ok, true);
+      assert.equal(report.score, 100);
+      assert.equal(report.reason, undefined, "100% coverage should not emit a failure reason");
+      assert.equal(report.unobservedFiles, undefined);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("agentctl coverage supports --mode committed --head <branch>", () => {
+    const root = tempRepo();
+    try {
+      execFileSync("git", ["checkout", "-q", "-b", "feat/cov-branch"], { cwd: root });
+      writeFileSync(
+        join(root, "app.mjs"),
+        "export function greet() { return 'hello'; }\n"
+      );
+      writeFileSync(
+        join(root, "app.test.mjs"),
+        'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { greet } from "./app.mjs";\ntest("greets", () => { const g = greet(); assert.equal(g, "hello"); });\n'
+      );
+      execFileSync("git", ["add", "."], { cwd: root });
+      execFileSync("git", ["commit", "-q", "-m", "feat: greet"], { cwd: root });
+
+      const proc = spawnSync(
+        process.execPath,
+        [CLI, "coverage", "--mode", "committed", "--head", "feat/cov-branch", "--base", "main", "--cmd", "node --test app.test.mjs", "--min", "100", "--json"],
+        { cwd: root, encoding: "utf-8" }
+      );
+
+      assert.equal(proc.status, 0);
+      const parsed = JSON.parse(proc.stdout);
+      assert.equal(parsed.ok, true);
+      assert.equal(parsed.score, 100);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

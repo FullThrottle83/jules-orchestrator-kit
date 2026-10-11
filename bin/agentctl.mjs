@@ -797,6 +797,7 @@ async function main() {
           "min-score": { type: "string", default: "80" },
           "max-mutants": { type: "string", default: "20" },
           cmd: { type: "string" },
+          head: { type: "string" },
           json: { type: "boolean", short: "j" },
         },
         allowPositionals: true,
@@ -820,7 +821,7 @@ async function main() {
       const testCmd = values.cmd || config.verify?.test || "npm test";
 
       if (!values.json) {
-        console.log(`\n🧬 Jules Diff Mutation Testing Harness (Base: ${values.base}, Mode: ${selectedMode})`);
+        console.log(`\n🧬 Jules Diff Mutation Testing Harness (Base: ${values.base}, Mode: ${selectedMode}${values.head ? `, Head: ${values.head}` : ""})`);
         console.log(`------------------------------------------------------------------`);
         console.log(`Evaluating candidate mutants against test command: "${testCmd}"...\n`);
       }
@@ -828,6 +829,7 @@ async function main() {
       const report = runMutationTest({
         root,
         base: values.base,
+        head: values.head,
         mode: selectedMode,
         minScore,
         maxMutants,
@@ -876,6 +878,7 @@ async function main() {
           "min-coverage": { type: "string" },
           cmd: { type: "string", short: "c" },
           base: { type: "string", short: "b" },
+          head: { type: "string" },
           mode: { type: "string" },
           json: { type: "boolean", short: "j" },
         },
@@ -888,7 +891,7 @@ async function main() {
       // so `agentctl coverage` alone died on "Cannot resolve base reference
       // main" in any repository not on `main`.
       const coverageBase = values.base || config.baseBranch || "main";
-      const diffStr = diffText(root, coverageBase, values.mode || "working-tree");
+      const diffStr = diffText(root, coverageBase, values.mode || "working-tree", values.head || "HEAD");
 
       const covRes = runV8Coverage(values.cmd, { root });
       const report = calculateDiffCoverage(covRes.coverageByFile, diffStr, { root, minCoverage });
@@ -896,7 +899,7 @@ async function main() {
       if (values.json) {
         console.log(JSON.stringify({ ...report, testPass: covRes.ok }, null, 2));
       } else {
-        console.log(`\n📊 V8 Native Diff Coverage Report (Base: ${coverageBase})`);
+        console.log(`\n📊 V8 Native Diff Coverage Report (Base: ${coverageBase}${values.head ? `, Head: ${values.head}` : ""})`);
         console.log(`------------------------------------------------------------------`);
         console.log(`  Target Min Coverage : ${report.minCoverage}%`);
         console.log(`  Achieved Coverage   : ${report.score}%`);
@@ -3543,10 +3546,12 @@ async function main() {
           args: args.slice(2),
           options: {
             json: { type: "boolean", short: "j" },
+            "dry-run": { type: "boolean", short: "d" },
             "max-chars": { type: "string" },
             "max-lines": { type: "string" },
           },
           allowPositionals: true,
+          strict: false,
         });
 
         const res = checkRulesBudget(root, {
@@ -3576,13 +3581,25 @@ async function main() {
           args: args.slice(2),
           options: {
             out: { type: "string", short: "o" },
+            "dry-run": { type: "boolean", short: "d" },
             json: { type: "boolean", short: "j" },
           },
           allowPositionals: true,
+          strict: false,
         });
 
         const res = compileRules(root);
-        if (values.out) {
+        if (values["dry-run"]) {
+          if (values.json) {
+            console.log(JSON.stringify({ ok: true, dryRun: true, out: values.out || null, sha256: res.sha256, bodyLen: res.bodyLen, sources: res.sources }, null, 2));
+          } else {
+            console.log(`[DRY-RUN] Compiled ${res.sources.length} rule source(s) (SHA-256: ${res.sha256.slice(0, 12)}..., ${res.bodyLen} bytes)`);
+            if (values.out) {
+              console.log(`[DRY-RUN] Target output path: ${values.out} (no files written)`);
+            }
+          }
+          process.exit(0);
+        } else if (values.out) {
           const { writeFileSync } = await import("node:fs");
           const { resolve } = await import("node:path");
           writeFileSync(resolve(root, values.out), res.compiled, "utf-8");

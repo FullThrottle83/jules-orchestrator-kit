@@ -57,13 +57,14 @@ export function measureEventLoopDelay(target, options = {}) {
 
   const durationMs = Date.now() - startTime;
 
-  // Convert nanoseconds to milliseconds
-  const minMs = Math.round((histogram.min / 1e6) * 100) / 100;
-  const maxMs = Math.round((histogram.max / 1e6) * 100) / 100;
-  const meanMs = Number.isFinite(histogram.mean) ? Math.round((histogram.mean / 1e6) * 100) / 100 : 0;
-  const p50Ms = Math.round((histogram.percentile(50) / 1e6) * 100) / 100;
-  const p90Ms = Math.round((histogram.percentile(90) / 1e6) * 100) / 100;
-  const p99Ms = Math.round((histogram.percentile(99) / 1e6) * 100) / 100;
+  // Convert nanoseconds to milliseconds (guard against empty histogram initial values: min = 2^63 - 1, max = 0, mean = NaN)
+  const hasSamples = typeof histogram.count === "number" ? histogram.count > 0 : (histogram.min < 1e12 && Number.isFinite(histogram.min));
+  const minMs = hasSamples && histogram.min < 1e12 ? Math.round((histogram.min / 1e6) * 100) / 100 : 0;
+  const maxMs = hasSamples && Number.isFinite(histogram.max) ? Math.round((histogram.max / 1e6) * 100) / 100 : 0;
+  const meanMs = hasSamples && Number.isFinite(histogram.mean) ? Math.round((histogram.mean / 1e6) * 100) / 100 : 0;
+  const p50Ms = hasSamples ? Math.round((histogram.percentile(50) / 1e6) * 100) / 100 : 0;
+  const p90Ms = hasSamples ? Math.round((histogram.percentile(90) / 1e6) * 100) / 100 : 0;
+  const p99Ms = hasSamples ? Math.round((histogram.percentile(99) / 1e6) * 100) / 100 : 0;
 
   // If p99 or max exceeds threshold, mark as lag violation
   const ok = exitCode === 0 && (p99Ms <= maxDelayMs || maxMs <= maxDelayMs);

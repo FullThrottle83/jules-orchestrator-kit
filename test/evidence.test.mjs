@@ -131,6 +131,42 @@ describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
     }
   });
 
+  it("verifyEvidenceManifest supports snapshot targetDir and testState options", () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "evd-root-"));
+    const snapDir = mkdtempSync(join(tmpdir(), "evd-snap-"));
+    try {
+      mkdirSync(join(rootDir, "test"), { recursive: true });
+      mkdirSync(join(snapDir, "test"), { recursive: true });
+      const baselineCode = "const num = 42;\nexport function answer() { return num; }\n";
+      const branchCode = "const num = 100;\nexport function answer() { return num; }\n";
+      writeFileSync(join(rootDir, "test", "a.test.js"), baselineCode, "utf-8");
+      writeFileSync(join(snapDir, "test", "a.test.js"), branchCode, "utf-8");
+
+      const snapTestState = computeDirectoryHash(snapDir, { testOnly: true });
+      const manifest = generateEvidenceManifest(snapDir, {
+        taskId: "TASK-SNAP",
+        testState: snapTestState,
+        postTestHash: snapTestState.treeHash,
+      });
+
+      // Verifying against rootDir without targetDir would fail because rootDir has different file content
+      const failCheck = verifyEvidenceManifest(rootDir, manifest);
+      assert.equal(failCheck.ok, false);
+
+      // Verifying with targetDir: snapDir succeeds
+      const passTarget = verifyEvidenceManifest(rootDir, manifest, { targetDir: snapDir });
+      assert.equal(passTarget.ok, true);
+
+      // Verifying with testState and sourceState succeeds
+      const snapSourceState = computeDirectoryHash(snapDir);
+      const passState = verifyEvidenceManifest(rootDir, manifest, { testState: snapTestState, sourceState: snapSourceState });
+      assert.equal(passState.ok, true);
+    } finally {
+      rmSync(rootDir, { recursive: true, force: true });
+      rmSync(snapDir, { recursive: true, force: true });
+    }
+  });
+
   it("generateEvidenceMarkdown formats clean PR-ready markdown summary", () => {
     const manifest = {
       schema: "agentctl/evidence-manifest-v1",

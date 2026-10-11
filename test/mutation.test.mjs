@@ -235,4 +235,32 @@ diff --git a/src/math.js b/src/math.js
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  await t.test("agentctl mutate supports --mode committed --head <branch>", () => {
+    const dir = tempRepo();
+    try {
+      execFileSync("git", ["checkout", "-q", "-b", "feat/mut-branch"], { cwd: dir });
+      const srcFile = join(dir, "index.mjs");
+      writeFileSync(srcFile, "export function isValid(n) {\n  const flag = n > 0;\n  return flag;\n}\n", "utf-8");
+      execFileSync("git", ["add", "-A"], { cwd: dir });
+      execFileSync("git", ["commit", "-qm", "feat: add validation"], { cwd: dir });
+      execFileSync("git", ["checkout", "-q", "main"], { cwd: dir });
+
+      const res = spawnSync(
+        process.execPath,
+        [CLI, "mutate", "--mode", "committed", "--head", "feat/mut-branch", "--base", "main", "--json", "--min-score", "0"],
+        {
+          cwd: dir,
+          encoding: "utf-8",
+        }
+      );
+
+      assert.equal(res.status, 0);
+      const parsed = JSON.parse(res.stdout);
+      assert.ok(parsed.totalMutants > 0, "committed branch must yield mutants for added line");
+      assert.equal(typeof parsed.mutationScore, "number");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

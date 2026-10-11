@@ -624,6 +624,7 @@ Alias of mutate: run zero-dependency diff mutation testing harness
 | Flag | Type | Description |
 | :--- | :--- | :--- |
 | `--base` | string | Base comparison branch (default: main or config base_branch) (-b) |
+| `--head` | string | Target comparison commit or branch (default: HEAD) |
 | `--mode` | string | Evaluation mode (working-tree | committed | staged) (-m) |
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
@@ -657,6 +658,7 @@ Run native zero-dependency V8 diff coverage check
 | `--min-coverage` | string | Alias for --min |
 | `--cmd` | string | Test command override to run with V8 coverage (-c) |
 | `--base` | string | Base comparison branch (default: main or config base_branch) (-b) |
+| `--head` | string | Target comparison commit or branch (default: HEAD) |
 | `--mode` | string | Evaluation mode (working-tree | committed | staged) |
 | `--json` | boolean | Output structured JSON coverage report (-j) |
 
@@ -1477,6 +1479,7 @@ Audit rule token budgets or compile rule sentinels (check | compile)
 | `--max-chars` | string | Override max characters per file for check |
 | `--max-lines` | string | Override max lines per file for check |
 | `--out` | string | Write compiled rules to file for compile (-o) |
+| `--dry-run` | boolean | Simulate execution without modifying files (-d) |
 | `--json` | boolean | Output structured JSON result (-j) |
 
 **Examples:**

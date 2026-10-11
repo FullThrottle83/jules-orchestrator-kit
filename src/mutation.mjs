@@ -637,6 +637,7 @@ export function runMutationTest(options = {}) {
   const root = options.root || process.cwd();
   const base = options.base || "main";
   const mode = options.mode || "working-tree";
+  const head = options.head || "HEAD";
   const minScore = typeof options.minScore === "number" ? options.minScore : 80;
   const maxMutants = typeof options.maxMutants === "number" ? options.maxMutants : 20;
   const testCmd = options.testCmd || "npm test";
@@ -656,7 +657,7 @@ export function runMutationTest(options = {}) {
     let diffContent = options.diffStr;
     if (!diffContent) {
       try {
-        diffContent = diffText(root, base, mode);
+        diffContent = diffText(root, base, mode, head);
       } catch (_) {
         diffContent = "";
       }
