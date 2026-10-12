@@ -56,7 +56,6 @@ export {
   generateEvidenceMarkdown,
   exportJsonReport,
   runAssertion,
-  buildVerificationEnv,
 };
 
 

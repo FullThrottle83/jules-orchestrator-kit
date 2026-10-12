@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildVerificationEnv, runCmd, NET_GUARD_FLAG } from "../src/git.mjs";
+import { buildVerificationEnv, runCmd, NET_GUARD_FLAG, isReservedVerificationKey } from "../src/git.mjs";
 import { gate } from "../src/engine.mjs";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -140,7 +140,7 @@ describe("P0-11: Verification Subprocess Environment Isolation", () => {
       assert.equal(env.CI, "true");
     });
 
-    it("does not inherit HOME or USERPROFILE by default (operator credential isolation)", () => {
+    it("does not inherit HOME or USERPROFILE environment variables by default", () => {
       const ambient = {
         PATH: "/bin",
         HOME: "/home/operator",
@@ -154,6 +154,33 @@ describe("P0-11: Verification Subprocess Environment Isolation", () => {
       const winEnv = buildVerificationEnv({ ambientEnv: ambient, platform: "win32" });
       assert.equal(winEnv.HOME, undefined);
       assert.equal(winEnv.USERPROFILE, undefined);
+    });
+
+    it("proves HOME/USERPROFILE env vars are omitted in subprocess while documenting os.homedir() remains accessible (no filesystem sandbox)", () => {
+      const vEnv = buildVerificationEnv();
+      const tmp = mkdtempSync(join(tmpdir(), "jules-home-probe-"));
+      try {
+        const probeFile = join(tmp, "probe.cjs");
+        writeFileSync(
+          probeFile,
+          "const os = require('node:os');\n" +
+          "console.log(JSON.stringify({\n" +
+          "  hasEnvHome: typeof process.env.HOME !== 'undefined',\n" +
+          "  hasEnvUserProfile: typeof process.env.USERPROFILE !== 'undefined',\n" +
+          "  homedirType: typeof os.homedir(),\n" +
+          "  homedirNonEmpty: typeof os.homedir() === 'string' && os.homedir().length > 0\n" +
+          "}));\n"
+        );
+        const res = runCmd(["node", probeFile], { env: vEnv });
+        assert.equal(res.status, 0);
+        const parsed = JSON.parse(res.stdout);
+        assert.equal(parsed.hasEnvHome, false);
+        assert.equal(parsed.hasEnvUserProfile, false);
+        assert.equal(parsed.homedirType, "string");
+        assert.equal(parsed.homedirNonEmpty, true);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
     });
 
     it("supports explicit isolated home when opts.home is provided", () => {
@@ -498,6 +525,115 @@ verify:
       assert.equal(env.NODE_V8_COVERAGE, "/tmp/cov");
       assert.equal(env.JULES_ALLOW_COMMAND_FILE_CHANGES, undefined);
       assert.equal(env.AGENT_ALLOW_COMMAND_FILE_CHANGES, undefined);
+    });
+  });
+
+  describe("Unit: isReservedVerificationKey & Command Prefix Protection", () => {
+    it("correctly identifies JOK security/control keys (case-insensitively)", () => {
+      assert.equal(isReservedVerificationKey("NODE_OPTIONS"), true);
+      assert.equal(isReservedVerificationKey("node_options"), true);
+      assert.equal(isReservedVerificationKey("CI"), true);
+      assert.equal(isReservedVerificationKey("ci"), true);
+      assert.equal(isReservedVerificationKey("HOME"), true);
+      assert.equal(isReservedVerificationKey("home"), true);
+      assert.equal(isReservedVerificationKey("USERPROFILE"), true);
+      assert.equal(isReservedVerificationKey("userprofile"), true);
+      assert.equal(isReservedVerificationKey("PR_LABELS"), true);
+      assert.equal(isReservedVerificationKey("HEAD_SHA"), true);
+      assert.equal(isReservedVerificationKey("BASE_SHA"), true);
+      assert.equal(isReservedVerificationKey("JULES_BASE_SHA"), true);
+      assert.equal(isReservedVerificationKey("JULES_ALLOW_COMMAND_FILE_CHANGES"), true);
+      assert.equal(isReservedVerificationKey("jules_allow_test_changes"), true);
+      assert.equal(isReservedVerificationKey("AGENT_ALLOW_COMMAND_FILE_CHANGES"), true);
+      assert.equal(isReservedVerificationKey("NODE_TEST_CONTEXT"), true);
+      assert.equal(isReservedVerificationKey("NODE_CHANNEL_FD"), true);
+
+      // Benign compatibility keys are not reserved
+      assert.equal(isReservedVerificationKey("PYTHONPATH"), false);
+      assert.equal(isReservedVerificationKey("NODE_ENV"), false);
+      assert.equal(isReservedVerificationKey("DEBUG"), false);
+      assert.equal(isReservedVerificationKey("PORT"), false);
+    });
+
+    it("prevents candidate command prefixes from overriding trusted NODE_OPTIONS or CI", () => {
+      const trustedEnv = buildVerificationEnv({ netGuard: true });
+      const tmp = mkdtempSync(join(tmpdir(), "jules-prefix-probe-"));
+      try {
+        const probeFile = join(tmp, "probe.cjs");
+        writeFileSync(
+          probeFile,
+          "console.log(JSON.stringify({\n" +
+          "  nodeOptions: process.env.NODE_OPTIONS,\n" +
+          "  ci: process.env.CI\n" +
+          "}));\n"
+        );
+        const res = runCmd(`NODE_OPTIONS=--max-old-space-size=4096 CI=false node ${probeFile}`, {
+          env: trustedEnv,
+        });
+        assert.equal(res.status, 0);
+        const parsed = JSON.parse(res.stdout);
+        assert.equal(parsed.nodeOptions, NET_GUARD_FLAG);
+        assert.equal(parsed.ci, "true");
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it("prevents candidate command prefixes from introducing gate waivers, test context, or HOME", () => {
+      const trustedEnv = buildVerificationEnv();
+      const tmp = mkdtempSync(join(tmpdir(), "jules-waiver-probe-"));
+      try {
+        const probeFile = join(tmp, "probe.cjs");
+        writeFileSync(
+          probeFile,
+          "console.log(JSON.stringify({\n" +
+          "  julesAllow: typeof process.env.JULES_ALLOW_COMMAND_FILE_CHANGES,\n" +
+          "  agentAllow: typeof process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES,\n" +
+          "  prLabels: typeof process.env.PR_LABELS,\n" +
+          "  nodeTestCtx: typeof process.env.NODE_TEST_CONTEXT,\n" +
+          "  home: typeof process.env.HOME,\n" +
+          "  userProfile: typeof process.env.USERPROFILE\n" +
+          "}));\n"
+        );
+        const res = runCmd(
+          `JULES_ALLOW_COMMAND_FILE_CHANGES=true AGENT_ALLOW_COMMAND_FILE_CHANGES=1 PR_LABELS=allow-p:xxx NODE_TEST_CONTEXT=tamper HOME=/fake USERPROFILE=C:\\fake node ${probeFile}`,
+          { env: trustedEnv }
+        );
+        assert.equal(res.status, 0);
+        const parsed = JSON.parse(res.stdout);
+        assert.equal(parsed.julesAllow, "undefined");
+        assert.equal(parsed.agentAllow, "undefined");
+        assert.equal(parsed.prLabels, "undefined");
+        assert.equal(parsed.nodeTestCtx, "undefined");
+        assert.equal(parsed.home, "undefined");
+        assert.equal(parsed.userProfile, "undefined");
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it("preserves benign command-local variable assignments (e.g. PYTHONPATH)", () => {
+      const trustedEnv = buildVerificationEnv();
+      const tmp = mkdtempSync(join(tmpdir(), "jules-benign-probe-"));
+      try {
+        const probeFile = join(tmp, "probe.cjs");
+        writeFileSync(
+          probeFile,
+          "console.log(JSON.stringify({\n" +
+          "  pythonPath: process.env.PYTHONPATH,\n" +
+          "  customVar: process.env.MY_CUSTOM_VAR\n" +
+          "}));\n"
+        );
+        const res = runCmd(`PYTHONPATH=my_pkg_src MY_CUSTOM_VAR=hello_world node ${probeFile}`, {
+          env: trustedEnv,
+        });
+        assert.equal(res.status, 0);
+        const parsed = JSON.parse(res.stdout);
+        assert.equal(parsed.pythonPath, "my_pkg_src");
+        assert.equal(parsed.customVar, "hello_world");
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
     });
   });
 });
