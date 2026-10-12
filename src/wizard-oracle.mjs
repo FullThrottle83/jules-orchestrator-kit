@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { detectStack, parseYaml } from "./config.mjs";
-import { runCmd } from "./git.mjs";
+import { runCmd, buildVerificationEnv } from "./git.mjs";
 import { pytestCmd } from "./stack-detector.mjs";
 
 /**
@@ -167,7 +167,8 @@ export async function runVerificationProbe(cmd, cwd = process.cwd(), options = {
   }
 
   try {
-    const res = runCmd(cmd, { cwd, timeout: timeoutMs });
+    const probeEnv = options.env || buildVerificationEnv();
+    const res = runCmd(cmd, { cwd, timeout: timeoutMs, env: probeEnv });
     const durationMs = Date.now() - start;
     const ok = res.status === 0;
     return {

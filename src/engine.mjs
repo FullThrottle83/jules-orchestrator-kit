@@ -3,7 +3,7 @@ import { isTestPath } from "./test-paths.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets, hasHighConfidenceSecret } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, gitlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase } from "./git.mjs";
+import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, gitlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase, buildVerificationEnv } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
@@ -360,40 +360,9 @@ export async function gate(opts = {}) {
   let serverResult = { ok: true, status: 0 };
   let failingCmd = null;
 
-  const existingNodeOptions = process.env.NODE_OPTIONS || "";
-  const netGuardUrl = new URL("./preload-net-guard.mjs", import.meta.url).href;
-  const netGuardFlag = `--import ${netGuardUrl}`;
-  const guardNodeOptions = existingNodeOptions && !existingNodeOptions.includes(netGuardFlag) && !existingNodeOptions.includes("preload-net-guard.mjs")
-    ? `${existingNodeOptions} ${netGuardFlag}`
-    : existingNodeOptions ? existingNodeOptions : netGuardFlag;
-
-  const testEnv = {
-    ...process.env,
-    NODE_OPTIONS: guardNodeOptions,
-  };
-
-  // Node's test runner talks to its children through NODE_TEST_CONTEXT and
-  // NODE_CHANNEL_FD. Inherited by a verification command that is itself a
-  // `node --test` run, the child switches into child-reporter mode and its
-  // failures stop reaching the exit code — the gate then sees exit 0 and
-  // approves a change whose tests failed. src/perf.mjs already strips these for
-  // the same reason; the gate, which is the one that decides, did not.
-  // Ambient PR waiver labels and HEAD_SHA must also be stripped so verification
-  // suites and child audits run hermetically without inherited waivers.
-  for (const key of Object.keys(testEnv)) {
-    if (
-      key.startsWith("NODE_TEST_") ||
-      key.startsWith("NODE_CHANNEL_") ||
-      key === "PR_LABELS" ||
-      key === "HEAD_SHA" ||
-      key === "BASE_SHA" ||
-      key === "JULES_BASE_SHA" ||
-      key.startsWith("JULES_ALLOW_") ||
-      key.startsWith("AGENT_ALLOW_")
-    ) {
-      delete testEnv[key];
-    }
-  }
+  const testEnv = buildVerificationEnv({
+    netGuard: true,
+  });
 
   let flakyVerdictResult = null;
   // Five minutes. A minute was too short for an ordinary suite — a mid-sized
@@ -1882,7 +1851,7 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
       cwd: root,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
+      env: buildVerificationEnv(),
     });
 
     if (child.stdout) {

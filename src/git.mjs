@@ -9,6 +9,121 @@ import { normalizePath, canonicalizePath } from "./config.mjs";
 export const NET_GUARD_PRELOAD_URL = new URL("./preload-net-guard.mjs", import.meta.url).href;
 export const NET_GUARD_FLAG = `--import ${NET_GUARD_PRELOAD_URL}`;
 
+/**
+ * Constructs an isolated, platform-aware execution environment for verification subprocesses (P0-11).
+ *
+ * Untrusted candidate code or repository verification commands must NOT inherit ambient
+ * host, operator, cloud, or CI credentials. This helper builds an environment starting
+ * from an empty object ({}) and populating ONLY explicitly allowed execution primitives
+ * required for reliable operation across Linux, macOS, and Windows.
+ *
+ * Scope boundary:
+ * P0-11 prevents inheritance of HOME/USERPROFILE environment variables.
+ * It does NOT prevent repository code from discovering an OS account home
+ * directory through APIs such as os.homedir(), nor does it provide filesystem
+ * sandboxing.
+ *
+ * @param {object} [opts]
+ * @param {NodeJS.ProcessEnv} [opts.ambientEnv] - Source environment to read baseline from (defaults to process.env)
+ * @param {NodeJS.Platform} [opts.platform] - Platform to target (defaults to process.platform)
+ * @param {boolean} [opts.netGuard] - Inject preload network guard in NODE_OPTIONS
+ * @param {string} [opts.home] - Optional explicit home directory to set in HOME/USERPROFILE env vars
+ * @param {Record<string, string>} [opts.extraEnv] - Trusted JOK-controlled environment variables to merge
+ * @returns {Record<string, string>}
+ */
+export function buildVerificationEnv(opts = {}) {
+  const ambient = opts.ambientEnv || process.env;
+  const platform = opts.platform || process.platform;
+  const isWin = platform === "win32";
+
+  const env = {};
+
+  function findAmbientKey(targetName) {
+    const targetUpper = targetName.toUpperCase();
+    for (const k of Object.keys(ambient)) {
+      if (k.toUpperCase() === targetUpper && ambient[k] !== undefined) {
+        return ambient[k];
+      }
+    }
+    return undefined;
+  }
+
+  if (isWin) {
+    const p = findAmbientKey("PATH");
+    env.PATH = p !== undefined ? String(p) : "";
+    const sr = findAmbientKey("SYSTEMROOT");
+    env.SystemRoot = sr !== undefined ? String(sr) : "C:\\Windows";
+    const cs = findAmbientKey("COMSPEC");
+    env.ComSpec = cs !== undefined ? String(cs) : "C:\\Windows\\system32\\cmd.exe";
+    const pe = findAmbientKey("PATHEXT");
+    env.PATHEXT = pe !== undefined ? String(pe) : ".COM;.EXE;.BAT;.CMD";
+    const wd = findAmbientKey("WINDIR");
+    if (wd !== undefined) env.WINDIR = String(wd);
+    const sd = findAmbientKey("SYSTEMDRIVE");
+    env.SystemDrive = sd !== undefined ? String(sd) : "C:";
+    const temp = findAmbientKey("TEMP");
+    if (temp !== undefined) env.TEMP = String(temp);
+    const tmp = findAmbientKey("TMP");
+    if (tmp !== undefined) env.TMP = String(tmp);
+  } else {
+    if (ambient.PATH !== undefined) env.PATH = String(ambient.PATH);
+    else env.PATH = "/usr/local/bin:/usr/bin:/bin";
+    if (ambient.TMPDIR !== undefined) env.TMPDIR = String(ambient.TMPDIR);
+    else env.TMPDIR = "/tmp";
+    if (ambient.TEMP !== undefined) env.TEMP = String(ambient.TEMP);
+    if (ambient.TMP !== undefined) env.TMP = String(ambient.TMP);
+  }
+
+  const lang = findAmbientKey("LANG");
+  if (lang !== undefined) env.LANG = String(lang);
+  const lcAll = findAmbientKey("LC_ALL");
+  if (lcAll !== undefined) env.LC_ALL = String(lcAll);
+  const lcCtype = findAmbientKey("LC_CTYPE");
+  if (lcCtype !== undefined) env.LC_CTYPE = String(lcCtype);
+  const term = findAmbientKey("TERM");
+  if (term !== undefined) env.TERM = String(term);
+
+  env.CI = "true";
+  const nodeEnv = findAmbientKey("NODE_ENV");
+  if (nodeEnv !== undefined) env.NODE_ENV = String(nodeEnv);
+
+  if (opts.netGuard) {
+    env.NODE_OPTIONS = NET_GUARD_FLAG;
+  }
+
+  if (opts.home) {
+    env.HOME = String(opts.home);
+    if (isWin) env.USERPROFILE = String(opts.home);
+  }
+
+  if (opts.extraEnv && typeof opts.extraEnv === "object") {
+    for (const [k, v] of Object.entries(opts.extraEnv)) {
+      if (v !== undefined && v !== null) {
+        env[k] = String(v);
+      }
+    }
+  }
+
+  delete env.NODE_TEST_CONTEXT;
+  delete env.NODE_CHANNEL_FD;
+  delete env.PR_LABELS;
+  delete env.HEAD_SHA;
+  delete env.BASE_SHA;
+  delete env.JULES_BASE_SHA;
+  for (const k of Object.keys(env)) {
+    if (
+      k.startsWith("JULES_ALLOW_") ||
+      k.startsWith("AGENT_ALLOW_") ||
+      k.startsWith("NODE_TEST_") ||
+      k.startsWith("NODE_CHANNEL_")
+    ) {
+      delete env[k];
+    }
+  }
+
+  return env;
+}
+
 export class GateError extends Error {
   constructor(message, opts = {}) {
     super(message);
@@ -20,6 +135,39 @@ export class GateError extends Error {
 // `NAME=value` at the head of a command line: a POSIX environment prefix,
 // not the name of a program.
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/**
+ * Checks whether an environment variable key is reserved for JOK security/control
+ * and cannot be set or overridden by candidate command prefixes (P0-11).
+ *
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isReservedVerificationKey(key) {
+  if (!key || typeof key !== "string") return false;
+  const upper = key.toUpperCase();
+  if (
+    upper === "NODE_OPTIONS" ||
+    upper === "CI" ||
+    upper === "PR_LABELS" ||
+    upper === "HEAD_SHA" ||
+    upper === "BASE_SHA" ||
+    upper === "JULES_BASE_SHA" ||
+    upper === "HOME" ||
+    upper === "USERPROFILE"
+  ) {
+    return true;
+  }
+  if (
+    upper.startsWith("JULES_ALLOW_") ||
+    upper.startsWith("AGENT_ALLOW_") ||
+    upper.startsWith("NODE_TEST_") ||
+    upper.startsWith("NODE_CHANNEL_")
+  ) {
+    return true;
+  }
+  return false;
+}
 
 const DEFAULT_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024; // 10 MB
@@ -157,6 +305,13 @@ export function runCmd(command, opts = {}) {
   } else if (typeof command === "string") {
     const trimmed = command.trim();
     if (/[\&\|\>\<\$\"\'\n\;]/.test(trimmed)) {
+      // For commands containing shell metacharacters, execution is delegated to the system shell
+      // (sh on POSIX, cmd.exe on Windows). The shell receives `childEnv` (opts.env || process.env).
+      // Note: P0-11 isolates the initial environment variables passed into the verification process.
+      // It is not a process sandbox: untrusted code executing arbitrary shell scripts can invoke its
+      // own child commands or modify its own local environment. The invariant enforced here is that
+      // JOK never leaks ambient operator secrets into `opts.env`, and JOK's command-prefix parsing
+      // never allows candidate-controlled assignments to overwrite JOK security controls.
       useShell = true;
       shellCmd = trimmed;
     } else {
@@ -172,11 +327,21 @@ export function runCmd(command, opts = {}) {
       // Peeling the assignments into the child's environment behaves the same
       // on every platform. Handing the string to a shell would not: cmd.exe
       // has no such syntax, so the Windows matrix would keep failing.
+      //
+      // Security contract (P0-11): Command prefixes may introduce ordinary
+      // task-local compatibility variables (e.g. PYTHONPATH=src, PORT=3000),
+      // but must NEVER be permitted to override JOK-owned security/control
+      // variables (NODE_OPTIONS, CI, PR_LABELS, gate waivers, HOME, etc.).
+      // Reserved keys are stripped from argv but ignored from envOverlay.
       while (tokens.length > 1 && ENV_ASSIGNMENT.test(tokens[0])) {
         const token = tokens.shift();
         const eq = token.indexOf("=");
-        if (!envOverlay) envOverlay = {};
-        envOverlay[token.slice(0, eq)] = token.slice(eq + 1);
+        const key = token.slice(0, eq);
+        const val = token.slice(eq + 1);
+        if (!isReservedVerificationKey(key)) {
+          if (!envOverlay) envOverlay = {};
+          envOverlay[key] = val;
+        }
       }
 
       binary = tokens[0] || "";

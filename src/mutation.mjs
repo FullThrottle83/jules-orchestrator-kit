@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { isTestPath } from "./test-paths.mjs";
 import { resolve, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
-import { diffText, runCmd, materializeSnapshot } from "./git.mjs";
+import { diffText, runCmd, materializeSnapshot, buildVerificationEnv } from "./git.mjs";
 
 /**
  * @typedef {Object} MutationCandidate
@@ -570,7 +570,9 @@ export function executeMutant(mutant, options = {}) {
       const execResult = runCmd(testCmd, {
         cwd: root,
         timeout: timeoutMs,
-        env: { ...process.env, CI: "true", JULES_MUTATION_RUN: "true" },
+        env: buildVerificationEnv({
+          extraEnv: { JULES_MUTATION_RUN: "true" },
+        }),
         ignoreError: true,
       });
       exitCode = execResult.status;
