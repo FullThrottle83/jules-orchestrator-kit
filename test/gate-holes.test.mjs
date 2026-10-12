@@ -167,7 +167,8 @@ describe("a binary file is not a blind spot", () => {
       );
       commit(dir, "sneaky");
 
-      const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "committed" });
+      const baseSha = git(dir, ["rev-parse", "main"]).trim();
+      const res = await gate({ root: dir, config: loadConfig(dir), baseSha, mode: "committed" });
       assert.equal(res.ok, false);
       assert.equal(res.code, 6);
       const secrets = res.phases.find((p) => p.phase === "secrets");
@@ -192,7 +193,8 @@ describe("a binary file is not a blind spot", () => {
       );
       commit(dir, "asset");
 
-      const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "committed" });
+      const baseSha = git(dir, ["rev-parse", "main"]).trim();
+      const res = await gate({ root: dir, config: loadConfig(dir), baseSha, mode: "committed" });
       assert.equal(res.phases.find((p) => p.phase === "secrets").ok, true, "a real asset must not be a false positive");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -272,7 +274,8 @@ describe("a symlink is judged by where it points", () => {
       git(dir, ["checkout", "-q", "-b", "agent/link"]);
       addSymlinkToIndex(dir, "notes.md", ".agent/config.yml");
 
-      const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "committed" });
+      const baseSha = git(dir, ["rev-parse", "main"]).trim();
+      const res = await gate({ root: dir, config: loadConfig(dir), baseSha, mode: "committed" });
       assert.equal(res.ok, false);
       assert.equal(res.code, 3);
       const scope = res.phases.find((p) => p.phase === "scope");
@@ -293,7 +296,8 @@ describe("a symlink is judged by where it points", () => {
       commit(dir, "docs");
       addSymlinkToIndex(dir, "shortcut.md", "docs/real.md");
 
-      const res = await gate({ root: dir, config: loadConfig(dir), base: "main", mode: "committed" });
+      const baseSha = git(dir, ["rev-parse", "main"]).trim();
+      const res = await gate({ root: dir, config: loadConfig(dir), baseSha, mode: "committed" });
       assert.equal(res.phases.find((p) => p.phase === "scope").ok, true);
     } finally {
       rmSync(dir, { recursive: true, force: true });

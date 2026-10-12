@@ -342,8 +342,6 @@ export async function gate(opts = {}) {
   const testEnv = {
     ...process.env,
     NODE_OPTIONS: guardNodeOptions,
-    JULES_AUTHORITY_DIR: join(snapshot.cwd, ".jules-isolated-authority"),
-    JULES_CACHE_DIR: join(snapshot.cwd, ".jules-isolated-cache"),
   };
 
   // Node's test runner talks to its children through NODE_TEST_CONTEXT and
@@ -404,16 +402,6 @@ export async function gate(opts = {}) {
     stagesToRun.push(...trustedVerify.stages);
   } else {
     stagesToRun.push(...buildDefaultStages(trustedVerify));
-  }
-
-  // In committed mode: consume and freeze host authority before any candidate-controlled command executes.
-  // This guarantees that candidate code executing during verification cannot tamper with or rewrite
-  // host authority to poison subsequent gate invocations.
-  if (mode === "committed") {
-    try {
-      const { consumeHostAuthority } = await import("./state.mjs");
-      consumeHostAuthority(root, { baseSha });
-    } catch (_) {}
   }
 
   // Pre-verification: compute test directory integrity hash on snapshot under test
@@ -1610,29 +1598,15 @@ export async function dispatch(task = {}, opts = {}) {
     try {
       const { createCheckpoint } = await import("./ops/checkpoint.mjs");
       const checkpointId = String(task.id || task.taskId || `dispatch-${Date.now()}`).replace(/[^A-Za-z0-9_.-]/g, "-");
-      const snapshot = createCheckpoint(checkpointId, { root, baseSha: preDispatchBaseSha });
+      const snapshot = createCheckpoint(checkpointId, { root });
       appendTelemetry(root, "checkpoint_created", {
         id: snapshot.id,
         headSha: snapshot.headSha,
-        baseSha: snapshot.baseSha,
         uncommittedFiles: snapshot.uncommittedFiles?.length || 0,
       });
     } catch (err) {
       console.warn(`⚠️  Could not create a pre-flight checkpoint (${err.message}). \`agentctl rollback\` will not be able to restore this dispatch.`);
     }
-  }
-
-  if (!opts.dryRun && preDispatchBaseSha) {
-    try {
-      const { recordDispatchBaseline } = await import("./state.mjs");
-      const providerKind = provider?.kind || (provider?.type === "exec" ? "local-result" : "remote-session");
-      recordDispatchBaseline(root, {
-        baseSha: preDispatchBaseSha,
-        taskId: task.id || task.taskId || null,
-        branch: task.branch || null,
-        lifecycle: providerKind,
-      });
-    } catch (_) {}
   }
 
   const runDispatch = () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun });

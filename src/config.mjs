@@ -543,7 +543,6 @@ export {
 };
 
 import { showFromOrigin, resolveTrustedBaseRef, resolveBase, getCommitSha } from "./git.mjs";
-import { recoverDispatchBaseline } from "./state.mjs";
 
 /**
  * Autodetects verification test/build commands across 24+ polyglot tech stacks.
@@ -1003,54 +1002,61 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
   const targetHead = opts.head || "HEAD";
   let headSha = null;
 
-  let base = baseRef || opts.base;
+  let base = baseRef || opts.base || null;
   let baseSha = opts.baseSha || null;
 
-  if (!baseSha && typeof base === "string" && /^[0-9a-f]{40}$/i.test(base.trim())) {
-    baseSha = base.trim();
-  }
+  if (mode === "committed") {
+    // F08 Guard: In committed mode, comparing a revision to itself produces an empty diff and would bypass the gate.
+    if (base === "HEAD" || base === "HEAD^0") {
+      return {
+        ok: false,
+        code: 3,
+        error: 'Cannot evaluate committed diff against base "HEAD": comparing a revision to itself would bypass the safety gate (F08).',
+        base,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
 
-  // In committed mode: Persistent files in candidate-writable storage (Host Authority, repo state)
-  // cannot establish an autonomous security authority against candidate code executing with the verifier's OS permissions.
-  // When no trusted baseSha was provided by the operator/host:
-  // If no explicit base was provided, fail closed immediately.
-  if (mode === "committed" && !baseSha && !base) {
-    let conflictDetail = "";
-    try {
-      const recovered = recoverDispatchBaseline(root, { requireRepoState: false });
-      if (recovered && recovered.error === "FORGED_BASELINE_DETECTED") {
-        conflictDetail = ` Security violation: Candidate-controlled repository state attempts to forge baseline (${recovered.forgedSha}) conflicting with host authority (${recovered.baseSha}).`;
-      } else if (recovered && recovered.error === "LEDGER_INTEGRITY_COMPROMISED") {
-        conflictDetail = ` Security violation: State ledger integrity check failed. Local ledger has been tampered with or corrupted.`;
-      } else if (recovered && recovered.baseSha) {
-        conflictDetail = ` (Recorded dispatch baseline: ${recovered.baseSha} - supply --base-sha ${recovered.baseSha} to verify against it).`;
-      }
-    } catch (_) {}
+    // Committed mode strictly requires an explicit trusted immutable 40-character baseline SHA.
+    // Mutable Git references, candidate-controlled configs, and local persistent state cannot establish authority.
+    if (!baseSha) {
+      return {
+        ok: false,
+        code: 1,
+        error: "Committed verification requires an explicit trusted baseline SHA (--base-sha <sha>). Mutable Git references and candidate-controlled state cannot establish committed-mode security authority.",
+        base,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
 
-    return {
-      ok: false,
-      code: 1,
-      error: `Committed verification requires an explicit trusted baseline SHA (--base-sha <sha>). Persistent host or repository state within candidate-writable storage cannot serve as an autonomous security authority.${conflictDetail}`,
-      base: null,
-      baseSha: null,
-      headSha: null,
-      isBootstrap: false,
-      scope: normalizeScope({}),
-      verify: {
-        ...autoVerify,
-        stages: null,
-        required: true,
-        tamperGuard: true,
-        minTests: 1,
-        timeoutMs: 300_000,
-      },
-      limits: { diffKb: 75 },
-      evidence: { strictTestLock: true },
-      rawConfig: null,
-    };
-  }
-
-  if (baseSha) {
     if (!/^[0-9a-f]{40}$/i.test(baseSha)) {
       return {
         ok: false,
@@ -1101,144 +1107,61 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
       };
     }
 
-    // When an explicit ref name was also provided, verify that the ref resolves to the expected baseSha
-    if (base && !/^[0-9a-f]{40}$/i.test(base.trim())) {
-      try {
-        const resolvedRefSha = resolveBase(root, base.trim());
-        if (resolvedRefSha && resolvedRefSha !== baseSha) {
-          return {
-            ok: false,
-            code: 1,
-            error: `Base reference "${base}" does not match expected trusted baseSha "${baseSha}" (ref resolves to ${resolvedRefSha}). Ref tampering or branch drift detected.`,
-            base,
-            baseSha: null,
-            headSha: null,
-            isBootstrap: false,
-            scope: normalizeScope({}),
-            verify: {
-              ...autoVerify,
-              stages: null,
-              required: true,
-              tamperGuard: true,
-              minTests: 1,
-              timeoutMs: 300_000,
-            },
-            limits: { diffKb: 75 },
-            evidence: { strictTestLock: true },
-            rawConfig: null,
-          };
-        }
-      } catch (_) {
-        // If ref name cannot be resolved in Git, baseSha remains the immutable anchor
-      }
-    }
-
     base = base || baseSha;
   } else {
-    if (mode === "committed") {
-      if (!base) {
-        return {
-          ok: false,
-          code: 1,
-          error: "Committed verification requires a pre-established immutable trusted base SHA. Mutable Git references cannot be used as post-candidate trust anchors. Specify --base-sha <sha> explicitly or dispatch through the supported pre-flight lifecycle.",
-          base: null,
-          baseSha: null,
-          headSha: null,
-          isBootstrap: false,
-          scope: normalizeScope({}),
-          verify: {
-            ...autoVerify,
-            stages: null,
-            required: true,
-            tamperGuard: true,
-            minTests: 1,
-            timeoutMs: 300_000,
-          },
-          limits: { diffKb: 75 },
-          evidence: { strictTestLock: true },
-          rawConfig: null,
-        };
-      }
+    // Non-committed mode (working-tree or staged): resolve trusted default base ref if not provided
+    if (!base) {
+      base = resolveTrustedBaseRef(root);
+    }
 
-      try {
-        baseSha = resolveBase(root, base);
-      } catch (err) {
-        return {
-          ok: false,
-          code: err.code || 1,
-          error: err.message,
-          base,
-          baseSha: null,
-          headSha: null,
-          isBootstrap: false,
-          scope: normalizeScope({}),
-          verify: {
-            ...autoVerify,
-            stages: null,
-            required: true,
-            tamperGuard: true,
-            minTests: 1,
-            timeoutMs: 300_000,
-          },
-          limits: { diffKb: 75 },
-          evidence: { strictTestLock: true },
-          rawConfig: null,
-        };
-      }
-    } else {
-      if (!base) {
-        base = resolveTrustedBaseRef(root);
-      }
+    if (!base) {
+      return {
+        ok: false,
+        code: 1,
+        error: "Unable to determine trusted base branch (no refs/remotes/origin/HEAD or conventional default branch [main, master, trunk] found). Specify a base revision explicitly with --base <ref>.",
+        base: null,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
 
-      if (!base) {
-        return {
-          ok: false,
-          code: 1,
-          error: "Unable to determine trusted base branch (no refs/remotes/origin/HEAD or conventional default branch [main, master, trunk] found). Specify a base revision explicitly with --base <ref>.",
-          base: null,
-          baseSha: null,
-          headSha: null,
-          isBootstrap: false,
-          scope: normalizeScope({}),
-          verify: {
-            ...autoVerify,
-            stages: null,
-            required: true,
-            tamperGuard: true,
-            minTests: 1,
-            timeoutMs: 300_000,
-          },
-          limits: { diffKb: 75 },
-          evidence: { strictTestLock: true },
-          rawConfig: null,
-        };
-      }
-
-      try {
-        baseSha = resolveBase(root, base);
-      } catch (err) {
-        return {
-          ok: false,
-          code: err.code || 1,
-          error: err.message,
-          base,
-          baseSha: null,
-          headSha: null,
-          isBootstrap: false,
-          scope: normalizeScope({}),
-          verify: {
-            ...autoVerify,
-            stages: null,
-            required: true,
-            tamperGuard: true,
-            minTests: 1,
-            timeoutMs: 300_000,
-          },
-          limits: { diffKb: 75 },
-          evidence: { strictTestLock: true },
-          rawConfig: null,
-        };
-      }
+    try {
+      baseSha = resolveBase(root, base);
+    } catch (err) {
+      return {
+        ok: false,
+        code: err.code || 1,
+        error: err.message,
+        base,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
     }
   }
 

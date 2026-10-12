@@ -1735,7 +1735,8 @@ test("P0-05: Working Tree & Untracked File Gate Mode", async (t) => {
       runCmd("git checkout main", { cwd: tmpDir });
 
       // Run gate explicitly specifying head as feat/tamper-branch while active branch is main
-      const resTamper = await gate({ root: tmpDir, base: "main", head: "feat/tamper-branch", mode: "committed" });
+      const baseSha = runCmd("git rev-parse main", { cwd: tmpDir }).stdout.trim();
+      const resTamper = await gate({ root: tmpDir, baseSha, head: "feat/tamper-branch", mode: "committed" });
       assert.equal(resTamper.ok, false);
       assert.equal(resTamper.code, 6);
       const secretPhase = resTamper.phases.find((p) => p.phase === "secrets");

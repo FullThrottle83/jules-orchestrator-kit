@@ -246,7 +246,8 @@ describe("src/engine.mjs", () => {
       git("commit", "-m", "introduce broken test");
 
       // Running gate in committed mode against base main MUST fail on HEAD
-      const res = await gate({ root: repo, mode: "committed", base: "main" });
+      const baseSha = execFileSync("git", ["rev-parse", "main"], { cwd: repo, encoding: "utf8" }).trim();
+      const res = await gate({ root: repo, mode: "committed", baseSha });
       assert.equal(res.ok, false);
       assert.equal(res.code, 4, "Must fail with exit code 4 (VERIFY phase failure)");
       const verifyPhase = res.phases.find((p) => p.phase === "verify");
