@@ -681,6 +681,7 @@ Run CI security, rules, and stack verification gate
 | Flag | Type | Description |
 | :--- | :--- | :--- |
 | `--base` | string | Base comparison branch (default: main or config base_branch) (-b) |
+| `--base-sha` | string | Explicit immutable base commit SHA (takes precedence over mutable refs) |
 | `--mode` | string | Evaluation mode (working-tree | committed | staged) (-m) |
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
@@ -714,6 +715,7 @@ Alias of gate: run all-in-one CI security, rules, and stack verification gate
 | Flag | Type | Description |
 | :--- | :--- | :--- |
 | `--base` | string | Base comparison branch (default: main or config base_branch) (-b) |
+| `--base-sha` | string | Explicit immutable base commit SHA (takes precedence over mutable refs) |
 | `--mode` | string | Evaluation mode (working-tree | committed | staged) (-m) |
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |
@@ -748,6 +750,7 @@ Alias of gate: run CI security and verification gate against current branch
 | Flag | Type | Description |
 | :--- | :--- | :--- |
 | `--base` | string | Base comparison branch (default: main or config base_branch) (-b) |
+| `--base-sha` | string | Explicit immutable base commit SHA (takes precedence over mutable refs) |
 | `--mode` | string | Evaluation mode (working-tree | committed | staged) (-m) |
 | `--working-tree` | boolean | Evaluate the working tree (default mode) |
 | `--staged` | boolean | Evaluate staged changes |

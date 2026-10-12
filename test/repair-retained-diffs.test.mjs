@@ -25,6 +25,7 @@ function createTempRepo() {
   writeFileSync(join(root, "app.js"), "export const value = 1;\n");
   execFileSync("git", ["add", "-A"], { cwd: root });
   execFileSync("git", ["commit", "-qm", "initial"], { cwd: root });
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: root });
   mkdirSync(join(root, ".agent"), { recursive: true });
   return root;
 }

@@ -35,6 +35,7 @@ function pythonBaselineRepo() {
   );
   writeFileSync(join(dir, "test_sample.py"), "def test_ok():\n    assert 1 + 1 == 2\n", "utf-8");
   commitAll(dir, "baseline");
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: dir });
   return dir;
 }
 
@@ -52,6 +53,7 @@ function jsRepo(extra = {}) {
     writeFileSync(join(dir, ".agent", "config.yml"), extra.config, "utf-8");
   }
   commitAll(dir, "baseline");
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: dir });
   return dir;
 }
 

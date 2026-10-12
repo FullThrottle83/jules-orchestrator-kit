@@ -1,5 +1,6 @@
 import {
   readFileSync,
+  writeFileSync,
   existsSync,
   mkdirSync,
   rmdirSync,
@@ -12,9 +13,9 @@ import {
   lstatSync,
   statSync,
 } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { hostname } from "node:os";
+import os, { hostname } from "node:os";
 import { execFileSync } from "node:child_process";
 import { resolveRoot, normalizePath } from "./config.mjs";
 import { redactSecrets } from "./security.mjs";
@@ -315,7 +316,14 @@ export function appendLedger(entry, rootOrOpts = resolveRoot()) {
 }
 
 /**
- * Verifies the SHA-256 cryptographic hash-chain integrity of a ledger file.
+ * Verifies the SHA-256 hash-chain integrity of a ledger file.
+ *
+ * NOTE ON TRUST BOUNDARIES:
+ * Hash-chain integrity verifies structural consistency across chained entries
+ * and protects against accidental corruption or naive single-line edits.
+ * It does NOT provide authenticated integrity against an adversary with filesystem
+ * write access who can rewrite the file and recompute the entire hash chain.
+ * Authentication requires a trust anchor outside candidate control.
  */
 export function verifyLedgerIntegrity(filePath) {
   if (!filePath || !existsSync(filePath)) return { ok: false, count: 0, error: "FILE_NOT_FOUND" };
@@ -364,6 +372,386 @@ export function readLedger(filePath) {
   } catch (_) {
     return [];
   }
+}
+
+/**
+ * Returns the host authority directory path for authenticated provenance storage.
+ * Positioned on the trusted host machine outside the candidate repository worktree.
+ */
+export function getHostAuthorityDir() {
+  return process.env.JULES_AUTHORITY_DIR
+    ? resolve(process.env.JULES_AUTHORITY_DIR)
+    : join(
+        process.env.JULES_CACHE_DIR ? resolve(process.env.JULES_CACHE_DIR) : join(os.homedir(), ".cache", "jules-orchestrator-kit"),
+        "authority"
+      );
+}
+
+/**
+ * Computes a stable host repository key from the canonical path.
+ */
+export function getRepoAuthorityKey(rootOrOpts = resolveRoot()) {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
+  const normalized = normalizePath(resolve(root));
+  return createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+}
+
+function readDispatchesJournal(repoAuthorityDir) {
+  const p = join(repoAuthorityDir, "dispatches.json");
+  if (!existsSync(p)) return {};
+  try {
+    const raw = readFileSync(p, "utf-8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeDispatchesJournal(repoAuthorityDir, journal) {
+  const p = join(repoAuthorityDir, "dispatches.json");
+  writeFileSync(p, JSON.stringify(journal, null, 2) + "\n", "utf-8");
+}
+
+/**
+ * Records a pre-dispatch trusted baseline SHA in both:
+ * 1. The Host Authority Store (outside repository worktree, providing authenticated provenance
+ *    for remote sessions); and
+ * 2. The repository-local daily hash-chained ledger and checkpoints (operational state for
+ *    audit logging, telemetry, and rollback).
+ *
+ * @param {string} rootOrOpts - Repository root
+ * @param {object} baseline - { baseSha, headSha, taskId, sessionId, branch, lifecycle }
+ * @returns {object} Appended ledger entry
+ */
+export function recordDispatchBaseline(rootOrOpts = resolveRoot(), baseline = {}) {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
+  if (!baseline.baseSha || !/^[0-9a-f]{40}$/i.test(String(baseline.baseSha).trim())) {
+    return null;
+  }
+  const cleanBaseSha = String(baseline.baseSha).trim();
+  const lifecycle = baseline.lifecycle || "remote-session";
+  const dispatchNonce = randomUUID();
+
+  // 1. Host Authority Store (trusted host provenance outside repository worktree)
+  try {
+    const authorityDir = getHostAuthorityDir();
+    const repoKey = getRepoAuthorityKey(root);
+    const repoAuthorityDir = join(authorityDir, repoKey);
+    ensureDir(repoAuthorityDir);
+
+    const authorityRecord = {
+      baseSha: cleanBaseSha,
+      headSha: baseline.headSha || null,
+      taskId: baseline.taskId || null,
+      sessionId: baseline.sessionId || null,
+      branch: baseline.branch || null,
+      lifecycle,
+      dispatchedAt: new Date().toISOString(),
+      root: normalizePath(resolve(root)),
+      dispatchNonce,
+    };
+
+    const journal = readDispatchesJournal(repoAuthorityDir);
+    journal[dispatchNonce] = {
+      baseSha: cleanBaseSha,
+      lifecycle,
+      dispatchedAt: authorityRecord.dispatchedAt,
+      state: "active",
+    };
+    writeDispatchesJournal(repoAuthorityDir, journal);
+
+    const authorityPath = join(repoAuthorityDir, "authority.json");
+    writeFileSync(authorityPath, JSON.stringify(authorityRecord, null, 2) + "\n", "utf-8");
+  } catch (_) {}
+
+  // 2. Repository operational state (hash-chain integrity for local operational logging)
+  return appendLedger(
+    {
+      event: "task_dispatch_baseline",
+      baseSha: cleanBaseSha,
+      headSha: baseline.headSha || null,
+      taskId: baseline.taskId || null,
+      sessionId: baseline.sessionId || null,
+      branch: baseline.branch || null,
+      lifecycle,
+    },
+    root
+  );
+}
+
+/**
+ * Consumes and unlinks the active host authority record before untrusted candidate code executes.
+ * Marks the active dispatch nonce as consumed so candidate code running during verification
+ * cannot rewrite or reuse host authority for subsequent gate invocations.
+ *
+ * @param {string} rootOrOpts - Repository root
+ * @param {object} [opts={}]
+ * @returns {boolean} True if an active authority was consumed
+ */
+export function consumeHostAuthority(rootOrOpts = resolveRoot(), opts = {}) {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
+  try {
+    const authorityDir = getHostAuthorityDir();
+    const repoKey = getRepoAuthorityKey(root);
+    const repoAuthorityDir = join(authorityDir, repoKey);
+    const authorityPath = join(repoAuthorityDir, "authority.json");
+
+    if (existsSync(authorityPath)) {
+      let record = null;
+      try {
+        record = JSON.parse(readFileSync(authorityPath, "utf-8"));
+      } catch (_) {}
+
+      try {
+        unlinkSync(authorityPath);
+      } catch (_) {}
+
+      if (record && record.dispatchNonce) {
+        const journal = readDispatchesJournal(repoAuthorityDir);
+        if (journal[record.dispatchNonce]) {
+          journal[record.dispatchNonce].state = "consumed";
+          journal[record.dispatchNonce].consumedAt = new Date().toISOString();
+        } else {
+          journal[record.dispatchNonce] = {
+            baseSha: record.baseSha || opts.baseSha || null,
+            state: "consumed",
+            consumedAt: new Date().toISOString(),
+          };
+        }
+        writeDispatchesJournal(repoAuthorityDir, journal);
+      }
+
+      const consumedRecord = {
+        baseSha: record?.baseSha || opts.baseSha || null,
+        dispatchNonce: record?.dispatchNonce || null,
+        consumedAt: new Date().toISOString(),
+      };
+      writeFileSync(join(repoAuthorityDir, "consumed.json"), JSON.stringify(consumedRecord, null, 2) + "\n", "utf-8");
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+/**
+ * Recovers the latest pre-dispatch trusted baseline SHA.
+ *
+ * Enforces strict separation between candidate-readable operational state and security authority:
+ * - Security authority is established only by Host Authority (for remote-session lifecycle)
+ *   or explicit operator-supplied baseline (--base-sha).
+ * - Repository operational state (.agent/state/ledger, .agent/state/checkpoints) is candidate-writable
+ *   and verified against Host Authority; conflicting repository state indicates tampering/forgery.
+ * - Local-agent executions (local-result) execute with shell access in the user's OS domain and cannot
+ *   rely on unauthenticated host storage; they fail closed requiring explicit --base-sha.
+ *
+ * @param {string} rootOrOpts - Repository root
+ * @param {object} [opts={}]
+ * @returns {{ ok: boolean, baseSha?: string, headSha?: string, source?: string, error?: string, detail?: string, forgedSha?: string }}
+ */
+export function recoverDispatchBaseline(rootOrOpts = resolveRoot(), opts = {}) {
+  const root = typeof rootOrOpts === "string" ? rootOrOpts : resolveRoot();
+  const stateDir = getStateDir(root);
+
+  // 1. Check Host Authority Store (outside repository worktree)
+  const authorityDir = getHostAuthorityDir();
+  const repoKey = getRepoAuthorityKey(root);
+  const repoAuthorityDir = join(authorityDir, repoKey);
+  const authorityPath = join(repoAuthorityDir, "authority.json");
+  const consumedPath = join(repoAuthorityDir, "consumed.json");
+
+  let hostRecord = null;
+  let authorityConsumed = false;
+  let authorityForged = false;
+  let forgedReason = "";
+
+  if (existsSync(authorityPath)) {
+    try {
+      const raw = readFileSync(authorityPath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.baseSha && /^[0-9a-f]{40}$/i.test(parsed.baseSha)) {
+        const journal = readDispatchesJournal(repoAuthorityDir);
+        const nonce = parsed.dispatchNonce;
+        if (!nonce || !journal[nonce]) {
+          authorityForged = true;
+          forgedReason = "Host authority record lacks a valid unconsumed dispatch token. Forgery detected.";
+          hostRecord = parsed;
+        } else if (journal[nonce].state === "consumed") {
+          authorityConsumed = true;
+          hostRecord = parsed;
+        } else if (journal[nonce].baseSha !== parsed.baseSha) {
+          authorityForged = true;
+          forgedReason = `Host authority record baseSha ${parsed.baseSha} conflicts with active dispatch registration ${journal[nonce].baseSha}. Forgery detected.`;
+          hostRecord = parsed;
+        } else {
+          hostRecord = parsed;
+        }
+      }
+    } catch (_) {}
+  } else if (existsSync(consumedPath)) {
+    authorityConsumed = true;
+  }
+
+  // 2. Check repository-local operational state (.agent/state)
+  let repoLedgerBaseSha = null;
+  let repoCheckpointBaseSha = null;
+  let ledgerIntegrityFailure = null;
+
+  if (existsSync(stateDir)) {
+    try {
+      const files = readdirSync(stateDir)
+        .filter((f) => f.startsWith("ledger-") && f.endsWith(".jsonl"))
+        .sort()
+        .reverse();
+
+      for (const file of files) {
+        const fullPath = join(stateDir, file);
+        const integrity = verifyLedgerIntegrity(fullPath);
+        if (!integrity.ok) {
+          ledgerIntegrityFailure = integrity.error;
+          break;
+        }
+
+        const entries = readLedger(fullPath);
+        for (let i = entries.length - 1; i >= 0; i--) {
+          const entry = entries[i];
+          if (entry.event === "task_dispatch_baseline" && entry.baseSha && /^[0-9a-f]{40}$/i.test(entry.baseSha)) {
+            repoLedgerBaseSha = entry.baseSha;
+            break;
+          }
+        }
+        if (repoLedgerBaseSha) break;
+      }
+    } catch (_) {}
+
+    const checkpointDir = join(stateDir, "checkpoints");
+    if (existsSync(checkpointDir)) {
+      try {
+        const cpFiles = readdirSync(checkpointDir)
+          .filter((f) => f.endsWith(".json"))
+          .map((f) => {
+            const p = join(checkpointDir, f);
+            try {
+              return { file: f, path: p, mtime: statSync(p).mtimeMs };
+            } catch (_) {
+              return null;
+            }
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.mtime - a.mtime);
+
+        for (const cp of cpFiles) {
+          try {
+            const data = JSON.parse(readFileSync(cp.path, "utf-8"));
+            const candidateSha = data.baseSha || data.headSha;
+            if (candidateSha && /^[0-9a-f]{40}$/i.test(candidateSha)) {
+              repoCheckpointBaseSha = candidateSha;
+              break;
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 3. Security Decision & Cross-Validation:
+  // If repository ledger suffered hash-chain corruption / torn write / naive tampering:
+  if (ledgerIntegrityFailure) {
+    return {
+      ok: false,
+      error: "LEDGER_INTEGRITY_COMPROMISED",
+      detail: ledgerIntegrityFailure,
+    };
+  }
+
+  if (authorityForged) {
+    let originalBaseSha = null;
+    try {
+      if (existsSync(consumedPath)) {
+        const c = JSON.parse(readFileSync(consumedPath, "utf-8"));
+        originalBaseSha = c.baseSha || null;
+      }
+    } catch (_) {}
+    return {
+      ok: false,
+      error: "FORGED_BASELINE_DETECTED",
+      detail: forgedReason || "Host authority record lacks a valid unconsumed dispatch token. Forgery detected.",
+      baseSha: originalBaseSha || null,
+      forgedSha: hostRecord?.baseSha || null,
+    };
+  }
+
+  if (authorityConsumed) {
+    return {
+      ok: false,
+      error: "DISPATCH_AUTHORITY_CONSUMED",
+      detail:
+        "Dispatch authority was already consumed by a prior verification pass. An explicit trusted --base-sha <sha> is required for repeated or subsequent verification.",
+    };
+  }
+
+  // If host authority is NOT present:
+  if (!hostRecord) {
+    if (repoLedgerBaseSha || repoCheckpointBaseSha) {
+      return {
+        ok: false,
+        error: "UNAUTHENTICATED_REPOSITORY_STATE",
+        detail:
+          "Committed verification requires an authenticated pre-established trusted base SHA. Local repository state (.agent/state) is candidate-writable and cannot serve as an unauthenticated authority. Specify --base-sha <sha> explicitly or dispatch through a verified host authority.",
+      };
+    }
+    return { ok: false, error: "NO_PRE_DISPATCH_BASELINE" };
+  }
+
+  // Host authority IS present.
+  // Check lifecycle: Local vs Remote
+  if (hostRecord.lifecycle === "local-result") {
+    return {
+      ok: false,
+      error: "LOCAL_LIFECYCLE_REQUIRES_EXPLICIT_BASE",
+      detail:
+        "Committed verification of local-agent execution requires an explicit trusted --base-sha <sha>. Host storage is within the local candidate OS trust domain and cannot serve as an unauthenticated authority.",
+    };
+  }
+
+  // For remote-session (Jules):
+  // If repository baseline state was deleted, fail closed (cannot verify without repository operational record)
+  if (opts.requireRepoState && !repoLedgerBaseSha && !repoCheckpointBaseSha) {
+    return {
+      ok: false,
+      error: "REPO_STATE_DELETED",
+      detail: "Repository baseline state is missing or was deleted.",
+    };
+  }
+
+  // Check if candidate attempted to forge or overwrite repository state:
+  if (repoLedgerBaseSha && repoLedgerBaseSha !== hostRecord.baseSha) {
+    return {
+      ok: false,
+      error: "FORGED_BASELINE_DETECTED",
+      detail: `Repository ledger claims forged baseline ${repoLedgerBaseSha} conflicting with authenticated host authority ${hostRecord.baseSha}.`,
+      baseSha: hostRecord.baseSha,
+      forgedSha: repoLedgerBaseSha,
+    };
+  }
+
+  if (repoCheckpointBaseSha && repoCheckpointBaseSha !== hostRecord.baseSha) {
+    return {
+      ok: false,
+      error: "FORGED_BASELINE_DETECTED",
+      detail: `Repository checkpoint claims forged baseline ${repoCheckpointBaseSha} conflicting with authenticated host authority ${hostRecord.baseSha}.`,
+      baseSha: hostRecord.baseSha,
+      forgedSha: repoCheckpointBaseSha,
+    };
+  }
+
+  return {
+    ok: true,
+    baseSha: hostRecord.baseSha,
+    headSha: hostRecord.headSha || null,
+    source: "host_authority",
+    lifecycle: hostRecord.lifecycle,
+  };
 }
 
 /**

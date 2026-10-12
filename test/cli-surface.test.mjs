@@ -77,6 +77,7 @@ function repoWithFailingTest(stderrLines) {
   spawnSync("node", [CLI, "init"], { cwd: dir, encoding: "utf-8" });
   execFileSync("git", ["add", "-A"], { cwd: dir });
   execFileSync("git", ["commit", "-qm", "agent config"], { cwd: dir });
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: dir });
   writeFileSync(join(dir, "src.js"), "export const a = 2;\n", "utf-8");
   return dir;
 }
@@ -1449,6 +1450,7 @@ describe("CLI usability improvements: suggestions, protected scope bypass, dry-r
       spawnSync("node", [CLI, "init", "--yes"], { cwd: dir, encoding: "utf-8" });
       execFileSync("git", ["add", ".agent/config.yml", ".gitignore"], { cwd: dir });
       execFileSync("git", ["commit", "-qm", "chore: add agent config"], { cwd: dir });
+      execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: dir });
 
       // Modify protected package.json
       writeFileSync(

@@ -27,9 +27,27 @@ export function timestamp() {
   return new Date().toISOString();
 }
 
+const BLOCKED_DOTENV_KEYS = new Set([
+  "JULES_AUTHORITY_DIR",
+  "JULES_CACHE_DIR",
+  "BASE_SHA",
+  "JULES_BASE_SHA",
+  "HEAD_SHA",
+  "PR_LABELS",
+  "NODE_OPTIONS",
+]);
+
+export function isBlockedDotenvKey(key) {
+  if (!key || typeof key !== "string") return true;
+  if (BLOCKED_DOTENV_KEYS.has(key)) return true;
+  if (key.startsWith("JULES_ALLOW_") || key.startsWith("AGENT_ALLOW_")) return true;
+  return false;
+}
+
 /**
  * Loads KEY=VALUE lines from `<targetDir>/.env` into `process.env`.
  * Quoted values and leading `export ` are tolerated; a missing file is a no-op.
+ * Security-sensitive authority and waiver environment variables are blocked.
  */
 export function loadEnv(targetDir = process.cwd()) {
   const envPath = join(targetDir, ".env");
@@ -43,6 +61,7 @@ export function loadEnv(targetDir = process.cwd()) {
       const eqIdx = clean.indexOf("=");
       if (eqIdx > 0) {
         const k = clean.slice(0, eqIdx).trim();
+        if (isBlockedDotenvKey(k)) continue;
         let v = clean.slice(eqIdx + 1).trim();
         if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
           v = v.slice(1, -1);

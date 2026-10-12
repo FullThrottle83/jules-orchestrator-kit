@@ -74,6 +74,7 @@ export function createCheckpoint(sessionId = `session-${Date.now()}`, options = 
     id: safeId,
     timestamp: new Date().toISOString(),
     headSha,
+    baseSha: options.baseSha || headSha,
     branch,
     uncommittedFiles,
     diffContent,

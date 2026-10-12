@@ -3,7 +3,7 @@ import { isTestPath } from "./test-paths.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets, hasHighConfidenceSecret } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd, materializeSnapshot } from "./git.mjs";
+import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
@@ -151,46 +151,57 @@ export async function gate(opts = {}) {
   const progressToken = opts.progressToken;
   const phases = [];
 
-  const policy = resolveTrustedPolicy(root, opts.base, mode, { ...opts, config });
+  const head = opts.head || "HEAD";
+  const policy = resolveTrustedPolicy(root, opts.base, mode, { ...opts, config, head });
   if (!policy.ok) {
+    const errorPhase = policy.code === 1 ? "git_resolution" : "scope";
     phases.push({
-      phase: "scope",
+      phase: errorPhase,
       ok: false,
       error: policy.error,
-      violations: [{ file: ".agent/config.yml", rule: "BUILTIN_PROTECT", reason: policy.error }],
+      ...(errorPhase === "scope" ? { violations: [{ file: ".agent/config.yml", rule: "BUILTIN_PROTECT", reason: policy.error }] } : {}),
     });
     appendTelemetry(root, "gate_finished", { ok: false, code: policy.code || 3, error: policy.error });
-    return { ok: false, code: policy.code || 3, phases, error: policy.error, base: policy.base };
+    return {
+      ok: false,
+      code: policy.code || 3,
+      phases,
+      error: policy.error,
+      base: policy.base,
+      baseSha: policy.baseSha || null,
+      headSha: policy.headSha || null,
+    };
   }
 
   const base = policy.base;
+  const baseSha = policy.baseSha || null;
+  const headSha = policy.headSha || getCommitSha(root, head);
   const trustedScope = policy.scope;
   let trustedVerify = policy.verify;
   const trustedDiffKb = policy.limits?.diffKb || 75;
   const trustedEvidence = policy.evidence || { strictTestLock: true };
 
-  const head = opts.head || "HEAD";
-
-  appendTelemetry(root, "gate_started", { base, mode, head });
+  appendTelemetry(root, "gate_started", { base, baseSha, headSha, mode, head });
 
   let files = [];
   let bytes = 0;
   let diffStr = "";
 
+  const diffBase = baseSha || base;
   try {
-    files = changedFiles(root, base, mode, head);
-    bytes = diffBytes(root, base, mode, head);
-    diffStr = diffText(root, base, mode, head);
+    files = changedFiles(root, diffBase, mode, head);
+    bytes = diffBytes(root, diffBase, mode, head);
+    diffStr = diffText(root, diffBase, mode, head);
   } catch (err) {
     phases.push({ phase: "git_resolution", ok: false, error: err.message });
     appendTelemetry(root, "gate_finished", { ok: false, code: 1, error: err.message });
-    return { ok: false, code: 1, phases, error: err.message, base };
+    return { ok: false, code: 1, phases, error: err.message, base, baseSha, headSha };
   }
 
   // Phase 1: Scope Guard
   let symlinks = [];
   try {
-    symlinks = symlinkChanges(root, base, mode, head);
+    symlinks = symlinkChanges(root, diffBase, mode, head);
   } catch (_) {
     // Scope must still be enforced on the ordinary file list if git cannot describe the links.
   }
@@ -252,7 +263,7 @@ export async function gate(opts = {}) {
 
   if (!scopeResult.ok) {
     appendTelemetry(root, "gate_finished", { ok: false, code: 3 });
-    return { ok: false, code: 3, phases, base };
+    return { ok: false, code: 3, phases, base, baseSha, headSha };
   }
 
   // Phase 2: Diff Payload Governor
@@ -267,7 +278,7 @@ export async function gate(opts = {}) {
 
   if (!payloadOk) {
     appendTelemetry(root, "gate_finished", { ok: false, code: 5 });
-    return { ok: false, code: 5, phases };
+    return { ok: false, code: 5, phases, base, baseSha, headSha };
   }
 
   // Phase 3: Diff Secret Scanner & Security Checks
@@ -286,7 +297,7 @@ export async function gate(opts = {}) {
   // Inspect those files directly and fold the verdict in.
   let binaryFindings = [];
   try {
-    binaryFindings = scanBinaryPayloads(binaryDiffEntries(root, base, mode, head), root);
+    binaryFindings = scanBinaryPayloads(binaryDiffEntries(root, diffBase, mode, head), root);
   } catch (_) {
     // Never let the extra pass break a gate that would otherwise have run; the
     // text scan above has already been applied.
@@ -301,7 +312,7 @@ export async function gate(opts = {}) {
 
   if (!secretsOk) {
     appendTelemetry(root, "gate_finished", { ok: false, code: 6 });
-    return { ok: false, code: 6, phases };
+    return { ok: false, code: 6, phases, base, baseSha, headSha };
   }
 
   // Phase 4: Automated Test & Build Verification (Uses trusted verify commands only)
@@ -313,7 +324,7 @@ export async function gate(opts = {}) {
   } catch (snapErr) {
     phases.push({ phase: "verify", ok: false, error: snapErr.message });
     appendTelemetry(root, "gate_finished", { ok: false, code: snapErr.code || 1, error: snapErr.message });
-    return { ok: false, code: snapErr.code || 1, phases, error: snapErr.message, base };
+    return { ok: false, code: snapErr.code || 1, phases, error: snapErr.message, base, baseSha, headSha };
   }
 
   let testResult = { ok: true, status: 0 };
@@ -331,6 +342,8 @@ export async function gate(opts = {}) {
   const testEnv = {
     ...process.env,
     NODE_OPTIONS: guardNodeOptions,
+    JULES_AUTHORITY_DIR: join(snapshot.cwd, ".jules-isolated-authority"),
+    JULES_CACHE_DIR: join(snapshot.cwd, ".jules-isolated-cache"),
   };
 
   // Node's test runner talks to its children through NODE_TEST_CONTEXT and
@@ -347,7 +360,10 @@ export async function gate(opts = {}) {
       key.startsWith("NODE_CHANNEL_") ||
       key === "PR_LABELS" ||
       key === "HEAD_SHA" ||
-      key.startsWith("JULES_ALLOW_")
+      key === "BASE_SHA" ||
+      key === "JULES_BASE_SHA" ||
+      key.startsWith("JULES_ALLOW_") ||
+      key.startsWith("AGENT_ALLOW_")
     ) {
       delete testEnv[key];
     }
@@ -388,6 +404,16 @@ export async function gate(opts = {}) {
     stagesToRun.push(...trustedVerify.stages);
   } else {
     stagesToRun.push(...buildDefaultStages(trustedVerify));
+  }
+
+  // In committed mode: consume and freeze host authority before any candidate-controlled command executes.
+  // This guarantees that candidate code executing during verification cannot tamper with or rewrite
+  // host authority to poison subsequent gate invocations.
+  if (mode === "committed") {
+    try {
+      const { consumeHostAuthority } = await import("./state.mjs");
+      consumeHostAuthority(root, { baseSha });
+    } catch (_) {}
   }
 
   // Pre-verification: compute test directory integrity hash on snapshot under test
@@ -492,7 +518,7 @@ export async function gate(opts = {}) {
             });
             appendTelemetry(root, "gate_phase", { phase: "verify", ok: false, quarantined: true });
             appendTelemetry(root, "gate_finished", { ok: false, code: 8 });
-            return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult, base };
+            return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult, base, baseSha, headSha };
           }
         }
       } else if (stage.kind === "build") {
@@ -674,6 +700,9 @@ export async function gate(opts = {}) {
     sourceState: postSourceHashResult,
     tamperDetected: testTampered,
     head: opts.head || "HEAD",
+    base,
+    baseSha,
+    headSha,
     executionRecords,
     secretScanOk: secretResult.ok,
     diffKb: Math.round(bytes / 1024),
@@ -746,21 +775,21 @@ export async function gate(opts = {}) {
   if (!verifyOk && opts.fix && failingCmd) {
     if (isNetViolation) {
       appendTelemetry(root, "gate_finished", { ok: false, code: 188, networkViolation: true });
-      return { ok: false, code: 188, phases, evidence: evidenceManifest };
+      return { ok: false, code: 188, phases, evidence: evidenceManifest, base, baseSha, headSha };
     }
     const repairs = await repair(failingCmd, { config, root, signal: opts.signal, progressBus, progressToken });
     const finalOk = repairs.ok;
     const finalCode = repairs.ok ? 0 : 4;
     appendTelemetry(root, "gate_finished", { ok: finalOk, code: finalCode, repaired: true });
     if (repairs.ok) {
-      return { ok: true, code: 0, phases, repairs, evidence: evidenceManifest };
+      return { ok: true, code: 0, phases, repairs, evidence: evidenceManifest, base, baseSha, headSha };
     }
-    return { ok: false, code: 4, phases, repairs, evidence: evidenceManifest };
+    return { ok: false, code: 4, phases, repairs, evidence: evidenceManifest, base, baseSha, headSha };
   }
 
   const code = verifyOk ? 0 : isNetViolation ? 188 : testTampered ? 3 : 4;
   appendTelemetry(root, "gate_finished", { ok: verifyOk, code });
-  return { ok: verifyOk, code, phases, evidence: evidenceManifest };
+  return { ok: verifyOk, code, phases, evidence: evidenceManifest, base, baseSha, headSha };
 }
 
 /**
@@ -1549,7 +1578,21 @@ export async function dispatch(task = {}, opts = {}) {
     throw new Error(`Task prompt exceeds maximum payload limit of ${config.limits.promptKb} KB (${Math.ceil(Buffer.byteLength(envelopedPrompt, "utf-8") / 1024)} KB)`);
   }
 
-  const cleanTask = { ...task, prompt: envelopedPrompt };
+  const preDispatchBaseSha =
+    task.baseSha ||
+    task.base_sha ||
+    task.baseCommit ||
+    task.base_commit ||
+    opts.baseSha ||
+    (() => {
+      try {
+        return resolveBase(root, task.base || "HEAD");
+      } catch (_) {
+        return null;
+      }
+    })();
+
+  const cleanTask = { ...task, prompt: envelopedPrompt, ...(preDispatchBaseSha ? { baseSha: preDispatchBaseSha } : {}) };
 
   // Snapshot the tree before anything can change it.
   //
@@ -1567,15 +1610,29 @@ export async function dispatch(task = {}, opts = {}) {
     try {
       const { createCheckpoint } = await import("./ops/checkpoint.mjs");
       const checkpointId = String(task.id || task.taskId || `dispatch-${Date.now()}`).replace(/[^A-Za-z0-9_.-]/g, "-");
-      const snapshot = createCheckpoint(checkpointId, { root });
+      const snapshot = createCheckpoint(checkpointId, { root, baseSha: preDispatchBaseSha });
       appendTelemetry(root, "checkpoint_created", {
         id: snapshot.id,
         headSha: snapshot.headSha,
+        baseSha: snapshot.baseSha,
         uncommittedFiles: snapshot.uncommittedFiles?.length || 0,
       });
     } catch (err) {
       console.warn(`⚠️  Could not create a pre-flight checkpoint (${err.message}). \`agentctl rollback\` will not be able to restore this dispatch.`);
     }
+  }
+
+  if (!opts.dryRun && preDispatchBaseSha) {
+    try {
+      const { recordDispatchBaseline } = await import("./state.mjs");
+      const providerKind = provider?.kind || (provider?.type === "exec" ? "local-result" : "remote-session");
+      recordDispatchBaseline(root, {
+        baseSha: preDispatchBaseSha,
+        taskId: task.id || task.taskId || null,
+        branch: task.branch || null,
+        lifecycle: providerKind,
+      });
+    } catch (_) {}
   }
 
   const runDispatch = () => provider.dispatch(cleanTask, { root, dryRun: opts.dryRun });
@@ -1602,7 +1659,8 @@ export async function dispatch(task = {}, opts = {}) {
     const session = opts.dryRun
       ? await runDispatch()
       : await withBudget(runDispatch, root, budget.limit, { enforce: budget.certain, author });
-    return classification ? { ...session, _routeTier: classification.tier, _routeReason: classification.reason } : session;
+    const sessionWithBase = preDispatchBaseSha ? { ...session, baseSha: preDispatchBaseSha } : session;
+    return classification ? { ...sessionWithBase, _routeTier: classification.tier, _routeReason: classification.reason } : sessionWithBase;
   } catch (err) {
     // A refusal for daily quota is the only authoritative statement of the
     // account's real allowance, so record it: from here on the gate enforces a

@@ -1174,6 +1174,53 @@ export function detectDefaultBranch(root = process.cwd()) {
   return "main";
 }
 
+/**
+ * Resolves a trusted default base reference for the deterministic gatekeeper.
+ *
+ * Strict trust anchor precedence:
+ * 1. Explicit remote default: `refs/remotes/origin/HEAD` (e.g. origin/main, origin/trunk, origin/develop).
+ * 2. Conventional primary branch names with defensible trust semantics: `main`, `master`, `trunk`.
+ *    (Checks both `refs/remotes/origin/<candidate>` and `refs/heads/<candidate>`).
+ *
+ * Security Invariants:
+ * - Does NOT guess `develop` as a default branch merely because it exists locally.
+ * - Does NOT fall back to the currently checked-out branch (`branch --show-current`).
+ * - A candidate/feature branch is NEVER a trust anchor merely because it is checked out.
+ * - Returns `null` if no trustworthy default branch can be established.
+ *
+ * @param {string} [root]
+ * @returns {string | null}
+ */
+export function resolveTrustedBaseRef(root = process.cwd()) {
+  const ask = (args) => {
+    try {
+      return git(args, { cwd: root, ignoreError: true }) || "";
+    } catch (_) {
+      return "";
+    }
+  };
+
+  // 1. Prefer refs/remotes/origin/HEAD when available
+  const remoteHead = ask(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).trim();
+  if (remoteHead.startsWith("origin/")) {
+    const name = remoteHead.slice("origin/".length).trim();
+    if (name) return name;
+  }
+  if (remoteHead.startsWith("refs/remotes/origin/")) {
+    const name = remoteHead.slice("refs/remotes/origin/".length).trim();
+    if (name) return name;
+  }
+
+  // 2. Conventional remote refs only (refs/remotes/origin/{main,master,trunk})
+  for (const candidate of ["main", "master", "trunk"]) {
+    if (ask(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${candidate}`])) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 export function resolveGitRemoteOrigin(root = process.cwd()) {
   try {
     const raw = git(["config", "--get", "remote.origin.url"], { cwd: root, ignoreError: true });

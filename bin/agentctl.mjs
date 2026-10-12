@@ -498,6 +498,7 @@ async function main() {
         args: args.slice(1),
         options: {
           base: { type: "string", short: "b" },
+          "base-sha": { type: "string" },
           head: { type: "string" },
           mode: { type: "string", short: "m", default: "working-tree" },
           "working-tree": { type: "boolean" },
@@ -534,6 +535,7 @@ async function main() {
         root,
         config,
         base: values.base,
+        baseSha: values["base-sha"],
         head: values.head,
         mode: selectedMode,
         fix: values.fix,

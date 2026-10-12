@@ -382,6 +382,7 @@ describe("the flag reaches the gate", () => {
       writeFileSync(join(dir, "test", "index.test.js"), suite(3));
       git(["add", "-A"]);
       git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+      git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
 
       writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a - b; }\n");
       writeFileSync(join(dir, "test", "index.test.js"), suite(-1));

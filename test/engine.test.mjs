@@ -142,6 +142,7 @@ describe("src/engine.mjs", () => {
       execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "ignore" });
       execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "ignore" });
       execSync('git commit --allow-empty -m "initial"', { cwd: tmpDir, stdio: "ignore" });
+      execSync("git update-ref refs/remotes/origin/main HEAD", { cwd: tmpDir, stdio: "ignore" });
       const setupFile = join(tmpDir, "setup.flag");
       const testFile = join(tmpDir, "test.flag");
       const teardownFile = join(tmpDir, "teardown.flag");
