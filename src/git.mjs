@@ -9,6 +9,119 @@ import { normalizePath, canonicalizePath } from "./config.mjs";
 export const NET_GUARD_PRELOAD_URL = new URL("./preload-net-guard.mjs", import.meta.url).href;
 export const NET_GUARD_FLAG = `--import ${NET_GUARD_PRELOAD_URL}`;
 
+/**
+ * Constructs an isolated, platform-aware execution environment for verification subprocesses (P0-11).
+ *
+ * Untrusted candidate code or repository verification commands must NOT inherit ambient
+ * host, operator, cloud, or CI credentials. This helper builds an environment starting
+ * from an empty object ({}) and populating ONLY explicitly allowed execution primitives
+ * required for reliable operation across Linux, macOS, and Windows.
+ *
+ * Scope boundary:
+ * P0-11 protects ambient environment-variable inheritance. It is not a filesystem
+ * isolation sandbox.
+ *
+ * @param {object} [opts]
+ * @param {NodeJS.ProcessEnv} [opts.ambientEnv] - Source environment to read baseline from (defaults to process.env)
+ * @param {NodeJS.Platform} [opts.platform] - Platform to target (defaults to process.platform)
+ * @param {boolean} [opts.netGuard] - Inject preload network guard in NODE_OPTIONS
+ * @param {string} [opts.home] - Optional isolated home directory
+ * @param {Record<string, string>} [opts.extraEnv] - Trusted JOK-controlled environment variables to merge
+ * @returns {Record<string, string>}
+ */
+export function buildVerificationEnv(opts = {}) {
+  const ambient = opts.ambientEnv || process.env;
+  const platform = opts.platform || process.platform;
+  const isWin = platform === "win32";
+
+  const env = {};
+
+  function findAmbientKey(targetName) {
+    const targetUpper = targetName.toUpperCase();
+    for (const k of Object.keys(ambient)) {
+      if (k.toUpperCase() === targetUpper && ambient[k] !== undefined) {
+        return ambient[k];
+      }
+    }
+    return undefined;
+  }
+
+  if (isWin) {
+    const p = findAmbientKey("PATH");
+    env.PATH = p !== undefined ? String(p) : "";
+    const sr = findAmbientKey("SYSTEMROOT");
+    env.SystemRoot = sr !== undefined ? String(sr) : "C:\\Windows";
+    const cs = findAmbientKey("COMSPEC");
+    env.ComSpec = cs !== undefined ? String(cs) : "C:\\Windows\\system32\\cmd.exe";
+    const pe = findAmbientKey("PATHEXT");
+    env.PATHEXT = pe !== undefined ? String(pe) : ".COM;.EXE;.BAT;.CMD";
+    const wd = findAmbientKey("WINDIR");
+    if (wd !== undefined) env.WINDIR = String(wd);
+    const sd = findAmbientKey("SYSTEMDRIVE");
+    env.SystemDrive = sd !== undefined ? String(sd) : "C:";
+    const temp = findAmbientKey("TEMP");
+    if (temp !== undefined) env.TEMP = String(temp);
+    const tmp = findAmbientKey("TMP");
+    if (tmp !== undefined) env.TMP = String(tmp);
+  } else {
+    if (ambient.PATH !== undefined) env.PATH = String(ambient.PATH);
+    else env.PATH = "/usr/local/bin:/usr/bin:/bin";
+    if (ambient.TMPDIR !== undefined) env.TMPDIR = String(ambient.TMPDIR);
+    else env.TMPDIR = "/tmp";
+    if (ambient.TEMP !== undefined) env.TEMP = String(ambient.TEMP);
+    if (ambient.TMP !== undefined) env.TMP = String(ambient.TMP);
+  }
+
+  const lang = findAmbientKey("LANG");
+  if (lang !== undefined) env.LANG = String(lang);
+  const lcAll = findAmbientKey("LC_ALL");
+  if (lcAll !== undefined) env.LC_ALL = String(lcAll);
+  const lcCtype = findAmbientKey("LC_CTYPE");
+  if (lcCtype !== undefined) env.LC_CTYPE = String(lcCtype);
+  const term = findAmbientKey("TERM");
+  if (term !== undefined) env.TERM = String(term);
+
+  env.CI = "true";
+  const nodeEnv = findAmbientKey("NODE_ENV");
+  if (nodeEnv !== undefined) env.NODE_ENV = String(nodeEnv);
+
+  if (opts.netGuard) {
+    env.NODE_OPTIONS = NET_GUARD_FLAG;
+  }
+
+  if (opts.home) {
+    env.HOME = String(opts.home);
+    if (isWin) env.USERPROFILE = String(opts.home);
+  }
+
+  if (opts.extraEnv && typeof opts.extraEnv === "object") {
+    for (const [k, v] of Object.entries(opts.extraEnv)) {
+      if (v !== undefined && v !== null) {
+        env[k] = String(v);
+      }
+    }
+  }
+
+  delete env.NODE_TEST_CONTEXT;
+  delete env.NODE_CHANNEL_FD;
+  delete env.PR_LABELS;
+  delete env.HEAD_SHA;
+  delete env.BASE_SHA;
+  delete env.JULES_BASE_SHA;
+  for (const k of Object.keys(env)) {
+    if (
+      k.startsWith("JULES_ALLOW_") ||
+      k.startsWith("AGENT_ALLOW_") ||
+      k.startsWith("NODE_TEST_") ||
+      k.startsWith("NODE_CHANNEL_")
+    ) {
+      delete env[k];
+    }
+  }
+
+  return env;
+}
+
 export class GateError extends Error {
   constructor(message, opts = {}) {
     super(message);

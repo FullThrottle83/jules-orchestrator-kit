@@ -3,7 +3,7 @@ import { isTestPath } from "./test-paths.mjs";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { runCmd } from "./git.mjs";
+import { runCmd, buildVerificationEnv } from "./git.mjs";
 import { resolveVerify } from "./config.mjs";
 
 /**
@@ -157,16 +157,9 @@ export function runV8Coverage(testCmd, options = {}) {
   const tempCoverageDir = mkdtempSync(join(tmpdir(), "jules-v8-cov-"));
 
   try {
-    const env = {
-      ...process.env,
-      NODE_V8_COVERAGE: tempCoverageDir,
-    };
-    // Strip child test runner flags to avoid collisions
-    for (const k of Object.keys(env)) {
-      if (k.startsWith("NODE_TEST_") || k.startsWith("NODE_CHANNEL_")) {
-        delete env[k];
-      }
-    }
+    const env = buildVerificationEnv({
+      extraEnv: { NODE_V8_COVERAGE: tempCoverageDir },
+    });
 
     const res = runCmd(cmd, {
       cwd: root,

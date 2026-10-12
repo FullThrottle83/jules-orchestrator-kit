@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { detectPolyglotStack } from "../stack-detector.mjs";
 import { resolveRoot } from "../config.mjs";
-import { runCmd } from "../git.mjs";
+import { runCmd, buildVerificationEnv } from "../git.mjs";
 
 export class TddError extends Error {
   constructor(message, opts = {}) {
@@ -139,13 +139,7 @@ export async function runTddCycle(spec = {}, options = {}) {
   // Step 1: RED Check - Must fail initially
   let redOutput;
   try {
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.NODE_OPTIONS;
-    for (const k of Object.keys(cleanEnv)) {
-      if (k.startsWith("NODE_TEST_") || k.startsWith("NODE_CHANNEL_")) {
-        delete cleanEnv[k];
-      }
-    }
+    const cleanEnv = buildVerificationEnv();
     redOutput = runCmd(scaffolded.testCmd, { cwd: root, ignoreError: true, env: cleanEnv });
   } catch (err) {
     redOutput = { status: 1, stdout: "", stderr: err.message };

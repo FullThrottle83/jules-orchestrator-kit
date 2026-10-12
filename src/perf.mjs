@@ -1,5 +1,5 @@
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { runCmd } from "./git.mjs";
+import { runCmd, buildVerificationEnv } from "./git.mjs";
 import { resolveVerify } from "./config.mjs";
 
 /**
@@ -34,12 +34,7 @@ export function measureEventLoopDelay(target, options = {}) {
       target();
     } else {
       const cmd = target || resolveVerify(root).testCmd || "npm test";
-      const env = { ...process.env };
-      for (const k of Object.keys(env)) {
-        if (k.startsWith("NODE_TEST_") || k.startsWith("NODE_CHANNEL_")) {
-          delete env[k];
-        }
-      }
+      const env = buildVerificationEnv();
 
       const execResult = runCmd(cmd, {
         cwd: root,
