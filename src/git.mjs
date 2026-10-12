@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { killProcessTree } from "./process-tree.mjs";
-import { readFileSync, existsSync, statSync, lstatSync, readlinkSync, mkdtempSync, rmSync, symlinkSync, readdirSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, statSync, lstatSync, readlinkSync, mkdtempSync, rmSync, symlinkSync, readdirSync, mkdirSync, openSync, readSync, closeSync } from "node:fs";
 import { join, delimiter, relative, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { normalizePath, canonicalizePath } from "./config.mjs";
@@ -364,9 +364,11 @@ export function ensureBaseFetched(root = process.cwd(), baseRef = "main") {
   }
 }
 
-export function resolveBase(root = process.cwd(), baseRef = "main") {
-  const isHeadRef = baseRef === "HEAD" || baseRef.startsWith("HEAD~") || baseRef.startsWith("HEAD^") || baseRef.startsWith("HEAD@");
-  const candidates = isHeadRef
+export function resolveBase(root = process.cwd(), baseRef = "main", opts = {}) {
+  const allowFetch = opts.allowFetch !== false;
+  const isCommitSha = typeof baseRef === "string" && /^[0-9a-f]{40}$/i.test(baseRef);
+  const isHeadRef = typeof baseRef === "string" && (baseRef === "HEAD" || baseRef.startsWith("HEAD~") || baseRef.startsWith("HEAD^") || baseRef.startsWith("HEAD@"));
+  const candidates = isHeadRef || isCommitSha
     ? [baseRef]
     : [`origin/${baseRef}`, `refs/remotes/origin/${baseRef}`, baseRef];
   for (const ref of candidates) {
@@ -383,7 +385,7 @@ export function resolveBase(root = process.cwd(), baseRef = "main") {
     } catch (_) {}
   }
 
-  if (!isHeadRef) {
+  if (!isHeadRef && !isCommitSha && allowFetch) {
     ensureBaseFetched(root, baseRef);
 
     for (const ref of candidates) {
@@ -399,6 +401,13 @@ export function resolveBase(root = process.cwd(), baseRef = "main") {
         }
       } catch (_) {}
     }
+  }
+
+  if (isCommitSha) {
+    throw new GateError(
+      `Cannot resolve base commit SHA "${baseRef}". Object does not exist locally. Fetch the required commit history before verification.`,
+      { code: 1 }
+    );
   }
 
   throw new GateError(
@@ -443,68 +452,71 @@ export function getHeadParent(root = process.cwd()) {
   return getCommitParent(root, "HEAD");
 }
 
-export function changedFiles(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
+export const PINNED_DIFF_CONFIG = Object.freeze([
+  "-c", "core.quotePath=false",
+  "-c", "diff.external=",
+]);
+
+export const PINNED_DIFF_FLAGS = Object.freeze([
+  "--text",
+  "--no-ext-diff",
+  "--no-textconv",
+  "--no-color",
+  "--no-renames",
+  "--src-prefix=a/",
+  "--dst-prefix=b/",
+]);
+
+export function resolveDiffRange(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
   const targetHead = head || "HEAD";
-  const resolvedRef = resolveBase(root, base);
+  const allowFetch = mode !== "committed";
+  const resolvedRef = resolveBase(root, base, { allowFetch });
   const headCommit = getCommitSha(root, targetHead);
   const isHeadRef = typeof base === "string" && (base === targetHead || base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
-  const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
+  const isBaseAtHead = Boolean(mode === "committed" && !isHeadRef && headCommit && resolvedRef === headCommit);
+  const headParent = isBaseAtHead ? getCommitParent(root, targetHead) : null;
+
+  return Object.freeze({
+    root,
+    base,
+    mode,
+    head: targetHead,
+    resolvedRef,
+    headCommit,
+    isHeadRef,
+    isBaseAtHead,
+    headParent,
+  });
+}
+
+export function changedFiles(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
+  const rawEntries = parseRawDiff(root, base, mode, head);
+  const files = new Set(rawEntries.map((e) => e.file).filter(Boolean));
 
   if (mode === "working-tree" || mode === "working") {
-    const committedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true, ignoreError: true }) || "";
-    const uncommittedRaw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", targetHead], { cwd: root, raw: true, ignoreError: true }) || "";
-    const untrackedRaw = git(["-c", "core.quotePath=false", "ls-files", "-z", "--others", "--exclude-standard"], { cwd: root, raw: true, ignoreError: true }) || "";
-
-    const set = new Set([
-      ...committedRaw.split("\0").map(normalizePath).filter(Boolean),
-      ...uncommittedRaw.split("\0").map(normalizePath).filter(Boolean),
-      ...untrackedRaw.split("\0").map(normalizePath).filter(Boolean),
-    ]);
-    return Array.from(set);
-  } else if (mode === "staged" || mode === "index") {
-    const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", "--cached", resolvedRef], { cwd: root, raw: true });
-    return raw.split("\0").map(normalizePath).filter(Boolean);
-  } else {
-    if (isBaseAtHead) {
-      const headParent = getCommitParent(root, targetHead);
-      if (headParent) {
-        const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${headParent}...${targetHead}`], { cwd: root, raw: true });
-        return raw.split("\0").map(normalizePath).filter(Boolean);
-      } else {
-        const raw = git(["-c", "core.quotePath=false", "diff-tree", "--root", "--no-commit-id", "-r", "-z", "--name-only", headCommit], { cwd: root, raw: true });
-        return raw.split("\0").map(normalizePath).filter(Boolean);
-      }
+    const untrackedRaw = git([...PINNED_DIFF_CONFIG, "ls-files", "-z", "--others", "--exclude-standard"], { cwd: root, raw: true, ignoreError: true }) || "";
+    for (const f of untrackedRaw.split("\0").map(normalizePath).filter(Boolean)) {
+      files.add(f);
     }
-    const raw = git(["-c", "core.quotePath=false", "diff", "-z", "--name-only", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true });
-    return raw.split("\0").map(normalizePath).filter(Boolean);
   }
+
+  return Array.from(files);
 }
 
 export function diffText(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
-  const targetHead = head || "HEAD";
-  const resolvedRef = resolveBase(root, base);
-  const headCommit = getCommitSha(root, targetHead);
-  const isHeadRef = typeof base === "string" && (base === targetHead || base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
-  const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
+  const range = resolveDiffRange(root, base, mode, head);
 
   if (mode === "working-tree" || mode === "working") {
-    const committed = git(["diff", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true, ignoreError: true }) || "";
-    const uncommitted = git(["diff", targetHead], { cwd: root, raw: true, ignoreError: true }) || "";
+    const committed = git([...PINNED_DIFF_CONFIG, "diff", ...PINNED_DIFF_FLAGS, `${range.resolvedRef}...${range.head}`], { cwd: root, raw: true, ignoreError: true }) || "";
+    const uncommitted = git([...PINNED_DIFF_CONFIG, "diff", ...PINNED_DIFF_FLAGS, range.head], { cwd: root, raw: true, ignoreError: true }) || "";
 
-    const untrackedRaw = git(["-c", "core.quotePath=false", "ls-files", "-z", "--others", "--exclude-standard"], { cwd: root, raw: true, ignoreError: true }) || "";
+    const untrackedRaw = git([...PINNED_DIFF_CONFIG, "ls-files", "-z", "--others", "--exclude-standard"], { cwd: root, raw: true, ignoreError: true }) || "";
     const untrackedFiles = untrackedRaw.split("\0").map(normalizePath).filter(Boolean);
     let untrackedDiff = "";
     for (const file of untrackedFiles) {
       try {
         const fullPath = join(root, file);
 
-        // A symlink is its target *path*, never its target's contents — that is
-        // how git stores one and how `git diff` renders one. Reading through
-        // the link instead pulled whatever it pointed at into the diff, so
-        // `ln -s /etc/passwd notes.md` shipped that file's contents to the
-        // provider as ordinary added lines under an innocent name. Emit the
-        // link the way a committed symlink is emitted, and let checkScope judge
-        // the target it resolves to.
         let linkStat = null;
         try {
           linkStat = lstatSync(fullPath);
@@ -519,13 +531,6 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
         if (existsSync(fullPath)) {
           const content = readFileSync(fullPath, "utf-8");
           const addedLines = content.split(/\r?\n/);
-          // The `@@` header is not decoration. Every consumer that needs to know
-          // *which* line an addition is on parses it — the mutation harness and
-          // the V8 diff-coverage mapper both walk hunks — so a synthetic diff
-          // without one made untracked files invisible to them. Both silently
-          // reported nothing to do for a brand-new file, which is precisely
-          // where untested code arrives. The secret scanner never noticed
-          // because it only reads `+` lines.
           untrackedDiff += `\ndiff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n`;
           untrackedDiff += `@@ -0,0 +1,${addedLines.length} @@\n`;
           untrackedDiff += addedLines.map((line) => `+${line}`).join("\n") + "\n";
@@ -534,31 +539,30 @@ export function diffText(root = process.cwd(), base = "main", mode = "committed"
     }
     return [committed, uncommitted, untrackedDiff].filter(Boolean).join("\n");
   } else if (mode === "staged" || mode === "index") {
-    return git(["diff", "--cached", resolvedRef], { cwd: root, raw: true });
+    return git([...PINNED_DIFF_CONFIG, "diff", ...PINNED_DIFF_FLAGS, "--cached", range.resolvedRef], { cwd: root, raw: true });
   }
 
-  if (isBaseAtHead) {
-    const headParent = getCommitParent(root, targetHead);
-    if (headParent) {
-      return git(["diff", `${headParent}...${targetHead}`], { cwd: root, raw: true });
+  if (range.isBaseAtHead) {
+    if (range.headParent) {
+      return git([...PINNED_DIFF_CONFIG, "diff", ...PINNED_DIFF_FLAGS, `${range.headParent}...${range.head}`], { cwd: root, raw: true });
     } else {
-      return git(["diff-tree", "-p", "--no-commit-id", "--root", headCommit], { cwd: root, raw: true });
+      return git([...PINNED_DIFF_CONFIG, "diff-tree", "-p", "--no-commit-id", "--root", ...PINNED_DIFF_FLAGS, range.headCommit], { cwd: root, raw: true });
     }
   }
-  return git(["diff", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true });
+  return git([...PINNED_DIFF_CONFIG, "diff", ...PINNED_DIFF_FLAGS, `${range.resolvedRef}...${range.head}`], { cwd: root, raw: true });
 }
 
 /**
  * Paths git summarised as binary in this diff, with the size of what changed.
  *
- * `git diff` prints one 43-byte line for a binary file — "Binary files a/x and
+ * \`git diff\` prints one 43-byte line for a binary file — "Binary files a/x and
  * b/x differ" — regardless of whether x grew by a byte or by half a megabyte.
  * Everything downstream reads the diff *text*, so a binary file is invisible to
  * both the payload governor and the secret scanner: a 500 KB blob measured 250
  * bytes, and a credential with a leading NUL byte was never looked at.
  *
  * Sizes come from the object git actually recorded where there is one, and from
- * the working file otherwise, so both `committed` and `working-tree` modes get a
+ * the working file otherwise, so both \`committed\` and \`working-tree\` modes get a
  * real number.
  *
  * @param {string} root
@@ -577,7 +581,7 @@ function parseRawDiffOutput(raw, out) {
     i += 1;
     if (!file) continue;
     out.push({
-      file,
+      file: normalizePath(file),
       srcMode: parts[0] || "",
       dstMode: parts[1] || "",
       srcSha: parts[2] || "",
@@ -588,54 +592,63 @@ function parseRawDiffOutput(raw, out) {
 }
 
 export function parseRawDiff(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
-  const targetHead = head || "HEAD";
-  const resolvedRef = resolveBase(root, base);
-  const headCommit = getCommitSha(root, targetHead);
-  const isHeadRef = typeof base === "string" && (base === targetHead || base === "HEAD" || base.startsWith("HEAD~") || base.startsWith("HEAD^") || base.startsWith("HEAD@"));
-  const isBaseAtHead = Boolean(!isHeadRef && headCommit && resolvedRef === headCommit);
-
+  const range = resolveDiffRange(root, base, mode, head);
   const out = [];
+
   if (mode === "working-tree" || mode === "working") {
-    for (const range of [[`${resolvedRef}...${targetHead}`], [targetHead]]) {
+    for (const r of [`${range.resolvedRef}...${range.head}`, range.head]) {
       let raw = "";
       try {
-        raw = git(["diff", "--raw", "--no-renames", "-z", ...range], { cwd: root, raw: true, ignoreError: true }) || "";
+        raw = git([...PINNED_DIFF_CONFIG, "diff", "--raw", ...PINNED_DIFF_FLAGS, "-z", r], { cwd: root, raw: true, ignoreError: true }) || "";
       } catch (_) {
         continue;
       }
       parseRawDiffOutput(raw, out);
     }
   } else if (mode === "staged" || mode === "index") {
-    let raw = "";
-    try {
-      raw = git(["diff", "--raw", "--no-renames", "-z", "--cached", resolvedRef], { cwd: root, raw: true, ignoreError: true }) || "";
-    } catch (_) {}
+    const raw = git([...PINNED_DIFF_CONFIG, "diff", "--raw", ...PINNED_DIFF_FLAGS, "-z", "--cached", range.resolvedRef], { cwd: root, raw: true, ignoreError: true }) || "";
     parseRawDiffOutput(raw, out);
   } else {
-    if (isBaseAtHead) {
-      const headParent = getCommitParent(root, targetHead);
-      if (headParent) {
-        let raw = "";
-        try {
-          raw = git(["diff", "--raw", "--no-renames", "-z", `${headParent}...${targetHead}`], { cwd: root, raw: true, ignoreError: true }) || "";
-        } catch (_) {}
+    if (range.isBaseAtHead) {
+      if (range.headParent) {
+        const raw = git([...PINNED_DIFF_CONFIG, "diff", "--raw", ...PINNED_DIFF_FLAGS, "-z", `${range.headParent}...${range.head}`], { cwd: root, raw: true, ignoreError: true }) || "";
         parseRawDiffOutput(raw, out);
       } else {
-        let raw = "";
-        try {
-          raw = git(["diff-tree", "--root", "--no-commit-id", "-r", "--raw", "--no-renames", "-z", headCommit], { cwd: root, raw: true, ignoreError: true }) || "";
-        } catch (_) {}
+        const raw = git([...PINNED_DIFF_CONFIG, "diff-tree", "--root", "--no-commit-id", "-r", "--raw", ...PINNED_DIFF_FLAGS, "-z", range.headCommit], { cwd: root, raw: true, ignoreError: true }) || "";
         parseRawDiffOutput(raw, out);
       }
     } else {
-      let raw = "";
-      try {
-        raw = git(["diff", "--raw", "--no-renames", "-z", `${resolvedRef}...${targetHead}`], { cwd: root, raw: true, ignoreError: true }) || "";
-      } catch (_) {}
+      const raw = git([...PINNED_DIFF_CONFIG, "diff", "--raw", ...PINNED_DIFF_FLAGS, "-z", `${range.resolvedRef}...${range.head}`], { cwd: root, raw: true, ignoreError: true }) || "";
       parseRawDiffOutput(raw, out);
     }
   }
   return out;
+}
+
+/**
+ * Gitlink (mode 160000) submodule changes introduced or removed in this diff.
+ */
+export function gitlinkChanges(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
+  const GITLINK_MODE = "160000";
+  const results = [];
+  const seen = new Set();
+
+  for (const entry of parseRawDiff(root, base, mode, head)) {
+    if (entry.srcMode !== GITLINK_MODE && entry.dstMode !== GITLINK_MODE) continue;
+    if (seen.has(entry.file)) continue;
+    seen.add(entry.file);
+
+    results.push({
+      file: entry.file,
+      srcSha: entry.srcSha,
+      dstSha: entry.dstSha,
+      srcMode: entry.srcMode,
+      dstMode: entry.dstMode,
+      status: entry.status,
+    });
+  }
+
+  return results;
 }
 
 /**
@@ -693,7 +706,7 @@ export function symlinkChanges(root = process.cwd(), base = "main", mode = "comm
   // whether the attacker ran `git add`.
   if (mode === "working-tree" || mode === "working") {
     const untrackedRaw =
-      git(["-c", "core.quotePath=false", "ls-files", "-z", "--others", "--exclude-standard"], {
+      git([...PINNED_DIFF_CONFIG, "ls-files", "-z", "--others", "--exclude-standard"], {
         cwd: root,
         raw: true,
         ignoreError: true,
@@ -724,10 +737,42 @@ function resolveLinkTarget(link, target) {
     : canonicalizePath(linkDir ? `${linkDir}/${target}` : target);
 }
 
+function isBinaryBlobOrFile(root, dstSha, file) {
+  try {
+    const fullPath = join(root, file);
+    if (existsSync(fullPath)) {
+      const fd = openSync(fullPath, "r");
+      const buf = Buffer.alloc(8192);
+      const bytesRead = readSync(fd, buf, 0, 8192, 0);
+      closeSync(fd);
+      if (buf.subarray(0, bytesRead).includes(0)) return true;
+    }
+  } catch (_) {}
+
+  if (dstSha && !/^0+$/.test(dstSha)) {
+    try {
+      const chunk = execFileSync("git", ["cat-file", "-p", dstSha], {
+        cwd: root,
+        encoding: "buffer",
+        maxBuffer: 8192,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      if (chunk.includes(0)) return true;
+    } catch (err) {
+      if (err.stdout && Buffer.isBuffer(err.stdout) && err.stdout.includes(0)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
   const entries = new Map();
   for (const entry of parseRawDiff(root, base, mode, head)) {
     if (entry.status === "D") continue;
+    if (entry.dstMode === "120000" || entry.dstMode === "160000") continue;
     const { file, dstSha } = entry;
 
     let bytes = 0;
@@ -745,23 +790,27 @@ export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "c
       }
     }
     // Keep the largest observation: the same path can appear in both ranges.
-    entries.set(file, Math.max(entries.get(file) || 0, bytes));
+    entries.set(file, { bytes: Math.max(entries.get(file)?.bytes || 0, bytes), dstSha });
   }
 
-  // Only the paths git itself refused to render as text are relevant; a file
-  // that diffed normally is already counted in the diff text.
   const binaryPaths = new Set();
+  for (const [file, info] of entries) {
+    if (isBinaryBlobOrFile(root, info.dstSha, file)) {
+      binaryPaths.add(normalizePath(file));
+    }
+  }
+
   const text = diffText(root, base, mode, head);
   for (const line of text.split("\n")) {
     const m = line.match(/^Binary files (?:a\/(.+) and )?(?:b\/(.+)|\/dev\/null) differ$/);
     if (m) binaryPaths.add(normalizePath(m[2] || m[1] || ""));
     const m2 = line.match(/^Binary files \/dev\/null and b\/(.+) differ$/);
-    if (m2) binaryPaths.add(normalizePath(m2[1]));
+    if (m2) binaryPaths.add(normalizePath(m2[1] || ""));
   }
 
   return [...entries.entries()]
     .filter(([file]) => binaryPaths.has(normalizePath(file)))
-    .map(([file, bytes]) => ({ file, bytes }));
+    .map(([file, info]) => ({ file, bytes: info.bytes }));
 }
 
 /**
@@ -785,9 +834,9 @@ export function diffBytes(root = process.cwd(), base = "main", mode = "committed
 }
 
 export function showFromOrigin(root = process.cwd(), base = "main", filePath = "") {
-  const resolvedRef = resolveBase(root, base);
-  const normPath = normalizePath(filePath);
   try {
+    const resolvedRef = resolveBase(root, base, { allowFetch: false });
+    const normPath = normalizePath(filePath);
     return git(["show", `${resolvedRef}:${normPath}`], { cwd: root, raw: true });
   } catch (_) {
     return null;

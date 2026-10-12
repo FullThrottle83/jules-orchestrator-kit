@@ -94,6 +94,10 @@ export const BUILTIN_PROTECT = [
   ".agent/rules/**",
   ".agent/SYSTEM_LEARNINGS.md",
   ".agent/knowledge/**",
+  ".gitattributes",
+  "**/.gitattributes",
+  ".gitmodules",
+  ".lfsconfig",
   "package.json",
   "**/package.json",
   "Cargo.toml",
@@ -1082,7 +1086,7 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
     }
 
     try {
-      baseSha = resolveBase(root, baseSha);
+      baseSha = resolveBase(root, baseSha, { allowFetch: false });
     } catch (err) {
       return {
         ok: false,
