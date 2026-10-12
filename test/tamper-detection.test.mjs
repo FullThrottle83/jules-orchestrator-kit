@@ -45,7 +45,7 @@ import { gate } from "../src/engine.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "../src/stack-detector.mjs";
 import { resolveTestWaiverFromLabels, resolveProtectedWaiverFromLabels, parseLabels } from "../src/self-audit.mjs";
 import { parseCollectedTests } from "../src/ops/test-collection.mjs";
-import { materializeSnapshot, runCmd, changedFiles, diffText } from "../src/git.mjs";
+import { materializeSnapshot, runCmd, changedFiles, diffText, findWorkspaceDependencyDirs, isDependencyPath } from "../src/git.mjs";
 import { createCheckpoint, restoreCheckpoint, CheckpointError } from "../src/ops/checkpoint.mjs";
 import { buildAgentEnvelope } from "../src/prompt-guard.mjs";
 
@@ -1372,6 +1372,42 @@ describe("F10 — Materialize snapshot isolation", () => {
       try {
         const content = readFileSync(join(snapshot.cwd, "file.txt"), "utf-8").replace(/\r\n/g, "\n");
         assert.equal(content, "rev1\n");
+      } finally {
+        snapshot.cleanup();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("materializeSnapshot preserves monorepo subpackage and workspace dependency directories", () => {
+    const { dir, git } = setupGitRepo();
+    try {
+      // Setup monorepo structure
+      mkdirSync(join(dir, "packages", "web", "node_modules"), { recursive: true });
+      writeFileSync(join(dir, "packages", "web", "node_modules", "dep.txt"), "web-dep");
+      mkdirSync(join(dir, "apps", "api", "node_modules"), { recursive: true });
+      writeFileSync(join(dir, "apps", "api", "node_modules", "dep.txt"), "api-dep");
+      mkdirSync(join(dir, "node_modules"), { recursive: true });
+      writeFileSync(join(dir, "node_modules", "root.txt"), "root-dep");
+
+      writeFileSync(join(dir, "packages", "web", "index.js"), "export const a = 1;");
+      git(["add", "packages/web/index.js"]);
+      git(["commit", "-qm", "feat: web index"]);
+
+      const found = findWorkspaceDependencyDirs(dir);
+      assert.ok(found.includes("node_modules"));
+      assert.ok(found.includes("packages/web/node_modules"));
+      assert.ok(found.includes("apps/api/node_modules"));
+      assert.ok(isDependencyPath("packages/web/node_modules/dep.txt"));
+      assert.ok(!isDependencyPath("packages/web/index.js"));
+
+      const snapshot = materializeSnapshot(dir, "committed", "HEAD");
+      try {
+        assert.ok(existsSync(join(snapshot.cwd, "node_modules", "root.txt")));
+        assert.ok(existsSync(join(snapshot.cwd, "packages", "web", "node_modules", "dep.txt")));
+        assert.ok(existsSync(join(snapshot.cwd, "apps", "api", "node_modules", "dep.txt")));
+        assert.equal(readFileSync(join(snapshot.cwd, "packages", "web", "node_modules", "dep.txt"), "utf-8"), "web-dep");
       } finally {
         snapshot.cleanup();
       }

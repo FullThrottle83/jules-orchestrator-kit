@@ -51,7 +51,44 @@ export function planGitignoreEntries(root) {
   return RUNTIME_GITIGNORE_ENTRIES.filter((e) => !lines.has(e));
 }
 
+/**
+ * Plan project dependency ignore entries like `node_modules/` that should be in `.gitignore`.
+ * Kept separate from runtime state so it is not stripped on uninstall.
+ *
+ * @param {string} root
+ * @returns {string[]} Entries needed
+ */
+export function planProjectGitignoreEntries(root) {
+  const gitignorePath = join(root, ".gitignore");
+  const current = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
+  const lines = current.split(/\r?\n/).map((l) => l.trim());
+  const needed = [];
+
+  if (existsSync(join(root, "package.json")) || existsSync(join(root, "node_modules"))) {
+    const hasNodeModules = lines.some(
+      (l) => l === "node_modules" || l === "node_modules/" || l === "/node_modules" || l === "/node_modules/"
+    );
+    if (!hasNodeModules) {
+      needed.push("node_modules/");
+    }
+  }
+
+  return needed;
+}
+
+export function ensureProjectGitignore(root) {
+  const missing = planProjectGitignoreEntries(root);
+  if (missing.length === 0) return [];
+
+  const gitignorePath = join(root, ".gitignore");
+  const current = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
+  const prefix = current && !current.endsWith("\n") ? "\n" : "";
+  appendFileSync(gitignorePath, `${prefix}${missing.join("\n")}\n`, "utf-8");
+  return missing;
+}
+
 export function ensureGitignore(root) {
+  ensureProjectGitignore(root);
   const gitignorePath = join(root, ".gitignore");
   const current = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
   const missing = planGitignoreEntries(root);

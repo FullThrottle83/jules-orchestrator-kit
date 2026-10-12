@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { killProcessTree } from "./process-tree.mjs";
-import { readFileSync, existsSync, statSync, lstatSync, readlinkSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { join, delimiter } from "node:path";
+import { readFileSync, existsSync, statSync, lstatSync, readlinkSync, mkdtempSync, rmSync, symlinkSync, readdirSync, mkdirSync } from "node:fs";
+import { join, delimiter, relative, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { normalizePath, canonicalizePath } from "./config.mjs";
 
@@ -803,6 +803,58 @@ export function worktreePrune(root = process.cwd()) {
   return git(["worktree", "prune"], { cwd: root });
 }
 
+export const WORKSPACE_DEP_NAMES = ["node_modules", ".venv", "venv", "target", ".pytest_cache"];
+const SCAN_SKIP_DIRS = new Set([".git", "dist", "build", ".agent", ".turbo", ".next", ".cache", ...WORKSPACE_DEP_NAMES]);
+
+/**
+ * Discover root and workspace subpackage dependency directories so they can be symlinked into snapshots.
+ * Supports monorepos (packages/*, apps/*, etc.) and pnpm symlink structures.
+ *
+ * @param {string} [root=process.cwd()]
+ * @returns {string[]}
+ */
+export function findWorkspaceDependencyDirs(root = process.cwd()) {
+  const depDirs = [];
+
+  // 1. Root dependencies
+  for (const dep of WORKSPACE_DEP_NAMES) {
+    if (existsSync(join(root, dep))) {
+      depDirs.push(dep);
+    }
+  }
+
+  // 2. Monorepo subpackage dependencies (scan up to depth 3)
+  function scan(dir, depth) {
+    if (depth > 3) return;
+    let entries = [];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+
+    for (const entry of entries) {
+      let isDir = entry.isDirectory();
+      if (!isDir && entry.isSymbolicLink()) {
+        try {
+          isDir = statSync(join(dir, entry.name)).isDirectory();
+        } catch (_) {}
+      }
+      if (!isDir) continue;
+      const name = entry.name;
+      if (WORKSPACE_DEP_NAMES.includes(name)) {
+        depDirs.push(relative(root, join(dir, name)).replace(/\\/g, "/"));
+        continue;
+      }
+      if (SCAN_SKIP_DIRS.has(name) || name.startsWith(".")) continue;
+      scan(join(dir, name), depth + 1);
+    }
+  }
+
+  scan(root, 1);
+  return [...new Set(depDirs)];
+}
+
 /**
  * Materialize the revision under review into an isolated execution directory (F10).
  *
@@ -858,13 +910,14 @@ export function materializeSnapshot(root = process.cwd(), mode = "working-tree",
       }
     }
 
-    // Preserve local runtime dependencies in snapshot so offline/sandboxed verification can run:
-    const ignoredDeps = ["node_modules", ".venv", "venv", "target", ".pytest_cache"];
-    for (const dep of ignoredDeps) {
-      const srcDep = join(root, dep);
-      const dstDep = join(tmpDir, dep);
+    // Preserve local runtime dependencies in snapshot so offline/sandboxed verification can run (including monorepos & pnpm):
+    const depDirs = findWorkspaceDependencyDirs(root);
+    for (const relDep of depDirs) {
+      const srcDep = join(root, relDep);
+      const dstDep = join(tmpDir, relDep);
       if (existsSync(srcDep) && !existsSync(dstDep)) {
         try {
+          mkdirSync(dirname(dstDep), { recursive: true });
           symlinkSync(srcDep, dstDep, "junction");
         } catch (_) {}
       }
@@ -1012,18 +1065,41 @@ const ONBOARDING_ROOT_ARTIFACTS = [
   "bun.lockb",
 ];
 
+export const DEPENDENCY_DIR_PATTERNS = [
+  "node_modules/",
+  ".venv/",
+  "venv/",
+  "target/",
+  ".pytest_cache/",
+];
+
+/**
+ * True if path is inside a dependency directory (e.g. node_modules, .venv, target).
+ *
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+export function isDependencyPath(filePath = "") {
+  const norm = String(filePath).replace(/\\/g, "/");
+  return DEPENDENCY_DIR_PATTERNS.some(
+    (dep) => norm.startsWith(dep) || norm.includes("/" + dep)
+  );
+}
+
 /**
  * Among the given repo-relative paths, which are *untracked* root-level
- * package-manager artifacts — i.e. manifests a fresh `npm init -y`/install just
- * created rather than files the maintainer committed and an agent then rewrote?
+ * package-manager artifacts or untracked dependency files — i.e. manifests a
+ * fresh `npm init -y`/install just created rather than files the maintainer
+ * committed and an agent then rewrote?
  *
  * The scope rules flag a brand-new package.json as `protect`, which is the
  * right call for the gate. But a task-create preflight that rejects a brand-new
  * repository because its own onboarding just produced package.json is a cold
  * start deadlock: the user has not committed anything yet, so they cannot make
- * the preflight pass without guessing the secret incantation. Modified
- * *tracked* lockfiles are deliberately NOT returned here — those stay protected
- * as supply-chain tampering.
+ * the preflight pass without guessing the secret incantation. Similarly,
+ * untracked dependency packages in node_modules/ or virtualenvs must not abort
+ * preflight. Modified *tracked* lockfiles are deliberately NOT returned here —
+ * those stay protected as supply-chain tampering.
  *
  * @param {string} root
  * @param {string[]} files repo-relative paths (as reported by a scope phase)
@@ -1032,7 +1108,7 @@ const ONBOARDING_ROOT_ARTIFACTS = [
 export function untrackedOnboardingArtifacts(root = process.cwd(), files = []) {
   const { untracked } = partitionTracked(root, files);
   if (untracked.length === 0) return [];
-  return untracked.filter((f) => ONBOARDING_ROOT_ARTIFACTS.includes(f));
+  return untracked.filter((f) => ONBOARDING_ROOT_ARTIFACTS.includes(f) || isDependencyPath(f));
 }
 
 /**
