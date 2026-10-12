@@ -2195,10 +2195,13 @@ async function main() {
       const {
         ensureGitignore,
         planGitignoreEntries,
+        planProjectGitignoreEntries,
         planScaffoldRepoAssets,
         scaffoldRepoAssets,
       } = await import("../src/scaffold.mjs");
       const plannedGitignore = planGitignoreEntries(root);
+      const plannedProjectGitignore = planProjectGitignoreEntries(root);
+      const hasAnyPlannedGitignore = plannedGitignore.length > 0 || plannedProjectGitignore.length > 0;
       const legacyPlan = values.force ? planScaffoldRepoAssets(root, { force: true }) : { created: [], gitignore: plannedGitignore };
       const scaffold =
         values.force && !values["dry-run"]
@@ -2213,7 +2216,7 @@ async function main() {
       const writes = [
         ...res.writes.map((p) => (relative(root, p) || p).replaceAll("\\", "/")),
         ...legacyPlan.created,
-        ...(plannedGitignore.length > 0 ? [".gitignore"] : []),
+        ...(hasAnyPlannedGitignore ? [".gitignore"] : []),
       ].filter((p, index, all) => all.indexOf(p) === index);
 
       if (values.json) {

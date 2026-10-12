@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { untrackedOnboardingArtifacts } from "./git.mjs";
+import { untrackedOnboardingArtifacts, isDependencyPath } from "./git.mjs";
 import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
 import { scanDiff, shannonEntropy } from "./security.mjs";
@@ -482,7 +482,7 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
     // dependency change the maintainer shipped), so they are filtered out the
     // same way the .agent/ scaffolding already is. A modified *tracked*
     // lockfile stays protected and still rejects the task.
-    const realViolations = scopeViolations.filter((v) => !v.file.startsWith(".agent/")) || [];
+    const realViolations = scopeViolations.filter((v) => !v.file.startsWith(".agent/") && !isDependencyPath(v.file)) || [];
     const installArtifacts = new Set(untrackedOnboardingArtifacts(root, scopeViolations.map((v) => v.file)));
     const blockers = realViolations.filter((v) => !installArtifacts.has(v.file));
     if (blockers.length > 0) {

@@ -75,6 +75,18 @@ test("src/scaffold.mjs", async (t) => {
     }
   });
 
+  await t.test("ensureGitignore adds node_modules/ to .gitignore when package.json is present", () => {
+    const dir = tempRepo();
+    try {
+      ensureGitignore(dir);
+      const content = readFileSync(join(dir, ".gitignore"), "utf-8");
+      assert.match(content, /^node_modules\//m, "node_modules/ must be in .gitignore");
+      assert.ok(content.indexOf("node_modules/") < content.indexOf(RUNTIME_GITIGNORE_ENTRIES[0]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   await t.test("does not clobber local edits without force", () => {
     const dir = tempRepo();
     try {

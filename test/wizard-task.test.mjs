@@ -310,6 +310,38 @@ test("Guided Task Authoring Subsystem", async (t) => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  await t.test("runTaskCreateWizard succeeds when untracked dependency files exist in node_modules without .gitignore", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "jules-task-dep-trap-"));
+    const mockStdin = new PassThrough();
+    const mockStdout = new PassThrough();
+    try {
+      runCmd("git init -q -b main", { cwd: tmpDir });
+      runCmd('git config user.name "Test"', { cwd: tmpDir });
+      runCmd('git config user.email "test@example.com"', { cwd: tmpDir });
+      writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "app", version: "1.0.0" }));
+      runCmd("git add package.json", { cwd: tmpDir });
+      runCmd('git commit -m "initial commit"', { cwd: tmpDir });
+
+      // Simulate untracked node_modules without .gitignore
+      mkdirSync(join(tmpDir, "node_modules", "some-pkg"), { recursive: true });
+      writeFileSync(join(tmpDir, "node_modules", "some-pkg", "package.json"), JSON.stringify({ name: "some-pkg" }));
+
+      const res = await runTaskCreateWizard(tmpDir, {
+        interactive: false,
+        title: "Fix bug with untracked deps",
+        prompt: "Fix math function",
+        verifyCmd: "npm test",
+        stdin: mockStdin,
+        stdout: mockStdout,
+      });
+
+      assert.equal(res.ok, true);
+      assert.ok(res.taskId.startsWith("TASK-"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 
