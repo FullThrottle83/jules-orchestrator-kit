@@ -206,7 +206,7 @@ describe("Reconciliation on Mutating API Timeouts", () => {
       process.env.JULES_API_KEY = "test-token";
       const result = await provider.dispatch(
         { prompt: "do something", title: "Reconcile Task", branch: "main" },
-        { timeoutMs: 50, reconcile: true }
+        { timeoutMs: 200, reconcile: true }
       );
 
       assert.equal(result.id, "sess-reconciled-123");
@@ -249,7 +249,7 @@ describe("Reconciliation on Mutating API Timeouts", () => {
         async () =>
           provider.dispatch(
             { prompt: "do something", title: "Nonexistent Task", branch: "main" },
-            { timeoutMs: 50, reconcile: true }
+            { timeoutMs: 200, reconcile: true }
           ),
         (err) => {
           assert.ok(err instanceof ProviderUnavailableError);
@@ -307,7 +307,7 @@ describe("Reconciliation on Mutating API Timeouts", () => {
         async () =>
           failover.dispatch(
             { prompt: "test", title: "Ambiguous Task" },
-            { timeoutMs: 50, reconcile: true }
+            { timeoutMs: 200, reconcile: true }
           ),
         (err) => {
           assert.ok(err instanceof ProviderAmbiguousOutcomeError);
@@ -345,7 +345,7 @@ describe("Reconciliation on Mutating API Timeouts", () => {
       });
 
       process.env.JULES_API_KEY = "test-token";
-      const res = await provider.approvePlan("sess-100", { timeoutMs: 50, reconcile: true });
+      const res = await provider.approvePlan("sess-100", { timeoutMs: 200, reconcile: true });
       assert.equal(res.id, "sess-100");
       assert.equal(res.approved, true);
       assert.equal(res.status, "IN_PROGRESS");
