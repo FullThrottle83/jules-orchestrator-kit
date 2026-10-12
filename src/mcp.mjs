@@ -15,6 +15,7 @@ import {
   retrySession,
   pruneSessions,
 } from "./session-ops.mjs";
+import { resolveTrustedBaseRef, resolveBase } from "./git.mjs";
 
 export const MCP_SERVER_INFO = {
   name: "jules-orchestrator-kit",
@@ -553,12 +554,44 @@ export async function handleMcpRequest(request, opts = {}) {
       }
 
       if (toolName === "audit_jules_gate") {
+        let baseOverride = undefined;
+        if (args && args.base && typeof args.base === "string" && args.base.trim() !== "") {
+          const trustedBaseRef = resolveTrustedBaseRef(root);
+          let trustedSha = null;
+          let requestedSha = null;
+          try {
+            if (trustedBaseRef) trustedSha = resolveBase(root, trustedBaseRef);
+            requestedSha = resolveBase(root, args.base.trim());
+          } catch (_) {}
+
+          if (!trustedSha || requestedSha !== trustedSha) {
+            return {
+              jsonrpc: "2.0",
+              id,
+              result: {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    ok: false,
+                    code: 3,
+                    error: `Untrusted MCP base override rejected: '${args.base}' does not resolve to trusted repository base '${trustedBaseRef || "unknown"}'. MCP callers cannot redirect or weaken the review boundary.`,
+                    base: null,
+                    baseSha: null,
+                    headSha: null,
+                  }, null, 2),
+                }],
+              },
+            };
+          }
+          baseOverride = trustedBaseRef;
+        }
+
         const res = await gate({
           root,
           config,
-          base: args.base || config.baseBranch || "main",
-          fix: args.fix || false,
-          allowProtected: args.allowProtected || false,
+          base: baseOverride,
+          fix: args?.fix || false,
+          allowProtected: args?.allowProtected || false,
         });
         return {
           jsonrpc: "2.0",

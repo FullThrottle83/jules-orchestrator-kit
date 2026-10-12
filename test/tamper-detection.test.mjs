@@ -382,6 +382,7 @@ describe("the flag reaches the gate", () => {
       writeFileSync(join(dir, "test", "index.test.js"), suite(3));
       git(["add", "-A"]);
       git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+      git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
 
       writeFileSync(join(dir, "index.js"), "export function add(a, b) { return a - b; }\n");
       writeFileSync(join(dir, "test", "index.test.js"), suite(-1));
@@ -1734,7 +1735,8 @@ test("P0-05: Working Tree & Untracked File Gate Mode", async (t) => {
       runCmd("git checkout main", { cwd: tmpDir });
 
       // Run gate explicitly specifying head as feat/tamper-branch while active branch is main
-      const resTamper = await gate({ root: tmpDir, base: "main", head: "feat/tamper-branch", mode: "committed" });
+      const baseSha = runCmd("git rev-parse main", { cwd: tmpDir }).stdout.trim();
+      const resTamper = await gate({ root: tmpDir, baseSha, head: "feat/tamper-branch", mode: "committed" });
       assert.equal(resTamper.ok, false);
       assert.equal(resTamper.code, 6);
       const secretPhase = resTamper.phases.find((p) => p.phase === "secrets");

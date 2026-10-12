@@ -635,6 +635,7 @@ export const COMMAND_REGISTRY = [
     ],
     flags: [
       { name: "base", type: "string", description: "Base comparison branch (default: main or config base_branch) (-b)" },
+      { name: "base-sha", type: "string", description: "Explicit immutable base commit SHA (takes precedence over mutable refs)" },
       { name: "mode", type: "string", description: "Evaluation mode (working-tree | committed | staged) (-m)" },
       { name: "working-tree", type: "boolean", description: "Evaluate the working tree (default mode)" },
       { name: "staged", type: "boolean", description: "Evaluate staged changes" },
@@ -669,6 +670,7 @@ export const COMMAND_REGISTRY = [
     ],
     flags: [
       { name: "base", type: "string", description: "Base comparison branch (default: main or config base_branch) (-b)" },
+      { name: "base-sha", type: "string", description: "Explicit immutable base commit SHA (takes precedence over mutable refs)" },
       { name: "mode", type: "string", description: "Evaluation mode (working-tree | committed | staged) (-m)" },
       { name: "working-tree", type: "boolean", description: "Evaluate the working tree (default mode)" },
       { name: "staged", type: "boolean", description: "Evaluate staged changes" },
@@ -702,6 +704,7 @@ export const COMMAND_REGISTRY = [
     ],
     flags: [
       { name: "base", type: "string", description: "Base comparison branch (default: main or config base_branch) (-b)" },
+      { name: "base-sha", type: "string", description: "Explicit immutable base commit SHA (takes precedence over mutable refs)" },
       { name: "mode", type: "string", description: "Evaluation mode (working-tree | committed | staged) (-m)" },
       { name: "working-tree", type: "boolean", description: "Evaluate the working tree (default mode)" },
       { name: "staged", type: "boolean", description: "Evaluate staged changes" },

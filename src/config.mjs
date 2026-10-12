@@ -542,7 +542,7 @@ export {
   isPlaceholderTestScript,
 };
 
-import { showFromOrigin, detectDefaultBranch } from "./git.mjs";
+import { showFromOrigin, resolveTrustedBaseRef, resolveBase, getCommitSha } from "./git.mjs";
 
 /**
  * Autodetects verification test/build commands across 24+ polyglot tech stacks.
@@ -998,37 +998,236 @@ export function checkBootstrapPolicyIntegrity(root, proposedConfig = {}, propose
  * }}
  */
 export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode = "working-tree", opts = {}) {
-  // 1. Resolve base branch
-  let base = baseRef || opts.base;
-  if (!base) {
-    const diskConfig = opts.config || (existsSync(join(root, ".agent/config.yml")) ? loadConfig(root) : null);
-    base = diskConfig?.baseBranch || detectDefaultBranch(root) || "main";
+  const autoVerify = resolveVerify(root);
+  const targetHead = opts.head || "HEAD";
+  let headSha = null;
+
+  let base = baseRef || opts.base || null;
+  let baseSha = opts.baseSha || null;
+
+  if (mode === "committed") {
+    // F08 Guard: In committed mode, comparing a revision to itself produces an empty diff and would bypass the gate.
+    if (base === "HEAD" || base === "HEAD^0") {
+      return {
+        ok: false,
+        code: 3,
+        error: 'Cannot evaluate committed diff against base "HEAD": comparing a revision to itself would bypass the safety gate (F08).',
+        base,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
+
+    // Committed mode strictly requires an explicit trusted immutable 40-character baseline SHA.
+    // Mutable Git references, candidate-controlled configs, and local persistent state cannot establish authority.
+    if (!baseSha) {
+      return {
+        ok: false,
+        code: 1,
+        error: "Committed verification requires an explicit trusted baseline SHA (--base-sha <sha>). Mutable Git references and candidate-controlled state cannot establish committed-mode security authority.",
+        base,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
+
+    if (!/^[0-9a-f]{40}$/i.test(baseSha)) {
+      return {
+        ok: false,
+        code: 1,
+        error: `Invalid baseSha format "${baseSha}": expected 40 hexadecimal characters.`,
+        base: base || baseSha,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
+
+    try {
+      baseSha = resolveBase(root, baseSha);
+    } catch (err) {
+      return {
+        ok: false,
+        code: 1,
+        error: `Cannot resolve trusted base commit SHA "${baseSha}": ${err.message}`,
+        base: base || baseSha,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
+
+    base = base || baseSha;
+  } else {
+    // Non-committed mode (working-tree or staged): resolve trusted default base ref if not provided
+    if (!base) {
+      base = resolveTrustedBaseRef(root);
+    }
+
+    if (!base) {
+      return {
+        ok: false,
+        code: 1,
+        error: "Unable to determine trusted base branch (no refs/remotes/origin/HEAD or conventional default branch [main, master, trunk] found). Specify a base revision explicitly with --base <ref>.",
+        base: null,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
+
+    try {
+      baseSha = resolveBase(root, base);
+    } catch (err) {
+      return {
+        ok: false,
+        code: err.code || 1,
+        error: err.message,
+        base,
+        baseSha: null,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
   }
 
-  // F08 Guard: In committed mode, base branch can never be HEAD
-  // (Comparing a commit against itself would produce an empty diff and bypass the gate)
-  if (mode === "committed" && (base === "HEAD" || base === "HEAD^0")) {
-    return {
-      ok: false,
-      code: 3,
-      error: 'Cannot evaluate committed diff against base "HEAD": comparing a revision to itself would bypass the safety gate (F08).',
-      base,
-      isBootstrap: false,
-    };
+  headSha = getCommitSha(root, targetHead);
+
+  // F08 Guard: In committed mode, comparing a revision to itself produces an empty diff
+  // and would bypass the safety gate. Refuse self-referential or empty review ranges.
+  if (mode === "committed") {
+    if (headSha && baseSha === headSha) {
+      return {
+        ok: false,
+        code: 3,
+        error: `Cannot evaluate committed diff against base "${base}": base and head resolve to the same commit (${baseSha}); comparing a revision to itself would bypass the safety gate (F08).`,
+        base,
+        baseSha,
+        headSha,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
+    if (!headSha) {
+      return {
+        ok: false,
+        code: 1,
+        error: `Cannot resolve head reference "${targetHead}".`,
+        base,
+        baseSha,
+        headSha: null,
+        isBootstrap: false,
+        scope: normalizeScope({}),
+        verify: {
+          ...autoVerify,
+          stages: null,
+          required: true,
+          tamperGuard: true,
+          minTests: 1,
+          timeoutMs: 300_000,
+        },
+        limits: { diffKb: 75 },
+        evidence: { strictTestLock: true },
+        rawConfig: null,
+      };
+    }
   }
 
   let trustedConfigRaw = null;
   let trustedJulesRaw = null;
   let trustedProtectedRaw = null;
   try {
-    trustedConfigRaw = showFromOrigin(root, base, ".agent/config.yml");
-    trustedJulesRaw = showFromOrigin(root, base, ".agent/jules.yml");
-    trustedProtectedRaw = showFromOrigin(root, base, ".agent/protected-paths.json");
+    trustedConfigRaw = showFromOrigin(root, baseSha, ".agent/config.yml");
+    trustedJulesRaw = showFromOrigin(root, baseSha, ".agent/jules.yml");
+    trustedProtectedRaw = showFromOrigin(root, baseSha, ".agent/protected-paths.json");
   } catch (_) {
-    // If base branch cannot be resolved or show fails, let changedFiles report code 1
+    // If base commit has no config or cannot read file, handled below
   }
-
-  const autoVerify = resolveVerify(root);
 
   if (trustedConfigRaw || trustedJulesRaw) {
     const raw = trustedConfigRaw || trustedJulesRaw;
@@ -1096,6 +1295,8 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
     return {
       ok: true,
       base,
+      baseSha,
+      headSha,
       scope: trustedScope,
       verify: {
         ...mergedVerify,
@@ -1160,6 +1361,8 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
         code: 3,
         error: integrity.error,
         base,
+        baseSha,
+        headSha,
         scope: normalizeScope({}),
         verify: {
           ...autoVerify,
@@ -1231,6 +1434,8 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
   return {
     ok: true,
     base,
+    baseSha,
+    headSha,
     scope: trustedScope,
     verify: {
       ...mergedBootstrapVerify,

@@ -112,6 +112,7 @@ describe("the gate refuses to approve against nothing", () => {
     writeFileSync(join(dir, ".agent", "config.yml"), 'version: 1\nverify:\n  test: "./runner.sh"\n');
     git(["add", "-A"]);
     git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+    git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
 
     // Break the code, so the only thing standing between this and APPROVED is
     // whether the gate notices that nothing was tested.

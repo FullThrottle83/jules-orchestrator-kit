@@ -281,6 +281,8 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
   const manifestId = options.manifestId || `EVD-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const generatedAt = new Date().toISOString();
   const gitInfo = getGitProvenance(root, { head: options.head });
+  const headSha = options.headSha || (gitInfo.commitSha !== "unknown" ? gitInfo.commitSha : null);
+  const baseSha = options.baseSha || null;
 
   // Compute test tree integrity
   const preTestHash = options.preTestHash || null;
@@ -308,6 +310,8 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
     manifestId,
     generatedAt,
     status,
+    baseSha,
+    headSha,
     ...(failedStage ? { failedStage } : {}),
     intent: {
       taskId: options.taskId || options.task?.id || "local-task",
@@ -316,7 +320,11 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
       promptExcerpt,
     },
     provenance: {
-      commitSha: gitInfo.commitSha,
+      commitSha: headSha || gitInfo.commitSha,
+      baseSha,
+      headSha,
+      baseRef: options.base || options.baseRef || null,
+      headRef: options.head || null,
       branch: gitInfo.branch,
       dirty: gitInfo.dirty,
       repository: options.repository || "local",

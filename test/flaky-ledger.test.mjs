@@ -101,6 +101,7 @@ describe("Statistical Flaky Test Quarantine & Ledger", () => {
       fs.writeFileSync(path.join(tmpDir, "README.md"), "# Flaky Test Repo\n");
       execFileSync("git", ["add", "."], opts);
       execFileSync("git", ["commit", "-m", "initial commit"], opts);
+      execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], opts);
 
       const testCmd = "node -e process.exit(1)";
 

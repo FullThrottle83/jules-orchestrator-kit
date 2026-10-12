@@ -206,6 +206,8 @@ test(
       // posture as a consumer that followed the README quickstart).
       git(consumer, ["add", ".agent/config.yml", ".gitignore"]);
       git(consumer, ["commit", "-m", "chore: agentctl init"]);
+      git(consumer, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+      git(consumer, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
 
       // --- g. doctor --json ---
       const doctor = run("npx", ["agentctl", "doctor", "--json"], {

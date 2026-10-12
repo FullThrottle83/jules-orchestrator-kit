@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { untrackedOnboardingArtifacts, isDependencyPath } from "./git.mjs";
+import { untrackedOnboardingArtifacts, isDependencyPath, resolveBase } from "./git.mjs";
 import { loadConfig } from "./config.mjs";
 import { gate } from "./engine.mjs";
 import { scanDiff, shannonEntropy } from "./security.mjs";
@@ -299,10 +299,18 @@ ${buildGuardrailFooter(config, { allowedPaths: targetFiles, baseBranch: flags.st
 
   const tier = inputObj.tier === "fast" || inputObj.tier === "complex" ? inputObj.tier : undefined;
 
+  let baseSha = inputObj.baseSha || inputObj.base_sha || null;
+  if (!baseSha) {
+    try {
+      baseSha = resolveBase(root, flags.startingBranch);
+    } catch (_) {}
+  }
+
   const envelopeMetadata = {
     version: 1,
     id: taskId,
     title,
+    baseSha,
     flags,
     risk,
     circuitBreaker,
@@ -332,6 +340,8 @@ ${buildGuardrailFooter(config, { allowedPaths: targetFiles, baseBranch: flags.st
     version: "agentctl.task/v1",
     id: taskId,
     title,
+    baseCommit: baseSha || flags.startingBranch,
+    baseSha,
     role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
     tier,
     risk,
@@ -360,6 +370,7 @@ ${fullPrompt}
     ok: true,
     taskId,
     title,
+    baseSha,
     prompt: rawPrompt,
     fullPrompt,
     verifyCmd,

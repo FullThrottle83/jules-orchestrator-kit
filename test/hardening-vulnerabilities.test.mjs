@@ -85,9 +85,10 @@ test("Vulnerabilities A-D Hardening Test Suite", async (t) => {
 
       // In --mode committed, gate must reject with code 5 (Payload exceeded)
       // because uncommitted disk config is ignored; limit stays at trusted 75 KB.
+      const baseSha = execFileSync("git", ["rev-parse", "main"], { cwd: tmpDir, encoding: "utf8" }).trim();
       const gateRes = await gate({
         root: tmpDir,
-        base: "main",
+        baseSha,
         mode: "committed",
       });
 
