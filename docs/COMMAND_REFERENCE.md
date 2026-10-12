@@ -1054,12 +1054,14 @@ Approve a pending execution plan for an agent session
 | Flag | Type | Description |
 | :--- | :--- | :--- |
 | `--dry-run` | boolean | Simulate plan approval (-d) |
+| `--expected-plan` | string | Verify active plan ID before approving to prevent plan races |
 | `--json` | boolean | Output structured JSON result (-j) |
 
 **Examples:**
 
 ```sh
 agentctl plan approve <sessionId>
+agentctl plan approve <sessionId> --expected-plan <planId>
 agentctl plan approve <sessionId> --dry-run
 agentctl approve <sessionId>
 ```

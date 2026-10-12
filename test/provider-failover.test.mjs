@@ -940,7 +940,7 @@ test("createFailoverProvider routes dispatches across an ordered provider list",
     );
   });
 
-  await t.test("resume walks the same ordered chain", async () => {
+  await t.test("resume enforces provider affinity and does not fail over across providers", async () => {
     let liveCalls = 0;
     // Specs must carry a dispatch to be recognised as provider objects —
     // otherwise the router rebuilds them from the spec via createProvider.
@@ -957,11 +957,39 @@ test("createFailoverProvider routes dispatches across an ordered provider list",
       },
     ]);
 
-    const res = await provider.resume("sess-1", "continue");
-    assert.equal(res.id, "r1");
-    assert.equal(res._routedProvider, "live");
-    assert.equal(res._failoverAttempts, 1);
-    assert.equal(liveCalls, 1);
+    await assert.rejects(
+      () => provider.resume("sess-1", "continue"),
+      (err) => {
+        assert.ok(err instanceof ProviderUnavailableError);
+        assert.match(err.message, /session gone/);
+        return true;
+      }
+    );
+    assert.equal(liveCalls, 0, "resume must not fail over to a different provider");
+  });
+
+  await t.test("session operations route to the provider that won the initial dispatch", async () => {
+    const provider = createFailoverProvider([
+      {
+        name: "flaky-primary",
+        dispatch: async () => { throw new ProviderRateLimitError("rate limited", { status: 429 }); },
+        resume: async () => { throw new Error("primary should not be called for secondary's session"); },
+      },
+      {
+        name: "backup-worker",
+        dispatch: async () => ({ id: "sess-backup-99", status: "pending" }),
+        resume: async (sessionId, prompt) => ({ id: sessionId, status: "resumed", prompt }),
+      },
+    ]);
+
+    const dispatchRes = await provider.dispatch({ prompt: "start" });
+    assert.equal(dispatchRes.id, "sess-backup-99");
+    assert.equal(dispatchRes._routedProvider, "backup-worker");
+
+    const resumeRes = await provider.resume("sess-backup-99", "next step");
+    assert.equal(resumeRes.id, "sess-backup-99");
+    assert.equal(resumeRes._routedProvider, "backup-worker");
+    assert.equal(resumeRes.prompt, "next step");
   });
 });
 
