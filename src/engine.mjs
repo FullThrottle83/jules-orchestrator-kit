@@ -3,7 +3,7 @@ import { isTestPath } from "./test-paths.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets, hasHighConfidenceSecret } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase } from "./git.mjs";
+import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, gitlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
@@ -205,6 +205,12 @@ export async function gate(opts = {}) {
   } catch (_) {
     // Scope must still be enforced on the ordinary file list if git cannot describe the links.
   }
+  let gitlinks = [];
+  try {
+    gitlinks = gitlinkChanges(root, diffBase, mode, head);
+  } catch (_) {
+    // Non-fatal if raw diff inspection fails; file scope checks still proceed
+  }
   const scopeCandidates = [...files];
   const symlinkTargetOf = new Map();
   for (const { link, target } of symlinks) {
@@ -212,16 +218,38 @@ export async function gate(opts = {}) {
     scopeCandidates.push(target);
     symlinkTargetOf.set(target, link);
   }
+  for (const gl of gitlinks) {
+    if (!scopeCandidates.includes(gl.file)) {
+      scopeCandidates.push(gl.file);
+    }
+  }
+
+  const allowProtected = Boolean(
+    opts.allowProtected ||
+    process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true" ||
+    process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1" ||
+    process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "true" ||
+    process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1"
+  );
 
   const scopeResult = checkScope(scopeCandidates, trustedScope, {
-    allowProtected:
-      opts.allowProtected ||
-      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true" ||
-      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1" ||
-      process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "true" ||
-      process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1",
+    allowProtected,
     protectedPatterns: trustedScope.protectedPatterns,
   });
+
+  // Treat gitlink changes conservatively as security-relevant/protected
+  for (const gl of gitlinks) {
+    if (!allowProtected) {
+      scopeResult.ok = false;
+      scopeResult.violations = scopeResult.violations || [];
+      scopeResult.violations.push({
+        file: gl.file,
+        rule: "BUILTIN_PROTECT",
+        reason: `Gitlink/submodule pointer change "${gl.file}" is protected. Submodules cannot be modified in unattended agent tasks.`,
+      });
+    }
+  }
+
   // Report the violation against the link the change actually introduced, not
   // against a path the diff never names — the operator has to be able to find it.
   for (const violation of scopeResult.violations || []) {
