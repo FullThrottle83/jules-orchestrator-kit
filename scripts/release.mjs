@@ -7,7 +7,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { resolveRoot } from "../src/config.mjs";
 
 const root = resolveRoot();
@@ -171,17 +171,17 @@ try {
   if (tags.includes(tagName)) {
     let taggedVersion = "";
     try {
-      const rawPkg = execSync(`git show ${tagName}:package.json`, { cwd: root, encoding: "utf-8" });
+      const rawPkg = execFileSync("git", ["show", `${tagName}:package.json`], { cwd: root, encoding: "utf-8" });
       taggedVersion = JSON.parse(rawPkg).version;
     } catch (_) {}
     if (taggedVersion && taggedVersion !== version) {
       console.log(`   ⚠️ Tag ${tagName} points to package.json version ${taggedVersion}. Updating tag to HEAD (${version})...`);
-      execSync(`git tag -f -a ${tagName} -m "${pkg.name} ${tagName}"`, { cwd: root, stdio: "inherit" });
+      execFileSync("git", ["tag", "-f", "-a", tagName, "-m", `${pkg.name} ${tagName}`], { cwd: root, stdio: "inherit" });
     } else {
       console.log(`   ℹ️ Git tag ${tagName} already exists.`);
     }
   } else {
-    execSync(`git tag -a ${tagName} -m "${pkg.name} ${tagName}"`, { cwd: root, stdio: "inherit" });
+    execFileSync("git", ["tag", "-a", tagName, "-m", `${pkg.name} ${tagName}`], { cwd: root, stdio: "inherit" });
     console.log(`   ✅ Created Git tag ${tagName}.`);
   }
 } catch (err) {
@@ -192,8 +192,8 @@ try {
 // 4. Push git commits and tag to origin
 console.log(`4. Pushing main and tag ${tagName} to origin...`);
 try {
-  execSync("git push origin main", { cwd: root, stdio: "inherit" });
-  execSync(`git push origin ${tagName}`, { cwd: root, stdio: "inherit" });
+  execFileSync("git", ["push", "origin", "main"], { cwd: root, stdio: "inherit" });
+  execFileSync("git", ["push", "origin", tagName], { cwd: root, stdio: "inherit" });
   console.log("   ✅ Pushed commits and tag to origin.\n");
 } catch (err) {
   console.error(`❌ Push failed: ${err.message}`);
@@ -207,7 +207,7 @@ try {
   const fs = await import("node:fs");
   fs.writeFileSync(notesFile, notes, "utf-8");
   
-  execSync(`gh release create ${tagName} --title "${tagName}" --notes-file "${notesFile}"`, {
+  execFileSync("gh", ["release", "create", tagName, "--title", tagName, "--notes-file", notesFile], {
     cwd: root,
     stdio: "inherit",
   });

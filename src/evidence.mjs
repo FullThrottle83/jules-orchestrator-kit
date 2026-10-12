@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { join, resolve, relative, isAbsolute, extname } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { isTestPath } from "./test-paths.mjs";
 import { safeAtomicWrite } from "./security.mjs";
 import { normalizePath } from "./config.mjs";
@@ -242,23 +242,50 @@ export function computeEvidenceHash(manifest) {
 export function getGitProvenance(root = process.cwd(), options = {}) {
   try {
     const targetHead = options.head || "HEAD";
-    const commitSha = execSync(`git rev-parse ${targetHead}`, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (typeof targetHead !== "string" || targetHead.startsWith("-")) {
+      return {
+        commitSha: "unknown",
+        branch: "unknown",
+        dirty: false,
+      };
+    }
+
+    let commitSha = "";
+    try {
+      commitSha = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${targetHead}^{commit}`], {
+        cwd: root,
+        encoding: "utf8",
+        shell: false,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+    } catch (_) {}
+
     let branch = "";
     if (targetHead !== "HEAD") {
       branch = targetHead;
     } else {
       try {
-        branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+        branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+          shell: false,
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
       } catch (_) {}
     }
 
     let statusOutput = "";
     try {
-      statusOutput = execSync("git status --porcelain", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      statusOutput = execFileSync("git", ["status", "--porcelain"], {
+        cwd: root,
+        encoding: "utf8",
+        shell: false,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
     } catch (_) {}
 
     return {
-      commitSha,
+      commitSha: commitSha || "unknown",
       branch: branch || targetHead,
       dirty: statusOutput.length > 0,
     };

@@ -530,6 +530,12 @@ export function ensureBaseFetched(root = process.cwd(), baseRef = "main") {
 }
 
 export function resolveBase(root = process.cwd(), baseRef = "main", opts = {}) {
+  if (!baseRef || typeof baseRef !== "string" || baseRef.startsWith("-")) {
+    throw new GateError(
+      `Cannot resolve base reference "${baseRef}". Ensure base branch is fetched (e.g., fetch-depth: 0 in CI).`,
+      { code: 1 }
+    );
+  }
   const allowFetch = opts.allowFetch !== false;
   const isCommitSha = typeof baseRef === "string" && /^[0-9a-f]{40}$/i.test(baseRef);
   const isHeadRef = typeof baseRef === "string" && (baseRef === "HEAD" || baseRef.startsWith("HEAD~") || baseRef.startsWith("HEAD^") || baseRef.startsWith("HEAD@"));
@@ -582,6 +588,7 @@ export function resolveBase(root = process.cwd(), baseRef = "main", opts = {}) {
 }
 
 export function getCommitSha(root = process.cwd(), ref = "HEAD") {
+  if (!ref || typeof ref !== "string" || ref.startsWith("-")) return null;
   try {
     const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
       cwd: root,
@@ -596,6 +603,7 @@ export function getCommitSha(root = process.cwd(), ref = "HEAD") {
 }
 
 export function getCommitParent(root = process.cwd(), ref = "HEAD") {
+  if (!ref || typeof ref !== "string" || ref.startsWith("-")) return null;
   try {
     const res = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}~1^{commit}`], {
       cwd: root,
@@ -634,6 +642,9 @@ export const PINNED_DIFF_FLAGS = Object.freeze([
 
 export function resolveDiffRange(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
   const targetHead = head || "HEAD";
+  if (typeof targetHead !== "string" || targetHead.startsWith("-")) {
+    throw new GateError(`Invalid head reference "${targetHead}".`, { code: 1 });
+  }
   const allowFetch = mode !== "committed";
   const resolvedRef = resolveBase(root, base, { allowFetch });
   const headCommit = getCommitSha(root, targetHead);
@@ -1010,7 +1021,8 @@ export function showFromOrigin(root = process.cwd(), base = "main", filePath = "
 
 
 export function worktreeRemove(root = process.cwd(), targetDir = "") {
-  return git(["worktree", "remove", targetDir, "--force"], { cwd: root });
+  if (!targetDir || typeof targetDir !== "string" || targetDir.startsWith("-")) return "";
+  return git(["worktree", "remove", "--force", "--", targetDir], { cwd: root });
 }
 
 export function worktreePrune(root = process.cwd()) {
@@ -1104,8 +1116,12 @@ export function materializeSnapshot(root = process.cwd(), mode = "working-tree",
       });
     } else {
       // committed mode
+      const safeRef = targetRef || "HEAD";
+      if (typeof safeRef !== "string" || safeRef.startsWith("-")) {
+        throw new Error(`Invalid target ref "${safeRef}".`);
+      }
       try {
-        execFileSync("git", ["worktree", "add", "--detach", tmpDir, targetRef || "HEAD"], {
+        execFileSync("git", ["worktree", "add", "--detach", tmpDir, safeRef], {
           cwd: root,
           stdio: ["ignore", "pipe", "pipe"],
         });
@@ -1113,13 +1129,13 @@ export function materializeSnapshot(root = process.cwd(), mode = "working-tree",
       } catch (_) {
         // Fallback: git archive piped to tar when worktree cannot be created (e.g. read-only .git)
         try {
-          const tar = execFileSync("git", ["archive", targetRef || "HEAD"], {
+          const tar = execFileSync("git", ["archive", safeRef], {
             cwd: root,
             maxBuffer: 50 * 1024 * 1024,
           });
           execFileSync("tar", ["-x", "-C", tmpDir], { input: tar, stdio: ["pipe", "ignore", "pipe"] });
         } catch (tarErr) {
-          throw new Error(`Failed to extract snapshot for ${targetRef || "HEAD"}: ${tarErr.message}`);
+          throw new Error(`Failed to extract snapshot for ${safeRef}: ${tarErr.message}`);
         }
       }
     }
