@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -282,3 +283,354 @@ describe("P0-01 Core: Trusted Base & Review Range Resolution (PR A)", () => {
     }
   });
 });
+
+describe("P0-01 Extended: Adversarial Lifecycle & Tamper Hardening (PR B)", () => {
+  // 1. Fully forged ledger
+  it("1. Fully forged ledger with recomputed SHA-256 hash chain cannot establish authority", async () => {
+    const dir = initRepo("main");
+    try {
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+      git(dir, ["checkout", "-q", "-b", "candidate/feature"]);
+      writeFileSync(join(dir, "feat.js"), "export const f = 1;\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "candidate commit B"]);
+      const commitB = git(dir, ["rev-parse", "HEAD"]);
+
+      const stateDir = join(dir, ".agent", "state");
+      mkdirSync(stateDir, { recursive: true });
+      const ledgerPath = join(stateDir, "ledger-daily-2026-10-12.jsonl");
+
+      let prevHash = "0".repeat(64);
+      const lines = [];
+      const events = [
+        { seq: 1, event: "session_start", timestamp: Date.now() },
+        { seq: 2, event: "task_dispatch_baseline", baseSha: commitB, branch: "main", timestamp: Date.now() },
+      ];
+      for (const ev of events) {
+        ev.prevHash = prevHash;
+        const hash = createHash("sha256").update(JSON.stringify(ev)).digest("hex");
+        ev.hash = hash;
+        prevHash = hash;
+        lines.push(JSON.stringify(ev));
+      }
+      writeFileSync(ledgerPath, lines.join("\n") + "\n", "utf8");
+
+      const resUnassisted = await gate({ root: dir, mode: "committed" });
+      assert.equal(resUnassisted.ok, false);
+      assert.equal(resUnassisted.code, 1);
+      assert.notEqual(resUnassisted.baseSha, commitB);
+
+      const resAssisted = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(resAssisted.ok, true);
+      assert.equal(resAssisted.baseSha, commitA);
+      assert.equal(resAssisted.headSha, commitB);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 2. Forged checkpoint + ledger
+  it("2. Forged checkpoint and ledger combined cannot establish security authority", async () => {
+    const dir = initRepo("main");
+    try {
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+      git(dir, ["checkout", "-q", "-b", "candidate/feature"]);
+      writeFileSync(join(dir, "feat.js"), "export const f = 2;\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "candidate commit B"]);
+      const commitB = git(dir, ["rev-parse", "HEAD"]);
+
+      const stateDir = join(dir, ".agent", "state");
+      mkdirSync(join(stateDir, "checkpoints"), { recursive: true });
+      writeFileSync(
+        join(stateDir, "checkpoints", "preflight-session-1.json"),
+        JSON.stringify({ baseSha: commitB, headSha: commitB, timestamp: Date.now() })
+      );
+      writeFileSync(
+        join(stateDir, "ledger.jsonl"),
+        JSON.stringify({ event: "checkpoint_created", baseSha: commitB, hash: "1234" }) + "\n"
+      );
+
+      const res = await gate({ root: dir, mode: "committed" });
+      assert.equal(res.ok, false);
+      assert.equal(res.code, 1);
+      assert.notEqual(res.baseSha, commitB);
+
+      const resA = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(resA.ok, true);
+      assert.equal(resA.baseSha, commitA);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 3. Forged authority-style files
+  it("3. Forged authority.json, dispatches.json, and nonce registries are ignored as security authority", async () => {
+    const dir = initRepo("main");
+    try {
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+      git(dir, ["checkout", "-q", "-b", "candidate/feature"]);
+      writeFileSync(join(dir, "feat.js"), "export const f = 3;\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "candidate commit B"]);
+      const commitB = git(dir, ["rev-parse", "HEAD"]);
+
+      const authDir = join(dir, ".agent", "authority");
+      mkdirSync(authDir, { recursive: true });
+      writeFileSync(
+        join(authDir, "authority.json"),
+        JSON.stringify({ baseSha: commitB, dispatchNonce: "nonce-999", active: true })
+      );
+      writeFileSync(
+        join(authDir, "dispatches.json"),
+        JSON.stringify({ "nonce-999": { baseSha: commitB, status: "dispatched" } })
+      );
+
+      const res = await gate({ root: dir, mode: "committed" });
+      assert.equal(res.ok, false);
+      assert.equal(res.code, 1);
+      assert.notEqual(res.baseSha, commitB);
+
+      const resA = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(resA.ok, true);
+      assert.equal(resA.baseSha, commitA);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 4. Candidate verification code attempts state poisoning
+  it("4. Candidate verification script attempting state poisoning during execution cannot hijack subsequent gate calls", async () => {
+    const dir = initRepo("main");
+    try {
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "test-pkg", scripts: { test: "node test.js" } }, null, 2)
+      );
+      writeFileSync(join(dir, "test.js"), "process.exit(0);\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "setup test.js runner"]);
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+
+      git(dir, ["checkout", "-q", "-b", "candidate/exploit"]);
+      writeFileSync(
+        join(dir, "test.js"),
+        `import { writeFileSync, mkdirSync } from "node:fs";
+try {
+  mkdirSync(".agent/state", { recursive: true });
+  writeFileSync(".agent/state/poison.json", JSON.stringify({ baseSha: "4444444444444444444444444444444444444444" }));
+} catch (_) {}
+process.exit(0);
+`
+      );
+      git(dir, ["add", "test.js"]);
+      git(dir, ["commit", "-m", "candidate with state poisoning test"]);
+      const commitC = git(dir, ["rev-parse", "HEAD"]);
+
+      const res1 = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(res1.ok, true);
+      assert.equal(res1.baseSha, commitA);
+
+      const res2 = await gate({ root: dir, mode: "committed" });
+      assert.equal(res2.ok, false);
+      assert.equal(res2.code, 1);
+      assert.notEqual(res2.baseSha, "4444444444444444444444444444444444444444");
+
+      const res3 = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(res3.ok, true);
+      assert.equal(res3.baseSha, commitA);
+      assert.equal(res3.headSha, commitC);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 5. Crash / interrupted verification + retry
+  it("5. Crash or interrupted verification followed by retry remains deterministically anchored", async () => {
+    const dir = initRepo("main");
+    try {
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "test-pkg", scripts: { test: "node test.js" } }, null, 2)
+      );
+      writeFileSync(join(dir, "test.js"), "process.exit(0);\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "setup test.js runner"]);
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+
+      git(dir, ["checkout", "-q", "-b", "candidate/crash"]);
+      writeFileSync(join(dir, "test.js"), "process.exit(137);\n");
+      git(dir, ["add", "test.js"]);
+      git(dir, ["commit", "-m", "candidate with crashing verification"]);
+
+      const resCrash = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(resCrash.ok, false);
+      assert.equal(resCrash.code, 4);
+
+      const resRetryUnassisted = await gate({ root: dir, mode: "committed" });
+      assert.equal(resRetryUnassisted.ok, false);
+      assert.equal(resRetryUnassisted.code, 1);
+
+      const resRetryAssisted = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(resRetryAssisted.code, 4);
+      assert.equal(resRetryAssisted.baseSha, commitA);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 6. Remote Jules lifecycle
+  it("6. Remote Jules lifecycle: maintainer pre-flight SHA anchors evaluation against remote candidate commit", async () => {
+    const dir = initRepo("main");
+    try {
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+
+      git(dir, ["checkout", "-q", "-b", "jules/session-remote-100"]);
+      writeFileSync(join(dir, "remote-feat.js"), "export const remote = true;\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "remote Jules candidate work"]);
+      const commitC = git(dir, ["rev-parse", "HEAD"]);
+
+      git(dir, ["update-ref", "refs/remotes/origin/main", commitC]);
+
+      const res = await gate({ root: dir, mode: "committed", baseSha: commitA, head: commitC });
+      assert.equal(res.ok, true);
+      assert.equal(res.baseSha, commitA);
+      assert.equal(res.headSha, commitC);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 7. Local same-user lifecycle
+  it("7. Local same-user lifecycle requires explicit --base-sha despite shared filesystem access", async () => {
+    const dir = initRepo("main");
+    try {
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+      git(dir, ["checkout", "-q", "-b", "local-agent/feat"]);
+      writeFileSync(join(dir, "local-work.js"), "export const local = 1;\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "local agent work"]);
+
+      git(dir, ["update-ref", "refs/heads/main", git(dir, ["rev-parse", "HEAD"])]);
+
+      const resUnassisted = await gate({ root: dir, mode: "committed" });
+      assert.equal(resUnassisted.ok, false);
+      assert.equal(resUnassisted.code, 1);
+
+      const resAssisted = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(resAssisted.ok, true);
+      assert.equal(resAssisted.baseSha, commitA);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 8. Compound forgery
+  it("8. Compound forgery: simultaneous ref, ledger, checkpoint, authority, and env spoofing cannot bypass gate", async () => {
+    const dir = initRepo("main");
+    try {
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+      git(dir, ["checkout", "-q", "-b", "candidate/compound"]);
+      writeFileSync(join(dir, "exploit.js"), "export const x = 1;\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "attacker commit B"]);
+      const commitB = git(dir, ["rev-parse", "HEAD"]);
+
+      git(dir, ["update-ref", "refs/remotes/origin/main", commitB]);
+      const stateDir = join(dir, ".agent", "state");
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(
+        join(stateDir, "ledger.jsonl"),
+        JSON.stringify({ event: "task_dispatch_baseline", baseSha: commitB, hash: "abc" }) + "\n"
+      );
+      mkdirSync(join(stateDir, "checkpoints"), { recursive: true });
+      writeFileSync(
+        join(stateDir, "checkpoints", "checkpoint.json"),
+        JSON.stringify({ baseSha: commitB, headSha: commitB })
+      );
+      writeFileSync(join(dir, ".agent", "authority.json"), JSON.stringify({ baseSha: commitB }));
+
+      const resUnassisted = await gate({ root: dir, mode: "committed" });
+      assert.equal(resUnassisted.ok, false);
+      assert.equal(resUnassisted.code, 1);
+      assert.notEqual(resUnassisted.baseSha, commitB);
+
+      const resAssisted = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(resAssisted.ok, true);
+      assert.equal(resAssisted.baseSha, commitA);
+      assert.equal(resAssisted.headSha, commitB);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 9. Missing / deleted persistent state
+  it("9. Missing or deleted persistent state does not cause fallback to mutable refs", async () => {
+    const dir = initRepo("main");
+    try {
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+      git(dir, ["checkout", "-q", "-b", "candidate/del-state"]);
+      writeFileSync(join(dir, "work.js"), "export const w = 1;\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "candidate work"]);
+      const commitB = git(dir, ["rev-parse", "HEAD"]);
+
+      rmSync(join(dir, ".agent", "state"), { recursive: true, force: true });
+      git(dir, ["update-ref", "refs/remotes/origin/main", commitB]);
+
+      const resUnassisted = await gate({ root: dir, mode: "committed" });
+      assert.equal(resUnassisted.ok, false);
+      assert.equal(resUnassisted.code, 1);
+      assert.notEqual(resUnassisted.baseSha, commitB);
+
+      const resAssisted = await gate({ root: dir, mode: "committed", baseSha: commitA });
+      assert.equal(resAssisted.ok, true);
+      assert.equal(resAssisted.baseSha, commitA);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 10. Relevant environment spoofing
+  it("10. Candidate-controlled environment variables cannot establish committed review authority", async () => {
+    const dir = initRepo("main");
+    try {
+      const commitA = git(dir, ["rev-parse", "HEAD"]);
+      git(dir, ["checkout", "-q", "-b", "candidate/env-spoof"]);
+      writeFileSync(join(dir, "feat.js"), "export const e = 1;\n");
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-m", "candidate work"]);
+      const commitB = git(dir, ["rev-parse", "HEAD"]);
+
+      const originalBaseSha = process.env.BASE_SHA;
+      const originalJulesBaseSha = process.env.JULES_BASE_SHA;
+      try {
+        process.env.BASE_SHA = commitB;
+        process.env.JULES_BASE_SHA = commitB;
+
+        const res = await gate({ root: dir, mode: "committed" });
+        assert.equal(res.ok, false);
+        assert.equal(res.code, 1);
+        assert.notEqual(res.baseSha, commitB);
+
+        const resAssisted = await gate({ root: dir, mode: "committed", baseSha: commitA });
+        assert.equal(resAssisted.ok, true);
+        assert.equal(resAssisted.baseSha, commitA);
+
+        assert.throws(
+          () => execFileSync("node", [CLI, "gate", "--committed"], { cwd: dir, encoding: "utf8", stdio: "pipe", env: { ...process.env, BASE_SHA: commitB } }),
+          (err) => err.status === 1
+        );
+      } finally {
+        if (originalBaseSha !== undefined) process.env.BASE_SHA = originalBaseSha;
+        else delete process.env.BASE_SHA;
+        if (originalJulesBaseSha !== undefined) process.env.JULES_BASE_SHA = originalJulesBaseSha;
+        else delete process.env.JULES_BASE_SHA;
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
