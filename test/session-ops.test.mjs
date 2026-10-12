@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import {
   parseAgeDuration,
   extractSessionPatch,
+  extractFilesFromPatch,
   extractFailureDiagnostics,
   applySessionPatch,
   retrySession,
@@ -110,6 +111,172 @@ test("Jules Power-User Session Operations & Lifecycle Engine", async (t) => {
     assert.ok(res.files.includes("calc.js"));
   });
 
+  await t.test("extractSessionPatch prefers finalized outputs[].changeSet.gitPatch.unidiffPatch over earlier activity patch", async () => {
+    const finalPatch = `diff --git a/final.js b/final.js
+--- a/final.js
++++ b/final.js
+@@ -1 +1,2 @@
+ export function final() {}
+`;
+    const earlierPatch = `diff --git a/earlier.js b/earlier.js
+--- a/earlier.js
++++ b/earlier.js
+@@ -1 +1,2 @@
+ export function earlier() {}
+`;
+
+    const mockProvider = {
+      async getSession(id) {
+        return {
+          id,
+          raw: {
+            outputs: [
+              {
+                changeSet: {
+                  gitPatch: {
+                    unidiffPatch: finalPatch,
+                    baseCommitId: "f00ba42",
+                    suggestedCommitMessage: "feat: finalize patch",
+                  },
+                },
+              },
+            ],
+          },
+        };
+      },
+      async listActivities() {
+        return {
+          activities: [
+            {
+              artifacts: [
+                {
+                  patch: earlierPatch,
+                },
+              ],
+            },
+          ],
+        };
+      },
+    };
+
+    const res = await extractSessionPatch("session-final-wins", { provider: mockProvider, root: tmpdir() });
+    assert.equal(res.ok, true);
+    assert.ok(res.patch.includes("export function final"));
+    assert.ok(!res.patch.includes("export function earlier"));
+    assert.deepEqual(res.files, ["final.js"]);
+    assert.equal(res.baseCommitId, "f00ba42");
+    assert.equal(res.suggestedCommitMessage, "feat: finalize patch");
+  });
+
+  await t.test("extractSessionPatch retains multi-file canonical changeset without truncation or scratch contamination", async () => {
+    const twoFilePatch = `diff --git a/src/a.js b/src/a.js
+--- a/src/a.js
++++ b/src/a.js
+@@ -1 +1 @@
+-a
++a_mod
+diff --git a/src/b.js b/src/b.js
+--- a/src/b.js
++++ b/src/b.js
+@@ -1 +1 @@
+-b
++b_mod
+`;
+
+    const mockProvider = {
+      async getSession(id) {
+        return {
+          id,
+          raw: {
+            outputs: [
+              {
+                changeSet: {
+                  gitPatch: {
+                    unidiffPatch: twoFilePatch,
+                  },
+                },
+              },
+            ],
+          },
+        };
+      },
+      async listActivities() {
+        return {
+          activities: [
+            {
+              // Activity only saw a single file earlier, and produced scratch artifacts
+              artifacts: [
+                { path: "src/a.js", patch: "diff --git a/src/a.js b/src/a.js\n..." },
+                { path: "src/a.js.orig" },
+                { filename: "test/scratch.test.js" },
+              ],
+              changedFiles: ["src/a.js", "src/a.js.orig", "test/scratch.test.js"],
+            },
+          ],
+        };
+      },
+    };
+
+    const res = await extractSessionPatch("session-multi-file", { provider: mockProvider, root: tmpdir() });
+    assert.equal(res.ok, true);
+    assert.equal(res.files.length, 2);
+    assert.deepEqual(res.files.sort(), ["src/a.js", "src/b.js"]);
+    assert.ok(!res.files.includes("src/a.js.orig"));
+    assert.ok(!res.files.includes("test/scratch.test.js"));
+  });
+
+  await t.test("extractSessionPatch preserves legacy output formats and retrieves PR from activities if absent in outputs", async () => {
+    const patchDiff = `diff --git a/legacy.js b/legacy.js
+--- a/legacy.js
++++ b/legacy.js
+@@ -1 +1 @@
+-old
++new
+`;
+    const mockProvider = {
+      async getSession(id) {
+        return {
+          id,
+          raw: {
+            outputs: [{ patch: patchDiff }],
+          },
+        };
+      },
+      async listActivities() {
+        return {
+          activities: [
+            {
+              pullRequest: { url: "https://github.com/org/repo/pull/789", number: 789 },
+            },
+          ],
+        };
+      },
+    };
+
+    const res = await extractSessionPatch("session-legacy-formats", { provider: mockProvider, root: tmpdir() });
+    assert.equal(res.ok, true);
+    assert.ok(res.patch.includes("+new"));
+    assert.deepEqual(res.files, ["legacy.js"]);
+    assert.equal(res.pr.number, 789);
+  });
+
+  await t.test("extractFilesFromPatch parses standard, quoted, and CRLF diff headers accurately", () => {
+    const diff = `diff --git a/src/normal.js b/src/normal.js\r\n` +
+      `--- a/src/normal.js\r\n+++ b/src/normal.js\r\n` +
+      `diff --git "a/src/with spaces.js" "b/src/with spaces.js"\n` +
+      `--- "a/src/with spaces.js"\n+++ "b/src/with spaces.js"\n` +
+      `diff --git a/deleted.js b//dev/null\n` +
+      `--- a/deleted.js\n+++ /dev/null\n` +
+      `diff --git a//dev/null b/created.js\n` +
+      `--- /dev/null\n+++ b/created.js\n`;
+
+    const files = extractFilesFromPatch(diff);
+    assert.equal(files.has("src/normal.js"), true);
+    assert.equal(files.has("src/with spaces.js"), true);
+    assert.equal(files.has("deleted.js"), true);
+    assert.equal(files.has("created.js"), true);
+  });
+
   await t.test("applySessionPatch validates and applies patch cleanly to git working tree", async () => {
     const repoDir = createTempGitRepo();
     try {
@@ -160,6 +327,109 @@ test("Jules Power-User Session Operations & Lifecycle Engine", async (t) => {
 
       const updatedContent = readFileSync(join(repoDir, "calc.js"), "utf-8");
       assert.ok(updatedContent.includes("export function multiply"));
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("applySessionPatch --save succeeds without failing when patch targets an unrelated checkout", async () => {
+    const repoDir = createTempGitRepo();
+    try {
+      const unrelatedPatch = `diff --git a/fixture-only.js b/fixture-only.js
+--- a/fixture-only.js
++++ b/fixture-only.js
+@@ -1 +1,2 @@
+ export function fixture() {}
++export function extra() {}
+`;
+
+      const mockProvider = {
+        async getSession(id) {
+          return {
+            id,
+            raw: {
+              outputs: [
+                {
+                  changeSet: {
+                    gitPatch: {
+                      unidiffPatch: unrelatedPatch,
+                      baseCommitId: "deadbeefcafe",
+                      suggestedCommitMessage: "chore: update fixture",
+                    },
+                  },
+                },
+              ],
+            },
+          };
+        },
+        async listActivities() {
+          return { activities: [] };
+        },
+      };
+
+      // Save-only mode: save is requested, apply is false
+      const saveRes = await applySessionPatch("session-save-only", {
+        provider: mockProvider,
+        root: repoDir,
+        save: "saved-patch.diff",
+        apply: false,
+      });
+
+      assert.equal(saveRes.ok, true);
+      assert.equal(saveRes.patchApplied, false);
+      assert.equal(saveRes.checkPassed, false); // Does not cleanly apply to main checkout
+      assert.equal(saveRes.baseCommitId, "deadbeefcafe");
+      assert.equal(saveRes.suggestedCommitMessage, "chore: update fixture");
+      assert.equal(existsSync(join(repoDir, "saved-patch.diff")), true);
+      assert.equal(readFileSync(join(repoDir, "saved-patch.diff"), "utf-8"), unrelatedPatch);
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("applySessionPatch --apply fails safely when git apply --check fails", async () => {
+    const repoDir = createTempGitRepo();
+    try {
+      const unrelatedPatch = `diff --git a/nonexistent.js b/nonexistent.js
+--- a/nonexistent.js
++++ b/nonexistent.js
+@@ -1 +1,2 @@
+ export function none() {}
++export function fail() {}
+`;
+
+      const mockProvider = {
+        async getSession(id) {
+          return {
+            id,
+            raw: {
+              outputs: [
+                {
+                  changeSet: {
+                    gitPatch: {
+                      unidiffPatch: unrelatedPatch,
+                    },
+                  },
+                },
+              ],
+            },
+          };
+        },
+        async listActivities() {
+          return { activities: [] };
+        },
+      };
+
+      const applyRes = await applySessionPatch("session-apply-fail", {
+        provider: mockProvider,
+        root: repoDir,
+        apply: true,
+      });
+
+      assert.equal(applyRes.ok, false);
+      assert.equal(applyRes.patchApplied, false);
+      assert.equal(applyRes.checkPassed, false);
+      assert.ok(applyRes.error.includes("git apply --check failed"));
     } finally {
       rmSync(repoDir, { recursive: true, force: true });
     }
@@ -508,5 +778,11 @@ test("Jules Power-User Session Operations & Lifecycle Engine", async (t) => {
       encoding: "utf-8",
     });
     assert.ok(listText.includes("Sessions List"));
+
+    // 5. patch without session ID exits 1
+    assert.throws(
+      () => execFileSync(process.execPath, [cliPath, "patch"], { encoding: "utf-8", stdio: "pipe" }),
+      (err) => err.status === 1
+    );
   });
 });

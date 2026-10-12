@@ -132,11 +132,48 @@ export function extractFailureDiagnostics(activities) {
 }
 
 /**
+ * Extracts list of affected file paths from git unidiff headers.
+ *
+ * @param {string} patch
+ * @returns {Set<string>}
+ */
+export function extractFilesFromPatch(patch) {
+  const files = new Set();
+  if (!patch || typeof patch !== "string") return files;
+
+  // Header matching standard and quoted paths:
+  // diff --git a/path/to/file b/path/to/file
+  // diff --git "a/path/with spaces" "b/path/with spaces"
+  const headerRegex = /^diff --git (?:a\/(.+?)|"a\/(.+?)") (?:b\/(.+?)|"b\/(.+?)")\r?$/gm;
+  for (const m of patch.matchAll(headerRegex)) {
+    const fileB = (m[3] || m[4] || "").trim();
+    const fileA = (m[1] || m[2] || "").trim();
+    const candidate = fileB && fileB !== "/dev/null" ? fileB : fileA;
+    if (candidate) {
+      files.add(candidate.replace(/^["']|["']$/g, ""));
+    }
+  }
+
+  // Fallback pattern if non-standard diff --git format
+  if (files.size === 0) {
+    const simpleMatches = patch.matchAll(/^diff --git\s+a\/(.+?)\s+b\/(.+?)\r?$/gm);
+    for (const m of simpleMatches) {
+      const candidate = (m[2] !== "/dev/null" ? m[2] : m[1] || "").trim().replace(/^["']|["']$/g, "");
+      if (candidate) {
+        files.add(candidate);
+      }
+    }
+  }
+
+  return files;
+}
+
+/**
  * Extracts git diff patch, PR details, and modified files from a Jules session.
  *
  * @param {string} sessionId
  * @param {object} opts
- * @returns {Promise<{ ok: boolean, id: string, patch: string, pr: object|null, files: string[], error?: string }>}
+ * @returns {Promise<{ ok: boolean, id: string, patch: string, pr: object|null, files: string[], baseCommitId?: string|null, suggestedCommitMessage?: string|null, rawSession?: object, error?: string }>}
  */
 export async function extractSessionPatch(sessionId, opts = {}) {
   if (!sessionId || typeof sessionId !== "string") {
@@ -150,55 +187,164 @@ export async function extractSessionPatch(sessionId, opts = {}) {
   const activitiesRes = await provider.listActivities(sessionId, opts).catch(() => ({ activities: [] }));
   const activities = activitiesRes.activities || [];
 
-  let patch = "";
   let pr = null;
+  let baseCommitId = null;
+  let suggestedCommitMessage = null;
   const files = new Set();
 
-  // 1. Inspect session outputs
-  const outputs = session?.raw?.outputs || session?.outputs || [];
+  // 1. Inspect session outputs for canonical finalized output patch and metadata
+  const outputs = Array.isArray(session?.raw?.outputs)
+    ? session.raw.outputs
+    : Array.isArray(session?.outputs)
+      ? session.outputs
+      : [];
+
+  let canonicalPatch = "";
+  let fallbackOutputPatch = "";
+
   for (const out of outputs) {
+    if (!out || typeof out !== "object") continue;
+
     if (out.pullRequest) {
       pr = out.pullRequest;
     }
-    if (out.gitPatch || out.patch || out.diff) {
-      patch = out.gitPatch || out.patch || out.diff;
+
+    const gitPatch = out.changeSet?.gitPatch || (typeof out.gitPatch === "object" && out.gitPatch !== null ? out.gitPatch : null);
+    if (gitPatch) {
+      if (!baseCommitId && typeof gitPatch.baseCommitId === "string" && gitPatch.baseCommitId.trim()) {
+        baseCommitId = gitPatch.baseCommitId.trim();
+      }
+      if (!suggestedCommitMessage && typeof gitPatch.suggestedCommitMessage === "string" && gitPatch.suggestedCommitMessage.trim()) {
+        suggestedCommitMessage = gitPatch.suggestedCommitMessage.trim();
+      }
+      if (!canonicalPatch && typeof gitPatch.unidiffPatch === "string" && gitPatch.unidiffPatch.trim()) {
+        canonicalPatch = gitPatch.unidiffPatch;
+      }
+    }
+
+    if (!fallbackOutputPatch) {
+      const directPatch =
+        (typeof out.gitPatch === "string" ? out.gitPatch : "") ||
+        (typeof out.patch === "string" ? out.patch : "") ||
+        (typeof out.diff === "string" ? out.diff : "");
+      if (directPatch.trim()) {
+        fallbackOutputPatch = directPatch;
+      }
     }
   }
 
-  // 2. Inspect activity artifacts and logs if patch wasn't in top-level output
-  for (const act of activities) {
-    if (act.pullRequest) pr = act.pullRequest;
-    if (act.gitPatch || act.patch || act.diff || act.changeSet?.gitPatch?.unidiffPatch) {
-      patch = patch || act.gitPatch || act.patch || act.diff || act.changeSet?.gitPatch?.unidiffPatch;
+  // Also inspect top-level session changeSet if outputs didn't provide one
+  const topChangeSet = session?.raw?.changeSet?.gitPatch || session?.changeSet?.gitPatch;
+  if (topChangeSet && typeof topChangeSet === "object") {
+    if (!baseCommitId && typeof topChangeSet.baseCommitId === "string" && topChangeSet.baseCommitId.trim()) {
+      baseCommitId = topChangeSet.baseCommitId.trim();
     }
-    const artifactList = [
-      ...(Array.isArray(act.artifacts) ? act.artifacts : []),
-      ...(Array.isArray(act.artifactsCreated?.artifacts) ? act.artifactsCreated.artifacts : []),
-    ];
-    for (const art of artifactList) {
-      const artPatch =
-        art.patch ||
-        art.diff ||
-        art.changeSet?.gitPatch?.unidiffPatch ||
-        art.gitPatch?.unidiffPatch ||
-        (typeof art.content === "string" && art.content.startsWith("diff --git") ? art.content : "");
-      if (artPatch) {
-        patch = patch || artPatch;
-      }
-      if (art.path || art.filename) {
-        files.add(art.path || art.filename);
-      }
+    if (!suggestedCommitMessage && typeof topChangeSet.suggestedCommitMessage === "string" && topChangeSet.suggestedCommitMessage.trim()) {
+      suggestedCommitMessage = topChangeSet.suggestedCommitMessage.trim();
     }
-    if (act.changedFiles && Array.isArray(act.changedFiles)) {
-      act.changedFiles.forEach((f) => files.add(f));
+    if (!canonicalPatch && typeof topChangeSet.unidiffPatch === "string" && topChangeSet.unidiffPatch.trim()) {
+      canonicalPatch = topChangeSet.unidiffPatch;
     }
   }
 
-  // Extract changed files from patch headers if files set is empty
-  if (patch && files.size === 0) {
-    const fileMatches = patch.matchAll(/^diff --git a\/(.+?) b\/(.+?)$/gm);
-    for (const m of fileMatches) {
-      files.add(m[2]);
+  let patch = canonicalPatch || fallbackOutputPatch;
+
+  if (patch) {
+    // Canonical finalized patch selected from session outputs.
+    // 1. Authoritative for patch bytes.
+    // 2. Changed files derived strictly from diff headers.
+    // 3. Activity scratch artifacts (.orig, temporary test files) do NOT contaminate the file list.
+    for (const f of extractFilesFromPatch(patch)) {
+      files.add(f);
+    }
+
+    // 4. Activities remain metadata/diagnostic providers only (e.g. PR metadata or base commit evidence if missing)
+    for (const act of activities) {
+      if (!act || typeof act !== "object") continue;
+      if (!pr && act.pullRequest) {
+        pr = act.pullRequest;
+      }
+      const actGitPatch = act.changeSet?.gitPatch || (typeof act.gitPatch === "object" && act.gitPatch !== null ? act.gitPatch : null);
+      if (actGitPatch) {
+        if (!baseCommitId && typeof actGitPatch.baseCommitId === "string" && actGitPatch.baseCommitId.trim()) {
+          baseCommitId = actGitPatch.baseCommitId.trim();
+        }
+        if (!suggestedCommitMessage && typeof actGitPatch.suggestedCommitMessage === "string" && actGitPatch.suggestedCommitMessage.trim()) {
+          suggestedCommitMessage = actGitPatch.suggestedCommitMessage.trim();
+        }
+      }
+    }
+  } else {
+    // Fallback: inspect activity artifacts and logs when no usable finalized output patch exists
+    for (const act of activities) {
+      if (!act || typeof act !== "object") continue;
+      if (act.pullRequest && !pr) pr = act.pullRequest;
+
+      const actGitPatch = act.changeSet?.gitPatch || (typeof act.gitPatch === "object" && act.gitPatch !== null ? act.gitPatch : null);
+      if (actGitPatch) {
+        if (!baseCommitId && typeof actGitPatch.baseCommitId === "string" && actGitPatch.baseCommitId.trim()) {
+          baseCommitId = actGitPatch.baseCommitId.trim();
+        }
+        if (!suggestedCommitMessage && typeof actGitPatch.suggestedCommitMessage === "string" && actGitPatch.suggestedCommitMessage.trim()) {
+          suggestedCommitMessage = actGitPatch.suggestedCommitMessage.trim();
+        }
+        if (!patch && typeof actGitPatch.unidiffPatch === "string" && actGitPatch.unidiffPatch.trim()) {
+          patch = actGitPatch.unidiffPatch;
+        }
+      }
+
+      if (!patch) {
+        const directActPatch =
+          (typeof act.gitPatch === "string" ? act.gitPatch : "") ||
+          (typeof act.patch === "string" ? act.patch : "") ||
+          (typeof act.diff === "string" ? act.diff : "");
+        if (directActPatch.trim()) {
+          patch = directActPatch;
+        }
+      }
+
+      const artifactList = [
+        ...(Array.isArray(act.artifacts) ? act.artifacts : []),
+        ...(Array.isArray(act.artifactsCreated?.artifacts) ? act.artifactsCreated.artifacts : []),
+      ];
+      for (const art of artifactList) {
+        if (!art || typeof art !== "object") continue;
+
+        const artGitPatch = art.changeSet?.gitPatch || (typeof art.gitPatch === "object" && art.gitPatch !== null ? art.gitPatch : null);
+        if (artGitPatch) {
+          if (!baseCommitId && typeof artGitPatch.baseCommitId === "string" && artGitPatch.baseCommitId.trim()) {
+            baseCommitId = artGitPatch.baseCommitId.trim();
+          }
+          if (!suggestedCommitMessage && typeof artGitPatch.suggestedCommitMessage === "string" && artGitPatch.suggestedCommitMessage.trim()) {
+            suggestedCommitMessage = artGitPatch.suggestedCommitMessage.trim();
+          }
+          if (!patch && typeof artGitPatch.unidiffPatch === "string" && artGitPatch.unidiffPatch.trim()) {
+            patch = artGitPatch.unidiffPatch;
+          }
+        }
+
+        const artPatch =
+          (!patch && typeof art.patch === "string" ? art.patch : "") ||
+          (!patch && typeof art.diff === "string" ? art.diff : "") ||
+          (!patch && typeof art.content === "string" && art.content.startsWith("diff --git") ? art.content : "");
+        if (artPatch) {
+          patch = artPatch;
+        }
+        if (art.path || art.filename) {
+          files.add(art.path || art.filename);
+        }
+      }
+
+      if (act.changedFiles && Array.isArray(act.changedFiles)) {
+        act.changedFiles.forEach((f) => files.add(f));
+      }
+    }
+
+    // Extract changed files from patch headers if files set is empty
+    if (patch && files.size === 0) {
+      for (const f of extractFilesFromPatch(patch)) {
+        files.add(f);
+      }
     }
   }
 
@@ -208,7 +354,9 @@ export async function extractSessionPatch(sessionId, opts = {}) {
     patch: patch ? (patch.endsWith("\n") ? patch : patch + "\n") : "",
     pr,
     files: Array.from(files),
-    rawSession: session.raw,
+    baseCommitId: baseCommitId || null,
+    suggestedCommitMessage: suggestedCommitMessage || null,
+    rawSession: session?.raw,
   };
 }
 
@@ -217,7 +365,7 @@ export async function extractSessionPatch(sessionId, opts = {}) {
  *
  * @param {string} sessionId
  * @param {object} opts
- * @returns {Promise<{ ok: boolean, patchApplied: boolean, checkPassed: boolean, patch: string, files: string[], error?: string }>}
+ * @returns {Promise<{ ok: boolean, patchApplied: boolean, checkPassed: boolean, patch: string, files: string[], baseCommitId?: string|null, suggestedCommitMessage?: string|null, error?: string }>}
  */
 /**
  * Fetch a session patch with argument validation at the boundary.
@@ -259,13 +407,28 @@ export async function applySessionPatch(sessionId, opts = {}) {
       checkPassed: false,
       patch: "",
       files: res.files || [],
+      baseCommitId: res.baseCommitId || null,
+      suggestedCommitMessage: res.suggestedCommitMessage || null,
       error: "No git patch found in session output or activities.",
     };
   }
 
   if (opts.save) {
-    const savePath = resolve(root, opts.save);
-    writeFileSync(savePath, res.patch, "utf-8");
+    try {
+      const savePath = resolve(root, opts.save);
+      writeFileSync(savePath, res.patch, "utf-8");
+    } catch (err) {
+      return {
+        ok: false,
+        patchApplied: false,
+        checkPassed: false,
+        patch: res.patch,
+        files: res.files,
+        baseCommitId: res.baseCommitId || null,
+        suggestedCommitMessage: res.suggestedCommitMessage || null,
+        error: `Failed to save patch to ${opts.save}: ${err.message}`,
+      };
+    }
   }
 
   // 1. Dry run: git apply --check
@@ -274,8 +437,23 @@ export async function applySessionPatch(sessionId, opts = {}) {
     input: res.patch,
     encoding: "utf-8",
   });
+  const checkPassed = checkRes.status === 0;
 
-  if (checkRes.status !== 0) {
+  // Save-only mode: when saving without applying, the primary operation is retrieval and persistence.
+  // Do not fail extraction merely because the patch targets a revision different from the caller's working tree.
+  if (opts.save && !opts.apply) {
+    return {
+      ok: true,
+      patchApplied: false,
+      checkPassed,
+      patch: res.patch,
+      files: res.files,
+      baseCommitId: res.baseCommitId || null,
+      suggestedCommitMessage: res.suggestedCommitMessage || null,
+    };
+  }
+
+  if (!checkPassed) {
     const stderr = (checkRes.stderr || "").trim();
     return {
       ok: false,
@@ -283,6 +461,8 @@ export async function applySessionPatch(sessionId, opts = {}) {
       checkPassed: false,
       patch: res.patch,
       files: res.files,
+      baseCommitId: res.baseCommitId || null,
+      suggestedCommitMessage: res.suggestedCommitMessage || null,
       error: `git apply --check failed: ${stderr || "Patch does not cleanly apply to working directory"}`,
     };
   }
@@ -315,6 +495,8 @@ export async function applySessionPatch(sessionId, opts = {}) {
         checkPassed: true,
         patch: res.patch,
         files: res.files,
+        baseCommitId: res.baseCommitId || null,
+        suggestedCommitMessage: res.suggestedCommitMessage || null,
         error: `git apply failed: ${stderr}`,
       };
     }
@@ -325,6 +507,8 @@ export async function applySessionPatch(sessionId, opts = {}) {
       checkPassed: true,
       patch: res.patch,
       files: res.files,
+      baseCommitId: res.baseCommitId || null,
+      suggestedCommitMessage: res.suggestedCommitMessage || null,
     };
   }
 
@@ -334,6 +518,8 @@ export async function applySessionPatch(sessionId, opts = {}) {
     checkPassed: true,
     patch: res.patch,
     files: res.files,
+    baseCommitId: res.baseCommitId || null,
+    suggestedCommitMessage: res.suggestedCommitMessage || null,
   };
 }
 
