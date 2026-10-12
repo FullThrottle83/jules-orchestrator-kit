@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { runCmd, buildVerificationEnv } from "./git.mjs";
 import { resolveVerify } from "./config.mjs";
 import { computeOscillation, recordVerifyRun } from "./flaky-ledger.mjs";
 
@@ -34,27 +34,19 @@ export function runStabilityProbe(testCmd, options = {}) {
     let stdout = "";
     let stderr = "";
 
-    try {
-      const env = { ...process.env };
-      for (const k of Object.keys(env)) {
-        if (k.startsWith("NODE_TEST_") || k.startsWith("NODE_CHANNEL_")) {
-          delete env[k];
-        }
-      }
-
-      stdout = execSync(cmd, {
-        cwd: root,
-        env,
-        timeout: timeoutMs,
-        stdio: ["ignore", "pipe", "pipe"],
-        encoding: "utf-8",
-      });
-      pass = true;
+    const res = runCmd(cmd, {
+      cwd: root,
+      env: buildVerificationEnv(),
+      timeout: timeoutMs,
+      ignoreError: true,
+    });
+    pass = res.status === 0;
+    exitCode = res.status;
+    stdout = res.stdout || "";
+    stderr = res.stderr || "";
+    if (pass) {
       passes++;
-    } catch (err) {
-      exitCode = err.status || 1;
-      stdout = err.stdout ? String(err.stdout) : "";
-      stderr = err.stderr ? String(err.stderr) : err.message;
+    } else {
       failures++;
     }
 
