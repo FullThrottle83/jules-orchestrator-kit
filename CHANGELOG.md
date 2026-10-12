@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.8] - 2026-10-12
+
+### Fixed
+- **Project Dependency Gitignore Automation (`src/scaffold.mjs`, `bin/agentctl.mjs`)**: Automatically ensured `node_modules/` is added to `.gitignore` when initializing a Node repository if not already ignored, placing project dependency ignore rules outside the kit runtime state block so they persist through kit uninstallation.
+- **Untracked Dependency Directory Preflight Bypass (`src/git.mjs`, `src/wizard-task.mjs`)**: Filtered untracked dependencies in `node_modules/`, `.venv/`, `venv/`, `target/`, and `.pytest_cache/` from `realViolations` and included them in `untrackedOnboardingArtifacts`, preventing fresh repository initializations from falsely aborting `agentctl task new` with Exit 3 scope violation errors.
+- **Monorepo Workspace Dependency Symlinking in Snapshot Materialization (`src/git.mjs`)**: Enhanced `materializeSnapshot` with `findWorkspaceDependencyDirs` to discover and symlink monorepo subpackage dependency directories (`packages/*/node_modules`, `apps/*/node_modules`, etc.) up to depth 3, ensuring sandboxed verification operates seamlessly in monorepos and pnpm workspaces.
+
 ## [0.75.7] - 2026-10-11
 
 ### Fixed
