@@ -21,7 +21,12 @@ function createMockServer(handler) {
       const port = server.address().port;
       resolve({
         url: `http://127.0.0.1:${port}`,
-        close: () => new Promise((done) => server.close(done)),
+        close: () => {
+          if (typeof server.closeAllConnections === "function") {
+            server.closeAllConnections();
+          }
+          return new Promise((done) => server.close(done));
+        },
       });
     });
   });

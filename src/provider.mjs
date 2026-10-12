@@ -38,7 +38,7 @@ async function attemptSessionReconciliation(provider, data, startTime, timeoutMs
   try {
     const listRes = await provider.listSessions({
       pageSize: 10,
-      timeoutMs: Math.min(10_000, timeoutMs),
+      timeoutMs: Number(opts.probeTimeoutMs ?? 10_000),
       tokenPool: opts.tokenPool,
       allowLegacyKey: opts.allowLegacyKey,
     });
