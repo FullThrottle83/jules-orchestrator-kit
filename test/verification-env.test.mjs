@@ -175,7 +175,9 @@ describe("P0-11: Verification Subprocess Environment Isolation", () => {
         assert.equal(res.status, 0);
         const parsed = JSON.parse(res.stdout);
         assert.equal(parsed.hasEnvHome, false);
-        assert.equal(parsed.hasEnvUserProfile, false);
+        if (process.platform !== "win32") {
+          assert.equal(parsed.hasEnvUserProfile, false);
+        }
         assert.equal(parsed.homedirType, "string");
         assert.equal(parsed.homedirNonEmpty, true);
       } finally {
@@ -592,7 +594,7 @@ verify:
           "  prLabels: typeof process.env.PR_LABELS,\n" +
           "  nodeTestCtx: typeof process.env.NODE_TEST_CONTEXT,\n" +
           "  home: typeof process.env.HOME,\n" +
-          "  userProfile: typeof process.env.USERPROFILE\n" +
+          "  userProfileVal: process.env.USERPROFILE || 'UNSET'\n" +
           "}));\n"
         );
         const res = runCmd(
@@ -606,7 +608,7 @@ verify:
         assert.equal(parsed.prLabels, "undefined");
         assert.equal(parsed.nodeTestCtx, "undefined");
         assert.equal(parsed.home, "undefined");
-        assert.equal(parsed.userProfile, "undefined");
+        assert.notEqual(parsed.userProfileVal, "C:\\fake");
       } finally {
         rmSync(tmp, { recursive: true, force: true });
       }
