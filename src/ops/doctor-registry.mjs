@@ -56,6 +56,36 @@ import {
  */
 
 /**
+ * Evaluate whether a Node.js version string meets minimum engine requirements (>=22.0.0).
+ * @param {string} [nodeVersion=process.version]
+ * @returns {DiagnosticResult}
+ */
+export function evaluateNodeRuntime(nodeVersion = process.version) {
+  const cleanVersion = String(nodeVersion).replace(/^v/, "");
+  const nodeMajor = parseInt(cleanVersion.split(".")[0], 10);
+  if (nodeMajor >= 22) {
+    return {
+      id: "runtime.node",
+      category: "System",
+      title: "Node.js Engine Version",
+      status: "pass",
+      severity: "info",
+      summary: `Node.js ${nodeVersion} satisfies runtime requirements (v22+)`,
+      evidence: [{ label: "nodeVersion", value: nodeVersion, sensitive: false }],
+    };
+  }
+  return {
+    id: "runtime.node",
+    category: "System",
+    title: "Node.js Engine Version",
+    status: "fail",
+    severity: "critical",
+    summary: `Node.js ${nodeVersion} is below required minimum v22.0.0`,
+    evidence: [{ label: "nodeVersion", value: nodeVersion, sensitive: false }],
+  };
+}
+
+/**
  * Compute SHA-256 report hash for DoctorReport.
  * @param {Omit<DoctorReport, "reportHash">} report
  * @returns {string}
@@ -102,28 +132,7 @@ export async function runDoctorChecks(options = {}) {
   // 1. System Checks
   // runtime.node
   const nodeVersion = process.version;
-  const nodeMajor = parseInt(nodeVersion.slice(1).split(".")[0], 10);
-  if (nodeMajor >= 20) {
-    addResult({
-      id: "runtime.node",
-      category: "System",
-      title: "Node.js Engine Version",
-      status: "pass",
-      severity: "info",
-      summary: `Node.js ${nodeVersion} satisfies runtime requirements (v20+)`,
-      evidence: [{ label: "nodeVersion", value: nodeVersion, sensitive: false }],
-    });
-  } else {
-    addResult({
-      id: "runtime.node",
-      category: "System",
-      title: "Node.js Engine Version",
-      status: "fail",
-      severity: "critical",
-      summary: `Node.js ${nodeVersion} is below required minimum v20.0.0`,
-      evidence: [{ label: "nodeVersion", value: nodeVersion, sensitive: false }],
-    });
-  }
+  addResult(evaluateNodeRuntime(nodeVersion));
 
   // runtime.git
   let gitPassed = false;

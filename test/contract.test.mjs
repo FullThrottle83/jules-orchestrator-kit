@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { evaluateNodeRuntime } from "../src/ops/doctor-registry.mjs";
 
 describe("Jules Workflow & Provider Documentation Contracts", () => {
   const rootDir = process.cwd();
@@ -129,5 +130,60 @@ describe("Jules Workflow & Provider Documentation Contracts", () => {
       /branch protection/i.test(content) && /authenticated/i.test(content),
       "docs/jules-workflow.md must identify branch protection and Reactive Mode as authenticated settings outside this task"
     );
+  });
+});
+
+describe("Node.js Runtime Baseline Contract (>=22.0.0)", () => {
+  const rootDir = process.cwd();
+
+  it("package.json requires node engine >=22.0.0", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf-8"));
+    assert.equal(pkg.engines?.node, ">=22.0.0");
+  });
+
+  it("evaluateNodeRuntime accepts Node >=22 and reports pass", () => {
+    for (const v of ["v22.0.0", "v22.14.0", "v24.0.0", "22.0.0", "24.2.0"]) {
+      const res = evaluateNodeRuntime(v);
+      assert.equal(res.status, "pass", `expected ${v} to pass`);
+      assert.equal(res.severity, "info");
+      assert.match(res.summary, /satisfies runtime requirements \(v22\+\)/);
+    }
+  });
+
+  it("evaluateNodeRuntime rejects Node <22 and reports critical failure", () => {
+    for (const v of ["v20.0.0", "v20.11.0", "v21.0.0", "v18.19.0", "20.18.0", "21.6.0"]) {
+      const res = evaluateNodeRuntime(v);
+      assert.equal(res.status, "fail", `expected ${v} to fail`);
+      assert.equal(res.severity, "critical");
+      assert.match(res.summary, /is below required minimum v22\.0\.0/);
+    }
+  });
+
+  it("CI workflow jules-audit.yml tests 22.x and 24.x, excluding 20.x", () => {
+    const auditWf = fs.readFileSync(path.join(rootDir, ".github", "workflows", "jules-audit.yml"), "utf-8");
+    assert.match(auditWf, /node-version:\s*\[['"]22\.x['"],\s*['"]24\.x['"]\]/);
+    assert.doesNotMatch(auditWf, /20\.x/);
+  });
+
+  it("setup-jules composite action defaults to >=22.0.0", () => {
+    const actionYaml = fs.readFileSync(path.join(rootDir, ".github", "actions", "setup-jules", "action.yml"), "utf-8");
+    assert.match(actionYaml, /default:\s*['"]>=22\.0\.0['"]/);
+  });
+
+  it("README.md documents Node.js 22+ as the runtime baseline", () => {
+    const readme = fs.readFileSync(path.join(rootDir, "README.md"), "utf-8");
+    assert.match(readme, /Node\.js 22\+/);
+    assert.doesNotMatch(readme, /Node\.js 20\+/);
+  });
+
+  it("scripts/doc-sync-check.mjs records doctor-registry foreign version 22.0.0", () => {
+    const docSync = fs.readFileSync(path.join(rootDir, "scripts", "doc-sync-check.mjs"), "utf-8");
+    assert.match(docSync, /file:\s*["']src\/ops\/doctor-registry\.mjs["'],\s*value:\s*["']22\.0\.0["']/);
+  });
+
+  it("bug report issue template prompts for Node 22 examples", () => {
+    const bugTemplate = fs.readFileSync(path.join(rootDir, ".github", "ISSUE_TEMPLATE", "bug_report.md"), "utf-8");
+    assert.match(bugTemplate, /placeholder:\s*["']v22\.x["']/);
+    assert.doesNotMatch(bugTemplate, /v20\.x/);
   });
 });

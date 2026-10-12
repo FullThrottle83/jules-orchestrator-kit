@@ -35,12 +35,8 @@ const testFiles = readdirSync(testDir)
 // two orders of magnitude of headroom and only ever fires on a real hang.
 const timeoutMs = Number(process.env.JULES_TEST_TIMEOUT_MS) || 180_000;
 
-// `--test-timeout` landed in Node 20.6. package.json engines allows >=20.0.0,
-// and an unrecognised flag makes Node abort before running anything — so on an
-// older runtime the suite runs without the deadline rather than not at all.
-const [major, minor] = process.versions.node.split(".").map(Number);
-const supportsTestTimeout = major > 20 || (major === 20 && minor >= 6);
-const timeoutArgs = supportsTestTimeout ? [`--test-timeout=${timeoutMs}`] : [];
+// Native test-runner timeout and concurrency flags are supported on Node >=22.0.0.
+const timeoutArgs = [`--test-timeout=${timeoutMs}`];
 
 // Node runs one test file per core by default. Several suites here spawn a
 // verification command of their own — `npm test`, and in the monorepo fixtures
@@ -58,7 +54,7 @@ const envConcurrency = Number(process.env.JULES_TEST_CONCURRENCY);
 const concurrency = Number.isFinite(envConcurrency) && envConcurrency > 0
   ? Math.floor(envConcurrency)
   : Math.max(2, Math.floor(cpuCount / 2));
-const concurrencyArgs = supportsTestTimeout ? [`--test-concurrency=${concurrency}`] : [];
+const concurrencyArgs = [`--test-concurrency=${concurrency}`];
 
 // The runner leads its own process group, and nothing outlives it.
 //

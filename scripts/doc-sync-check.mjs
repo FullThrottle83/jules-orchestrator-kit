@@ -83,7 +83,7 @@ function readIfExists(path) {
  * drift can never slip through by resembling one of these.
  */
 const FOREIGN_VERSIONS = [
-  { file: "src/ops/doctor-registry.mjs", value: "20.0.0", why: "minimum supported Node.js runtime" },
+  { file: "src/ops/doctor-registry.mjs", value: "22.0.0", why: "minimum supported Node.js runtime" },
   { file: "src/ops/ide-scaffold.mjs", value: "2.0.0", why: "VS Code tasks.json schema version" },
   { file: "src/version.mjs", value: "0.0.0", why: "documented fallback when package.json is absent" },
 ];

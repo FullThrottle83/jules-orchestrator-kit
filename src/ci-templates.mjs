@@ -86,8 +86,8 @@ export function buildCiWorkflow(opts = {}) {
   const setupSummary = toolchain ? toolchain.label : "Node only";
 
   if (target === "gitlab") {
-    const image = toolchain?.gl || "node:20";
-    const needsNode = image !== "node:20" && !image.startsWith("node");
+    const image = toolchain?.gl || "node:22";
+    const needsNode = image !== "node:22" && !image.startsWith("node");
     const content = `${HEADER(stackId, version)}
 agent-gate:
   image: ${image}
@@ -140,7 +140,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 ${extraSteps ? extraSteps + "\n" : ""}
       - name: Run agent safety gate
         run: npx --yes jules-orchestrator-kit check --mode committed --base "origin/${base}"
@@ -265,7 +265,7 @@ jobs:
         if: steps.pr.outputs.found == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Verify safety gate from base
         if: steps.pr.outputs.found == 'true'
