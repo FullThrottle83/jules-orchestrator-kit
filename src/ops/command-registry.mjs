@@ -993,11 +993,13 @@ export const COMMAND_REGISTRY = [
     shortcuts: ["approve", "plan"],
     examples: [
       "agentctl plan approve <sessionId>",
+      "agentctl plan approve <sessionId> --expected-plan <planId>",
       "agentctl plan approve <sessionId> --dry-run",
       "agentctl approve <sessionId>",
     ],
     flags: [
       { name: "dry-run", type: "boolean", description: "Simulate plan approval (-d)" },
+      { name: "expected-plan", type: "string", description: "Verify active plan ID before approving to prevent plan races" },
       { name: "json", type: "boolean", description: "Output structured JSON result (-j)" },
     ],
   },

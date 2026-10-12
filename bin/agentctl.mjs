@@ -2830,6 +2830,7 @@ async function main() {
           options: {
             "dry-run": { type: "boolean", short: "d" },
             json: { type: "boolean", short: "j" },
+            "expected-plan": { type: "string" },
           },
           allowPositionals: true,
         });
@@ -2841,12 +2842,19 @@ async function main() {
         const { createProvider } = await import("../src/provider.mjs");
         const provider = createProvider(config.provider || "jules", config);
         try {
-          const res = await provider.approvePlan(targetSessionId, { root, dryRun: values["dry-run"] });
+          const res = await provider.approvePlan(targetSessionId, {
+            root,
+            dryRun: values["dry-run"],
+            expectedPlanId: values["expected-plan"],
+          });
           if (values.json) {
             console.log(JSON.stringify(res, null, 2));
           } else {
             console.log(values["dry-run"] ? `\n[DRY-RUN] Plan Approved Successfully (Simulation)!` : `\n✅ Plan Approved Successfully!`);
             console.log(`   Session ID : ${res.id}`);
+            if (values["expected-plan"] || res.planId) {
+              console.log(`   Plan ID    : ${res.planId || values["expected-plan"]}`);
+            }
             console.log(`   Status     : ${res.status}\n`);
           }
           process.exit(0);
@@ -2866,6 +2874,7 @@ async function main() {
         options: {
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
+          "expected-plan": { type: "string" },
         },
         allowPositionals: true,
       });
@@ -2877,12 +2886,19 @@ async function main() {
       const { createProvider } = await import("../src/provider.mjs");
       const provider = createProvider(config.provider || "jules", config);
       try {
-        const res = await provider.approvePlan(targetSessionId, { root, dryRun: values["dry-run"] });
+        const res = await provider.approvePlan(targetSessionId, {
+          root,
+          dryRun: values["dry-run"],
+          expectedPlanId: values["expected-plan"],
+        });
         if (values.json) {
           console.log(JSON.stringify(res, null, 2));
         } else {
           console.log(values["dry-run"] ? `\n[DRY-RUN] Plan Approved Successfully (Simulation)!` : `\n✅ Plan Approved Successfully!`);
           console.log(`   Session ID : ${res.id}`);
+          if (values["expected-plan"] || res.planId) {
+            console.log(`   Plan ID    : ${res.planId || values["expected-plan"]}`);
+          }
           console.log(`   Status     : ${res.status}\n`);
         }
         process.exit(0);

@@ -11,6 +11,77 @@ import { resolveWindowsSpawn, resolveGitRemoteOrigin } from "./git.mjs";
 // harmless) escalation to the primary provider rather than a missed one.
 const SYNTAX_CHECKABLE_EXTS = new Set([".js", ".mjs", ".cjs"]);
 
+export class ProviderAmbiguousOutcomeError extends Error {
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = "ProviderAmbiguousOutcomeError";
+    this.status = opts.status || 504;
+    this.operation = opts.operation || "dispatch";
+    this.candidates = Array.isArray(opts.candidates) ? opts.candidates : [];
+  }
+}
+
+export class PlanMismatchError extends Error {
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = "PlanMismatchError";
+    this.expectedPlanId = opts.expectedPlanId;
+    this.actualPlanId = opts.actualPlanId;
+  }
+}
+
+/**
+ * Reconciles remote session creation outcome after a network timeout on mutating POST.
+ * Probes recent sessions via listSessions() to detect whether the session actually landed.
+ */
+async function attemptSessionReconciliation(provider, data, startTime, timeoutMs, opts = {}) {
+  try {
+    const listRes = await provider.listSessions({
+      pageSize: 10,
+      timeoutMs: Math.min(10_000, timeoutMs),
+      tokenPool: opts.tokenPool,
+      allowLegacyKey: opts.allowLegacyKey,
+    });
+    const sessions = Array.isArray(listRes?.sessions) ? listRes.sessions : [];
+    if (sessions.length === 0) {
+      return { notFound: true };
+    }
+
+    const expectedTitle = data?.title || "";
+    const expectedBranch = data?.branch || data?.sourceContext?.githubRepoContext?.startingBranch || "";
+    const windowStart = startTime - 30_000;
+    const windowEnd = Date.now() + 10_000;
+
+    const candidates = sessions.filter((s) => {
+      if (s.createTime) {
+        const cTime = Date.parse(s.createTime);
+        if (!isNaN(cTime) && (cTime < windowStart || cTime > windowEnd)) {
+          return false;
+        }
+      }
+      if (expectedTitle && s.title !== expectedTitle) {
+        return false;
+      }
+      if (expectedBranch && s.sourceContext?.githubRepoContext?.startingBranch) {
+        if (s.sourceContext.githubRepoContext.startingBranch !== expectedBranch) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (candidates.length === 1) {
+      return { recovered: true, session: candidates[0] };
+    }
+    if (candidates.length === 0) {
+      return { notFound: true };
+    }
+    return { ambiguous: true, candidates };
+  } catch (err) {
+    return { error: err };
+  }
+}
+
 /**
  * Lists working-tree files (relative paths) touched since the last commit,
  * limited to JS extensions node --check can parse. Deleted files are
@@ -372,6 +443,7 @@ export function createProvider(spec = "jules", config = {}) {
         return {
           id: "dry-run-session-id",
           status: "pending",
+          kind: providerSpec.type === "exec" ? "local-result" : "remote-session",
           title: data.title,
           provider: providerSpec.name,
           data: {
@@ -431,6 +503,7 @@ export function createProvider(spec = "jules", config = {}) {
             body = JSON.stringify(bodyObj);
           }
 
+          const dispatchStartTime = Date.now();
           const requestedTimeout = Number(ctx.timeoutMs ?? config.timeoutMs ?? providerSpec.timeoutMs ?? 120_000);
           const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 120_000;
           let res;
@@ -443,9 +516,48 @@ export function createProvider(spec = "jules", config = {}) {
             });
           } catch (err) {
             if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
-              throw new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, {
+              if (providerSpec.name === "jules" && ctx.reconcile !== false && !ctx.dryRun) {
+                const rec = await attemptSessionReconciliation(this, data, dispatchStartTime, timeoutMs, {
+                  tokenPool: pool,
+                  allowLegacyKey: ctx.allowLegacyKey,
+                }).catch((recErr) => ({
+                  error: recErr,
+                }));
+
+                if (rec && rec.recovered) {
+                  pool.recordUsage(rawToken);
+                  return {
+                    id: rec.session.id || rec.session.name || "http-session",
+                    status: rec.session.state || "active",
+                    kind: "remote-session",
+                    provider: providerSpec.name,
+                    raw: rec.session,
+                    _reconciled: true,
+                  };
+                }
+
+                if (rec && rec.ambiguous) {
+                  throw new ProviderAmbiguousOutcomeError(
+                    `Provider mutation timed out after ${timeoutMs}ms and session reconciliation was ambiguous (${rec.candidates.length} candidates found). Manual verification required.`,
+                    { status: 504, operation: "dispatch", candidates: rec.candidates }
+                  );
+                }
+
+                if (rec && rec.error) {
+                  throw new ProviderAmbiguousOutcomeError(
+                    `Provider mutation timed out after ${timeoutMs}ms and reconciliation probe failed: ${rec.error.message}`,
+                    { status: 504, operation: "dispatch" }
+                  );
+                }
+              }
+
+              lastError = new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, {
                 status: 504,
               });
+              if (pool.size > 1 && attempt < maxAttempts - 1) {
+                continue;
+              }
+              throw lastError;
             }
             throw err;
           }
@@ -541,6 +653,8 @@ export function createProvider(spec = "jules", config = {}) {
           return {
             id: json.id || json.name || "http-session",
             status: json.state || "active",
+            kind: "remote-session",
+            provider: providerSpec.name,
             raw: json,
           };
         }
@@ -584,6 +698,8 @@ export function createProvider(spec = "jules", config = {}) {
         return {
           id: "exec-session-" + Date.now(),
           status: "completed",
+          kind: "local-result",
+          provider: providerSpec.name,
           output: res.stdout || "",
         };
       }
@@ -705,12 +821,17 @@ export function createProvider(spec = "jules", config = {}) {
           id: json.id || json.name || sessionId,
           status: json.state || "active",
           resumed: true,
+          kind: "remote-session",
+          provider: providerSpec.name,
           raw: json,
         };
       }
 
       if (providerSpec.type === "exec") {
-        return this.dispatch({ ...(task || {}), prompt }, ctx);
+        if (!sessionId || !sessionId.startsWith("exec-session-")) {
+          throw new Error(`Provider "${providerSpec.name}" is a local execution provider (local-result) and cannot resume remote session "${sessionId}".`);
+        }
+        throw new Error(`Session "${sessionId}" completed locally (local-result) and cannot be resumed. Dispatch a new task instead.`);
       }
 
       throw new Error(`Unsupported provider type: ${providerSpec.type}`);
@@ -846,7 +967,10 @@ export function createProvider(spec = "jules", config = {}) {
       }
 
       if (providerSpec.type === "exec") {
-        return { id: sessionId, status: "completed" };
+        if (!sessionId || !sessionId.startsWith("exec-session-")) {
+          throw new Error(`Provider "${providerSpec.name}" is a local execution provider (local-result) and cannot inspect remote session "${sessionId}".`);
+        }
+        return { id: sessionId, status: "completed", kind: "local-result", provider: providerSpec.name };
       }
 
       throw new Error(`Unsupported provider type: ${providerSpec.type}`);
@@ -857,6 +981,31 @@ export function createProvider(spec = "jules", config = {}) {
         throw new TypeError("approvePlan() requires a valid sessionId string");
       }
       if (!ctx || typeof ctx !== "object") ctx = {};
+
+      if (providerSpec.type === "exec") {
+        throw new Error(`Provider "${providerSpec.name}" is a local execution provider (local-result) and does not support remote plan approval.`);
+      }
+
+      if (ctx.expectedPlanId && !ctx.dryRun) {
+        const actRes = await this.listActivities(sessionId, ctx).catch(() => ({ activities: [] }));
+        const activities = Array.isArray(actRes?.activities) ? actRes.activities : [];
+        let latestPlanId = null;
+        for (let i = activities.length - 1; i >= 0; i--) {
+          const act = activities[i];
+          const pId = act.planGenerated?.plan?.id || act.planGenerated?.planId || act.plan?.id;
+          if (pId) {
+            latestPlanId = pId;
+            break;
+          }
+        }
+        if (latestPlanId && latestPlanId !== ctx.expectedPlanId) {
+          const err = new PlanMismatchError(
+            `Plan changed since review; expected "${ctx.expectedPlanId}", but current active plan is "${latestPlanId}". Approval rejected.`,
+            { expectedPlanId: ctx.expectedPlanId, actualPlanId: latestPlanId }
+          );
+          throw err;
+        }
+      }
 
       const pool = ctx.tokenPool || config.tokenPool || TokenPool.fromEnv(config);
       const rawToken = pool.getNextToken() || process.env.JULES_API_KEY || (ctx.allowLegacyKey ? process.env.GEMINI_API_KEY : "") || "";
@@ -870,6 +1019,7 @@ export function createProvider(spec = "jules", config = {}) {
           status: "approved",
           approved: true,
           provider: providerSpec.name,
+          planId: ctx.expectedPlanId || undefined,
         };
       }
 
@@ -890,88 +1040,84 @@ export function createProvider(spec = "jules", config = {}) {
 
         const requestedTimeout = Number(ctx.timeoutMs ?? config.timeoutMs ?? providerSpec.timeoutMs ?? 30_000);
         const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 30_000;
-        const maxRetries = Number.isInteger(ctx.maxRetries) ? ctx.maxRetries : 3;
-        const initialDelayMs = Number.isInteger(ctx.initialDelayMs) ? ctx.initialDelayMs : 500;
 
-        let lastErr = null;
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          if (attempt > 0) {
-            const delay = initialDelayMs * Math.pow(2, attempt - 1);
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
-
-          let res;
-          try {
-            res = await fetch(url, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(ctx.body || {}),
-              signal: AbortSignal.timeout(timeoutMs),
-            });
-          } catch (err) {
-            if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
-              lastErr = new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms): ${err.message}`, { status: 504 });
-              if (attempt < maxRetries) continue;
-              throw lastErr;
+        let res;
+        try {
+          res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(ctx.body || {}),
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+        } catch (err) {
+          if (err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR") {
+            if (!ctx.dryRun && ctx.reconcile !== false) {
+              try {
+                const sessionRes = await this.getSession(sessionId, { timeoutMs: 10_000, tokenPool: pool, allowLegacyKey: ctx.allowLegacyKey });
+                const currentStatus = sessionRes?.status || sessionRes?.raw?.state;
+                if (currentStatus && currentStatus !== "AWAITING_PLAN_APPROVAL") {
+                  return {
+                    id: sessionId,
+                    status: currentStatus,
+                    approved: true,
+                    _reconciled: true,
+                    planId: ctx.expectedPlanId || undefined,
+                    raw: sessionRes?.raw || {},
+                  };
+                }
+              } catch (_) {}
             }
-            throw err;
+            throw new ProviderUnavailableError(`Provider HTTP Timeout (${timeoutMs}ms) during approvePlan: ${err.message}`, { status: 504 });
           }
-
-          if (!res.ok) {
-            const text = await res.text();
-            const cleanText = text.slice(0, 500);
-            const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
-
-            if (res.status === 404) {
-              lastErr = new Error(`Provider HTTP Error (404 Not Found): ${sanitizedText}`);
-              lastErr.status = 404;
-              if (attempt < maxRetries) continue;
-              throw lastErr;
-            }
-
-            if (res.status === 429) {
-              const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
-              const retryAfterMs = parseRetryAfter(retryAfterHeader);
-              pool.markRateLimited(rawToken, retryAfterMs ?? 60000);
-              lastErr = new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
-                retryAfterMs: retryAfterMs ?? 60000,
-                status: 429,
-              });
-              if (attempt < maxRetries) continue;
-              throw lastErr;
-            }
-
-            if (res.status >= 500 && res.status < 600) {
-              lastErr = new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
-                status: res.status,
-              });
-              if (attempt < maxRetries) continue;
-              throw lastErr;
-            }
-
-            const err = new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
-            err.status = res.status;
-            throw err;
-          }
-
-          let json;
-          try {
-            json = await res.json();
-          } catch (_) {
-            json = {};
-          }
-
-          return {
-            id: json.id || json.name || sessionId,
-            status: json.state || "approved",
-            approved: true,
-            raw: json,
-          };
+          throw err;
         }
-      }
 
-      if (providerSpec.type === "exec") {
-        return { id: sessionId, status: "approved", approved: true };
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          const cleanText = text.slice(0, 500);
+          const sanitizedText = redactSecrets(rawToken ? cleanText.split(rawToken).join("[REDACTED]") : cleanText);
+          const retryAfterHeader = res.headers ? res.headers.get("retry-after") : null;
+          const retryAfterMs = parseRetryAfter(retryAfterHeader);
+
+          if (res.status === 404) {
+            const err = new Error(`Provider HTTP Error (404 Not Found): ${sanitizedText}`);
+            err.status = 404;
+            throw err;
+          }
+
+          if (res.status === 429) {
+            pool.markRateLimited(rawToken, retryAfterMs ?? 60000);
+            throw new ProviderRateLimitError(`Provider HTTP Error (429): ${sanitizedText}`, {
+              retryAfterMs: retryAfterMs ?? 60000,
+              status: 429,
+            });
+          }
+
+          if (res.status >= 500 && res.status < 600) {
+            throw new ProviderUnavailableError(`Provider HTTP Error (${res.status}): ${sanitizedText}`, {
+              status: res.status,
+            });
+          }
+
+          const err = new Error(`Provider HTTP Error (${res.status}): ${sanitizedText}`);
+          err.status = res.status;
+          throw err;
+        }
+
+        let json;
+        try {
+          json = await res.json();
+        } catch (_) {
+          json = {};
+        }
+
+        return {
+          id: json.id || json.name || sessionId,
+          status: json.state || "approved",
+          approved: true,
+          planId: ctx.expectedPlanId || undefined,
+          raw: json,
+        };
       }
 
       throw new Error(`Unsupported provider type: ${providerSpec.type}`);
@@ -1025,9 +1171,17 @@ export function createProvider(spec = "jules", config = {}) {
       if (!ctx || typeof ctx !== "object") ctx = {};
       if (ctx.dryRun) return { id: sessionId, archived: true, raw: {} };
       if (providerSpec.type === "http") {
-        const url = `${providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions"}/${sessionId}:archive`;
-        const res = await this.approvePlan(sessionId, { ...ctx, customUrl: url });
-        return { id: sessionId, archived: true, raw: res?.raw || {} };
+        if (providerSpec.archiveUrl) {
+          const url = interpolateString(providerSpec.archiveUrl, { sessionId, ...ctx });
+          const res = await this.approvePlan(sessionId, { ...ctx, customUrl: url });
+          return { id: sessionId, archived: true, raw: res?.raw || {} };
+        }
+        return {
+          id: sessionId,
+          archived: false,
+          unsupported: true,
+          message: "Session archiving is not supported by Jules REST API. Use deleteSession instead.",
+        };
       }
       return { id: sessionId, archived: true, raw: {} };
     },
@@ -1076,6 +1230,19 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
     spec && typeof spec === "object" && typeof spec.dispatch === "function" ? spec : createProvider(spec, config)
   );
 
+  const sessionProviderMap = new Map();
+
+  const resolveTargetProvider = (sessionId, ctx = {}) => {
+    if (ctx.provider) {
+      const match = providerList.find((p) => p.name === ctx.provider);
+      if (match) return match;
+    }
+    if (sessionId && sessionProviderMap.has(sessionId)) {
+      return sessionProviderMap.get(sessionId);
+    }
+    return providerList[0];
+  };
+
   return {
     name: `failover:${providerList.map((p) => p.name).join("->")}`,
 
@@ -1085,14 +1252,21 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
         const provider = providerList[i];
         try {
           const res = await provider.dispatch(task, ctx);
+          if (res && res.id) {
+            sessionProviderMap.set(res.id, provider);
+          }
           return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
         } catch (err) {
           errors.push({ provider: provider.name, error: err });
+          const isAmbiguous =
+            err instanceof ProviderAmbiguousOutcomeError ||
+            err?.name === "ProviderAmbiguousOutcomeError";
           const isRecoverable =
-            err instanceof ProviderRateLimitError ||
-            err instanceof ProviderUnavailableError ||
-            (err.status && err.status >= 500 && err.status < 600) ||
-            err.status === 429;
+            !isAmbiguous &&
+            (err instanceof ProviderRateLimitError ||
+              err instanceof ProviderUnavailableError ||
+              (err.status && err.status >= 500 && err.status < 600) ||
+              err.status === 429);
 
           if (i === providerList.length - 1 || !isRecoverable) {
             if (err && typeof err === "object") {
@@ -1105,29 +1279,12 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
     },
 
     async resume(sessionId, prompt, ctx = {}, task = null) {
-      const errors = [];
-      for (let i = 0; i < providerList.length; i++) {
-        const provider = providerList[i];
-        if (typeof provider.resume !== "function") continue;
-        try {
-          const res = await provider.resume(sessionId, prompt, ctx, task);
-          return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
-        } catch (err) {
-          errors.push({ provider: provider.name, error: err });
-          const isRecoverable =
-            err instanceof ProviderRateLimitError ||
-            err instanceof ProviderUnavailableError ||
-            (err.status && err.status >= 500 && err.status < 600) ||
-            err.status === 429;
-
-          if (i === providerList.length - 1 || !isRecoverable) {
-            if (err && typeof err === "object") {
-              err._failoverErrors = errors;
-            }
-            throw err;
-          }
-        }
+      const target = resolveTargetProvider(sessionId, ctx);
+      if (!target || typeof target.resume !== "function") {
+        throw new Error(`Provider "${target?.name || "unknown"}" does not support resume.`);
       }
+      const res = await target.resume(sessionId, prompt, ctx, task);
+      return { ...res, _routedProvider: target.name };
     },
 
     async sendMessage(sessionId, prompt, ctx = {}, task = null) {
@@ -1135,57 +1292,21 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
     },
 
     async getSession(sessionId, ctx = {}) {
-      const errors = [];
-      for (let i = 0; i < providerList.length; i++) {
-        const provider = providerList[i];
-        if (typeof provider.getSession !== "function") continue;
-        try {
-          const res = await provider.getSession(sessionId, ctx);
-          return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
-        } catch (err) {
-          errors.push({ provider: provider.name, error: err });
-          const isRecoverable =
-            err instanceof ProviderRateLimitError ||
-            err instanceof ProviderUnavailableError ||
-            (err.status && err.status >= 500 && err.status < 600) ||
-            err.status === 429 ||
-            err.status === 404;
-
-          if (i === providerList.length - 1 || !isRecoverable) {
-            if (err && typeof err === "object") {
-              err._failoverErrors = errors;
-            }
-            throw err;
-          }
-        }
+      const target = resolveTargetProvider(sessionId, ctx);
+      if (!target || typeof target.getSession !== "function") {
+        throw new Error(`Provider "${target?.name || "unknown"}" does not support getSession.`);
       }
+      const res = await target.getSession(sessionId, ctx);
+      return { ...res, _routedProvider: target.name };
     },
 
     async approvePlan(sessionId, ctx = {}) {
-      const errors = [];
-      for (let i = 0; i < providerList.length; i++) {
-        const provider = providerList[i];
-        if (typeof provider.approvePlan !== "function") continue;
-        try {
-          const res = await provider.approvePlan(sessionId, ctx);
-          return { ...res, _routedProvider: provider.name, _failoverAttempts: i };
-        } catch (err) {
-          errors.push({ provider: provider.name, error: err });
-          const isRecoverable =
-            err instanceof ProviderRateLimitError ||
-            err instanceof ProviderUnavailableError ||
-            (err.status && err.status >= 500 && err.status < 600) ||
-            err.status === 429 ||
-            err.status === 404;
-
-          if (i === providerList.length - 1 || !isRecoverable) {
-            if (err && typeof err === "object") {
-              err._failoverErrors = errors;
-            }
-            throw err;
-          }
-        }
+      const target = resolveTargetProvider(sessionId, ctx);
+      if (!target || typeof target.approvePlan !== "function") {
+        throw new Error(`Provider "${target?.name || "unknown"}" does not support approvePlan.`);
       }
+      const res = await target.approvePlan(sessionId, ctx);
+      return { ...res, _routedProvider: target.name };
     },
 
     async listSessions(ctx = {}) {
@@ -1193,15 +1314,27 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
     },
 
     async listActivities(sessionId, ctx = {}) {
-      return providerList[0].listActivities(sessionId, ctx);
+      const target = resolveTargetProvider(sessionId, ctx);
+      if (!target || typeof target.listActivities !== "function") {
+        return { activities: [], raw: {} };
+      }
+      return target.listActivities(sessionId, ctx);
     },
 
     async archiveSession(sessionId, ctx = {}) {
-      return providerList[0].archiveSession(sessionId, ctx);
+      const target = resolveTargetProvider(sessionId, ctx);
+      if (!target || typeof target.archiveSession !== "function") {
+        return { id: sessionId, archived: false };
+      }
+      return target.archiveSession(sessionId, ctx);
     },
 
     async deleteSession(sessionId, ctx = {}) {
-      return providerList[0].deleteSession(sessionId, ctx);
+      const target = resolveTargetProvider(sessionId, ctx);
+      if (!target || typeof target.deleteSession !== "function") {
+        return { id: sessionId, deleted: false };
+      }
+      return target.deleteSession(sessionId, ctx);
     },
 
     async listSources(ctx = {}) {
