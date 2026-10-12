@@ -23,13 +23,13 @@ jobs:
       # Fail-fast answers "one did, and we won't say which of the others would
       # have". It cancelled all nine jobs here when a Linux-only policy step
       # failed, destroying the cross-platform signal that is the entire reason
-      # the matrix is nine-way — and every cross-platform break this repository
-      # has shipped was green on Linux and red on Windows. Nine jobs at ~30s
+      # the matrix is six-way — and every cross-platform break this repository
+      # has shipped was green on Linux and red on Windows. Six jobs at ~30s
       # each is not a budget worth optimising against that.
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node-version: ['20.x', '22.x', '24.x']
+        node-version: ['22.x', '24.x']
     steps:
       - name: Harden Runner
         if: runner.os == 'Linux'

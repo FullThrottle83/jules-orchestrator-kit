@@ -37,7 +37,7 @@ inputs:
   node-version:
     description: 'Node.js version or range to install'
     required: false
-    default: '>=20.0.0'
+    default: '>=22.0.0'
 
 runs:
   using: 'composite'

@@ -12,8 +12,8 @@ body:
     id: version
     attributes:
       label: "Node.js Version"
-      description: "What version of Node.js are you using? (e.g. v20.11.0)"
-      placeholder: "v20.x"
+      description: "What version of Node.js are you using? (e.g. v22.14.0)"
+      placeholder: "v22.x"
     validations:
       required: true
   - type: dropdown

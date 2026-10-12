@@ -1,6 +1,6 @@
 # jules-orchestrator-kit
 
-Task dispatch and local verification for coding agents. Requires Node.js 20+ and
+Task dispatch and local verification for coding agents. Requires Node.js 22+ and
 Git; uses no third-party runtime dependencies.
 
 [![npm version](https://img.shields.io/npm/v/jules-orchestrator-kit.svg)](https://www.npmjs.com/package/jules-orchestrator-kit)
@@ -176,7 +176,7 @@ npm run package-integrity
 npm run guard-reach
 ```
 
-The recorded baseline is **1731 unit tests across 217 suites**. Doc-sync compares
+The recorded baseline is **1739 unit tests across 218 suites**. Doc-sync compares
 that count with an actual run. Counts do not establish correctness for every
 provider or project. See
 [contributing](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTING.md)
