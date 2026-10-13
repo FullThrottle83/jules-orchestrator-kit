@@ -19,7 +19,7 @@ import {
   ensureGitignore,
 } from "../src/scaffold.mjs";
 import {
-  hasEnvIgnoreRule,
+  endsInExactEnvIgnoreRule,
   planUninstall,
   uninstallKit,
 } from "../src/uninstall.mjs";
@@ -281,7 +281,7 @@ test("agentctl uninstall", async (t) => {
   await t.test("P1-19: Adversarial B: pre-existing user .env ignore rule is preserved without duplication", () => {
     const dir = tempRepo();
     try {
-      writeFileSync(join(dir, ".gitignore"), "# project rules\nnode_modules/\n.env\ndist/\n", "utf-8");
+      writeFileSync(join(dir, ".gitignore"), "# project rules\nnode_modules/\ndist/\n.env\n", "utf-8");
       seedKitInstall(dir);
       writeFileSync(join(dir, ".env"), "SENTINEL_VAR=pre-existing-sentinel\n", "utf-8");
 
@@ -295,6 +295,172 @@ test("agentctl uninstall", async (t) => {
       assert.equal(ignore.includes(RUNTIME_GITIGNORE_HEADER), false);
       const occurrences = (ignore.match(/^\.env$/gm) || []).length;
       assert.equal(occurrences, 1, `expected exactly 1 .env rule, found: ${occurrences}`);
+
+      // Confirm git ignore oracle
+      const check = execFileSync("git", ["check-ignore", "-q", ".env"], { cwd: dir });
+      assert.equal(check.length, 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("P1-19: pre-existing user .env followed by other rules appends trailing .env to guarantee protection", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, ".gitignore"), "# project rules\nnode_modules/\n.env\ndist/\n", "utf-8");
+      seedKitInstall(dir);
+      writeFileSync(join(dir, ".env"), "SENTINEL_VAR=interleaved\n", "utf-8");
+
+      const res = run(dir, ["uninstall", "--yes"]);
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+
+      const ignore = readFileSync(join(dir, ".gitignore"), "utf-8");
+      assert.match(ignore, /dist\/\n\.env\n$/);
+      // Git ignore oracle proves .env remains ignored
+      execFileSync("git", ["check-ignore", "-q", ".env"], { cwd: dir });
+      const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: dir, encoding: "utf-8" });
+      assert.equal(status.includes(".env"), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("P1-19: Negation Case A: .env followed by !.env appends trailing .env to guarantee protection", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, ".gitignore"), "# rules\nnode_modules/\n.env\n!.env\n", "utf-8");
+      seedKitInstall(dir);
+      writeFileSync(join(dir, ".env"), "SENTINEL_VAR=case-a\n", "utf-8");
+
+      const plan = planUninstall(dir);
+      assert.equal(plan.willPreserveEnv, true);
+
+      const res = run(dir, ["uninstall", "--yes"]);
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+
+      const ignore = readFileSync(join(dir, ".gitignore"), "utf-8");
+      assert.match(ignore, /!\.env\n\.env\n$/);
+      execFileSync("git", ["check-ignore", "-q", ".env"], { cwd: dir });
+      const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: dir, encoding: "utf-8" });
+      assert.equal(status.includes(".env"), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("P1-19: Negation Case B: *.env followed by !.env appends trailing .env to guarantee protection", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, ".gitignore"), "# rules\nnode_modules/\n*.env\n!.env\n", "utf-8");
+      seedKitInstall(dir);
+      writeFileSync(join(dir, ".env"), "SENTINEL_VAR=case-b\n", "utf-8");
+
+      const plan = planUninstall(dir);
+      assert.equal(plan.willPreserveEnv, true);
+
+      const res = run(dir, ["uninstall", "--yes"]);
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+
+      const ignore = readFileSync(join(dir, ".gitignore"), "utf-8");
+      assert.match(ignore, /!\.env\n\.env\n$/);
+      execFileSync("git", ["check-ignore", "-q", ".env"], { cwd: dir });
+      const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: dir, encoding: "utf-8" });
+      assert.equal(status.includes(".env"), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("P1-19: Negation Case C: !.env followed by .env already ends in .env and requires no duplicate", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, ".gitignore"), "# rules\nnode_modules/\n!.env\n.env\n", "utf-8");
+      seedKitInstall(dir);
+      writeFileSync(join(dir, ".env"), "SENTINEL_VAR=case-c\n", "utf-8");
+
+      const plan = planUninstall(dir);
+      assert.equal(plan.willPreserveEnv, false);
+
+      const res = run(dir, ["uninstall", "--yes"]);
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+
+      const ignore = readFileSync(join(dir, ".gitignore"), "utf-8");
+      assert.match(ignore, /!\.env\n\.env\n?$/);
+      const occurrences = (ignore.match(/^\.env$/gm) || []).length;
+      assert.equal(occurrences, 1);
+      execFileSync("git", ["check-ignore", "-q", ".env"], { cwd: dir });
+      const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: dir, encoding: "utf-8" });
+      assert.equal(status.includes(".env"), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("P1-19: Negation Case D: multiple alternating negation rules (.env/!.env/.env/!.env) append trailing .env", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, ".gitignore"), "# rules\nnode_modules/\n.env\n!.env\n.env\n!.env\n", "utf-8");
+      seedKitInstall(dir);
+      writeFileSync(join(dir, ".env"), "SENTINEL_VAR=case-d\n", "utf-8");
+
+      const plan = planUninstall(dir);
+      assert.equal(plan.willPreserveEnv, true);
+
+      const res = run(dir, ["uninstall", "--yes"]);
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+
+      const ignore = readFileSync(join(dir, ".gitignore"), "utf-8");
+      assert.match(ignore, /!\.env\n\.env\n$/);
+      execFileSync("git", ["check-ignore", "-q", ".env"], { cwd: dir });
+      const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: dir, encoding: "utf-8" });
+      assert.equal(status.includes(".env"), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("P1-19: Negation Case E: trailing comments/blank lines after exact .env do not cause duplicate", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, ".gitignore"), "# rules\nnode_modules/\n.env\n# trailing comment\n\n", "utf-8");
+      seedKitInstall(dir);
+      writeFileSync(join(dir, ".env"), "SENTINEL_VAR=case-e\n", "utf-8");
+
+      const plan = planUninstall(dir);
+      assert.equal(plan.willPreserveEnv, false);
+
+      const res = run(dir, ["uninstall", "--yes"]);
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+
+      const ignore = readFileSync(join(dir, ".gitignore"), "utf-8");
+      const occurrences = (ignore.match(/^\.env$/gm) || []).length;
+      assert.equal(occurrences, 1);
+      execFileSync("git", ["check-ignore", "-q", ".env"], { cwd: dir });
+      const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: dir, encoding: "utf-8" });
+      assert.equal(status.includes(".env"), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("P1-19: Negation Case F: trailing comments/blank lines after negation !.env still trigger safety append", () => {
+    const dir = tempRepo();
+    try {
+      writeFileSync(join(dir, ".gitignore"), "# rules\nnode_modules/\n.env\n!.env\n# keep env committable\n\n", "utf-8");
+      seedKitInstall(dir);
+      writeFileSync(join(dir, ".env"), "SENTINEL_VAR=case-f\n", "utf-8");
+
+      const plan = planUninstall(dir);
+      assert.equal(plan.willPreserveEnv, true);
+
+      const res = run(dir, ["uninstall", "--yes"]);
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+
+      const ignore = readFileSync(join(dir, ".gitignore"), "utf-8");
+      assert.match(ignore, /# keep env committable\n\.env\n$/);
+      execFileSync("git", ["check-ignore", "-q", ".env"], { cwd: dir });
+      const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: dir, encoding: "utf-8" });
+      assert.equal(status.includes(".env"), false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -457,16 +623,24 @@ test("agentctl uninstall", async (t) => {
     }
   });
 
-  await t.test("P1-19: Unit: hasEnvIgnoreRule accurately parses ignore rules and rejects comments", () => {
-    assert.equal(hasEnvIgnoreRule(".env"), true);
-    assert.equal(hasEnvIgnoreRule("  .env  "), true);
-    assert.equal(hasEnvIgnoreRule("/.env"), true);
-    assert.equal(hasEnvIgnoreRule("*.env"), true);
-    assert.equal(hasEnvIgnoreRule("node_modules/\n.env\ndist/"), true);
-    assert.equal(hasEnvIgnoreRule("# .env\nnode_modules/"), false);
-    assert.equal(hasEnvIgnoreRule("# comments only"), false);
-    assert.equal(hasEnvIgnoreRule("node_modules/\ndist/"), false);
-    assert.equal(hasEnvIgnoreRule(""), false);
+  await t.test("P1-19: Unit: endsInExactEnvIgnoreRule accurately parses trailing ignore rules and rejects comments", () => {
+    assert.equal(endsInExactEnvIgnoreRule(".env"), true);
+    assert.equal(endsInExactEnvIgnoreRule("  .env  "), true);
+    assert.equal(endsInExactEnvIgnoreRule("/.env"), true);
+    assert.equal(endsInExactEnvIgnoreRule("  /.env  "), true);
+    assert.equal(endsInExactEnvIgnoreRule("node_modules/\n.env"), true);
+    assert.equal(endsInExactEnvIgnoreRule("node_modules/\n/.env"), true);
+    assert.equal(endsInExactEnvIgnoreRule(".env\n# trailing comment"), true);
+    assert.equal(endsInExactEnvIgnoreRule(".env\n\n  \n# comment\n"), true);
+    assert.equal(endsInExactEnvIgnoreRule("*.env"), false);
+    assert.equal(endsInExactEnvIgnoreRule(".env\n!.env"), false);
+    assert.equal(endsInExactEnvIgnoreRule("*.env\n!.env"), false);
+    assert.equal(endsInExactEnvIgnoreRule(".env\n!.env\n# comment"), false);
+    assert.equal(endsInExactEnvIgnoreRule("node_modules/\n.env\ndist/"), false);
+    assert.equal(endsInExactEnvIgnoreRule("# .env\nnode_modules/"), false);
+    assert.equal(endsInExactEnvIgnoreRule("# comments only"), false);
+    assert.equal(endsInExactEnvIgnoreRule("node_modules/\ndist/"), false);
+    assert.equal(endsInExactEnvIgnoreRule(""), false);
   });
 
   await t.test("P1-19: Programmatic uninstallKit returns preservedEnv metadata accurately", () => {

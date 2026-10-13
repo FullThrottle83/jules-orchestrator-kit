@@ -66,17 +66,25 @@ export function detectKitInstallation(root) {
 }
 
 /**
- * Check whether a `.gitignore` content already contains a non-comment ignore
- * rule that covers a root `.env` file.
+ * Check whether a `.gitignore` content already ends in an active (non-comment)
+ * exact `.env` or `/.env` ignore rule.
+ *
+ * This is an exact deduplication helper, not a full Git ignore engine. When a
+ * `.gitignore` already ends in an active exact `.env` rule, that rule is
+ * guaranteed to be evaluated last by Git without subsequent negation.
  *
  * @param {string} content
  * @returns {boolean}
  */
-export function hasEnvIgnoreRule(content) {
-  const lines = String(content).split(/\r?\n/).map((l) => l.trim());
-  return lines.some(
-    (l) => !l.startsWith("#") && (l === ".env" || l === "/.env" || l === "*.env")
-  );
+export function endsInExactEnvIgnoreRule(content) {
+  const lines = String(content).split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const trimmed = lines[i].trim();
+    if (trimmed !== "" && !trimmed.startsWith("#")) {
+      return trimmed === ".env" || trimmed === "/.env";
+    }
+  }
+  return false;
 }
 
 /**
@@ -128,7 +136,7 @@ export function planUninstall(root, options = {}) {
       try {
         const current = readFileSync(gitignorePath, "utf-8");
         const { text } = stripRuntimeGitignoreBlock(current);
-        if (!hasEnvIgnoreRule(text)) {
+        if (!endsInExactEnvIgnoreRule(text)) {
           willPreserveEnv = true;
         }
       } catch (_) {
@@ -236,7 +244,7 @@ export function uninstallKit(root, options = {}) {
     if (stripped) {
       let finalText = text;
       const envPath = join(root, ".env");
-      if (existsSync(envPath) && !hasEnvIgnoreRule(finalText)) {
+      if (existsSync(envPath) && !endsInExactEnvIgnoreRule(finalText)) {
         const prefix = finalText.length > 0 && !finalText.endsWith("\n") ? "\n" : "";
         finalText = `${finalText}${prefix}.env\n`;
         preservedEnv = true;
