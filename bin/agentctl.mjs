@@ -2348,7 +2348,7 @@ async function main() {
           repoless: values.repoless,
           interactive: isInteractive,
           dryRun: values["dry-run"],
-          allowProtected: Boolean(values["allow-protected"]),
+          allowProtected: values["allow-protected"] !== undefined ? Boolean(values["allow-protected"]) : undefined,
         });
 
         if (values.json) {

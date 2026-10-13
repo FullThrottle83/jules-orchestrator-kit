@@ -4,7 +4,12 @@ import { handleMcpRequest, startMcpServer, MCP_SERVER_INFO, MCP_TOOLS, MCP_TOOL_
 import { BudgetError } from "../src/state.mjs";
 import { KIT_VERSION } from "../src/version.mjs";
 import { PassThrough } from "node:stream";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { gate } from "../src/engine.mjs";
+
 
 test("Model Context Protocol (MCP) Server", async (t) => {
   await t.test("handles ping request", async () => {
@@ -390,4 +395,162 @@ test("MCP aliases preserve schemas and route to original handlers", async () => 
     jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "toString" },
   });
   assert.ok(unknown.error, "inherited object properties must not resolve as aliases");
+});
+
+function initMcpGateFixture() {
+  const dir = mkdtempSync(join(tmpdir(), "jok-mcp-gate-"));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Tester"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: dir });
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ name: "test-pkg" }, null, 2)
+  );
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\nverify:\n  required: false\n");
+  execFileSync("git", ["add", "."], { cwd: dir });
+  execFileSync("git", ["commit", "-m", "init"], { cwd: dir });
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: dir });
+  execFileSync("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], { cwd: dir });
+  return dir;
+}
+
+test("MCP gate protected-path waiver contraction & trust boundary", async (t) => {
+  await t.test("schema contraction: audit_jules_gate and agent_audit_gate do not expose allowProtected", () => {
+    const julesGate = MCP_TOOLS.find((tool) => tool.name === "audit_jules_gate");
+    assert.ok(julesGate);
+    assert.equal(julesGate.inputSchema.properties.allowProtected, undefined);
+
+    const agentGate = MCP_TOOLS.find((tool) => tool.name === "agent_audit_gate");
+    assert.ok(agentGate);
+    assert.equal(agentGate.inputSchema.properties.allowProtected, undefined);
+  });
+
+  await t.test("undeclared argument allowProtected: true is rejected/ignored by MCP gate", async () => {
+    const dir = initMcpGateFixture();
+    try {
+      writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\nverify:\n  required: false\n# modified protected config\n");
+
+      // Direct tool: audit_jules_gate
+      const resJules = await handleMcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 10,
+          method: "tools/call",
+          params: {
+            name: "audit_jules_gate",
+            arguments: { allowProtected: true },
+          },
+        },
+        { root: dir }
+      );
+      assert.equal(resJules.jsonrpc, "2.0");
+      assert.equal(resJules.id, 10);
+      const parsedJules = JSON.parse(resJules.result.content[0].text);
+      assert.equal(parsedJules.ok, false);
+      assert.equal(parsedJules.code, 3);
+      assert.equal(parsedJules.phases[0].violations[0].file, ".agent/config.yml");
+
+      // Alias tool: agent_audit_gate
+      const resAgent = await handleMcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 11,
+          method: "tools/call",
+          params: {
+            name: "agent_audit_gate",
+            arguments: { allowProtected: true },
+          },
+        },
+        { root: dir }
+      );
+      assert.equal(resAgent.jsonrpc, "2.0");
+      assert.equal(resAgent.id, 11);
+      const parsedAgent = JSON.parse(resAgent.result.content[0].text);
+      assert.equal(parsedAgent.ok, false);
+      assert.equal(parsedAgent.code, 3);
+      assert.equal(parsedAgent.phases[0].violations[0].file, ".agent/config.yml");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("MCP gate resists ambient waiver environment variables", async () => {
+    const dir = initMcpGateFixture();
+    try {
+      writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\nverify:\n  required: false\n# modified protected config\n");
+
+      for (const envKey of ["JULES_ALLOW_COMMAND_FILE_CHANGES", "AGENT_ALLOW_COMMAND_FILE_CHANGES"]) {
+        const prev = process.env[envKey];
+        try {
+          process.env[envKey] = "1";
+          const res = await handleMcpRequest(
+            {
+              jsonrpc: "2.0",
+              id: 20,
+              method: "tools/call",
+              params: {
+                name: "audit_jules_gate",
+                arguments: {},
+              },
+            },
+            { root: dir }
+          );
+          const parsed = JSON.parse(res.result.content[0].text);
+          assert.equal(parsed.ok, false, `MCP gate must fail closed even when ${envKey}=1`);
+          assert.equal(parsed.code, 3);
+          assert.equal(parsed.phases[0].violations[0].file, ".agent/config.yml");
+        } finally {
+          if (prev === undefined) {
+            delete process.env[envKey];
+          } else {
+            process.env[envKey] = prev;
+          }
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("engine precedence preserves explicit CLI waiver and trusted ambient env fallback", async () => {
+    const dir = initMcpGateFixture();
+    try {
+      writeFileSync(join(dir, ".agent", "config.yml"), "version: 1\nverify:\n  required: false\n# modified protected config\n");
+
+      // 1. Explicit true (operator CLI --allow-protected) allows protected changes
+      const explicitTrueRes = await gate({ root: dir, allowProtected: true });
+      assert.equal(explicitTrueRes.ok, true);
+      assert.equal(explicitTrueRes.code, 0);
+
+      // 2. Explicit false (MCP boundary) rejects protected changes even with env waiver set
+      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES = "1";
+      try {
+        const explicitFalseRes = await gate({ root: dir, allowProtected: false });
+        assert.equal(explicitFalseRes.ok, false);
+        assert.equal(explicitFalseRes.code, 3);
+        assert.equal(explicitFalseRes.phases[0].violations[0].file, ".agent/config.yml");
+      } finally {
+        delete process.env.JULES_ALLOW_COMMAND_FILE_CHANGES;
+      }
+
+      // 3. Undefined/omitted (CLI default) allows ambient env fallback when set
+      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES = "1";
+      try {
+        const envFallbackRes = await gate({ root: dir });
+        assert.equal(envFallbackRes.ok, true);
+        assert.equal(envFallbackRes.code, 0);
+      } finally {
+        delete process.env.JULES_ALLOW_COMMAND_FILE_CHANGES;
+      }
+
+      // 4. Undefined/omitted without env waiver fails closed
+      const defaultClosedRes = await gate({ root: dir });
+      assert.equal(defaultClosedRes.ok, false);
+      assert.equal(defaultClosedRes.code, 3);
+      assert.equal(defaultClosedRes.phases[0].violations[0].file, ".agent/config.yml");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

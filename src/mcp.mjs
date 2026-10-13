@@ -122,7 +122,6 @@ export const MCP_TOOLS = [
       properties: {
         base: { type: "string", description: "Base branch to diff against (defaults to main)" },
         fix: { type: "boolean", description: "Attempt OODA auto-repair loop on verification failure" },
-        allowProtected: { type: "boolean", description: "Allow edits to protected files" },
       },
     },
   },
@@ -591,7 +590,7 @@ export async function handleMcpRequest(request, opts = {}) {
           config,
           base: baseOverride,
           fix: args?.fix || false,
-          allowProtected: args?.allowProtected || false,
+          allowProtected: false,
         });
         return {
           jsonrpc: "2.0",

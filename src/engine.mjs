@@ -224,13 +224,14 @@ export async function gate(opts = {}) {
     }
   }
 
-  const allowProtected = Boolean(
-    opts.allowProtected ||
+  const envAllow =
     process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true" ||
     process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1" ||
     process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "true" ||
-    process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1"
-  );
+    process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1";
+
+  const allowProtected =
+    opts.allowProtected !== undefined ? Boolean(opts.allowProtected) : envAllow;
 
   const scopeResult = checkScope(scopeCandidates, trustedScope, {
     allowProtected,

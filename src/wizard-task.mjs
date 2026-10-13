@@ -481,7 +481,11 @@ export async function runTaskCreateWizard(root = process.cwd(), options = {}) {
   });
 
   // Perform Gate Preflight
-  const gateRes = await gate({ root, mode: "working-tree", allowProtected: Boolean(options.allowProtected) });
+  const gateRes = await gate({
+    root,
+    mode: "working-tree",
+    allowProtected: options.allowProtected !== undefined ? Boolean(options.allowProtected) : undefined,
+  });
   if (!gateRes.ok && (gateRes.code === 3 || gateRes.code === 6) && !options.allowGateFailure) {
     const scopeViolations = gateRes.phases[0]?.violations || [];
     // A cold-start repository has nothing committed yet: every path init just
