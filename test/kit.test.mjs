@@ -156,6 +156,7 @@ allow_paths:
       git("config", "user.email", "test@example.com");
       git("config", "user.name", "KitTest");
       fs.writeFileSync(path.join(repo, "index.js"), "module.exports = 1;\n");
+      fs.writeFileSync(path.join(repo, "package.json"), JSON.stringify({ name: "fixture", version: "1.0.0" }, null, 2) + "\n");
       fs.mkdirSync(path.join(repo, ".agent"), { recursive: true });
       fs.writeFileSync(path.join(repo, ".agent", "jules.yml"), 'version: 2\ntest_cmd: "node --check index.js"\nforbidden_paths: []\n');
       git("add", ".");
@@ -163,6 +164,47 @@ allow_paths:
 
       const gates = await auditGates({ root: repo });
       assert.ok(typeof gates.ok === "boolean");
+
+      // Modify protected path package.json to test waiver resolution
+      fs.writeFileSync(path.join(repo, "package.json"), JSON.stringify({ name: "fixture", version: "1.0.1" }, null, 2) + "\n");
+
+      const origJules = process.env.JULES_ALLOW_COMMAND_FILE_CHANGES;
+      const origAgent = process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES;
+      try {
+        // 1. JULES alias allows protected path when allowProtected is omitted
+        process.env.JULES_ALLOW_COMMAND_FILE_CHANGES = "1";
+        delete process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES;
+        const julesRes = await auditGates({ root: repo });
+        assert.equal(julesRes.phases?.find((p) => p.phase === "scope")?.ok, true);
+
+        // 2. AGENT alias allows protected path when allowProtected is omitted
+        delete process.env.JULES_ALLOW_COMMAND_FILE_CHANGES;
+        process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES = "1";
+        const agentRes = await auditGates({ root: repo });
+        assert.equal(agentRes.phases?.find((p) => p.phase === "scope")?.ok, true);
+
+        // 3. Explicit allowProtected: false strictly rejects even if both ambient env vars are set
+        process.env.JULES_ALLOW_COMMAND_FILE_CHANGES = "1";
+        process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES = "1";
+        const falseRes = await auditGates({ root: repo, allowProtected: false });
+        assert.equal(falseRes.ok, false);
+        assert.equal(falseRes.code, 3);
+        assert.equal(falseRes.phases?.find((p) => p.phase === "scope")?.ok, false);
+        assert.ok(falseRes.phases?.[0]?.violations?.some((v) => v.file === "package.json" && v.rule === "protect"));
+
+        // 4. Default omitted with neither env var rejects
+        delete process.env.JULES_ALLOW_COMMAND_FILE_CHANGES;
+        delete process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES;
+        const defaultRes = await auditGates({ root: repo });
+        assert.equal(defaultRes.ok, false);
+        assert.equal(defaultRes.code, 3);
+        assert.equal(defaultRes.phases?.find((p) => p.phase === "scope")?.ok, false);
+      } finally {
+        if (origJules === undefined) delete process.env.JULES_ALLOW_COMMAND_FILE_CHANGES;
+        else process.env.JULES_ALLOW_COMMAND_FILE_CHANGES = origJules;
+        if (origAgent === undefined) delete process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES;
+        else process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES = origAgent;
+      }
     } finally {
       try { fs.rmSync(repo, { recursive: true, force: true }); } catch (_) {}
     }
