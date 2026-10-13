@@ -132,5 +132,35 @@ The following need a concrete user/verifier before implementation:
 - telemetry-driven task creation;
 - broader structural parsing.
 
+### Jules CLI/API parity lab
+
+Use Google's `gemini-cli-extensions/jules` integration as an external reference fixture,
+not as a security authority or an implementation dependency. Its intentionally small MCP
+surface and CLI-driven session flow are useful comparison points for JOK's contraction and
+provider-lifecycle work.
+
+After the current trust-remediation and contraction work, evaluate:
+
+- canonical Jules API change-set output versus `jules remote pull` for the same completed
+  session, including exact file-set and patch parity;
+- Jules CLI session IDs versus API/provider session IDs so JOK can prove it is observing
+  the same remote work across interfaces;
+- documented/observable active-session `remote pull` behavior as a possible read-only WIP
+  snapshot experiment, while keeping all hard approval authority in JOK's deterministic gate;
+- `jules remote new --parallel` for repeated benchmark replicas, measuring whether one local
+  controller can create multiple remote sessions without recreating the prior local-process
+  memory-pressure failure mode;
+- the value of a deliberately thin MCP adapter: keep provider account housekeeping,
+  protected-path waivers, rollback and other privileged control-plane operations out of a
+  provider-branded MCP mirror unless a concrete v1 user requires them;
+- explicit repository selection and pinned task/session identity rather than heuristic
+  patch-to-current-directory matching;
+- missing CLI/provider tooling as a preflight diagnostic, not an implicit global
+  `npm install -g` mutation of the operator machine.
+
+Treat CLI/API parity as a compatibility oracle and regression signal only. It must never
+replace trusted base/range selection, deterministic verification, evidence integrity or the
+human/CI approval boundary.
+
 Existing evidence manifests establish integrity observations, not regulatory compliance,
 hermetic execution or certification.
