@@ -11,6 +11,9 @@ Current `agentctl init` owns only:
 
 To undo a default init, remove `.agent/config.yml` if it belongs to the kit and
 remove only that appended `.gitignore` block. Preserve unrelated user content.
+If an untracked root `.env` file exists and the kit's runtime ignore block was
+protecting it, `agentctl uninstall` preserves a root `.env` ignore rule so
+existing local credentials do not become newly committable.
 
 Runtime execution may later create untracked state below `.agent/state/`,
 `.agent/evidence/`, `.agent/history/`, `.agent/handovers/`,

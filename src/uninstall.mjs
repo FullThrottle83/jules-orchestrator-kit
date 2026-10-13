@@ -66,6 +66,20 @@ export function detectKitInstallation(root) {
 }
 
 /**
+ * Check whether a `.gitignore` content already contains a non-comment ignore
+ * rule that covers a root `.env` file.
+ *
+ * @param {string} content
+ * @returns {boolean}
+ */
+export function hasEnvIgnoreRule(content) {
+  const lines = String(content).split(/\r?\n/).map((l) => l.trim());
+  return lines.some(
+    (l) => !l.startsWith("#") && (l === ".env" || l === "/.env" || l === "*.env")
+  );
+}
+
+/**
  * @param {string} root
  * @param {{ force?: boolean }} [options]
  * @returns {{
@@ -73,6 +87,7 @@ export function detectKitInstallation(root) {
  *   installed: boolean,
  *   willRemove: string[],
  *   willCleanGitignore: boolean,
+ *   willPreserveEnv: boolean,
  *   forceDirs: string[],
  *   error?: string,
  * }}
@@ -86,6 +101,7 @@ export function planUninstall(root, options = {}) {
       installed: false,
       willRemove: [],
       willCleanGitignore: false,
+      willPreserveEnv: false,
       forceDirs: [],
       error: "No kit installation detected (missing .agent/config.yml and runtime gitignore block).",
     };
@@ -105,6 +121,22 @@ export function planUninstall(root, options = {}) {
   const willCleanGitignore = detection.hasGitignoreBlock;
   if (willCleanGitignore) willRemove.push(".gitignore");
 
+  let willPreserveEnv = false;
+  if (willCleanGitignore && existsSync(join(root, ".env"))) {
+    const gitignorePath = join(root, ".gitignore");
+    if (existsSync(gitignorePath)) {
+      try {
+        const current = readFileSync(gitignorePath, "utf-8");
+        const { text } = stripRuntimeGitignoreBlock(current);
+        if (!hasEnvIgnoreRule(text)) {
+          willPreserveEnv = true;
+        }
+      } catch (_) {
+        willPreserveEnv = true;
+      }
+    }
+  }
+
   // `.agent/` itself is only removed when it would be empty after the planned
   // deletions — reported so dry-run matches real execution.
   const agentDir = join(root, ".agent");
@@ -120,6 +152,7 @@ export function planUninstall(root, options = {}) {
     installed: true,
     willRemove: [...new Set(willRemove)],
     willCleanGitignore,
+    willPreserveEnv,
     forceDirs,
   };
 }
@@ -174,6 +207,7 @@ export function uninstallKit(root, options = {}) {
       installed: true,
       willRemove: plan.willRemove,
       willCleanGitignore: plan.willCleanGitignore,
+      willPreserveEnv: plan.willPreserveEnv,
     };
   }
 
@@ -194,12 +228,20 @@ export function uninstallKit(root, options = {}) {
   }
 
   let cleanedGitignore = false;
+  let preservedEnv = false;
   const gitignorePath = join(root, ".gitignore");
   if (plan.willCleanGitignore && existsSync(gitignorePath)) {
     const current = readFileSync(gitignorePath, "utf-8");
     const { text, stripped } = stripRuntimeGitignoreBlock(current);
     if (stripped) {
-      writeFileSync(gitignorePath, text, "utf-8");
+      let finalText = text;
+      const envPath = join(root, ".env");
+      if (existsSync(envPath) && !hasEnvIgnoreRule(finalText)) {
+        const prefix = finalText.length > 0 && !finalText.endsWith("\n") ? "\n" : "";
+        finalText = `${finalText}${prefix}.env\n`;
+        preservedEnv = true;
+      }
+      writeFileSync(gitignorePath, finalText, "utf-8");
       cleanedGitignore = true;
       removed.push(".gitignore");
     }
@@ -223,5 +265,6 @@ export function uninstallKit(root, options = {}) {
     installed: true,
     removed: [...new Set(removed)],
     cleanedGitignore,
+    preservedEnv,
   };
 }
