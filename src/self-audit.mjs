@@ -292,12 +292,14 @@ export async function auditGates(opts = {}) {
   let allowProtected =
     opts.allowProtected ??
     (process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "true" ||
-      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1");
+      process.env.JULES_ALLOW_COMMAND_FILE_CHANGES === "1" ||
+      process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "true" ||
+      process.env.AGENT_ALLOW_COMMAND_FILE_CHANGES === "1");
 
   const rawLabels = opts.prLabels || process.env.PR_LABELS;
   const headSha = opts.headSha || process.env.HEAD_SHA;
 
-  if (!allowProtected && rawLabels) {
+  if (opts.allowProtected !== false && !allowProtected && rawLabels) {
     const waiver = resolveProtectedWaiverFromLabels(rawLabels, headSha);
     if (waiver.ok) {
       allowProtected = true;
