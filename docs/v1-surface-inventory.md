@@ -156,12 +156,12 @@ Examines tools registered in `src/mcp.mjs` (`MCP_TOOLS`, `MCP_TOOL_ALIASES`, and
 | `jules_list_sessions` / `agent_list_sessions` | `ADVANCED_V1` | Remote session listing for provider-aware lifecycle management. |
 | `jules_list_activities` / `agent_list_activities` | `ADVANCED_V1` | Inspection of execution logs and activities for a remote session. |
 | `jules_get_session_output` / `agent_get_session_output` | `ADVANCED_V1` | Remote session patch extraction and PR metadata retrieval. |
-| `jules_archive_session` / `agent_archive_session` | `ADVANCED_V1` | Remote session archiving. |
-| `jules_delete_session` / `agent_delete_session` | `ADVANCED_V1` | Remote session deletion. |
+| `jules_archive_session` / `agent_archive_session` | `REMOVE_CANDIDATE` (Removed from MCP) | Provider-account session archiving is outside the core Task → Dispatch → Gate → Evidence control plane and removed from the MCP authority surface. |
+| `jules_delete_session` / `agent_delete_session` | `REMOVE_CANDIDATE` (Removed from MCP) | Provider-account session deletion is outside the core Task → Dispatch → Gate → Evidence control plane and removed from the MCP authority surface. |
 | `jules_retry_session` / `agent_retry_session` | `ADVANCED_V1` | Session retry with failure trace injection. |
 | `jules_apply_patch` / `agent_apply_patch` | `ADVANCED_V1` | Remote session patch materialization and verification. |
 | `jules_list_sources` / `agent_list_sources` | `ADVANCED_V1` | Listing connected repository sources for Jules provider. |
-| `jules_prune_sessions` / `agent_prune_sessions` | `ADVANCED_V1` | Session cleanup and pruning. |
+| `jules_prune_sessions` / `agent_prune_sessions` | `REMOVE_CANDIDATE` (Removed from MCP) | Bulk provider-account session pruning is outside the core Task → Dispatch → Gate → Evidence control plane and removed from the MCP authority surface. |
 | `jules_approve_plan` / `agent_approve_plan` | `ADVANCED_V1` | Plan approval for sessions requiring human confirmation. |
 | `jules_send_message` / `agent_send_message` | `ADVANCED_V1` | Sending feedback/steering messages to warm sessions. |
 | `jules_wait_for_session` / `agent_wait_for_session` | `ADVANCED_V1` | Synchronous polling for remote session completion. |

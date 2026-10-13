@@ -31,7 +31,7 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 3);
     assert.equal(Array.isArray(res.result.tools), true);
-    assert.equal(res.result.tools.length, 36);
+    assert.equal(res.result.tools.length, 30);
     assert.deepEqual(res.result.tools, MCP_TOOLS);
     const names = res.result.tools.map((t) => t.name);
     assert.deepEqual(names, [
@@ -46,12 +46,9 @@ test("Model Context Protocol (MCP) Server", async (t) => {
       "jules_list_sessions",
       "jules_list_activities",
       "jules_get_session_output",
-      "jules_archive_session",
-      "jules_delete_session",
       "jules_retry_session",
       "jules_apply_patch",
       "jules_list_sources",
-      "jules_prune_sessions",
       "jules_approve_plan",
       "jules_send_message",
       "jules_wait_for_session",
@@ -62,16 +59,38 @@ test("Model Context Protocol (MCP) Server", async (t) => {
       "agent_list_sessions",
       "agent_list_activities",
       "agent_get_session_output",
-      "agent_archive_session",
-      "agent_delete_session",
       "agent_retry_session",
       "agent_apply_patch",
       "agent_list_sources",
-      "agent_prune_sessions",
       "agent_approve_plan",
       "agent_send_message",
       "agent_wait_for_session",
     ]);
+
+    for (const removed of [
+      "jules_archive_session",
+      "agent_archive_session",
+      "jules_delete_session",
+      "agent_delete_session",
+      "jules_prune_sessions",
+      "agent_prune_sessions",
+    ]) {
+      assert.equal(names.includes(removed), false, `${removed} must not be exposed by tools/list`);
+    }
+
+    for (const surviving of [
+      "dispatch_jules_task",
+      "audit_jules_gate",
+      "jules_list_sessions",
+      "jules_get_session_output",
+      "jules_wait_for_session",
+      "jules_approve_plan",
+      "jules_send_message",
+      "jules_retry_session",
+      "jules_apply_patch",
+    ]) {
+      assert.equal(names.includes(surviving), true, `${surviving} must remain exposed by tools/list`);
+    }
   });
 
   await t.test("executes check_risk_tier tool call", async () => {
@@ -204,6 +223,42 @@ test("Model Context Protocol (MCP) Server", async (t) => {
     assert.equal(res2.jsonrpc, "2.0");
     assert.equal(res2.id, 102);
     assert.equal(res2.error.code, -32601);
+
+    // Removed provider-account session housekeeping tools (canonical and aliases) must fail closed with -32601
+    const removedCalls = [
+      { name: "jules_archive_session", arguments: { sessionId: "sess-test", dryRun: false } },
+      { name: "agent_archive_session", arguments: { sessionId: "sess-test", dryRun: false } },
+      { name: "jules_delete_session", arguments: { sessionId: "sess-test", dryRun: false } },
+      { name: "agent_delete_session", arguments: { sessionId: "sess-test", dryRun: false } },
+      { name: "jules_prune_sessions", arguments: { delete: true, dryRun: false, age: "0s" } },
+      { name: "agent_prune_sessions", arguments: { delete: true, dryRun: false, age: "0s" } },
+    ];
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      throw new Error("unexpected provider network call");
+    };
+    try {
+      for (const [idx, callSpec] of removedCalls.entries()) {
+        const resRemoved = await handleMcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 110 + idx,
+            method: "tools/call",
+            params: callSpec,
+          },
+          { dryRun: false }
+        );
+        assert.equal(resRemoved.jsonrpc, "2.0");
+        assert.equal(resRemoved.id, 110 + idx);
+        assert.equal(resRemoved.result, undefined, `${callSpec.name} must not return a result`);
+        assert.equal(resRemoved.error?.code, -32601, `${callSpec.name} must fail with -32601`);
+      }
+      assert.equal(fetchCalls, 0, "no provider network call may occur for removed housekeeping tools");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   await t.test("handles invalid/malformed parameters passed to check_risk_tier tool", async () => {
@@ -395,6 +450,23 @@ test("MCP aliases preserve schemas and route to original handlers", async () => 
     jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "toString" },
   });
   assert.ok(unknown.error, "inherited object properties must not resolve as aliases");
+
+  for (const removedAlias of [
+    "agent_archive_session",
+    "agent_delete_session",
+    "agent_prune_sessions",
+  ]) {
+    assert.equal(Object.hasOwn(MCP_TOOL_ALIASES, removedAlias), false, `${removedAlias} must not exist in MCP_TOOL_ALIASES`);
+    assert.equal(MCP_TOOL_ALIASES[removedAlias], undefined);
+  }
+  const aliasTargets = Object.values(MCP_TOOL_ALIASES);
+  for (const removedCanonical of [
+    "jules_archive_session",
+    "jules_delete_session",
+    "jules_prune_sessions",
+  ]) {
+    assert.equal(aliasTargets.includes(removedCanonical), false, `no alias may target ${removedCanonical}`);
+  }
 });
 
 function initMcpGateFixture() {

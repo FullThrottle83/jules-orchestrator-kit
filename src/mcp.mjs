@@ -13,7 +13,6 @@ import {
   extractSessionPatch,
   applySessionPatch,
   retrySession,
-  pruneSessions,
 } from "./session-ops.mjs";
 import { resolveTrustedBaseRef, resolveBase } from "./git.mjs";
 
@@ -239,28 +238,6 @@ export const MCP_TOOLS = [
     },
   },
   {
-    name: "jules_archive_session",
-    description: "Archive a Jules coding session to clean up the dashboard.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        sessionId: { type: "string", description: "Jules session ID to archive" },
-      },
-      required: ["sessionId"],
-    },
-  },
-  {
-    name: "jules_delete_session",
-    description: "Permanently delete a Jules coding session.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        sessionId: { type: "string", description: "Jules session ID to delete" },
-      },
-      required: ["sessionId"],
-    },
-  },
-  {
     name: "jules_retry_session",
     description: "Retry a failed Jules session by extracting failure diagnostics and dispatching a new OODA repair session.",
     inputSchema: {
@@ -294,19 +271,6 @@ export const MCP_TOOLS = [
       properties: {
         pageSize: { type: "number", description: "Maximum number of sources to return" },
         pageToken: { type: "string", description: "Page token for pagination" },
-      },
-    },
-  },
-  {
-    name: "jules_prune_sessions",
-    description: "Batch-archive or prune old/completed Jules sessions matching age and state filters.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        age: { type: "string", description: "Age cutoff string (e.g. '7d', '24h', '30m')" },
-        state: { type: "string", description: "Target session state to filter (e.g. 'FAILED', 'COMPLETED')" },
-        dryRun: { type: "boolean", description: "If true, previews sessions without modifying (default true)" },
-        delete: { type: "boolean", description: "If true, permanently deletes instead of archiving" },
       },
     },
   },
@@ -812,44 +776,6 @@ export async function handleMcpRequest(request, opts = {}) {
         };
       }
 
-      if (toolName === "jules_archive_session") {
-        if (!args.sessionId) {
-          return {
-            jsonrpc: "2.0",
-            id,
-            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
-          };
-        }
-        const provider = createProvider(config.provider || "jules", config);
-        const res = await provider.archiveSession(args.sessionId, { root, dryRun: isDryRun });
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: {
-            content: [{ type: "text", text: JSON.stringify({ ok: true, ...res }, null, 2) }],
-          },
-        };
-      }
-
-      if (toolName === "jules_delete_session") {
-        if (!args.sessionId) {
-          return {
-            jsonrpc: "2.0",
-            id,
-            error: { code: -32602, message: "Missing required parameter 'sessionId'" },
-          };
-        }
-        const provider = createProvider(config.provider || "jules", config);
-        const res = await provider.deleteSession(args.sessionId, { root, dryRun: isDryRun });
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: {
-            content: [{ type: "text", text: JSON.stringify({ ok: true, ...res }, null, 2) }],
-          },
-        };
-      }
-
       if (toolName === "jules_retry_session") {
         if (!args.sessionId) {
           return {
@@ -904,24 +830,6 @@ export async function handleMcpRequest(request, opts = {}) {
           id,
           result: {
             content: [{ type: "text", text: JSON.stringify({ ok: true, ...res }, null, 2) }],
-          },
-        };
-      }
-
-      if (toolName === "jules_prune_sessions") {
-        const res = await pruneSessions({
-          root,
-          config,
-          age: args.age || "7d",
-          state: args.state,
-          delete: Boolean(args.delete),
-          dryRun: args.dryRun !== false,
-        });
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: {
-            content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           },
         };
       }
