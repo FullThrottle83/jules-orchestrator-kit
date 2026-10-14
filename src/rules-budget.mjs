@@ -28,16 +28,20 @@ export function checkRulesBudget(root = process.cwd(), opts = {}) {
     "JULES_RULES_TEMPLATE.md",
   ];
 
-  // Scan .agent/rules/ directory if it exists
-  const rulesDir = join(root, ".agent", "rules");
-  try {
-    const files = readdirSync(rulesDir);
-    for (const f of files) {
-      if (f.endsWith(".md")) {
-        candidateFiles.push(join(".agent", "rules", f));
+  // Scan .agent/rules/ and .agents/rules/ directories if they exist
+  for (const dirName of [".agent", ".agents"]) {
+    const rulesDir = join(root, dirName, "rules");
+    try {
+      const files = readdirSync(rulesDir);
+      for (const f of files) {
+        if (f.endsWith(".md")) {
+          candidateFiles.push(join(dirName, "rules", f));
+        }
       }
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
+
+  const hasAgentsMd = existsSync(join(root, "AGENTS.md"));
 
   for (const relPath of candidateFiles) {
     const fullPath = join(root, relPath);
@@ -68,6 +72,31 @@ export function checkRulesBudget(root = process.cwd(), opts = {}) {
           lineCount,
           reason: `Exceeds max line budget of ${maxLines} lines (${lineCount} lines). Claude Code auto-memory truncates > 200 lines.`,
         });
+      }
+
+      if (relPath === "CLAUDE.md" && hasAgentsMd && !/(?:^|\n)@AGENTS\.md(?:\n|$)/.test(normalized)) {
+        violations.push({
+          path: relPath,
+          charCount,
+          lineCount,
+          reason: "CLAUDE.md must import @AGENTS.md on its own line so Claude Code loads the canonical repository policy.",
+        });
+      }
+
+      const normRel = relPath.replace(/\\/g, "/");
+      if (normRel.startsWith(".agent/rules/") || normRel.startsWith(".agents/rules/")) {
+        const fmMatch = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+        const hasValidTrigger =
+          Boolean(fmMatch) && /(?:^|\n)trigger:\s*(?:always_on|model_decision|glob|manual)\b/.test(fmMatch[1]);
+        if (!hasValidTrigger) {
+          violations.push({
+            path: relPath,
+            charCount,
+            lineCount,
+            reason:
+              "Rule file under .agent(s)/rules/ must start at line 1 with YAML frontmatter declaring 'trigger: always_on | model_decision | glob | manual' or Antigravity silently discards it.",
+          });
+        }
       }
     } catch (_) {}
   }
