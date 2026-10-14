@@ -14,12 +14,26 @@ import { PROVIDER_DESCRIPTORS } from "./provider-readiness.mjs";
  */
 
 /**
- * The manifest this repository uses, or null when it has none.
+ * Resolve the canonical writable manifest (.agent/config.yml).
+ * Legacy .agent/jules.yml is 0.x read-only compatibility input and must never
+ * be mutated by ordinary config setters; operators must run `agentctl migrate`
+ * explicitly first.
  * @param {string} root
- * @returns {string|null}
+ * @returns {{ file: string|null, error?: string }}
  */
-function findManifest(root) {
-  return [join(root, ".agent", "config.yml"), join(root, ".agent", "jules.yml")].find((f) => existsSync(f)) || null;
+function resolveWritableManifest(root) {
+  const configPath = join(root, ".agent", "config.yml");
+  if (existsSync(configPath)) return { file: configPath };
+  const legacyPath = join(root, ".agent", "jules.yml");
+  if (existsSync(legacyPath)) {
+    return {
+      file: null,
+      error:
+        "Legacy .agent/jules.yml is read-only compatibility input and cannot be modified in place. " +
+        "Preview migration with `agentctl migrate --dry-run`, then run `agentctl migrate --yes` to create .agent/config.yml.",
+    };
+  }
+  return { file: null, error: "No .agent/config.yml found. Run `agentctl init` first." };
 }
 
 /**
@@ -69,8 +83,8 @@ export function setConfigProvider(root, provider) {
     return { ok: false, error: `Invalid provider name '${provider}'.` };
   }
 
-  const file = findManifest(root);
-  if (!file) return { ok: false, error: "No .agent/config.yml found. Run `agentctl init` first." };
+  const { file, error } = resolveWritableManifest(root);
+  if (!file) return { ok: false, error };
 
   return editManifest(file, (lines) => {
     const idx = lines.findIndex((l) => /^provider:\s*/.test(l));
@@ -99,9 +113,9 @@ export function setVerificationProfile(root, profile) {
     return { ok: false, error: `Unknown profile '${profile}'. Choose one of: ${PROFILE_NAMES.join(", ")}` };
   }
 
-  const file = findManifest(root);
+  const { file, error } = resolveWritableManifest(root);
   if (!file) {
-    return { ok: false, error: "No .agent/config.yml found. Run `agentctl init` first." };
+    return { ok: false, error };
   }
 
   return editManifest(file, (lines) => {

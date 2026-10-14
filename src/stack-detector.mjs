@@ -1060,21 +1060,5 @@ export function bootstrapZeroTestRepo(root = process.cwd(), options = {}) {
     writeFileSync(configPath, cfg, "utf-8");
   }
 
-  const julesPath = join(root, ".agent", "jules.yml");
-  if (existsSync(julesPath)) {
-    try {
-      let rawJules = readFileSync(julesPath, "utf-8");
-      if (/^\s*test_cmd:\s*.*$/m.test(rawJules)) {
-        rawJules = rawJules.replace(/^\s*test_cmd:\s*.*$/m, () => `test_cmd: ${yamlScalar(testCmd)}`);
-      } else {
-        rawJules += `\ntest_cmd: ${yamlScalar(testCmd)}\n`;
-      }
-      if (detected.buildCmd && /^\s*build_cmd:\s*["']?["']?\s*$/m.test(rawJules)) {
-        rawJules = rawJules.replace(/^\s*build_cmd:\s*.*$/m, () => `build_cmd: ${yamlScalar(detected.buildCmd)}`);
-      }
-      writeFileSync(julesPath, rawJules, "utf-8");
-    } catch (_) {}
-  }
-
   return { bootstrapped: true, stack: detected.stack, testCmd, configPath };
 }

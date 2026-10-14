@@ -118,6 +118,9 @@ test("detectEdgeRuntime - detects wrangler configs and edge packages", () => {
 test("bootstrapZeroTestRepo - generates verification oracle for zero-test repositories", () => {
   const tmp = mkdtempSync(join(tmpdir(), "bootstrap-test-"));
   try {
+    mkdirSync(join(tmp, ".agent"), { recursive: true });
+    const legacyJules = '# legacy\nversion: 2\ntest_cmd: ""\n';
+    writeFileSync(join(tmp, ".agent", "jules.yml"), legacyJules);
     writeFileSync(join(tmp, "index.php"), "<?php echo 'hello';");
     const res = bootstrapZeroTestRepo(tmp);
 
@@ -125,6 +128,7 @@ test("bootstrapZeroTestRepo - generates verification oracle for zero-test reposi
     assert.equal(res.stack, "php");
     assert.ok(res.testCmd.includes("php -l"));
     assert.ok(existsSync(join(tmp, ".agent", "config.yml")));
+    assert.equal(readFileSync(join(tmp, ".agent", "jules.yml"), "utf-8"), legacyJules, ".agent/jules.yml must remain byte-identical");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
