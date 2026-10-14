@@ -35,9 +35,9 @@ Any surface primitive that directly serves this chain is evaluated for `CORE_V1`
 
 ---
 
-## 1. CLI Command Inventory (56 Commands)
+## 1. CLI Command Inventory (55 Commands)
 
-Examines all 56 command descriptors registered in `src/ops/command-registry.mjs`.
+Examines all 55 top-level commands (`bin/agentctl.mjs`) and 56 command descriptors registered in `src/ops/command-registry.mjs`.
 
 | Command | Category | Proposed Classification | Rationale (Tied to Task → Dispatch → Gate → Evidence) |
 | --- | --- | --- | --- |
@@ -92,7 +92,7 @@ Examines all 56 command descriptors registered in `src/ops/command-registry.mjs`
 | `agentctl perf` | Inspect | `REMOVE_CANDIDATE` | Node.js event-loop lag monitoring belongs in external performance tooling. |
 | `agentctl pr harvest` | Operate | `REMOVE_CANDIDATE` | Auto-merge PR harvesting is an external CI/CD workflow concern. |
 | `agentctl harvest` | Operate | `REMOVE_CANDIDATE` | System memory failure harvesting belongs to host-agent instruction systems. |
-| `agentctl prune` | Operate | `REMOVE_CANDIDATE` | Remote session pruning/archiving housekeeping is vendor-specific administration. |
+| `agentctl prune` | Operate | `REMOVE_CANDIDATE` (Removed from CLI/SDK) | Remote session pruning/archiving housekeeping is vendor-specific administration and removed from the CLI and root SDK surface. |
 | `agentctl scan` | Inspect | `REMOVE_CANDIDATE` | Codebase TODO/FIXME scanner is peripheral to core verification. |
 | `agentctl test-gen` | Create | `REMOVE_CANDIDATE` | TDD test generator belongs to coding agent capabilities, not orchestrator acceptance boundary. |
 | `agentctl hydrate` | Inspect | `REMOVE_CANDIDATE` | Prepending system learnings/handover to prompts belongs in host-agent skill layers. |
@@ -101,9 +101,9 @@ Examines all 56 command descriptors registered in `src/ops/command-registry.mjs`
 
 ---
 
-## 2. Root SDK Export Surface Inventory (250 Frozen Symbols)
+## 2. Root SDK Export Surface Inventory (248 Frozen Symbols)
 
-`test/api-surface.test.mjs` freezes 250 symbols exported at package root (`index.mjs`). v1 proposes contracting the public SDK root surface down to a small target contract (~15–25 core symbols) while internalizing or deprecating implementation helpers.
+`test/api-surface.test.mjs` freezes 248 symbols exported at package root (`index.mjs`). v1 proposes contracting the public SDK root surface down to a small target contract (~15–25 core symbols) while internalizing or deprecating implementation helpers.
 
 ### Summary by Functional Family
 
@@ -123,7 +123,7 @@ Examines all 56 command descriptors registered in `src/ops/command-registry.mjs`
 | **Stability & Perf Monitoring** | 6 | `REMOVE_CANDIDATE` | Propose removing `runStabilityProbe`, `measureEventLoopDelay`, `assertEventLoopLag` from root SDK. |
 | **Assertions DSL** | 8 | `REMOVE_CANDIDATE` | Propose removing `assertDirSize`, `assertFileExists`, `assertFileSize`, `assertFilePatterns`, etc. |
 | **Queue & DAG Engine** | 6 | `INTERNALIZE` | Internalize `executeQueueDag`, `DagExecutor`, `classifyQueueFailure`. |
-| **Session Operations & Patching** | 10 | `ADVANCED_V1` / `INTERNALIZE` | Keep high-level session lifecycle functions (`extractSessionPatch`, `applySessionPatch`, `retrySession`, `pruneSessions`); internalize helpers. |
+| **Session Operations & Patching** | 8 | `ADVANCED_V1` / `INTERNALIZE` | Keep high-level session lifecycle functions (`extractSessionPatch`, `applySessionPatch`, `retrySession`); internalize helpers. |
 | **Webhooks & Escalation** | 10 | `REMOVE_CANDIDATE` | Propose removing webhook server and escalation digest exports (`bufferEscalationIncident`, `createWebhookServer`, etc.). |
 | **Flaky Quarantine & Healing** | 8 | `REMOVE_CANDIDATE` | Propose removing flaky ledger and healing swarm exports (`listQuarantinedTests`, `synthesizeFlakyHealingTask`, etc.). |
 | **SPORE Memory & Learnings** | 6 | `REMOVE_CANDIDATE` | Propose removing system learning exports (`recordLearning`, `hydratePrompt`, `loadLearnings`, etc.). |
@@ -213,7 +213,7 @@ The following inventory points were identified as ambiguous or requiring explici
    - *Owner Decision Needed*: Should prompt optimization and templates be removed from the orchestrator core and moved to documentation or host-agent skills?
 
 4. **SDK Contract Contraction Boundary**:
-   - `test/api-surface.test.mjs` freezes 250 exports at package root `index.mjs`.
+   - `test/api-surface.test.mjs` freezes 248 exports at package root `index.mjs`.
    - *Owner Decision Needed*: Confirm the target v1 root SDK export list (~15–25 symbols) and whether subpath exports (e.g. `jules-orchestrator-kit/errors`, `jules-orchestrator-kit/provider`) should be established for advanced consumers.
 
 5. **`jules_*` vs. `agent_*` MCP Naming**:

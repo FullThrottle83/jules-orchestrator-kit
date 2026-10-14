@@ -3,7 +3,7 @@
 > Auto-generated from `src/ops/command-registry.mjs`. Do not edit by hand —
 run `node scripts/generate-command-reference.mjs` to regenerate.
 
-Total commands: 57
+Total commands: 56
 
 ## Index
 
@@ -49,7 +49,6 @@ Total commands: 57
 - [`agentctl repair`](#repair) — Explicitly repair from piped terminal logs or an error trace; `fix` remains a 0.x compatibility alias
 - [`agentctl patch`](#patch) — Extract and test/apply git patch from a Jules session
 - [`agentctl retry`](#retry) — Retry failed session with automated failure-trace injection
-- [`agentctl prune`](#prune) — Batch-archive or delete stale sessions via Jules API
 - [`agentctl clean`](#clean) — Clean stale branches, worktrees, locks, and ledgers
 - [`agentctl provider`](#provider) — Show provider readiness or switch the active provider (provider set <name>)
 - [`agentctl providers`](#providers) — List agent providers and whether this machine can reach them
@@ -1194,31 +1193,6 @@ Retry failed session with automated failure-trace injection
 agentctl retry <sessionId>
 agentctl retry <sessionId> --role debugger
 agentctl retry <sessionId> --dry-run --json
-```
-
-## `agentctl prune`
-
-**ID:** `prune` · **Category:** Operate · **Risk:** MODERATE · **Mutates:** yes
-
-Batch-archive or delete stale sessions via Jules API
-
-**Flags:**
-
-| Flag | Type | Description |
-| :--- | :--- | :--- |
-| `--age` | string | Only match sessions older than this (e.g. 7d) (-a) |
-| `--state` | string | Only match sessions in this state (-s) |
-| `--delete` | boolean | Delete matched sessions instead of archiving |
-| `--dry-run` | boolean | Report matches without archiving (-d) |
-| `--yes` | boolean | Confirm archiving matched sessions (-y) |
-| `--json` | boolean | Output structured JSON result (-j) |
-
-**Examples:**
-
-```sh
-agentctl prune --json
-agentctl prune --age 7d --dry-run
-agentctl prune --age 30d --state COMPLETED --yes
 ```
 
 ## `agentctl clean`

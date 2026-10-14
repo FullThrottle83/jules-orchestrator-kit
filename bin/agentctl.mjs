@@ -1260,53 +1260,6 @@ async function main() {
       break;
     }
 
-    case "prune": {
-      const { pruneSessions, resolveRoot } = await import("../index.mjs");
-      const { values } = parseArgs({
-        args: args.slice(1),
-        options: {
-          age: { type: "string", short: "a" },
-          state: { type: "string", short: "s" },
-          delete: { type: "boolean" },
-          "dry-run": { type: "boolean", short: "d" },
-          yes: { type: "boolean", short: "y" },
-          json: { type: "boolean", short: "j" },
-        },
-        allowPositionals: true,
-      });
-
-      const root = resolveRoot();
-      const dryRun = values["dry-run"] || (!values.yes && !values.delete);
-      const res = await pruneSessions({
-        root,
-        age: values.age || "7d",
-        state: values.state,
-        delete: Boolean(values.delete),
-        dryRun,
-      });
-
-      if (values.json) {
-        console.log(JSON.stringify(res, null, 2));
-      } else {
-        console.log(`\n🧹 Session Pruning Report (${dryRun ? "DRY RUN" : "EXECUTED"})`);
-        console.log(`------------------------------------------------------------------`);
-        console.log(`  Filter Age Cutoff   : ${values.age || "7d"}`);
-        console.log(`  Filter Target State : ${values.state || "ALL"}`);
-        console.log(`  Matched Sessions    : ${res.matchedCount}`);
-        console.log(`  Archived / Deleted  : ${res.archivedCount}`);
-        console.log(`------------------------------------------------------------------`);
-        for (const s of res.sessions) {
-          console.log(`  - [${s.action}] ${s.id} (State: ${s.state || "UNKNOWN"})`);
-        }
-        if (dryRun && res.matchedCount > 0) {
-          console.log(`\n💡 Re-run with --yes to archive matched sessions.\n`);
-        }
-      }
-
-      process.exit(0);
-      break;
-    }
-
     case "assert": {
       const { runAssertion, parseYaml } = await import("../index.mjs");
       const { values } = parseArgs({
