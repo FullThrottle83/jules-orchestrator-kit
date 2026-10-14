@@ -46,7 +46,7 @@ import {
   pruneCheckpoints,
   CheckpointError,
 } from "../src/ops/checkpoint.mjs";
-import { retrySession, pruneSessions } from "../src/session-ops.mjs";
+import { retrySession } from "../src/session-ops.mjs";
 import { loadLearnings } from "../src/memory.mjs";
 import { checkDailyBudget } from "../src/state.mjs";
 
@@ -1177,62 +1177,64 @@ describe("agentctl command surface — offline CLI coverage", () => {
     }
   });
 
-  it("prune --json on an untouched repo exits 0 and reports zero matches", () => {
-    const dir = offlineRepo("jok-cli-prune0-");
+  it("prune command is removed from top-level CLI and fails closed with zero network calls", () => {
+    const dir = offlineRepo("jok-cli-prune-removed-");
     try {
-      const proc = runCli(dir, ["prune", "--json"]);
-      assert.equal(proc.status, 0, proc.stderr);
-      const out = JSON.parse(proc.stdout);
-      assert.equal(out.ok, true);
-      assert.equal(out.matchedCount, 0);
-      assert.deepEqual(out.sessions, []);
+      const preloadPath = join(dir, "intercept-fetch.mjs");
+      const logPath = join(dir, "http-calls.json");
+      writeFileSync(
+        preloadPath,
+        `import { writeFileSync } from "node:fs";
+const calls = [];
+globalThis.fetch = async (url, init = {}) => {
+  calls.push({ method: init.method || "GET", url: String(url) });
+  writeFileSync(${JSON.stringify(logPath)}, JSON.stringify(calls));
+  throw new Error("Unexpected network call");
+};
+`
+      );
+      const cliBin = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
+      const res = spawnSync(
+        process.execPath,
+        ["--import", preloadPath, cliBin, "prune", "--delete", "--yes", "--json"],
+        {
+          cwd: dir,
+          env: { ...process.env, JULES_API_KEY: "fake-key-must-not-be-used" },
+          encoding: "utf-8",
+        }
+      );
+      assert.equal(res.status, 1);
+      assert.equal(res.stdout, "");
+      assert.match(res.stderr, /Unknown command: "prune"/);
+      assert.match(res.stderr, /Run 'agentctl --help' to see all available commands\./);
+      assert.equal(existsSync(logPath), false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("pruneSessions honours age and state filters, dry-run, archive and delete", async () => {
-    const dir = offlineRepo("jok-unit-prune-");
+  it("prune is absent from command registry and help while local lock and handover prune remain intact", () => {
+    const dir = offlineRepo("jok-cli-prune-surfaces-");
     try {
-      const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
-      const sessions = [
-        { id: "old-completed", state: "COMPLETED", createTime: daysAgo(10) },
-        { id: "fresh-completed", state: "COMPLETED", createTime: new Date().toISOString() },
-        { id: "old-failed", state: "FAILED", createTime: daysAgo(10) },
-      ];
-      const archived = [];
-      const deleted = [];
-      const provider = {
-        name: "mock",
-        async listSessions() {
-          return { sessions };
-        },
-        async archiveSession(id) {
-          archived.push(id);
-          return { ok: true };
-        },
-        async deleteSession(id) {
-          deleted.push(id);
-          return { ok: true };
-        },
-      };
+      assert.equal(getCommandDescriptor("prune"), null);
+      assert.equal(
+        COMMAND_REGISTRY.some((d) => d.id === "prune" || d.path[0] === "prune"),
+        false
+      );
+      const helpMarkdown = formatRegistryMarkdown();
+      assert.doesNotMatch(helpMarkdown, /^## `agentctl prune`$/m);
+      assert.doesNotMatch(helpMarkdown, /\[`agentctl prune`\]\(#prune\)/);
 
-      const dry = await pruneSessions({ root: dir, provider, age: "7d", dryRun: true });
-      assert.equal(dry.matchedCount, 2, "only sessions older than the cutoff match");
-      assert.ok(dry.sessions.every((s) => s.action === "DRY_RUN_SKIP"));
-      assert.equal(dry.archivedCount, 0);
-      assert.deepEqual(archived, [], "a dry run must not touch the provider");
+      const lockRes = runCli(dir, ["lock", "prune", "--json"]);
+      assert.equal(lockRes.status, 0);
+      const lockOut = JSON.parse(lockRes.stdout);
+      assert.deepEqual(lockOut.reaped, []);
 
-      const wet = await pruneSessions({ root: dir, provider, age: "7d" });
-      assert.equal(wet.archivedCount, 2);
-      assert.deepEqual(archived.sort(), ["old-completed", "old-failed"]);
-
-      const filtered = await pruneSessions({ root: dir, provider, age: "7d", state: "COMPLETED" });
-      assert.equal(filtered.matchedCount, 1, "the state filter excludes the FAILED session");
-
-      const removed = await pruneSessions({ root: dir, provider, age: "7d", delete: true });
-      assert.deepEqual(deleted.sort(), ["old-completed", "old-failed"]);
-      assert.ok(removed.sessions.every((s) => s.action === "DELETED"));
+      const hoRes = runCli(dir, ["handover", "prune", "--json"]);
+      assert.equal(hoRes.status, 0);
+      const hoOut = JSON.parse(hoRes.stdout);
+      assert.equal(hoOut.ok, true);
+      assert.equal(hoOut.pruned, 0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

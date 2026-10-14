@@ -249,7 +249,4 @@ export {
   extractSessionPatch,
   applySessionPatch,
   retrySession,
-  pruneSessions,
-  parseAgeDuration,
 } from "./src/session-ops.mjs";
-

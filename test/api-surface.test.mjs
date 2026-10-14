@@ -161,7 +161,6 @@ const FROZEN_SDK_EXPORTS = [
   "multiSelect",
   "normalizePath",
   "optimizeTaskPrompt",
-  "parseAgeDuration",
   "parseProcStat",
   "parseRetryAfter",
   "parseWebhookPayload",
@@ -171,7 +170,6 @@ const FROZEN_SDK_EXPORTS = [
   "probeDevServer",
   "pruneCheckpoints",
   "pruneHandovers",
-  "pruneSessions",
   "pushReservationManifest",
   "queryRemediations",
   "readActiveCeiling",
@@ -300,7 +298,7 @@ describe("SDK API Surface & Exit Code Stability Lock", () => {
       `Unapproved new SDK exports detected:\n${addedExports.join("\n")}\nIf intentional, review and update FROZEN_SDK_EXPORTS snapshot.`
     );
 
-    assert.equal(actualExports.length, 250, "Total exported SDK symbols count must remain locked at 250");
+    assert.equal(actualExports.length, 248, "Total exported SDK symbols count must remain locked at 248");
   });
 
   it("ensures every exported symbol is defined and non-null", () => {

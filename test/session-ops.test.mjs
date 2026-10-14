@@ -3,15 +3,15 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import * as sessionOps from "../src/session-ops.mjs";
+import * as sdk from "../index.mjs";
 import {
-  parseAgeDuration,
   extractSessionPatch,
   extractFilesFromPatch,
   extractFailureDiagnostics,
   applySessionPatch,
   retrySession,
-  pruneSessions,
 } from "../src/session-ops.mjs";
 
 function createTempGitRepo() {
@@ -26,15 +26,21 @@ function createTempGitRepo() {
 }
 
 test("Jules Power-User Session Operations & Lifecycle Engine", async (t) => {
-  await t.test("parseAgeDuration accurately parses human-readable duration strings", () => {
-    assert.equal(parseAgeDuration("60s"), 60000);
-    assert.equal(parseAgeDuration("30m"), 30 * 60 * 1000);
-    assert.equal(parseAgeDuration("24h"), 24 * 60 * 60 * 1000);
-    assert.equal(parseAgeDuration("7d"), 7 * 24 * 60 * 60 * 1000);
-    assert.equal(parseAgeDuration("2w"), 14 * 24 * 60 * 60 * 1000);
-    assert.equal(parseAgeDuration(5000), 5000);
-    assert.equal(parseAgeDuration("invalid"), 0);
-    assert.equal(parseAgeDuration(null), 0);
+  await t.test("parseAgeDuration and pruneSessions are removed from session-ops and root SDK exports", () => {
+    assert.equal(Object.hasOwn(sessionOps, "parseAgeDuration"), false);
+    assert.equal(Object.hasOwn(sessionOps, "pruneSessions"), false);
+    assert.equal(typeof sessionOps.parseAgeDuration, "undefined");
+    assert.equal(typeof sessionOps.pruneSessions, "undefined");
+    assert.equal(Object.hasOwn(sdk, "parseAgeDuration"), false);
+    assert.equal(Object.hasOwn(sdk, "pruneSessions"), false);
+    assert.equal(typeof sdk.parseAgeDuration, "undefined");
+    assert.equal(typeof sdk.pruneSessions, "undefined");
+    assert.equal(Object.hasOwn(sessionOps, "extractSessionPatch"), true);
+    assert.equal(Object.hasOwn(sessionOps, "applySessionPatch"), true);
+    assert.equal(Object.hasOwn(sessionOps, "retrySession"), true);
+    assert.equal(Object.hasOwn(sdk, "extractSessionPatch"), true);
+    assert.equal(Object.hasOwn(sdk, "applySessionPatch"), true);
+    assert.equal(Object.hasOwn(sdk, "retrySession"), true);
   });
 
   await t.test("extractSessionPatch retrieves git diff and PR details from outputs and activities", async () => {
@@ -682,80 +688,52 @@ diff --git a/src/b.js b/src/b.js
     assert.equal(res.failureReason, "Previous session did not complete cleanly.");
   });
 
-  await t.test("pruneSessions filters by age and state, dry-runs, and archives stale sessions", async () => {
-    const archivedIds = [];
-    const deletedIds = [];
+  await t.test("agentctl prune fails closed across former flag combinations without contacting provider", () => {
+    const dir = createTempGitRepo();
+    try {
+      const cliPath = join(process.cwd(), "bin", "agentctl.mjs");
+      const preloadPath = join(dir, "preload-fetch.mjs");
+      const logPath = join(dir, "http-calls.json");
+      writeFileSync(
+        preloadPath,
+        `import { writeFileSync } from "node:fs";
+const calls = [];
+globalThis.fetch = async (url, init = {}) => {
+  calls.push({ method: init.method || "GET", url: String(url) });
+  writeFileSync(${JSON.stringify(logPath)}, JSON.stringify(calls));
+  throw new Error("Network call prohibited");
+};
+`
+      );
 
-    const mockSessions = [
-      {
-        id: "s1",
-        state: "COMPLETED",
-        createTime: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(), // 10 days old
-      },
-      {
-        id: "s2",
-        state: "FAILED",
-        createTime: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(), // 8 days old
-      },
-      {
-        id: "s3",
-        state: "COMPLETED",
-        createTime: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day old
-      },
-    ];
-
-    const mockProvider = {
-      async listSessions() {
-        return { sessions: mockSessions };
-      },
-      async archiveSession(id) {
-        archivedIds.push(id);
-        return { id, archived: true };
-      },
-      async deleteSession(id) {
-        deletedIds.push(id);
-        return { id, deleted: true };
-      },
-    };
-
-    // 1. Dry run with age >= 7d
-    const dryRes = await pruneSessions({
-      provider: mockProvider,
-      age: "7d",
-      dryRun: true,
-      root: tmpdir(),
-    });
-
-    assert.equal(dryRes.ok, true);
-    assert.equal(dryRes.matchedCount, 2); // s1 and s2
-    assert.equal(dryRes.archivedCount, 0); // dry run did not archive
-    assert.equal(archivedIds.length, 0);
-
-    // 2. Real archive with age >= 7d and state=FAILED
-    const realRes = await pruneSessions({
-      provider: mockProvider,
-      age: "7d",
-      state: "FAILED",
-      dryRun: false,
-      root: tmpdir(),
-    });
-
-    assert.equal(realRes.ok, true);
-    assert.equal(realRes.matchedCount, 1); // s2 only
-    assert.equal(realRes.archivedCount, 1);
-    assert.deepEqual(archivedIds, ["s2"]);
+      for (const flagSet of [
+        ["prune"],
+        ["prune", "--delete"],
+        ["prune", "--age", "7d", "--state", "COMPLETED", "--yes"],
+      ]) {
+        const proc = spawnSync(process.execPath, ["--import", preloadPath, cliPath, ...flagSet], {
+          cwd: dir,
+          env: { ...process.env, JULES_API_KEY: "fake-key-must-not-be-used" },
+          encoding: "utf-8",
+        });
+        assert.equal(proc.status, 1);
+        assert.equal(proc.stdout, "");
+        assert.match(proc.stderr, /Unknown command: "prune"/);
+      }
+      assert.equal(existsSync(logPath), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
-  await t.test("agentctl CLI subcommands (prune, retry, patch) respond cleanly", () => {
+  await t.test("agentctl CLI subcommands (retry, session list, patch) respond cleanly and reject removed prune", () => {
     const cliPath = join(process.cwd(), "bin", "agentctl.mjs");
 
-    // 1. prune --dry-run --json
-    const pruneRes = execFileSync(process.execPath, [cliPath, "prune", "--dry-run", "--json"], {
-      encoding: "utf-8",
-    });
-    const pruneJson = JSON.parse(pruneRes);
-    assert.equal(pruneJson.ok, true);
-    assert.equal(typeof pruneJson.matchedCount, "number");
+    // 1. removed prune --dry-run --json exits 1 via unknown-command handler
+    assert.throws(
+      () => execFileSync(process.execPath, [cliPath, "prune", "--dry-run", "--json"], { encoding: "utf-8", stdio: "pipe" }),
+      (err) => err.status === 1 && /Unknown command: "prune"/.test(err.stderr)
+    );
 
     // 2. retry --dry-run --json
     const retryRes = execFileSync(process.execPath, [cliPath, "retry", "session-dry-123", "--dry-run", "--json"], {
