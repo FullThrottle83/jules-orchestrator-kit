@@ -9,10 +9,10 @@ import { join } from "node:path";
 export { detectStack, detectPackageManager } from "../src/config.mjs";
 
 /**
- * Extract and parse custom command definitions from .agent/jules.yml or .agent/config.yml.
+ * Extract and parse custom command definitions from .agent/config.yml or .agent/jules.yml.
  */
 export function parseYamlConfig(root = process.cwd()) {
-  const candidates = [join(root, ".agent", "jules.yml"), join(root, ".agent", "config.yml")];
+  const candidates = [join(root, ".agent", "config.yml"), join(root, ".agent", "jules.yml")];
   for (const configPath of candidates) {
     if (existsSync(configPath)) {
       try {

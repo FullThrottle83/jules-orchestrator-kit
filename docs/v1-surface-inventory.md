@@ -182,8 +182,8 @@ Examines files and configuration written by `bin/init.js`, `agentctl init`, `src
 
 | Output Asset | Proposed Classification | Rationale & Proposed Direction |
 | --- | --- | --- |
-| `.agent/config.yml` | `CORE_V1` | Single canonical project configuration file. |
-| `.agent/jules.yml` | `DEPRECATE_PRE_V1` | Legacy 0.x configuration file; read for migration compatibility, then omitted from default `init` output. |
+| `.agent/config.yml` | `CORE_V1` | Single canonical writable project configuration file. |
+| `.agent/jules.yml` | `DEPRECATE_PRE_V1` | Legacy 0.x configuration file; read-only compatibility input for migration (`agentctl migrate`), omitted from default `init` output and rejected by ordinary config mutators. |
 | `.gitignore` entries | `CORE_V1` | Essential runtime ignore entries (locks, temporary state, evidence caches). |
 | `.github/workflows/agent-gate.yml` | `ADVANCED_V1` | Stack-aware CI gate workflow generator; opt-in or created via `agentctl ci init`. |
 | `AGENTS.md` | `INTERNALIZE` / `REMOVE_CANDIDATE` | Currently written during legacy `init`; propose making default `init` write config only, leaving `AGENTS.md` as opt-in or user-owned. |
