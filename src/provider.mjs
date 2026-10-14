@@ -1164,42 +1164,6 @@ export function createProvider(spec = "jules", config = {}) {
       return { activities: [], raw: {} };
     },
 
-    async archiveSession(sessionId, ctx = {}) {
-      if (!sessionId || typeof sessionId !== "string") {
-        throw new TypeError("archiveSession() requires a valid sessionId string");
-      }
-      if (!ctx || typeof ctx !== "object") ctx = {};
-      if (ctx.dryRun) return { id: sessionId, archived: true, raw: {} };
-      if (providerSpec.type === "http") {
-        if (providerSpec.archiveUrl) {
-          const url = interpolateString(providerSpec.archiveUrl, { sessionId, ...ctx });
-          const res = await this.approvePlan(sessionId, { ...ctx, customUrl: url });
-          return { id: sessionId, archived: true, raw: res?.raw || {} };
-        }
-        return {
-          id: sessionId,
-          archived: false,
-          unsupported: true,
-          message: "Session archiving is not supported by Jules REST API. Use deleteSession instead.",
-        };
-      }
-      return { id: sessionId, archived: true, raw: {} };
-    },
-
-    async deleteSession(sessionId, ctx = {}) {
-      if (!sessionId || typeof sessionId !== "string") {
-        throw new TypeError("deleteSession() requires a valid sessionId string");
-      }
-      if (!ctx || typeof ctx !== "object") ctx = {};
-      if (ctx.dryRun) return { id: sessionId, deleted: true, raw: {} };
-      if (providerSpec.type === "http") {
-        const url = `${providerSpec.url || "https://jules.googleapis.com/v1alpha/sessions"}/${sessionId}`;
-        const res = await this.getSession("", { ...ctx, customUrl: url, method: "DELETE" });
-        return { id: sessionId, deleted: true, raw: res?.raw || {} };
-      }
-      return { id: sessionId, deleted: true, raw: {} };
-    },
-
     async listSources(ctx = {}) {
       if (!ctx || typeof ctx !== "object") ctx = {};
       if (ctx.dryRun) return { sources: [], raw: {} };
@@ -1321,22 +1285,6 @@ export function createFailoverProvider(providers = ["jules"], config = {}) {
       return target.listActivities(sessionId, ctx);
     },
 
-    async archiveSession(sessionId, ctx = {}) {
-      const target = resolveTargetProvider(sessionId, ctx);
-      if (!target || typeof target.archiveSession !== "function") {
-        return { id: sessionId, archived: false };
-      }
-      return target.archiveSession(sessionId, ctx);
-    },
-
-    async deleteSession(sessionId, ctx = {}) {
-      const target = resolveTargetProvider(sessionId, ctx);
-      if (!target || typeof target.deleteSession !== "function") {
-        return { id: sessionId, deleted: false };
-      }
-      return target.deleteSession(sessionId, ctx);
-    },
-
     async listSources(ctx = {}) {
       return providerList[0].listSources(ctx);
     },
@@ -1424,14 +1372,6 @@ export function createSyntaxVerifiedProvider(fastProvider, complexProvider, conf
 
     listActivities(...args) {
       return typeof fastProvider.listActivities === "function" ? fastProvider.listActivities(...args) : { activities: [] };
-    },
-
-    archiveSession(...args) {
-      return typeof fastProvider.archiveSession === "function" ? fastProvider.archiveSession(...args) : { id: args[0], archived: true };
-    },
-
-    deleteSession(...args) {
-      return typeof fastProvider.deleteSession === "function" ? fastProvider.deleteSession(...args) : { id: args[0], deleted: true };
     },
 
     listSources(...args) {
