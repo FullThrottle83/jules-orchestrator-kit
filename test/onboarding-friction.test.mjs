@@ -182,6 +182,88 @@ describe("switching provider does not mean re-running onboarding", () => {
       const out = readFileSync(join(dir, ".agent", "config.yml"), "utf-8");
       assert.match(out, /^provider: codex$/m);
       assert.match(out, /^ {2}profile: max$/m);
+      assert.equal(existsSync(join(dir, ".agent", "jules.yml")), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to mutate a legacy-only .agent/jules.yml and points to agentctl migrate", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jok-legacy-only-"));
+    try {
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      const legacyYaml = '# Google Jules Repository Configuration (Version 2)\nversion: 2\ntest_cmd: "npm test"\nbuild_cmd: ""\n';
+      const julesPath = join(dir, ".agent", "jules.yml");
+      const configPath = join(dir, ".agent", "config.yml");
+      writeFileSync(julesPath, legacyYaml, "utf-8");
+
+      const provRes = setConfigProvider(dir, "codex");
+      assert.equal(provRes.ok, false);
+      assert.match(provRes.error, /agentctl migrate --dry-run/);
+      assert.match(provRes.error, /agentctl migrate --yes/);
+
+      const profRes = setVerificationProfile(dir, "max");
+      assert.equal(profRes.ok, false);
+      assert.match(profRes.error, /agentctl migrate --dry-run/);
+      assert.match(profRes.error, /agentctl migrate --yes/);
+
+      assert.equal(readFileSync(julesPath, "utf-8"), legacyYaml, ".agent/jules.yml must remain byte-identical");
+      assert.equal(existsSync(configPath), false, ".agent/config.yml must not be created as a side effect");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("canonical .agent/config.yml wins in dual-config repos and mutations leave .agent/jules.yml byte-identical", async () => {
+    const { loadConfig } = await import("../src/config.mjs");
+    const { parseYamlConfig } = await import("../scripts/command-resolver.mjs");
+    const dir = mkdtempSync(join(tmpdir(), "jok-dual-conf-"));
+    try {
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      const legacyYaml = '# legacy\nversion: 2\nprovider: gemini-flash\ntest_cmd: "npm run test:legacy"\n';
+      const canonicalYaml = '# canonical\nversion: 1\nprovider: jules\nverify:\n  profile: standard\n  test: npm test\n';
+      const julesPath = join(dir, ".agent", "jules.yml");
+      const configPath = join(dir, ".agent", "config.yml");
+      writeFileSync(julesPath, legacyYaml, "utf-8");
+      writeFileSync(configPath, canonicalYaml, "utf-8");
+
+      const loadedBefore = loadConfig(dir);
+      assert.equal(loadedBefore.provider, "jules");
+      assert.equal(loadedBefore.verify.test, "npm test");
+      assert.equal(parseYamlConfig(dir).testCmd, "npm test");
+      assert.equal(parseYamlConfig(dir).source, ".agent/config.yml");
+
+      assert.equal(setConfigProvider(dir, "claude-code").ok, true);
+      assert.equal(setVerificationProfile(dir, "max").ok, true);
+
+      assert.equal(readFileSync(julesPath, "utf-8"), legacyYaml, ".agent/jules.yml must remain byte-identical");
+      const updatedCanonical = readFileSync(configPath, "utf-8");
+      assert.match(updatedCanonical, /^provider: claude-code$/m);
+      assert.match(updatedCanonical, /^ {2}profile: max$/m);
+
+      const loadedAfter = loadConfig(dir);
+      assert.equal(loadedAfter.provider, "claude-code");
+      assert.equal(loadedAfter.verify.profile, "max");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves legacy read compatibility when only .agent/jules.yml is present", async () => {
+    const { loadConfig } = await import("../src/config.mjs");
+    const { parseYamlConfig } = await import("../scripts/command-resolver.mjs");
+    const dir = mkdtempSync(join(tmpdir(), "jok-legacy-read-"));
+    try {
+      mkdirSync(join(dir, ".agent"), { recursive: true });
+      const legacyYaml =
+        'version: 2\ntest_cmd: "npm test"\nforbidden_paths:\n  - ".github/**"\n  - "**/secrets/**"\nallow_paths: []\n';
+      writeFileSync(join(dir, ".agent", "jules.yml"), legacyYaml, "utf-8");
+
+      const cfg = loadConfig(dir);
+      assert.equal(cfg.verify.test, "npm test");
+      assert.ok(cfg.scope.deny.includes("**/secrets/**"));
+      assert.equal(parseYamlConfig(dir).testCmd, "npm test");
+      assert.equal(parseYamlConfig(dir).source, ".agent/jules.yml");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
