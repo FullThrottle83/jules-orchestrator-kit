@@ -1,3 +1,7 @@
+---
+trigger: manual
+---
+
 # Jules compatibility reference
 
 Repository instructions are in [AGENTS.md](../../AGENTS.md).
