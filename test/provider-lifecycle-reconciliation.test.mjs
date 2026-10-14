@@ -6,11 +6,14 @@ import { join } from "node:path";
 import {
   createProvider,
   createFailoverProvider,
+  createSyntaxVerifiedProvider,
   ProviderAmbiguousOutcomeError,
   PlanMismatchError,
   ProviderUnavailableError,
   ProviderRateLimitError,
 } from "../src/provider.mjs";
+import { MCP_TOOLS, MCP_TOOL_ALIASES } from "../src/mcp.mjs";
+import { COMMAND_REGISTRY } from "../src/ops/command-registry.mjs";
 
 const AGENTCTL = join(process.cwd(), "bin", "agentctl.mjs");
 
@@ -476,13 +479,111 @@ describe("Scoped Plan Approval (expectedPlanId & PlanMismatchError)", () => {
   });
 });
 
-describe("Archive Endpoint Deprecation", () => {
-  it("archiveSession returns unsupported notice without calling :archive on live endpoint", async () => {
-    const provider = createProvider("jules");
-    const res = await provider.archiveSession("sess-legacy-1", { allowLegacyKey: true });
-    assert.equal(res.id, "sess-legacy-1");
-    assert.equal(res.archived, false);
-    assert.equal(res.unsupported, true);
-    assert.match(res.message, /not supported by Jules REST API/);
+describe("Destructive Session Housekeeping Contraction (Candidate B3)", () => {
+  it("standard, failover, and syntax-verified provider adapters do not expose archiveSession or deleteSession", async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchCount = 0;
+    globalThis.fetch = async () => {
+      fetchCount += 1;
+      throw new Error("unexpected provider network call");
+    };
+
+    try {
+      const julesProvider = createProvider("jules");
+      const claudeProvider = createProvider("claude-code");
+      const codexProvider = createProvider("codex");
+      const geminiProvider = createProvider("gemini-flash");
+      const customHttpProvider = createProvider({
+        name: "custom-http",
+        type: "http",
+        url: "https://example.invalid/v1alpha/sessions",
+        archiveUrl: "https://example.invalid/v1alpha/sessions/{sessionId}:archive",
+      });
+      const failoverProvider = createFailoverProvider(["jules", "claude-code"]);
+      const wrappedWithCustom = createFailoverProvider([
+        {
+          name: "custom-with-housekeeping",
+          dispatch: async () => ({ id: "sess-1", status: "pending" }),
+          archiveSession: async () => ({ id: "sess-1", archived: true }),
+          deleteSession: async () => ({ id: "sess-1", deleted: true }),
+        },
+      ]);
+      const syntaxVerifiedBare = createSyntaxVerifiedProvider(
+        { name: "bare-fast", dispatch: async () => ({ id: "fast-1" }) },
+        julesProvider,
+        {}
+      );
+      const syntaxVerifiedWithHousekeeping = createSyntaxVerifiedProvider(
+        {
+          name: "housekeeping-fast",
+          dispatch: async () => ({ id: "fast-2" }),
+          archiveSession: async () => ({ id: "fast-2", archived: true }),
+          deleteSession: async () => ({ id: "fast-2", deleted: true }),
+        },
+        julesProvider,
+        {}
+      );
+
+      for (const adapter of [
+        julesProvider,
+        claudeProvider,
+        codexProvider,
+        geminiProvider,
+        customHttpProvider,
+        failoverProvider,
+        wrappedWithCustom,
+        syntaxVerifiedBare,
+        syntaxVerifiedWithHousekeeping,
+      ]) {
+        assert.equal(Object.hasOwn(adapter, "archiveSession"), false);
+        assert.equal(typeof adapter.archiveSession, "undefined");
+        assert.equal(Object.hasOwn(adapter, "deleteSession"), false);
+        assert.equal(typeof adapter.deleteSession, "undefined");
+      }
+
+      // Non-destructive lifecycle surface remains intact across all three factories
+      for (const adapter of [julesProvider, failoverProvider, syntaxVerifiedBare]) {
+        assert.equal(typeof adapter.dispatch, "function");
+        assert.equal(typeof adapter.resume, "function");
+        assert.equal(typeof adapter.sendMessage, "function");
+        assert.equal(typeof adapter.getSession, "function");
+        assert.equal(typeof adapter.approvePlan, "function");
+        assert.equal(typeof adapter.listSessions, "function");
+        assert.equal(typeof adapter.listActivities, "function");
+        assert.equal(typeof adapter.listSources, "function");
+        assert.equal(typeof adapter.validate, "function");
+      }
+
+      const drySession = await julesProvider.getSession("sess-keep-1", { dryRun: true });
+      assert.equal(drySession.status, "active");
+      const dryPlan = await failoverProvider.approvePlan("sess-keep-1", { dryRun: true });
+      assert.equal(dryPlan.approved, true);
+      const dryList = await julesProvider.listSessions({ dryRun: true });
+      assert.deepEqual(dryList.sessions, []);
+      const dryActs = await failoverProvider.listActivities("sess-keep-1", { dryRun: true });
+      assert.deepEqual(dryActs.activities, []);
+      const drySources = await julesProvider.listSources({ dryRun: true });
+      assert.deepEqual(drySources.sources, []);
+
+      // MCP and CLI registries expose zero remote session archive/delete surfaces
+      const mcpNames = MCP_TOOLS.map((t) => t.name);
+      for (const toolName of [
+        "jules_archive_session",
+        "agent_archive_session",
+        "jules_delete_session",
+        "agent_delete_session",
+      ]) {
+        assert.equal(mcpNames.includes(toolName), false);
+        assert.equal(Object.hasOwn(MCP_TOOL_ALIASES, toolName), false);
+      }
+
+      const cliIds = COMMAND_REGISTRY.map((c) => c.id);
+      assert.equal(cliIds.includes("prune"), false);
+      assert.equal(cliIds.includes("session archive"), false);
+      assert.equal(cliIds.includes("session delete"), false);
+      assert.equal(fetchCount, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

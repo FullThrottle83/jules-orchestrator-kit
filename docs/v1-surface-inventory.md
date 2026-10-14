@@ -112,7 +112,7 @@ Examines all 55 top-level commands (`bin/agentctl.mjs`) and 56 command descripto
 | **Core Operations** | 5 | `CORE_V1` | Keep `dispatch`, `dispatchTask`, `gate`, `repair`, `run`. |
 | **Config & Environment** | 10 | `CORE_V1` / `INTERNALIZE` | Keep `loadConfig`, `planInit`; internalize helpers (`ENV_ALIASES`, `applyEnvAliases`, `describeEnvVar`, etc.). |
 | **Task Envelope & Authoring** | 8 | `CORE_V1` / `INTERNALIZE` | Keep `buildAgentEnvelope`, `planTaskCreate`, `validateEnvelope`; internalize wizards and prompt optimizers. |
-| **Provider Core & Errors** | 15 | `CORE_V1` / `ADVANCED_V1` | Keep provider factory (`createProvider`) and explicit error classes (`BudgetError`, `MissingApiKeyError`, `ProviderRateLimitError`, `ProviderUnavailableError`); internalize preset literals. |
+| **Provider Core & Errors** | 15 | `CORE_V1` / `ADVANCED_V1` | Keep provider factory (`createProvider`) and explicit error classes (`BudgetError`, `MissingApiKeyError`, `ProviderRateLimitError`, `ProviderUnavailableError`); internalize preset literals; destructive session housekeeping (`archiveSession`, `deleteSession`) removed from provider adapters. |
 | **Verification Profiles** | 7 | `ADVANCED_V1` / `INTERNALIZE` | Keep `buildProfileStages`, `describeProfilePlan`; internalize raw constant arrays. |
 | **Evidence & Integrity** | 7 | `CORE_V1` / `ADVANCED_V1` | Keep `generateEvidenceManifest`, `verifyEvidenceManifest`; internalize formatting/hashing details. |
 | **Scope & Security Guards** | 12 | `INTERNALIZE` | Internalize `checkScope`, `redactSecrets`, `hasEncodedSecret`, `shannonEntropy`, `checkTestTampering`, `assertTestIntegrity`, etc. |
@@ -156,8 +156,8 @@ Examines tools registered in `src/mcp.mjs` (`MCP_TOOLS`, `MCP_TOOL_ALIASES`, and
 | `jules_list_sessions` / `agent_list_sessions` | `ADVANCED_V1` | Remote session listing for provider-aware lifecycle management. |
 | `jules_list_activities` / `agent_list_activities` | `ADVANCED_V1` | Inspection of execution logs and activities for a remote session. |
 | `jules_get_session_output` / `agent_get_session_output` | `ADVANCED_V1` | Remote session patch extraction and PR metadata retrieval. |
-| `jules_archive_session` / `agent_archive_session` | `REMOVE_CANDIDATE` (Removed from MCP) | Provider-account session archiving is outside the core Task → Dispatch → Gate → Evidence control plane and removed from the MCP authority surface. |
-| `jules_delete_session` / `agent_delete_session` | `REMOVE_CANDIDATE` (Removed from MCP) | Provider-account session deletion is outside the core Task → Dispatch → Gate → Evidence control plane and removed from the MCP authority surface. |
+| `jules_archive_session` / `agent_archive_session` | `REMOVE_CANDIDATE` (Removed from MCP/Provider) | Provider-account session archiving is outside the core Task → Dispatch → Gate → Evidence control plane and removed from the MCP and provider adapter surfaces. |
+| `jules_delete_session` / `agent_delete_session` | `REMOVE_CANDIDATE` (Removed from MCP/Provider) | Provider-account session deletion is outside the core Task → Dispatch → Gate → Evidence control plane and removed from the MCP and provider adapter surfaces. |
 | `jules_retry_session` / `agent_retry_session` | `ADVANCED_V1` | Session retry with failure trace injection. |
 | `jules_apply_patch` / `agent_apply_patch` | `ADVANCED_V1` | Remote session patch materialization and verification. |
 | `jules_list_sources` / `agent_list_sources` | `ADVANCED_V1` | Listing connected repository sources for Jules provider. |
