@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import * as sessionOps from "../src/session-ops.mjs";
 import * as sdk from "../index.mjs";
 import {
@@ -711,7 +712,7 @@ globalThis.fetch = async (url, init = {}) => {
         ["prune", "--delete"],
         ["prune", "--age", "7d", "--state", "COMPLETED", "--yes"],
       ]) {
-        const proc = spawnSync(process.execPath, ["--import", preloadPath, cliPath, ...flagSet], {
+        const proc = spawnSync(process.execPath, ["--import", pathToFileURL(preloadPath).href, cliPath, ...flagSet], {
           cwd: dir,
           env: { ...process.env, JULES_API_KEY: "fake-key-must-not-be-used" },
           encoding: "utf-8",

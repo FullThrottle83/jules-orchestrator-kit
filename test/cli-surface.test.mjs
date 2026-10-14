@@ -25,7 +25,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { detectStackOracles } from "../src/wizard-oracle.mjs";
 import { parseCollectedTests } from "../src/ops/test-collection.mjs";
 import { gate } from "../src/engine.mjs";
@@ -1196,7 +1196,7 @@ globalThis.fetch = async (url, init = {}) => {
       const cliBin = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
       const res = spawnSync(
         process.execPath,
-        ["--import", preloadPath, cliBin, "prune", "--delete", "--yes", "--json"],
+        ["--import", pathToFileURL(preloadPath).href, cliBin, "prune", "--delete", "--yes", "--json"],
         {
           cwd: dir,
           env: { ...process.env, JULES_API_KEY: "fake-key-must-not-be-used" },
