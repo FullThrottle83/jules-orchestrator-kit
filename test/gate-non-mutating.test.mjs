@@ -62,6 +62,89 @@ test("gate remains non-mutating when legacy fix:true is supplied", async () => {
   }
 });
 
+test("gate fails closed when verification command mutates tracked source state", async () => {
+  const root = mkdtempSync(join(tmpdir(), "agentctl-gate-mutate-"));
+  try {
+    execFileSync("git", ["init", "--initial-branch=main"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Gate Mutate Test"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "gate@example.test"], { cwd: root });
+
+    mkdirSync(join(root, ".agent"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(
+      join(root, ".agent", "config.yml"),
+      [
+        "version: 1",
+        "provider: jules",
+        "verify:",
+        "  test: node -e \"require('node:fs').writeFileSync('src/generated.js', 'export const mutated = true;\\n')\"",
+        "",
+      ].join("\n")
+    );
+    writeFileSync(join(root, "src", "generated.js"), "export const mutated = false;\n");
+    writeFileSync(join(root, "src", "app.js"), "export const original = 1;\n");
+
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "initial commit"], { cwd: root });
+
+    // Candidate change in working tree
+    writeFileSync(join(root, "src", "app.js"), "export const original = 2;\n");
+
+    const result = await gate({
+      root,
+      base: "HEAD",
+      mode: "working-tree",
+    });
+
+    assert.equal(result.ok, false, "gate must fail when verification mutates candidate source state");
+    const verifyPhase = result.phases.find((p) => p.phase === "verify");
+    assert.equal(verifyPhase?.ok, false);
+    assert.equal(verifyPhase?.failure?.stageId, "VERIFICATION_MUTATED_CANDIDATE");
+    assert.match(verifyPhase?.failure?.stderr || "", /mutated during verification/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("gate permits verification commands writing to ignored cache or artifact directories", async () => {
+  const root = mkdtempSync(join(tmpdir(), "agentctl-gate-cache-"));
+  try {
+    execFileSync("git", ["init", "--initial-branch=main"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Gate Cache Test"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "gate@example.test"], { cwd: root });
+
+    mkdirSync(join(root, ".agent"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(
+      join(root, ".agent", "config.yml"),
+      [
+        "version: 1",
+        "provider: jules",
+        "verify:",
+        "  test: node -e \"require('node:fs').mkdirSync('.cache', { recursive: true }); require('node:fs').writeFileSync('.cache/build.json', '{}')\"",
+        "",
+      ].join("\n")
+    );
+    writeFileSync(join(root, "src", "app.js"), "export const original = 1;\n");
+
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "initial commit"], { cwd: root });
+
+    // Candidate change in working tree
+    writeFileSync(join(root, "src", "app.js"), "export const original = 2;\n");
+
+    const result = await gate({
+      root,
+      base: "HEAD",
+      mode: "working-tree",
+    });
+
+    assert.equal(result.ok, true, "gate must approve when verification only writes to ignored artifact directory");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("CLI refuses implicit gate repair and exposes explicit repair", () => {
   const root = createFixture();
 
