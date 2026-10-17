@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.9] - 2026-10-18
+
+### Added
+- **Session Lifecycle Affinity, Mutation Reconciliation, and Scoped Plan Approval (#95)**: Enforced session lifecycle affinity, deterministic mutation reconciliation, and scoped plan approval in provider adapters.
+- **Canonical Agent Rules & Adapter Budget Enforcement (#111)**: Unified canonical control-plane trust invariants in `AGENTS.md` and `JULES_RULES_TEMPLATE.md`, added `CLAUDE.md` adapter importing `@AGENTS.md`, and extended `checkRulesBudget` to verify adapter imports and `.agent(s)/rules` YAML frontmatter.
+
+### Changed
+- **Node.js >= 22.0.0 Runtime Floor (#100)**: Dropped Node.js 20 support and standardized on Node.js 22+ across package engines and CI matrices.
+- **Control-Plane Surface Contraction (#106, #107, #108, #109)**: Removed protected-path waiver authority from MCP tools and removed destructive session prune/housekeeping surfaces across MCP, CLI, SDK, and provider adapters.
+
+### Fixed
+- **Post-Verification Candidate Mutation Fail-Closed Gate (`src/engine.mjs`, `src/evidence.mjs`, #113, #114)**: Captured pre- and post-verification source tree and candidate diff file hashes (`VERIFICATION_MUTATED_CANDIDATE`), expanded `computeDirectoryHash()` coverage across standard source layouts (`lib`, `app`, `pkg`, `cmd`, `internal`, `packages`, `apps`, `.agent/config.yml`) while excluding build output directories (`dist`, `build`, `out`, `.astro`, `.svelte-kit`, `.output`, `.wrangler`), executed `verify.teardown` before sampling post-verification hashes, and forwarded `verifyFailure` diagnostics into the evidence manifest.
+- **Trusted Base Resolution Isolation (`src/config.mjs`, `src/git.mjs`, #97, #98, #101)**: Isolated trusted review base resolution from candidate-controlled git state and made committed diff inspection hermetic.
+- **Subprocess & Command Execution Hardening (`src/git.mjs`, `src/engine.mjs`, #102, #103)**: Isolated verification subprocess environments and hardened command execution against shell injection.
+- **Uninstall Credential Ignore Preservation (`src/scaffold.mjs`, #104)**: Preserved credential `.gitignore` safety rules during kit uninstallation.
+- **Jules Provider Finalized Changesets & Probe Timeouts (`src/provider.mjs`, #96, #99)**: Preferred finalized session changesets over intermediate artifacts and decoupled reconciliation probe timeouts from mutating dispatch timeouts.
+
 ## [0.75.8] - 2026-10-12
 
 ### Fixed
