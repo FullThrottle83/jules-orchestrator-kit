@@ -402,12 +402,15 @@ export async function gate(opts = {}) {
     stagesToRun.push(...buildDefaultStages(trustedVerify));
   }
 
-  // Pre-verification: compute test directory integrity hash on snapshot under test
+  // Pre-verification: compute test directory integrity hash and source state hash on snapshot under test
   const preTestHashResult = computeDirectoryHash(snapshot.cwd, { testOnly: true });
   let preTestHash = preTestHashResult.treeHash;
   let postTestHash = preTestHash;
   let postTestHashResult = preTestHashResult;
-  let postSourceHashResult = null;
+  const preSourceHashResult = computeDirectoryHash(snapshot.cwd);
+  const preSourceHash = preSourceHashResult.treeHash;
+  let postSourceHashResult = preSourceHashResult;
+  let postSourceHash = preSourceHash;
   const executionRecords = [];
   let testTampered = false;
 
@@ -538,6 +541,7 @@ export async function gate(opts = {}) {
     postTestHashResult = computeDirectoryHash(snapshot.cwd, { testOnly: true });
     postTestHash = postTestHashResult.treeHash;
     postSourceHashResult = computeDirectoryHash(snapshot.cwd);
+    postSourceHash = postSourceHashResult.treeHash;
     if (trustedEvidence.strictTestLock && !opts.allowTestModifications && preTestHashResult.fileCount > 0) {
       const changedTestFile = files.find((f) => isTestPath(f));
       if (changedTestFile && preTestHash !== postTestHash) {
@@ -602,7 +606,9 @@ export async function gate(opts = {}) {
     Boolean(testResult?.command) &&
     isPlaceholderTestScript(testResult.command);
 
-  const verifyOk = !failingCmd && !testTampered && !missingOracle && !emptySuite && !placeholderOracle;
+  const verificationMutatedCandidate = preSourceHash !== postSourceHash;
+
+  const verifyOk = !failingCmd && !testTampered && !verificationMutatedCandidate && !missingOracle && !emptySuite && !placeholderOracle;
 
   // What actually broke. Without this the verify phase reported `ok: false` and
   // nothing else — not the stage, not the exit code, not a line of output — so
@@ -635,7 +641,18 @@ export async function gate(opts = {}) {
           stderr: `Test files changed during the run (${preTestHash.slice(0, 12)} → ${postTestHash.slice(0, 12)}). evidence.strictTestLock treats a passing suite that the diff also rewrote as unproven.`,
           diagnostics: [],
         }
-      : missingOracle
+      : verificationMutatedCandidate
+        ? {
+            stageId: "VERIFICATION_MUTATED_CANDIDATE",
+            command: null,
+            exitCode: null,
+            stdout: "",
+            stderr: `Candidate source state was mutated during verification (${preSourceHash.slice(0, 12)} → ${postSourceHash.slice(0, 12)}). Verification commands must not mutate candidate source state.`,
+            diagnostics: [
+              "Verification modified tracked or source files after candidate scope verification. The approved state must match the verified state.",
+            ],
+          }
+        : missingOracle
         ? {
             stageId: "oracle",
             command: null,
@@ -695,7 +712,7 @@ export async function gate(opts = {}) {
     maxDiffKb: trustedDiffKb,
     protectedScopeOk: scopeResult.ok,
     repository: policy.provider || config?.provider || "jules",
-    failedStage: failingCmd?.stageId || failingCmd?.phase || null,
+    failedStage: failingCmd?.stageId || failingCmd?.phase || (verificationMutatedCandidate ? "VERIFICATION_MUTATED_CANDIDATE" : null),
     diagnostics: failingCmd?.diagnostics?.length ? failingCmd.diagnostics : (failingCmd?.stderr ? [failingCmd.stderr] : []),
     metrics: failingCmd?.metrics || {},
     collection: collectionFloor,
@@ -748,7 +765,7 @@ export async function gate(opts = {}) {
   });
   phases.push({
     phase: "evidence",
-    ok: !testTampered,
+    ok: !testTampered && !verificationMutatedCandidate,
     manifestPath: evidencePath,
     evidenceHash: evidenceManifest.evidenceHash,
   });
