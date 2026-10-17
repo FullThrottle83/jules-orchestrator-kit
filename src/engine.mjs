@@ -411,8 +411,22 @@ export async function gate(opts = {}) {
   const preSourceHash = preSourceHashResult.treeHash;
   let postSourceHashResult = preSourceHashResult;
   let postSourceHash = preSourceHash;
+  const preCandidateFilesHash = files.length > 0
+    ? computeDirectoryHash(snapshot.cwd, { paths: files }).treeHash
+    : null;
+  let postCandidateFilesHash = preCandidateFilesHash;
   const executionRecords = [];
   let testTampered = false;
+  let teardownRan = false;
+  const runTeardownOnce = () => {
+    if (teardownRan) return;
+    teardownRan = true;
+    if (trustedVerify.teardown) {
+      try {
+        runCmd(trustedVerify.teardown, { cwd: snapshot.cwd, ignoreError: true, env: testEnv });
+      } catch (_) {}
+    }
+  };
 
   try {
     for (const stage of stagesToRun) {
@@ -537,11 +551,16 @@ export async function gate(opts = {}) {
       }
     }
 
-    // Post-verification test integrity check (No Test Weakening Invariant)
+    runTeardownOnce();
+
+    // Post-verification test integrity and candidate source state check (after stages and teardown)
     postTestHashResult = computeDirectoryHash(snapshot.cwd, { testOnly: true });
     postTestHash = postTestHashResult.treeHash;
     postSourceHashResult = computeDirectoryHash(snapshot.cwd);
     postSourceHash = postSourceHashResult.treeHash;
+    postCandidateFilesHash = files.length > 0
+      ? computeDirectoryHash(snapshot.cwd, { paths: files }).treeHash
+      : null;
     if (trustedEvidence.strictTestLock && !opts.allowTestModifications && preTestHashResult.fileCount > 0) {
       const changedTestFile = files.find((f) => isTestPath(f));
       if (changedTestFile && preTestHash !== postTestHash) {
@@ -549,11 +568,7 @@ export async function gate(opts = {}) {
       }
     }
   } finally {
-    if (trustedVerify.teardown) {
-      try {
-        runCmd(trustedVerify.teardown, { cwd: snapshot.cwd, ignoreError: true, env: testEnv });
-      } catch (_) {}
-    }
+    runTeardownOnce();
     snapshot.cleanup();
   }
 
@@ -606,7 +621,11 @@ export async function gate(opts = {}) {
     Boolean(testResult?.command) &&
     isPlaceholderTestScript(testResult.command);
 
-  const verificationMutatedCandidate = preSourceHash !== postSourceHash;
+  const sourceHashChanged = preSourceHash !== postSourceHash;
+  const candidateFilesChanged = preCandidateFilesHash !== postCandidateFilesHash;
+  const verificationMutatedCandidate = sourceHashChanged || candidateFilesChanged;
+  const mutatedPreHash = sourceHashChanged ? preSourceHash : preCandidateFilesHash;
+  const mutatedPostHash = sourceHashChanged ? postSourceHash : postCandidateFilesHash;
 
   const verifyOk = !failingCmd && !testTampered && !verificationMutatedCandidate && !missingOracle && !emptySuite && !placeholderOracle;
 
@@ -647,7 +666,7 @@ export async function gate(opts = {}) {
             command: null,
             exitCode: null,
             stdout: "",
-            stderr: `Candidate source state was mutated during verification (${preSourceHash.slice(0, 12)} → ${postSourceHash.slice(0, 12)}). Verification commands must not mutate candidate source state.`,
+            stderr: `Candidate source state was mutated during verification (${mutatedPreHash.slice(0, 12)} → ${mutatedPostHash.slice(0, 12)}). Verification commands must not mutate candidate source state.`,
             diagnostics: [
               "Verification modified tracked or source files after candidate scope verification. The approved state must match the verified state.",
             ],
@@ -712,8 +731,16 @@ export async function gate(opts = {}) {
     maxDiffKb: trustedDiffKb,
     protectedScopeOk: scopeResult.ok,
     repository: policy.provider || config?.provider || "jules",
-    failedStage: failingCmd?.stageId || failingCmd?.phase || (verificationMutatedCandidate ? "VERIFICATION_MUTATED_CANDIDATE" : null),
-    diagnostics: failingCmd?.diagnostics?.length ? failingCmd.diagnostics : (failingCmd?.stderr ? [failingCmd.stderr] : []),
+    failedStage: failingCmd?.stageId || failingCmd?.phase || verifyFailure?.stageId || null,
+    diagnostics: failingCmd?.diagnostics?.length
+      ? failingCmd.diagnostics
+      : failingCmd?.stderr
+        ? [failingCmd.stderr]
+        : verifyFailure?.diagnostics?.length
+          ? verifyFailure.diagnostics
+          : verifyFailure?.stderr
+            ? [verifyFailure.stderr]
+            : [],
     metrics: failingCmd?.metrics || {},
     collection: collectionFloor,
     ok: verifyOk,

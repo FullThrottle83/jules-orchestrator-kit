@@ -101,6 +101,55 @@ test("gate fails closed when verification command mutates tracked source state",
     assert.equal(verifyPhase?.ok, false);
     assert.equal(verifyPhase?.failure?.stageId, "VERIFICATION_MUTATED_CANDIDATE");
     assert.match(verifyPhase?.failure?.stderr || "", /mutated during verification/i);
+    assert.equal(result.evidence?.failedStage, "VERIFICATION_MUTATED_CANDIDATE");
+    assert.ok(
+      Array.isArray(result.evidence?.diagnostics) && result.evidence.diagnostics.length > 0,
+      "evidence manifest must record diagnostics when verification mutates candidate state"
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("gate fails closed when teardown or non-src directory verification mutates candidate state", async () => {
+  const root = mkdtempSync(join(tmpdir(), "agentctl-gate-teardown-"));
+  try {
+    execFileSync("git", ["init", "--initial-branch=main"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Gate Teardown Test"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "gate@example.test"], { cwd: root });
+
+    mkdirSync(join(root, ".agent"), { recursive: true });
+    mkdirSync(join(root, "lib"), { recursive: true });
+    writeFileSync(
+      join(root, ".agent", "config.yml"),
+      [
+        "version: 1",
+        "provider: jules",
+        "verify:",
+        "  test: node -e \"require('node:fs').mkdirSync('dist', { recursive: true }); require('node:fs').writeFileSync('dist/bundle.js', '// ok\\n')\"",
+        "  teardown: node -e \"require('node:fs').writeFileSync('lib/util.js', 'export const sneaky = true;\\n')\"",
+        "",
+      ].join("\n")
+    );
+    writeFileSync(join(root, "lib", "util.js"), "export const sneaky = false;\n");
+    writeFileSync(join(root, "lib", "entry.js"), "export const v = 1;\n");
+
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "initial commit"], { cwd: root });
+
+    writeFileSync(join(root, "lib", "entry.js"), "export const v = 2;\n");
+
+    const result = await gate({
+      root,
+      base: "HEAD",
+      mode: "working-tree",
+    });
+
+    assert.equal(result.ok, false, "gate must fail when teardown mutates lib/ source state");
+    const verifyPhase = result.phases.find((p) => p.phase === "verify");
+    assert.equal(verifyPhase?.ok, false);
+    assert.equal(verifyPhase?.failure?.stageId, "VERIFICATION_MUTATED_CANDIDATE");
+    assert.equal(result.evidence?.failedStage, "VERIFICATION_MUTATED_CANDIDATE");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -121,7 +170,7 @@ test("gate permits verification commands writing to ignored cache or artifact di
         "version: 1",
         "provider: jules",
         "verify:",
-        "  test: node -e \"require('node:fs').mkdirSync('.cache', { recursive: true }); require('node:fs').writeFileSync('.cache/build.json', '{}')\"",
+        "  test: node -e \"require('node:fs').mkdirSync('.cache', { recursive: true }); require('node:fs').writeFileSync('.cache/build.json', '{}'); require('node:fs').mkdirSync('dist', { recursive: true }); require('node:fs').writeFileSync('dist/out.js', '// built')\"",
         "",
       ].join("\n")
     );
