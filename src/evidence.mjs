@@ -66,6 +66,7 @@ const ARTIFACT_DIRS = new Set([
   "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
   ".venv", "venv", ".gradle", ".nyc_output", "coverage", "htmlcov",
   ".next", ".nuxt", ".turbo", ".cache", ".parcel-cache",
+  "dist", "build", "out", ".astro", ".svelte-kit", ".output", ".wrangler",
 ]);
 
 /** Compiled output. Regenerated from the sources that are hashed instead. */
@@ -136,7 +137,13 @@ export function computeDirectoryHash(root, options = {}) {
     // The named directories stay as a fast path; when they yield nothing, walk
     // the repository and let the shared predicate decide. The walk already
     // skips node_modules, vendor, target and the build caches.
-    const targetDirs = options.directories || ["test", "tests", "__tests__", "spec", "specs", "src", "scripts", "bin"];
+    const defaultDirs = [
+      "test", "tests", "__tests__", "spec", "specs",
+      "src", "lib", "app", "pkg", "cmd", "internal", "packages", "apps",
+      "scripts", "bin",
+    ];
+    const targetDirs = options.directories || defaultDirs;
+    const scannedDirs = new Set(targetDirs);
     for (const dirName of targetDirs) {
       const dirPath = join(root, dirName);
       if (existsSync(dirPath)) {
@@ -150,6 +157,9 @@ export function computeDirectoryHash(root, options = {}) {
     }
     if (existsSync(join(root, "package.json"))) {
       fileList.push("package.json");
+    }
+    if (!options.testOnly && !options.directories && existsSync(join(root, ".agent", "config.yml"))) {
+      fileList.push(".agent/config.yml");
     }
     if (options.testOnly && !fileList.some((f) => isTestPath(f))) {
       for (const f of findFilesRecursively(root, root)) {
@@ -170,10 +180,22 @@ export function computeDirectoryHash(root, options = {}) {
     // on its own output.
     try {
       for (const entry of readdirSync(root, { withFileTypes: true })) {
-        if (!entry.isFile()) continue;
         if (entry.name.startsWith(".")) continue;
-        if (!SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
-        fileList.push(normalizePath(entry.name));
+        if (entry.isFile()) {
+          if (!SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
+          fileList.push(normalizePath(entry.name));
+        } else if (
+          !options.directories &&
+          entry.isDirectory() &&
+          !scannedDirs.has(entry.name) &&
+          !ARTIFACT_DIRS.has(entry.name)
+        ) {
+          for (const f of findFilesRecursively(join(root, entry.name), root)) {
+            if (SOURCE_EXTENSIONS.has(extname(f).toLowerCase()) || isTestPath(f)) {
+              fileList.push(f);
+            }
+          }
+        }
       }
     } catch (_) {
       // An unreadable root yields whatever the directory walk already found.
