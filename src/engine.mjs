@@ -1821,6 +1821,8 @@ export async function run(tasksOrOpts = {}, opts = {}) {
       concurrency,
       dryRun: isDry,
       config,
+      serialize: options.serialize,
+      serializeTimeout: options.serializeTimeout ?? options.serializeTimeoutMinutes,
     });
   }
 

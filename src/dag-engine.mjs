@@ -450,7 +450,109 @@ export function isDagTaskFile(fileName, content, isTaskFile) {
   return false;
 }
 
+export const VALID_SERIALIZE_MODES = ["dispatched", "completed", "merged"];
+
+function extractSessionOutputs(session = {}) {
+  const candidates = [];
+  if (Array.isArray(session?.raw?.outputs)) candidates.push(...session.raw.outputs);
+  if (Array.isArray(session?.outputs)) candidates.push(...session.outputs);
+  if (session?.pullRequest) candidates.push(session.pullRequest);
+  if (session?.raw?.pullRequest) candidates.push(session.raw.pullRequest);
+  if (typeof session?.prUrl === "string") candidates.push(session.prUrl);
+  if (typeof session?.url === "string") candidates.push(session.url);
+  return candidates;
+}
+
+async function queryPrView(prUrl, root, options = {}) {
+  if (typeof options.execGh === "function") {
+    const res = await options.execGh("pr", ["view", prUrl, "--json", "state,mergedAt"]);
+    if (typeof res === "string") return JSON.parse(res);
+    return res || {};
+  }
+  const { spawnSync } = await import("node:child_process");
+  const res = spawnSync("gh", ["pr", "view", prUrl, "--json", "state,mergedAt"], {
+    cwd: root,
+    encoding: "utf-8",
+    timeout: 30000,
+  });
+  if (res.error) {
+    throw new Error(`Failed to view PR ${prUrl}: ${res.error.message}`);
+  }
+  if (res.status !== 0) {
+    throw new Error(`gh pr view ${prUrl} failed (exit ${res.status}): ${(res.stderr || "").trim()}`);
+  }
+  return JSON.parse(res.stdout || "{}");
+}
+
+async function waitForPrsMerged(taskId, prUrls, root, options = {}) {
+  const pollIntervalMs = Number(options.pollIntervalMs ?? options.prPollIntervalMs ?? 1000);
+  const timeoutMinutes = Number(options.serializeTimeout ?? options.serializeTimeoutMinutes ?? 15);
+  const timeoutMs = Number(
+    options.serializeTimeoutMs ??
+      (Number.isFinite(timeoutMinutes) && timeoutMinutes > 0 ? timeoutMinutes * 60 * 1000 : 15 * 60 * 1000)
+  );
+  const deadline = Date.now() + timeoutMs;
+
+  const { appendLedger } = await import("./state.mjs");
+
+  for (const prUrl of prUrls) {
+    while (true) {
+      const info = await queryPrView(prUrl, root, options);
+      const state = String(info?.state || "").toUpperCase();
+      const merged = state === "MERGED" || Boolean(info?.mergedAt);
+      if (merged) {
+        break;
+      }
+      if (state === "CLOSED") {
+        appendLedger({ event: "merge_wait_done", taskId, prUrls, outcome: "PR_CLOSED_UNMERGED", prUrl }, root);
+        throw new Error(`PR_CLOSED_UNMERGED: Pull request ${prUrl} for task '${taskId}' was closed without merging.`);
+      }
+      if (Date.now() >= deadline) {
+        appendLedger({ event: "merge_wait_done", taskId, prUrls, outcome: "SERIALIZE_TIMEOUT", prUrl }, root);
+        throw new Error(`SERIALIZE_TIMEOUT: Timed out waiting for pull request ${prUrl} (task '${taskId}') to merge.`);
+      }
+      await new Promise((r) => setTimeout(r, Math.min(pollIntervalMs, Math.max(1, deadline - Date.now()))));
+    }
+  }
+
+  appendLedger({ event: "merge_wait_done", taskId, prUrls, outcome: "MERGED" }, root);
+}
+
+async function scanPendingMergeWaits(root) {
+  const { getLedgerPathsInWindow, readLedger } = await import("./state.mjs");
+  const pending = new Map();
+  let paths = [];
+  try {
+    paths = getLedgerPathsInWindow(root);
+  } catch (_) {
+    return pending;
+  }
+  for (const filePath of paths) {
+    for (const entry of readLedger(filePath)) {
+      if (!entry || !entry.event || !entry.taskId) continue;
+      if (entry.event === "awaiting_merge") {
+        pending.set(entry.taskId, {
+          taskId: entry.taskId,
+          prUrls: Array.isArray(entry.prUrls) ? entry.prUrls : [],
+        });
+      } else if (entry.event === "merge_wait_done") {
+        pending.delete(entry.taskId);
+      }
+    }
+  }
+  return pending;
+}
+
 export async function executeQueueDag(root = process.cwd(), options = {}) {
+  const serializeMode = options.serialize !== undefined && options.serialize !== null
+    ? String(options.serialize).trim().toLowerCase()
+    : "dispatched";
+  if (!VALID_SERIALIZE_MODES.includes(serializeMode)) {
+    throw new Error(
+      `Invalid --serialize mode '${options.serialize}'. Valid values: ${VALID_SERIALIZE_MODES.join(", ")}`
+    );
+  }
+
   const { readdirSync, renameSync, mkdirSync } = await import("node:fs");
   const { join, basename } = await import("node:path");
   const { isTaskFile } = await import("./engine.mjs");
@@ -478,7 +580,20 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
     return { processed: 0, results: [] };
   }
 
-  const executor = new DagExecutor({ concurrency: options.concurrency || 1 });
+  const timeoutMinutes = Number(options.serializeTimeout ?? options.serializeTimeoutMinutes);
+  const customTimeoutMs = Number.isFinite(Number(options.serializeTimeoutMs)) && Number(options.serializeTimeoutMs) > 0
+    ? Number(options.serializeTimeoutMs)
+    : Number.isFinite(timeoutMinutes) && timeoutMinutes > 0
+      ? timeoutMinutes * 60 * 1000
+      : undefined;
+  // Pass an extended taskTimeout to DagExecutor when serializeTimeout is set so DagExecutor's
+  // withTaskTimeout does not pre-empt our explicit SERIALIZE_TIMEOUT error handler.
+  const executorTaskTimeout = customTimeoutMs ? customTimeoutMs + 60_000 : 15 * 60 * 1000;
+
+  const executor = new DagExecutor({
+    concurrency: options.concurrency || 1,
+    taskTimeout: executorTaskTimeout,
+  });
   const taskMap = new Map();
   const results = [];
 
@@ -527,8 +642,59 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
     taskMap.set(taskId, { file, fullPath, taskId, title, prompt, role, tier, dependsOn, targetFiles });
   }
 
-  // Auto-serialize concurrent tasks that touch overlapping target files to prevent git merge conflicts
+  // Load completed tasks so overlap-derived dependencies from already-dispatched tasks are preserved on restart
+  const completedTaskMap = new Map();
+  if (!options.dryRun && existsSync(completedDir)) {
+    const completedFiles = readdirSync(completedDir).filter((f) => {
+      if (f.startsWith(".")) return false;
+      return f.endsWith(".md") || f.endsWith(".json") || f.endsWith(".task");
+    });
+    for (const file of completedFiles) {
+      if (basename(file) !== file) continue;
+      const fullPath = join(completedDir, file);
+      let content = "";
+      try {
+        content = readFileSync(fullPath, "utf-8");
+      } catch (_) {
+        continue;
+      }
+      if (!isDagTaskFile(file, content, isTaskFile)) continue;
+      let taskId = file.replace(/\.(md|json|task)$/, "");
+      let targetFiles = [];
+      const header = parseEnvelopeHeader(content);
+      if (header) {
+        if (header.id || header.taskId) taskId = header.id || header.taskId;
+        if (Array.isArray(header.targetFiles)) targetFiles = header.targetFiles;
+        else if (Array.isArray(header.referenced_paths)) targetFiles = header.referenced_paths;
+        else if (Array.isArray(header.allowed_paths)) targetFiles = header.allowed_paths;
+        else if (header.scope && Array.isArray(header.scope.allow)) targetFiles = header.scope.allow;
+      } else if (file.endsWith(".json")) {
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed.id) taskId = parsed.id;
+          if (Array.isArray(parsed.targetFiles)) targetFiles = parsed.targetFiles;
+          else if (Array.isArray(parsed.referenced_paths)) targetFiles = parsed.referenced_paths;
+        } catch (_) {}
+      }
+      if (!taskMap.has(taskId)) {
+        completedTaskMap.set(taskId, { taskId, targetFiles });
+      }
+    }
+  }
+
+  const pendingMergeWaits = !options.dryRun ? await scanPendingMergeWaits(root) : new Map();
+
+  // Seed fileToLastTaskId with completed tasks that still have an open awaiting_merge record
   const fileToLastTaskId = new Map();
+  for (const [compId, compTask] of completedTaskMap.entries()) {
+    if (!pendingMergeWaits.has(compId)) continue;
+    for (const rawPath of compTask.targetFiles || []) {
+      const norm = String(rawPath).replace(/\\/g, "/");
+      fileToLastTaskId.set(norm, compId);
+    }
+  }
+
+  // Auto-serialize concurrent tasks that touch overlapping target files to prevent git merge conflicts
   for (const [taskId, t] of taskMap.entries()) {
     for (const rawPath of t.targetFiles || []) {
       const norm = String(rawPath).replace(/\\/g, "/");
@@ -542,12 +708,32 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
     }
   }
 
-  // Register each task with its dependencies that are part of this queue run
+  // Register synthetic resume nodes for dependencies that have an unfinished awaiting_merge record
+  const registeredResumeIds = new Set();
+  for (const t of taskMap.values()) {
+    for (const dep of t.dependsOn) {
+      if (!taskMap.has(dep) && pendingMergeWaits.has(dep) && !registeredResumeIds.has(dep)) {
+        registeredResumeIds.add(dep);
+        const waitRecord = pendingMergeWaits.get(dep);
+        executor.addTask({
+          id: dep,
+          dependsOn: [],
+          timeout: executorTaskTimeout,
+          runner: async () => {
+            await waitForPrsMerged(dep, waitRecord.prUrls, root, options);
+          },
+        });
+      }
+    }
+  }
+
+  // Register each task with its dependencies that are part of this queue run (or resumed merge waits)
   for (const [taskId, t] of taskMap.entries()) {
-    const validDeps = t.dependsOn.filter((dep) => taskMap.has(dep));
+    const validDeps = t.dependsOn.filter((dep) => taskMap.has(dep) || registeredResumeIds.has(dep));
     executor.addTask({
       id: taskId,
       dependsOn: validDeps,
+      timeout: executorTaskTimeout,
       runner: async () => {
         const srcPath = t.fullPath;
         const taskObj = { id: t.taskId, title: t.title, prompt: t.prompt, role: t.role, tier: t.tier };
@@ -562,24 +748,66 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
         if (session && session.ok === false) {
           results.push({ file: t.file, taskId: t.taskId, ok: false, status: session.status, error: session.error, session });
           throw new Error(`DAG Task '${t.taskId}' failed: ${session.error || session.status || "Unknown error"}`);
-        } else {
-          // A dry run simulates; it must leave the queue exactly as it found it,
-          // or the second `--dry-run` sees an empty queue.
-          if (!options.dryRun) {
-            const dstPath = join(completedDir, t.file);
-            if (existsSync(srcPath)) {
-              if (!existsSync(dstPath)) {
-                renameSync(srcPath, dstPath);
-              }
+        }
+
+        // Keep the existing rename into completed/ right after a successful dispatch,
+        // so a restart does not dispatch task A a second time.
+        if (!options.dryRun) {
+          const dstPath = join(completedDir, t.file);
+          if (existsSync(srcPath)) {
+            if (!existsSync(dstPath)) {
+              renameSync(srcPath, dstPath);
             }
           }
-          results.push({ file: t.file, taskId: t.taskId, ok: true, dryRun: Boolean(options.dryRun), session });
         }
+
+        if (!options.dryRun && (serializeMode === "completed" || serializeMode === "merged")) {
+          const { pollSessionState } = await import("./engine.mjs");
+          const pollVerdict = await pollSessionState(options.provider || null, session, {
+            root,
+            dryRun: false,
+            pollFn: options.pollFn,
+            pollIntervalMs: options.pollIntervalMs ?? 50,
+            maxPollAttempts: options.maxPollAttempts ?? 1000,
+            pollTimeoutMs: customTimeoutMs || 15 * 60 * 1000,
+            task: taskObj,
+          });
+
+          if (pollVerdict.blockedOn) {
+            throw new Error(`DAG Task '${t.taskId}' blocked on actor (${pollVerdict.blockedOn})`);
+          }
+          if (String(pollVerdict.status || "").toUpperCase() === "FAILED") {
+            throw new Error(`DAG Task '${t.taskId}' session FAILED`);
+          }
+          if (!pollVerdict.terminal) {
+            throw new Error(
+              `DAG Task '${t.taskId}' session did not reach a terminal state (status: ${pollVerdict.status || "UNKNOWN"})`
+            );
+          }
+
+          if (serializeMode === "merged") {
+            const { extractPrUrls } = await import("./swarm.mjs");
+            const { appendLedger } = await import("./state.mjs");
+            const outputs = [
+              ...extractSessionOutputs(pollVerdict),
+              ...extractSessionOutputs(session),
+            ];
+            const prUrls = extractPrUrls(outputs);
+            if (prUrls.length === 0) {
+              throw new Error(`NO_PR_TO_WAIT_FOR: Task '${t.taskId}' reached terminal state with no pull request URL.`);
+            }
+            appendLedger({ event: "awaiting_merge", taskId: t.taskId, prUrls }, root);
+            await waitForPrsMerged(t.taskId, prUrls, root, options);
+          }
+        }
+
+        results.push({ file: t.file, taskId: t.taskId, ok: true, dryRun: Boolean(options.dryRun), session });
       },
     });
   }
 
-  await executor.execute({ concurrency: options.concurrency || 1, root });
+  await executor.execute({ concurrency: options.concurrency || 1, taskTimeout: executorTaskTimeout, root });
   return { processed: results.length, results };
 }
+
 

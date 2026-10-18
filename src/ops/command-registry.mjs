@@ -108,12 +108,14 @@ export const COMMAND_REGISTRY = [
       "agentctl queue --json",
     ],
     // `--interactive` and `--limit` were listed here and implemented nowhere:
-    // the handler parses only --dag, --concurrency, --dry-run and --json.
-    // Advertising flags the command silently ignores is the same defect as
-    // documenting `queue` as a read-only browser. They come back when an
-    // implementation exists.
+    // the handler parses only --dag, --serialize, --serialize-timeout,
+    // --concurrency, --dry-run and --json. Advertising flags the command
+    // silently ignores is the same defect as documenting `queue` as a read-only
+    // browser. They come back when an implementation exists.
     flags: [
       { name: "dag", type: "boolean", description: "Resolve depends-on order via Kahn's algorithm before running" },
+      { name: "serialize", type: "string", description: "DAG dependency completion gate: dispatched | completed | merged (default: dispatched)" },
+      { name: "serialize-timeout", type: "string", description: "Per-task DAG serialize wait timeout in minutes (default: 15)" },
       { name: "concurrency", type: "string", description: "Parallel worker slots (defaults to limits.concurrency) (-c)" },
       { name: "dry-run", type: "boolean", description: "Report what would run without dispatching or moving anything (-d)" },
       { name: "json", type: "boolean", description: "Output structured JSON queue snapshot (-j)" },

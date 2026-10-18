@@ -397,6 +397,545 @@ Test/Verification Command: npm test
     assert.equal(existsSync(join(queueDir, "completed", "TASK-01.md")), false);
     assert.equal(existsSync(join(queueDir, "completed")), false, "a dry run must not create completed/ either");
   });
+
+  it("10. Default dispatched: B is dispatched before A's PR is merged, no gh call", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+
+    let ghCalls = 0;
+    const events = [];
+    const res = await executeQueueDag(testDir, {
+      concurrency: 2,
+      execGh: async () => {
+        ghCalls++;
+        return { state: "OPEN", mergedAt: null };
+      },
+      dispatchFn: async (task) => {
+        events.push(`dispatch:${task.id}`);
+        return { id: `sess-${task.id}`, status: "RUNNING", outputs: [{ link: "https://github.com/org/repo/pull/1" }] };
+      },
+    });
+
+    assert.equal(res.processed, 2);
+    assert.deepEqual(events, ["dispatch:TASK-A", "dispatch:TASK-B"]);
+    assert.equal(ghCalls, 0);
+  });
+
+  it("11. completed: A reports RUNNING then COMPLETED. B is dispatched only after. Also fails fast if blockedOn", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+
+    const events = [];
+    const pollCounts = new Map();
+
+    const res = await executeQueueDag(testDir, {
+      concurrency: 2,
+      serialize: "completed",
+      pollIntervalMs: 5,
+      dispatchFn: async (task) => {
+        events.push(`dispatch:${task.id}`);
+        return { id: `sess-${task.id}`, status: "IN_PROGRESS" };
+      },
+      pollFn: async (sessionId) => {
+        const c = (pollCounts.get(sessionId) || 0) + 1;
+        pollCounts.set(sessionId, c);
+        const state = c < 2 ? "RUNNING" : "COMPLETED";
+        events.push(`poll:${sessionId}:${state}`);
+        return { id: sessionId, status: state };
+      },
+    });
+
+    assert.equal(res.processed, 2);
+    assert.deepEqual(events, [
+      "dispatch:TASK-A",
+      "poll:sess-TASK-A:RUNNING",
+      "poll:sess-TASK-A:COMPLETED",
+      "dispatch:TASK-B",
+      "poll:sess-TASK-B:RUNNING",
+      "poll:sess-TASK-B:COMPLETED",
+    ]);
+
+    // Also verify blockedOn fails with that status in the message and stops dependents
+    const blockedDir = join(testDir, "blocked-sub");
+    const blockedQueue = join(blockedDir, ".agent", "jules-queue");
+    mkdirSync(blockedQueue, { recursive: true });
+    writeFileSync(
+      join(blockedQueue, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(blockedQueue, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+    const blockedDispatched = [];
+    await assert.rejects(
+      () =>
+        executeQueueDag(blockedDir, {
+          concurrency: 2,
+          serialize: "completed",
+          pollIntervalMs: 5,
+          dispatchFn: async (task) => {
+            blockedDispatched.push(task.id);
+            return { id: `sess-${task.id}`, status: "IN_PROGRESS" };
+          },
+          pollFn: async (sessionId) => ({ id: sessionId, status: "AWAITING_USER_FEEDBACK" }),
+        }),
+      /AWAITING_USER_FEEDBACK/
+    );
+    assert.deepEqual(blockedDispatched, ["TASK-A"]);
+  });
+
+  it("12. merged: PR state OPEN, OPEN, MERGED. B is dispatched only after MERGED and not while OPEN", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+
+    const events = [];
+    const prSequence = {
+      "https://github.com/org/repo/pull/10": ["OPEN", "OPEN", "MERGED"],
+      "https://github.com/org/repo/pull/11": ["MERGED"],
+    };
+
+    const res = await executeQueueDag(testDir, {
+      concurrency: 2,
+      serialize: "merged",
+      pollIntervalMs: 5,
+      dispatchFn: async (task) => {
+        events.push(`dispatch:${task.id}`);
+        const prNum = task.id === "TASK-A" ? 10 : 11;
+        return {
+          id: `sess-${task.id}`,
+          status: "COMPLETED",
+          outputs: [{ pullRequest: { url: `https://github.com/org/repo/pull/${prNum}` } }],
+        };
+      },
+      execGh: async (_cmd, args) => {
+        const url = args[1];
+        const seq = prSequence[url];
+        const state = seq.length > 1 ? seq.shift() : seq[0];
+        events.push(`gh:${url}:${state}`);
+        return { state, mergedAt: state === "MERGED" ? "2026-10-18T12:00:00Z" : null };
+      },
+    });
+
+    assert.equal(res.processed, 2);
+    assert.deepEqual(events, [
+      "dispatch:TASK-A",
+      "gh:https://github.com/org/repo/pull/10:OPEN",
+      "gh:https://github.com/org/repo/pull/10:OPEN",
+      "gh:https://github.com/org/repo/pull/10:MERGED",
+      "dispatch:TASK-B",
+      "gh:https://github.com/org/repo/pull/11:MERGED",
+    ]);
+  });
+
+  it("13. PR CLOSED without merge: PR_CLOSED_UNMERGED, B never dispatched, DAG rejects with a clear message", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+
+    const dispatched = [];
+    await assert.rejects(
+      () =>
+        executeQueueDag(testDir, {
+          concurrency: 2,
+          serialize: "merged",
+          pollIntervalMs: 5,
+          dispatchFn: async (task) => {
+            dispatched.push(task.id);
+            return {
+              id: `sess-${task.id}`,
+              status: "COMPLETED",
+              outputs: [{ link: "https://github.com/org/repo/pull/20" }],
+            };
+          },
+          execGh: async () => ({ state: "CLOSED", mergedAt: null }),
+        }),
+      (err) => {
+        assert.match(err.message, /PR_CLOSED_UNMERGED/);
+        assert.match(err.message, /https:\/\/github\.com\/org\/repo\/pull\/20/);
+        return true;
+      }
+    );
+
+    assert.deepEqual(dispatched, ["TASK-A"]);
+  });
+
+  it("14. Timeout: PR stays OPEN, tiny --serialize-timeout: SERIALIZE_TIMEOUT naming the PR, B never dispatched", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+
+    const dispatched = [];
+    await assert.rejects(
+      () =>
+        executeQueueDag(testDir, {
+          concurrency: 2,
+          serialize: "merged",
+          serializeTimeout: 0.0005, // ~30ms
+          pollIntervalMs: 10,
+          dispatchFn: async (task) => {
+            dispatched.push(task.id);
+            return {
+              id: `sess-${task.id}`,
+              status: "COMPLETED",
+              outputs: [{ link: "https://github.com/org/repo/pull/30" }],
+            };
+          },
+          execGh: async () => ({ state: "OPEN", mergedAt: null }),
+        }),
+      (err) => {
+        assert.match(err.message, /SERIALIZE_TIMEOUT/);
+        assert.match(err.message, /https:\/\/github\.com\/org\/repo\/pull\/30/);
+        return true;
+      }
+    );
+
+    assert.deepEqual(dispatched, ["TASK-A"]);
+  });
+
+  it("15. merged mode, session terminal with no PR: NO_PR_TO_WAIT_FOR", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+
+    const dispatched = [];
+    await assert.rejects(
+      () =>
+        executeQueueDag(testDir, {
+          concurrency: 2,
+          serialize: "merged",
+          pollIntervalMs: 5,
+          dispatchFn: async (task) => {
+            dispatched.push(task.id);
+            return { id: `sess-${task.id}`, status: "COMPLETED", outputs: [] };
+          },
+        }),
+      /NO_PR_TO_WAIT_FOR/
+    );
+
+    assert.deepEqual(dispatched, ["TASK-A"]);
+  });
+
+  it("16. Independent task C (disjoint files) dispatches without waiting for A's merge, with concurrency 3", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-C.json"),
+      JSON.stringify({ id: "TASK-C", title: "Task C", prompt: "Work C", targetFiles: ["src/disjoint.mjs"] })
+    );
+
+    const events = [];
+    let cDispatched = false;
+
+    const res = await executeQueueDag(testDir, {
+      concurrency: 3,
+      serialize: "merged",
+      pollIntervalMs: 10,
+      dispatchFn: async (task) => {
+        events.push(`dispatch:${task.id}`);
+        if (task.id === "TASK-C") cDispatched = true;
+        const prMap = { "TASK-A": 41, "TASK-B": 42, "TASK-C": 43 };
+        return {
+          id: `sess-${task.id}`,
+          status: "COMPLETED",
+          outputs: [{ link: `https://github.com/org/repo/pull/${prMap[task.id]}` }],
+        };
+      },
+      execGh: async (_cmd, args) => {
+        const url = args[1];
+        if (url.endsWith("/41") && !cDispatched) {
+          events.push("gh:41:OPEN");
+          return { state: "OPEN", mergedAt: null };
+        }
+        const num = url.split("/").pop();
+        events.push(`gh:${num}:MERGED`);
+        return { state: "MERGED", mergedAt: "2026-10-18T12:00:00Z" };
+      },
+    });
+
+    assert.equal(res.processed, 3);
+    const dispatchCIdx = events.indexOf("dispatch:TASK-C");
+    const merged41Idx = events.indexOf("gh:41:MERGED");
+    const dispatchBIdx = events.indexOf("dispatch:TASK-B");
+    assert.ok(dispatchCIdx < merged41Idx, "C must dispatch before A's PR is merged");
+    assert.ok(merged41Idx < dispatchBIdx, "B must dispatch only after A's PR is merged");
+  });
+
+  it("17. Chain A, B, C all overlapping: strictly sequential, each waits for the previous merge", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    for (const id of ["TASK-A", "TASK-B", "TASK-C"]) {
+      writeFileSync(
+        join(queueDir, `${id}.json`),
+        JSON.stringify({ id, title: id, prompt: `Work ${id}`, targetFiles: ["src/overlap.mjs"] })
+      );
+    }
+
+    const events = [];
+    const prPollCounts = new Map();
+
+    const res = await executeQueueDag(testDir, {
+      concurrency: 3,
+      serialize: "merged",
+      pollIntervalMs: 5,
+      dispatchFn: async (task) => {
+        events.push(`dispatch:${task.id}`);
+        const num = { "TASK-A": 51, "TASK-B": 52, "TASK-C": 53 }[task.id];
+        return {
+          id: `sess-${task.id}`,
+          status: "COMPLETED",
+          outputs: [{ link: `https://github.com/org/repo/pull/${num}` }],
+        };
+      },
+      execGh: async (_cmd, args) => {
+        const url = args[1];
+        const num = url.split("/").pop();
+        const c = (prPollCounts.get(num) || 0) + 1;
+        prPollCounts.set(num, c);
+        const state = c < 2 ? "OPEN" : "MERGED";
+        events.push(`gh:${num}:${state}`);
+        return { state, mergedAt: state === "MERGED" ? "2026-10-18T12:00:00Z" : null };
+      },
+    });
+
+    assert.equal(res.processed, 3);
+    assert.deepEqual(events, [
+      "dispatch:TASK-A",
+      "gh:51:OPEN",
+      "gh:51:MERGED",
+      "dispatch:TASK-B",
+      "gh:52:OPEN",
+      "gh:52:MERGED",
+      "dispatch:TASK-C",
+      "gh:53:OPEN",
+      "gh:53:MERGED",
+    ]);
+  });
+
+  it("18. Resume: A dispatched and recorded as awaiting merge, process restarts, PR still OPEN -> B waits; after MERGED, B dispatches and A is not dispatched again", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+
+    const dispatchCounts = { "TASK-A": 0, "TASK-B": 0 };
+
+    // Run 1: A dispatches, moves to completed/, records awaiting_merge, then process "crashes" during gh poll
+    await assert.rejects(
+      () =>
+        executeQueueDag(testDir, {
+          concurrency: 2,
+          serialize: "merged",
+          pollIntervalMs: 5,
+          dispatchFn: async (task) => {
+            dispatchCounts[task.id] = (dispatchCounts[task.id] || 0) + 1;
+            return {
+              id: `sess-${task.id}`,
+              status: "COMPLETED",
+              outputs: [{ link: "https://github.com/org/repo/pull/61" }],
+            };
+          },
+          execGh: async () => {
+            throw new Error("SIMULATED_PROCESS_CRASH");
+          },
+        }),
+      /SIMULATED_PROCESS_CRASH/
+    );
+
+    assert.equal(dispatchCounts["TASK-A"], 1);
+    assert.equal(dispatchCounts["TASK-B"], 0);
+    assert.equal(existsSync(join(queueDir, "completed", "TASK-A.json")), true, "A was already moved to completed/");
+    assert.equal(existsSync(join(queueDir, "TASK-B.json")), true, "B is still in queue");
+
+    // Run 2 (restart): PR 61 is still OPEN for 2 polls, then MERGED; B must not dispatch while 61 is OPEN
+    const run2Events = [];
+    let pr61Polls = 0;
+    const res2 = await executeQueueDag(testDir, {
+      concurrency: 2,
+      serialize: "merged",
+      pollIntervalMs: 5,
+      dispatchFn: async (task) => {
+        dispatchCounts[task.id] = (dispatchCounts[task.id] || 0) + 1;
+        run2Events.push(`dispatch:${task.id}`);
+        return {
+          id: `sess-${task.id}`,
+          status: "COMPLETED",
+          outputs: [{ link: "https://github.com/org/repo/pull/62" }],
+        };
+      },
+      execGh: async (_cmd, args) => {
+        const url = args[1];
+        if (url.endsWith("/61")) {
+          pr61Polls++;
+          const state = pr61Polls < 3 ? "OPEN" : "MERGED";
+          run2Events.push(`gh:61:${state}`);
+          return { state, mergedAt: state === "MERGED" ? "2026-10-18T12:00:00Z" : null };
+        }
+        run2Events.push("gh:62:MERGED");
+        return { state: "MERGED", mergedAt: "2026-10-18T12:00:01Z" };
+      },
+    });
+
+    assert.equal(res2.processed, 1);
+    assert.equal(dispatchCounts["TASK-A"], 1, "A must not be dispatched a second time");
+    assert.equal(dispatchCounts["TASK-B"], 1, "B must be dispatched once after A's merge");
+    assert.deepEqual(run2Events, [
+      "gh:61:OPEN",
+      "gh:61:OPEN",
+      "gh:61:MERGED",
+      "dispatch:TASK-B",
+      "gh:62:MERGED",
+    ]);
+  });
+
+  it("19. Dry run with serialize=merged: no polling, no gh calls, queue files untouched", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+    writeFileSync(
+      join(queueDir, "TASK-B.json"),
+      JSON.stringify({ id: "TASK-B", title: "Task B", prompt: "Work B", targetFiles: ["src/shared.mjs"] })
+    );
+
+    let pollCalls = 0;
+    let ghCalls = 0;
+
+    const res = await executeQueueDag(testDir, {
+      concurrency: 2,
+      dryRun: true,
+      serialize: "merged",
+      dispatchFn: async (task) => ({ id: `sess-${task.id}`, status: "IN_PROGRESS" }),
+      pollFn: async () => {
+        pollCalls++;
+        return { status: "COMPLETED" };
+      },
+      execGh: async () => {
+        ghCalls++;
+        return { state: "MERGED" };
+      },
+    });
+
+    assert.equal(res.processed, 2);
+    assert.equal(pollCalls, 0);
+    assert.equal(ghCalls, 0);
+    assert.equal(existsSync(join(queueDir, "TASK-A.json")), true);
+    assert.equal(existsSync(join(queueDir, "TASK-B.json")), true);
+    assert.equal(existsSync(join(queueDir, "completed")), false);
+  });
+
+  it("20. Invalid --serialize value is rejected with the list of valid values", async () => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    await assert.rejects(
+      () => executeQueueDag(testDir, { serialize: "bogus" }),
+      (err) => {
+        assert.match(err.message, /Invalid --serialize mode 'bogus'/);
+        assert.match(err.message, /dispatched, completed, merged/);
+        return true;
+      }
+    );
+
+    const { spawnSync } = await import("node:child_process");
+    const cliRes = spawnSync(
+      process.execPath,
+      [join(process.cwd(), "bin", "agentctl.mjs"), "queue", "--dag", "--serialize", "bogus"],
+      { cwd: testDir, encoding: "utf-8" }
+    );
+    assert.notEqual(cliRes.status, 0);
+    assert.match(cliRes.stderr, /dispatched, completed, merged/);
+  });
+
+  it("21. COMMAND_REFERENCE.md matches formatRegistryMarkdown() generator output", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { formatRegistryMarkdown } = await import("../src/ops/command-registry.mjs");
+    const disk = readFileSync(join(process.cwd(), "docs", "COMMAND_REFERENCE.md"), "utf-8").replace(/\r\n/g, "\n");
+    const generated = (`${formatRegistryMarkdown()}`.replace(/\s+$/, "") + "\n").replace(/\r\n/g, "\n");
+    assert.equal(disk, generated);
+    assert.match(disk, /--serialize/);
+    assert.match(disk, /--serialize-timeout/);
+  });
 });
+
 
 
