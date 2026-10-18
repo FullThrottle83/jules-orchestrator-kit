@@ -3,7 +3,8 @@ import { isTestPath } from "./test-paths.mjs";
 import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets, hasHighConfidenceSecret } from "./security.mjs";
-import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, gitlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase, buildVerificationEnv } from "./git.mjs";
+import { matchesGlob } from "./scope-guard.mjs";
+import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, gitlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase, buildVerificationEnv, git } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
 import { withBudget, appendLedger, getQueueDir, ensureDir, rollbackBudgetReservation, isConcurrencyGroupLocked, checkDailyBudget } from "./state.mjs";
@@ -1622,6 +1623,98 @@ export async function dispatch(task = {}, opts = {}) {
         return null;
       }
     })();
+
+  const driftMode = String(opts.driftCheck || task.driftCheck || "off").toLowerCase();
+  if (driftMode !== "off" && !opts.dryRun && targetFiles.length > 0) {
+    const startingBranch = task.branch || opts.branch || config.baseBranch || process.env.BASE_BRANCH || "main";
+    const resolvedBaseSha = preDispatchBaseSha ? getCommitSha(root, preDispatchBaseSha) : null;
+    const validBranch = typeof startingBranch === "string" && !startingBranch.startsWith("-") && /^[A-Za-z0-9._/-]+$/.test(startingBranch);
+    let fetched = false;
+    if (validBranch) {
+      try {
+        git(["fetch", "--quiet", "origin", `+refs/heads/${startingBranch}:refs/remotes/origin/${startingBranch}`], { cwd: root });
+        fetched = true;
+      } catch (_) {
+        fetched = false;
+      }
+    }
+    const remoteTip = fetched ? getCommitSha(root, `refs/remotes/origin/${startingBranch}`) : null;
+
+    if (!fetched || !resolvedBaseSha || !remoteTip) {
+      const reason = !fetched
+        ? `Could not fetch origin/${startingBranch} for base drift preflight.`
+        : !resolvedBaseSha
+          ? `Could not resolve task baseSha '${preDispatchBaseSha || ""}' locally.`
+          : `Could not resolve origin/${startingBranch} after fetch.`;
+      if (driftMode === "block") {
+        return {
+          ok: false,
+          status: "BASE_UNKNOWN",
+          error: reason,
+          baseSha: preDispatchBaseSha || null,
+          remoteTip: remoteTip || null,
+        };
+      }
+      if (driftMode === "warn") {
+        console.warn(`[BASE_DRIFT] ${reason}`);
+      }
+    } else {
+      let diffFiles = [];
+      let diffFailed = false;
+      try {
+        const rawDiff = git(["diff", "--name-only", `${resolvedBaseSha}..${remoteTip}`], { cwd: root });
+        diffFiles = rawDiff
+          .split(/\r?\n/)
+          .map((f) => normalizePath(f.trim()))
+          .filter(Boolean);
+      } catch (_) {
+        diffFailed = true;
+      }
+
+      if (diffFailed) {
+        const reason = `Could not diff ${resolvedBaseSha}..${remoteTip} for base drift preflight.`;
+        if (driftMode === "block") {
+          return {
+            ok: false,
+            status: "BASE_UNKNOWN",
+            error: reason,
+            baseSha: resolvedBaseSha,
+            remoteTip,
+          };
+        }
+        if (driftMode === "warn") {
+          console.warn(`[BASE_DRIFT] ${reason}`);
+        }
+      } else {
+        const normalizedTargets = targetFiles
+          .map((t) => normalizePath(String(t || "").trim()))
+          .filter(Boolean);
+        const drifted = diffFiles.filter((file) =>
+          normalizedTargets.some((pat) => file === pat || matchesGlob(file, pat))
+        );
+        if (drifted.length > 0) {
+          if (driftMode === "warn") {
+            appendTelemetry(root, "dispatch_base_drift", {
+              taskId: task.id || task.taskId || null,
+              baseSha: resolvedBaseSha,
+              remoteTip,
+              drifted,
+              files: drifted,
+            });
+          } else if (driftMode === "block") {
+            return {
+              ok: false,
+              status: "BASE_DRIFT",
+              drifted,
+              baseSha: resolvedBaseSha,
+              remoteTip,
+              error: `Base branch origin/${startingBranch} (${remoteTip.slice(0, 7)}) modified target files since ${resolvedBaseSha.slice(0, 7)}: ${drifted.join(", ")}`,
+            };
+          }
+        }
+      }
+    }
+  }
 
   const cleanTask = { ...task, prompt: envelopedPrompt, ...(preDispatchBaseSha ? { baseSha: preDispatchBaseSha } : {}) };
 
