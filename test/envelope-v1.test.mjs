@@ -396,4 +396,85 @@ scope:
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  await t.test("planTaskCreate emits canonical intent.outcome and round-trips cleanly (#81)", async () => {
+    const { planTaskCreate } = await import("../src/wizard-task.mjs");
+    const built = planTaskCreate(process.cwd(), {
+      title: "Harden provider boundary",
+      prompt: "Ensure JULES_API_URL override and intent.outcome work (#81) across src/provider.mjs",
+      verifyCmd: "npm test",
+      targetFiles: ["src/provider.mjs"],
+    });
+    assert.strictEqual(built.ok, true);
+    assert.ok(built.taskFileContent.includes("intent:\n  outcome:"));
+    const parsed = parseEnvelopeHeader(built.taskFileContent);
+    assert.ok(parsed);
+    assert.strictEqual(
+      parsed.intent?.outcome,
+      "Ensure JULES_API_URL override and intent.outcome work (#81) across src/provider.mjs"
+    );
+    const val = validateEnvelope(parsed);
+    assert.strictEqual(val.ok, true);
+  });
+
+  await t.test("Jules provider honors JULES_API_URL override, derives /sources, and supports listActivities createTime (#81)", async () => {
+    const { createServer } = await import("node:http");
+    const { createProvider } = await import("../src/provider.mjs");
+
+    const requests = [];
+    const srv = createServer((req, res) => {
+      requests.push({ method: req.method, url: req.url });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      if (req.url?.includes("/activities")) {
+        res.end(JSON.stringify({ activities: [{ id: "act-1" }], nextPageToken: "tok-2" }));
+      } else if (req.url?.includes("/sources")) {
+        res.end(JSON.stringify({ sources: [{ name: "sources/github/org/repo" }] }));
+      } else {
+        res.end(JSON.stringify({ id: "sess-81", state: "IN_PROGRESS", sessions: [{ id: "sess-81" }] }));
+      }
+    });
+
+    await new Promise((resolve) => srv.listen(0, "127.0.0.1", resolve));
+    const port = srv.address().port;
+    const prevUrl = process.env.JULES_API_URL;
+    const prevKey = process.env.JULES_API_KEY;
+
+    try {
+      process.env.JULES_API_URL = `http://127.0.0.1:${port}/v1beta/sessions`;
+      process.env.JULES_API_KEY = "test-key-81";
+
+      const builtinProvider = createProvider("jules");
+      await builtinProvider.listSessions({ pageSize: 10 });
+      await builtinProvider.listActivities("sess-81", {
+        pageSize: 25,
+        pageToken: "page-1",
+        createTime: "2026-10-18T00:00:00Z",
+      });
+      await builtinProvider.listSources({ pageSize: 5 });
+
+      assert.strictEqual(requests[0].url, "/v1beta/sessions?pageSize=10");
+      assert.strictEqual(
+        requests[1].url,
+        "/v1beta/sessions/sess-81/activities?pageSize=25&pageToken=page-1&createTime=2026-10-18T00%3A00%3A00Z"
+      );
+      assert.strictEqual(requests[2].url, "/v1beta/sources?pageSize=5");
+
+      // Explicit spec URL takes precedence over JULES_API_URL
+      const explicitProvider = createProvider({
+        name: "jules",
+        type: "http",
+        url: `http://127.0.0.1:${port}/explicit/sessions`,
+        headers: { "X-Goog-Api-Key": "{token}" },
+      });
+      await explicitProvider.listSources();
+      assert.strictEqual(requests[3].url, "/explicit/sources");
+    } finally {
+      if (prevUrl === undefined) delete process.env.JULES_API_URL;
+      else process.env.JULES_API_URL = prevUrl;
+      if (prevKey === undefined) delete process.env.JULES_API_KEY;
+      else process.env.JULES_API_KEY = prevKey;
+      await new Promise((resolve) => srv.close(resolve));
+    }
+  });
 });
+

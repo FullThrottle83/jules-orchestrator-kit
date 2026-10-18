@@ -59,7 +59,9 @@ Release details, including earlier milestone summaries, are in
 
 ## P1 — before v1
 
-- **Version the task-envelope contract.** Tasks may narrow trusted repository scope and
+- **Enforce task-envelope policy narrowing (`agentctl.task/v1` shipped).** Canonical
+  `agentctl.task/v1` frontmatter, `intent.outcome`, parser/serializer round-trips, and
+  `agentctl migrate` upgrades have shipped; tasks may narrow trusted repository scope and
   add verification, but must never widen policy or remove required verification.
 - **Move ephemeral runtime state out of the working tree** where practical so normal
   execution does not require an expanding `.gitignore` ownership footprint.

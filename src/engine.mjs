@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendTelemetryBestEffort as appendTelemetry } from "./telemetry.mjs";
 
 import { spawn } from "node:child_process";
+import { reapProcessTree } from "./process-tree.mjs";
 import { resolveAffectedTests, executeQueueDag } from "./dag-engine.mjs";
 import { recordRemediation, queryRemediations, harvestFailureRecord, hydrateMemory, createWhackAMoleDetector } from "./remediation.mjs";
 import { hydratePrompt, harvestFailure } from "./memory.mjs";
@@ -1890,11 +1891,12 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
   let child;
   let stdoutLogs = "";
   let stderrLogs = "";
+  let probeResult = null;
 
   try {
     child = spawn(shellBin, shellArgs, {
       cwd: root,
-      detached: true,
+      detached: !isWin,
       stdio: ["ignore", "pipe", "pipe"],
       env: buildVerificationEnv(),
     });
@@ -1913,15 +1915,12 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
     const startTime = Date.now();
     let pollResponse = null;
     let pollError = null;
+    let earlyExitCode = null;
 
     while (Date.now() - startTime < timeoutMs) {
       if (child.exitCode !== null) {
-        return {
-          ok: false,
-          status: child.exitCode,
-          error: `Dev server process exited prematurely with code ${child.exitCode}`,
-          logs: (stderrLogs || stdoutLogs).slice(-2000),
-        };
+        earlyExitCode = child.exitCode;
+        break;
       }
 
       try {
@@ -1936,67 +1935,69 @@ export async function probeDevServer(serverConfig = {}, root = process.cwd()) {
       await new Promise((r) => setTimeout(r, 400));
     }
 
-    if (!pollResponse) {
-      return {
+    if (earlyExitCode !== null) {
+      probeResult = {
+        ok: false,
+        status: earlyExitCode,
+        error: `Dev server process exited prematurely with code ${earlyExitCode}`,
+        logs: (stderrLogs || stdoutLogs).slice(-2000),
+      };
+    } else if (!pollResponse) {
+      probeResult = {
         ok: false,
         status: 504,
         error: `Dev server probe timed out after ${timeoutMs}ms attempting to reach ${url}. ${pollError ? pollError.message : ""}`,
         logs: (stderrLogs || stdoutLogs).slice(-2000),
       };
+    } else {
+      const combinedLogs = (stderrLogs + "\n" + pollResponse.bodyText).toLowerCase();
+      const hydrationPanics = [
+        "hydration failed",
+        "text content did not match",
+        "unhandled runtime error",
+        "minified react error #418",
+        "minified react error #423",
+        "minified react error #425",
+      ];
+
+      const detectedPanic = hydrationPanics.find((panic) => combinedLogs.includes(panic));
+      if (detectedPanic) {
+        probeResult = {
+          ok: false,
+          status: 500,
+          error: `SSR Hydration Smoke Probe Failure: Detected '${detectedPanic}' error in server response or stderr.`,
+          logs: (stderrLogs || stdoutLogs).slice(-2000),
+        };
+      } else if (!pollResponse.ok) {
+        probeResult = {
+          ok: false,
+          status: pollResponse.status,
+          error: `Dev server responded with HTTP status ${pollResponse.status}`,
+          logs: (stderrLogs || stdoutLogs).slice(-2000),
+        };
+      } else {
+        probeResult = {
+          ok: true,
+          status: pollResponse.status,
+          url,
+          logs: stdoutLogs.slice(-500),
+        };
+      }
     }
-
-    const combinedLogs = (stderrLogs + "\n" + pollResponse.bodyText).toLowerCase();
-    const hydrationPanics = [
-      "hydration failed",
-      "text content did not match",
-      "unhandled runtime error",
-      "minified react error #418",
-      "minified react error #423",
-      "minified react error #425",
-    ];
-
-    const detectedPanic = hydrationPanics.find((panic) => combinedLogs.includes(panic));
-    if (detectedPanic) {
-      return {
-        ok: false,
-        status: 500,
-        error: `SSR Hydration Smoke Probe Failure: Detected '${detectedPanic}' error in server response or stderr.`,
-        logs: (stderrLogs || stdoutLogs).slice(-2000),
-      };
-    }
-
-    if (!pollResponse.ok) {
-      return {
-        ok: false,
-        status: pollResponse.status,
-        error: `Dev server responded with HTTP status ${pollResponse.status}`,
-        logs: (stderrLogs || stdoutLogs).slice(-2000),
-      };
-    }
-
-    return {
-      ok: true,
-      status: pollResponse.status,
-      url,
-      logs: stdoutLogs.slice(-500),
-    };
   } finally {
     if (child && child.pid) {
-      try {
-        if (isWin) {
-          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-        } else {
-          const pgid = -child.pid;
-          process.kill(pgid, "SIGTERM");
-          setTimeout(() => {
-            try {
-              process.kill(pgid, "SIGKILL");
-            } catch (_) {}
-          }, 2000).unref();
-        }
-      } catch (_) {}
+      const cleanup = await reapProcessTree(child.pid, serverConfig._teardownOptions);
+      if (cleanup && cleanup.ok === false && probeResult && typeof probeResult === "object") {
+        probeResult.cleanupError = cleanup.error;
+        probeResult.diagnostics = [
+          ...(Array.isArray(probeResult.diagnostics) ? probeResult.diagnostics : []),
+          `Process tree cleanup warning: ${cleanup.error}`,
+        ];
+      }
     }
   }
+
+  return probeResult;
 }
 
 /**

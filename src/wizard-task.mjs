@@ -306,10 +306,17 @@ ${buildGuardrailFooter(config, { allowedPaths: targetFiles, baseBranch: flags.st
     } catch (_) {}
   }
 
+  const intentOutcome = typeof inputObj.intent === "string"
+    ? inputObj.intent
+    : (inputObj.intent && typeof inputObj.intent === "object" && inputObj.intent.outcome
+      ? inputObj.intent.outcome
+      : rawPrompt);
+
   const envelopeMetadata = {
     version: 1,
     id: taskId,
     title,
+    intent: { outcome: intentOutcome },
     baseSha,
     flags,
     risk,
@@ -340,6 +347,7 @@ ${buildGuardrailFooter(config, { allowedPaths: targetFiles, baseBranch: flags.st
     version: "agentctl.task/v1",
     id: taskId,
     title,
+    intent: { outcome: intentOutcome },
     baseCommit: baseSha || flags.startingBranch,
     baseSha,
     role: resolvedRole ? resolvedRole.role : (inputObj.role || undefined),
