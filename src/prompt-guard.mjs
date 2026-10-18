@@ -31,7 +31,7 @@ const INJECTION_PATTERNS = [
  * to prevent false-positive safety classifier tripwires in Google VM environments.
  */
 export const STERILE_VOCABULARY_MAP = [
-  { pattern: /\bkill\s+-9\b/gi, replacement: "terminate with SIGTERM" },
+  { pattern: /\bkill[\s_]*-9\b/gi, replacement: "terminate with SIGTERM" },
   { pattern: /\bSIGKILL\b/gi, replacement: "SIGTERM" },
   { pattern: /\bkill\s+(?:the\s+)?processes\b/gi, replacement: "terminate the processes" },
   { pattern: /\bkill\s+(?:the\s+)?process\b/gi, replacement: "terminate the process" },
@@ -48,6 +48,68 @@ export const STERILE_VOCABULARY_MAP = [
   { pattern: /\bexploit_payload\b/gi, replacement: "test_payload" },
 ];
 
+function containsDirectiveOrMarker(candidate) {
+  if (!candidate) return false;
+  CONTROL_TAGS_REGEX.lastIndex = 0;
+  if (CONTROL_TAGS_REGEX.test(candidate)) return true;
+  ROLE_PREFIX_REGEX.lastIndex = 0;
+  if (ROLE_PREFIX_REGEX.test(candidate)) return true;
+  for (const pattern of INJECTION_PATTERNS) {
+    pattern.lastIndex = 0;
+    if (pattern.test(candidate)) return true;
+  }
+  return false;
+}
+
+function normalizeForDirectiveCheck(str) {
+  return str
+    .normalize("NFKC")
+    .replace(CONFUSABLE_REGEX, (m) => CONFUSABLE_TO_ASCII.get(m))
+    .replace(ZERO_WIDTH_AND_BIDI_REGEX, "")
+    .replace(BIDI_CONTROL_REGEX, "")
+    .replace(INVISIBLE_OBFUSCATION_REGEX, "");
+}
+
+function decodeHtmlNumericEntities(str) {
+  return str.replace(/&#(?:x([0-9a-fA-F]{1,6})|(\d{1,7}));/g, (full, hex, dec) => {
+    const codePoint = hex ? parseInt(hex, 16) : parseInt(dec, 10);
+    if (Number.isFinite(codePoint) && codePoint >= 0x20 && codePoint <= 0x10ffff && (codePoint < 0xd800 || codePoint > 0xdfff)) {
+      try {
+        return String.fromCodePoint(codePoint);
+      } catch {
+        return full;
+      }
+    }
+    return full;
+  });
+}
+
+function neutralizeBase64Directives(text) {
+  let examined = 0;
+  return text.replace(/\b[A-Za-z0-9+/]{20,}={0,2}\b/g, (token) => {
+    if (examined >= 32 || token.length > 4096 || token.length % 4 === 1) return token;
+    examined++;
+    try {
+      const buf = Buffer.from(token, "base64");
+      if (buf.length === 0) return token;
+      const decoded = buf.toString("utf8");
+      let printable = 0;
+      for (let i = 0; i < decoded.length; i++) {
+        const c = decoded.charCodeAt(i);
+        if (c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126)) printable++;
+      }
+      if (printable / decoded.length < 0.9) return token;
+      const normalized = normalizeForDirectiveCheck(decoded);
+      if (containsDirectiveOrMarker(normalized)) {
+        return "[NEUTRALIZED_DIRECTIVE]";
+      }
+    } catch {
+      // ignore invalid base64
+    }
+    return token;
+  });
+}
+
 /**
  * Sanitizes aggressive phrases into clinical equivalents while preserving
  * code blocks (```...```) and inline backticks (`...`) verbatim.
@@ -59,30 +121,38 @@ export function sanitizePromptVocabulary(text) {
   if (!text || typeof text !== "string") return text || "";
 
   const codeSpans = [];
-  const placeholderPrefix = "@@VERBATIM_CODE_SPAN_";
-
-  // Protect fenced code blocks
-  let protectedText = text.replace(/```[\s\S]*?```/g, (match) => {
+  let nonce = 0;
+  while (text.includes(`@@VERBATIM_CODE_SPAN_${nonce}_`)) {
+    nonce++;
+  }
+  const placeholderPrefix = `@@VERBATIM_CODE_SPAN_${nonce}_`;
+  const stashSpan = (match) => {
     const idx = codeSpans.length;
     codeSpans.push(match);
     return `${placeholderPrefix}${idx}@@`;
-  });
+  };
 
-  // Protect inline code spans
-  protectedText = protectedText.replace(/`[^`\n]+`/g, (match) => {
-    const idx = codeSpans.length;
-    codeSpans.push(match);
-    return `${placeholderPrefix}${idx}@@`;
-  });
+  // Protect fenced code blocks (3 or more backticks)
+  let protectedText = text.replace(/(`{3,})[\s\S]*?\1/g, stashSpan);
 
-  let sanitized = protectedText;
+  // Protect multi-backtick inline code spans (e.g. ``kill -9``)
+  protectedText = protectedText.replace(/(`{2,})[^`\n]+\1/g, stashSpan);
+
+  // Protect single-backtick inline code spans, ignoring stray apostrophe backticks inside words (e.g. Don`t ... it`s)
+  protectedText = protectedText.replace(/(?<![A-Za-z0-9_])`[^`\n]+`(?![A-Za-z0-9_])/g, stashSpan);
+
+  // Strip invisible obfuscation/zero-width/bidi characters in prose outside code spans
+  let sanitized = protectedText
+    .replace(ZERO_WIDTH_AND_BIDI_REGEX, "")
+    .replace(BIDI_CONTROL_REGEX, "")
+    .replace(INVISIBLE_OBFUSCATION_REGEX, "");
+
   for (const { pattern, replacement } of STERILE_VOCABULARY_MAP) {
     sanitized = sanitized.replace(pattern, replacement);
   }
 
-  for (let i = 0; i < codeSpans.length; i++) {
-    sanitized = sanitized.replace(`${placeholderPrefix}${i}@@`, codeSpans[i]);
-  }
+  const restoreRegex = new RegExp(`${placeholderPrefix}(\\d+)@@`, "g");
+  sanitized = sanitized.replace(restoreRegex, (_, idx) => codeSpans[Number(idx)]);
 
   return sanitized;
 }
@@ -101,8 +171,20 @@ export function sanitizeUntrustedData(input, sourceName = "untrusted") {
     input = String(input);
   }
 
+  // 0. Neutralize RLO (\u202E) visually reversed injection directives before stripping bidi controls
+  let text = input.replace(/\u202E([^\u202C\r\n]*)\u202C?/g, (_, segment) => {
+    const reversed = normalizeForDirectiveCheck([...segment].reverse().join(""));
+    if (containsDirectiveOrMarker(reversed)) {
+      return "[NEUTRALIZED_DIRECTIVE]";
+    }
+    return segment;
+  });
+
+  // 0.5 Decode HTML numeric character references
+  text = decodeHtmlNumericEntities(text);
+
   // 1. Normalize UTF-8 string (NFKC)
-  let text = input.normalize("NFKC");
+  text = text.normalize("NFKC");
 
   // 1.5 Convert confusables to ASCII (transliterate Cyrillic/Greek lookalikes)
   text = text.replace(CONFUSABLE_REGEX, (m) => CONFUSABLE_TO_ASCII.get(m));
@@ -119,10 +201,11 @@ export function sanitizeUntrustedData(input, sourceName = "untrusted") {
   text = text.replace(CONTROL_TAGS_REGEX, "[FILTERED_TAG]");
   text = text.replace(ROLE_PREFIX_REGEX, "[ROLE_MARKER: $1]");
 
-  // 5. Neutralize known prompt injection phrases
+  // 5. Neutralize known prompt injection phrases (cleartext and base64-encoded)
   for (const pattern of INJECTION_PATTERNS) {
     text = text.replace(pattern, "[NEUTRALIZED_DIRECTIVE]");
   }
+  text = neutralizeBase64Directives(text);
 
   // 6. Neutralize delimiter breakout attempts inside text
   text = text.replace(/<<</g, "[TAG_OPEN]");
