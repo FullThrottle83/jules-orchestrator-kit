@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-10-18
+
+### Added
+- **Jules Provider Boundary & `agentctl.task/v1` `intent.outcome` (`src/provider.mjs`, `src/envelope.mjs`, `src/wizard-task.mjs`, #81, #117)**: Honored `process.env.JULES_API_URL` across all builtin Jules HTTP operations while preserving precedence for explicit `spec.url`, derived `/sources` from the resolved sessions base URL, added `createTime` filtering to `listActivities()`, and emitted canonical `intent.outcome` in `planTaskCreate()` and `serializeTaskFrontmatter()`.
+- **Provider Lifecycle Documentation (`docs/providers/jules.md`, `docs/architecture.md`, #65, #66)**: Documented remote asynchronous session lifecycles versus local synchronous execution results, plan approval prerequisites, and session patch extraction boundaries.
+
+### Changed
+- **Canonical `.agent/config.yml` Write Authority (`src/config.mjs`, `src/wizard-init.mjs`, #110)**: Made `.agent/config.yml` the sole writable project configuration target across CLI and SDK mutators; `.agent/jules.yml` remains a read-only legacy compatibility input with deterministic migration via `agentctl migrate`.
+- **Public SDK, CLI, and MCP Surface Contraction Batch 1 (`index.mjs`, `bin/agentctl.mjs`, `src/mcp.mjs`, #64, #67)**: Removed vendor-account session pruning and destructive session housekeeping (`prune`, `archiveSession`, `deleteSession`) from the CLI, root SDK, MCP server, and provider adapters, and internalized `createSyntaxVerifiedProvider` and `parseFailoverList` from root SDK exports.
+
+### Fixed
+- **Fail-Closed Checkpoint Rollback (`src/checkpoint.mjs`, `src/engine.mjs`, `bin/agentctl.mjs`, #70, #71)**: Recorded lossless preflight dirty-state snapshots (including staged/unstaged diffs and untracked file inventory) before repair mutations and made `restoreCheckpoint()` fail closed with `Exit Code 2` (`CheckpointError`) instead of running destructive `git reset --hard` / `git clean -fd` when preflight state is absent or incomplete.
+- **Dev Server Probe Process-Tree Reaping (`src/process-tree.mjs`, `src/engine.mjs`, #60, #117)**: Spawned `probeDevServer()` processes in isolated POSIX process groups (`detached: !isWin`) and guaranteed full process-tree teardown (`reapProcessTree`) in a `finally` block across all exit paths, escalating `SIGTERM` to `SIGKILL` (excluding `Z` zombies) on POSIX and synchronously verifying `taskkill /F /T /PID` completion on Windows.
+
 ## [0.75.9] - 2026-10-18
 
 ### Added
