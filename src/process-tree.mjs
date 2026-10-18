@@ -144,3 +144,199 @@ export function killProcessTree(pid, signal = "SIGTERM") {
   }
   safeKill(n, signal);
 }
+
+/**
+ * List members of process group `pgid` via `pgrep -g`. Empty on failure / none.
+ * @param {number} pgid
+ * @returns {number[]}
+ */
+function listProcessGroupMembers(pgid) {
+  try {
+    const ret = spawnSync("pgrep", ["-g", String(pgid)], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (ret.error || !ret.stdout) return [];
+    return ret.stdout
+      .split(/\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0 && n !== process.pid);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Checks whether a single PID is alive and not a zombie (`Z` state).
+ * @param {number} targetPid
+ * @param {(pid: number, sig: NodeJS.Signals|number) => void} killFn
+ * @param {boolean} isCustomKill
+ * @param {typeof spawnSync} spawnSyncFn
+ * @returns {boolean}
+ */
+function isPidAlive(targetPid, killFn, isCustomKill, spawnSyncFn) {
+  try {
+    killFn(targetPid, 0);
+  } catch (err) {
+    return Boolean(err && err.code === "EPERM");
+  }
+  if (isCustomKill || targetPid <= 0) {
+    return true;
+  }
+  if (process.platform !== "win32") {
+    try {
+      const ret = spawnSyncFn("ps", ["-o", "state=", "-p", String(targetPid)], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      if (!ret.error && typeof ret.stdout === "string") {
+        const st = ret.stdout.trim();
+        if (!st || st.startsWith("Z")) return false;
+      }
+    } catch {
+      // ignore ps failure and trust kill(pid, 0)
+    }
+  }
+  return true;
+}
+
+/**
+ * Terminates a process tree (`pid` and all descendants) across platforms and
+ * waits for full teardown before resolving.
+ *
+ * - Windows (`win32`): invokes `taskkill /F /T /PID <pid>` synchronously so
+ *   completion is observed before returning. Exit code 0 or 128 ("not found")
+ *   is treated as clean termination.
+ * - POSIX: snapshots descendants and process-group members, sends `SIGTERM` to
+ *   process group `-pid` and all descendants, waits up to `gracePeriodMs` for
+ *   exit, and escalates any surviving members to `SIGKILL`.
+ *
+ * Never throws; returns `{ ok: boolean, escalated?: boolean, error?: string }`.
+ *
+ * @param {number|string} pid
+ * @param {object} [options]
+ * @param {string} [options.platform]
+ * @param {number} [options.gracePeriodMs=400]
+ * @param {number} [options.pollIntervalMs=25]
+ * @param {typeof spawnSync} [options.spawnSyncFn]
+ * @param {(pid: number, sig: NodeJS.Signals|number) => void} [options.killFn]
+ * @returns {Promise<{ ok: boolean, escalated?: boolean, error?: string }>}
+ */
+export async function reapProcessTree(pid, options = {}) {
+  const n = normalizePid(pid);
+  if (!n) return { ok: true, escalated: false };
+
+  const platform = options.platform || process.platform;
+  const gracePeriodMs = Number.isFinite(options.gracePeriodMs) && options.gracePeriodMs >= 0
+    ? Number(options.gracePeriodMs)
+    : 400;
+  const pollIntervalMs = Number.isFinite(options.pollIntervalMs) && options.pollIntervalMs > 0
+    ? Number(options.pollIntervalMs)
+    : 25;
+  const spawnSyncFn = options.spawnSyncFn || spawnSync;
+  const isCustomKill = typeof options.killFn === "function";
+  const killFn = options.killFn || ((targetPid, sig) => process.kill(targetPid, sig));
+
+  if (platform === "win32") {
+    try {
+      const ret = spawnSyncFn("taskkill", ["/F", "/T", "/PID", String(n)], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      if (ret && ret.error) {
+        return { ok: false, error: ret.error.message || String(ret.error) };
+      }
+      // Exit code 0 = terminated; 128 (or 255) = process already exited / not found.
+      if (ret && typeof ret.status === "number" && ret.status !== 0 && ret.status !== 128 && ret.status !== 255) {
+        return { ok: false, error: `taskkill exited with status ${ret.status}` };
+      }
+      return { ok: true, escalated: false };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  }
+
+  const trackedPids = new Set([n]);
+  const snapshotTree = () => {
+    if (!isCustomKill) {
+      for (const pgMember of listProcessGroupMembers(n)) {
+        trackedPids.add(pgMember);
+      }
+      for (const knownPid of Array.from(trackedPids)) {
+        for (const childPid of collectDescendants(knownPid)) {
+          trackedPids.add(childPid);
+        }
+      }
+    }
+  };
+
+  const signalAll = (sig) => {
+    snapshotTree();
+    try {
+      killFn(-n, sig);
+    } catch {
+      // ESRCH / EPERM / non-leader — continue to per-PID signalling
+    }
+    if (!isCustomKill) {
+      try {
+        const sigName = typeof sig === "string" ? sig.replace(/^SIG/i, "") : String(sig);
+        spawnSyncFn("pkill", [`-${sigName}`, "-P", String(n)], { stdio: "ignore" });
+      } catch {
+        // ignore missing pkill
+      }
+    }
+    const ordered = Array.from(trackedPids).reverse();
+    for (const targetPid of ordered) {
+      try {
+        killFn(targetPid, sig);
+      } catch {
+        // ignore ESRCH / EPERM
+      }
+    }
+  };
+
+  const anyAlive = () => {
+    snapshotTree();
+    for (const targetPid of trackedPids) {
+      if (isPidAlive(targetPid, killFn, isCustomKill, spawnSyncFn)) return true;
+    }
+    return false;
+  };
+
+  if (!anyAlive()) {
+    return { ok: true, escalated: false };
+  }
+
+  signalAll("SIGTERM");
+
+  const graceDeadline = Date.now() + gracePeriodMs;
+  while (Date.now() < graceDeadline) {
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+    if (!anyAlive()) {
+      return { ok: true, escalated: false };
+    }
+  }
+
+  if (!anyAlive()) {
+    return { ok: true, escalated: false };
+  }
+
+  signalAll("SIGKILL");
+
+  const killDeadline = Date.now() + Math.max(gracePeriodMs, 250);
+  while (Date.now() < killDeadline) {
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+    if (!anyAlive()) {
+      return { ok: true, escalated: true };
+    }
+  }
+
+  const stillAlive = anyAlive();
+  return stillAlive
+    ? { ok: false, escalated: true, error: `Process tree rooted at PID ${n} did not terminate after SIGKILL` }
+    : { ok: true, escalated: true };
+}
+
+

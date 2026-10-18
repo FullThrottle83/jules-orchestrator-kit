@@ -229,7 +229,14 @@ export function parseYamlSubset(yamlText) {
     if (trimmed === "false") return false;
     if (trimmed === "null" || trimmed === "~") return null;
     if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return trimmed.slice(1, -1);
+      }
+    }
+    if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
       return trimmed.slice(1, -1);
     }
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
@@ -342,6 +349,22 @@ export function parseTaskFrontmatter(content) {
   }
 }
 
+function formatYamlScalar(value) {
+  const clean = String(value ?? "").replace(/\r?\n+/g, " ").trim();
+  if (
+    clean.includes("#") ||
+    clean.startsWith('"') ||
+    clean.endsWith('"') ||
+    clean.startsWith("'") ||
+    clean.endsWith("'") ||
+    (clean.startsWith("[") && clean.endsWith("]")) ||
+    /^(?:true|false|null|~|-?\d+(?:\.\d+)?)$/.test(clean)
+  ) {
+    return JSON.stringify(clean);
+  }
+  return clean;
+}
+
 /**
  * Serializes task metadata into a canonical `agentctl.task/v1` YAML frontmatter block.
  *
@@ -356,6 +379,13 @@ export function serializeTaskFrontmatter(meta = {}) {
   ];
   if (meta.id) lines.push(`id: ${meta.id}`);
   if (meta.title) lines.push(`title: ${meta.title}`);
+  const rawOutcome = typeof meta.intent === "string"
+    ? meta.intent
+    : (meta.intent && typeof meta.intent === "object" ? meta.intent.outcome : undefined);
+  if (rawOutcome !== undefined && rawOutcome !== null && String(rawOutcome).trim() !== "") {
+    lines.push("intent:");
+    lines.push(`  outcome: ${formatYamlScalar(rawOutcome)}`);
+  }
   if (meta.role) lines.push(`role: ${meta.role}`);
   if (meta.tier) lines.push(`tier: ${meta.tier}`);
   const base = meta.baseCommit || meta.base_commit || meta.baseSha || meta.base_sha;

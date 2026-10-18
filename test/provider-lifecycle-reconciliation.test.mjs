@@ -209,7 +209,7 @@ describe("Reconciliation on Mutating API Timeouts", () => {
       process.env.JULES_API_KEY = "test-token";
       const result = await provider.dispatch(
         { prompt: "do something", title: "Reconcile Task", branch: "main" },
-        { timeoutMs: 200, reconcile: true }
+        { timeoutMs: 500, reconcile: true }
       );
 
       assert.equal(result.id, "sess-reconciled-123");
@@ -252,7 +252,7 @@ describe("Reconciliation on Mutating API Timeouts", () => {
         async () =>
           provider.dispatch(
             { prompt: "do something", title: "Nonexistent Task", branch: "main" },
-            { timeoutMs: 200, reconcile: true }
+            { timeoutMs: 500, reconcile: true }
           ),
         (err) => {
           assert.ok(err instanceof ProviderUnavailableError);
