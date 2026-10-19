@@ -124,8 +124,8 @@ agentctl dispatch \
 # 2. Run the non-mutating verification gate against the resulting changes
 agentctl gate
 
-# 3. If verification fails, run an explicit bounded repair loop
-agentctl repair --cmd "npm test"
+# 3. If verification fails, pipe the failure output into an explicit bounded repair loop
+npm test 2>&1 | agentctl repair --cmd "npm test"
 ```
 
 During `agentctl repair`, the orchestrator feeds failure diagnostics back into bounded repair attempts (up to `limits.repairAttempts`) and halts early if the failure fingerprint repeats (`Exit Code 4`).

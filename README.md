@@ -187,9 +187,9 @@ for the review process.
 ## Complete Uninstall / Removing the Kit (Undo Init)
 
 `agentctl clean` performs operational maintenance; it is not an uninstaller.
-Use `agentctl uninstall` (or `agentctl uninstall --dry-run`) to remove the
-default minimal setup (`.agent/config.yml` and the kit's runtime-state block in
-`.gitignore`) while preserving unrelated project files.
+Use `agentctl uninstall --dry-run` to preview removal or `agentctl uninstall --yes`
+to remove the default minimal setup (`.agent/config.yml` and the kit's
+runtime-state block in `.gitignore`) while preserving unrelated project files.
 
 Repositories that previously used the legacy full scaffold may also contain
 `AGENTS.md`, prompts, rules, workflows and contract files; remove those only

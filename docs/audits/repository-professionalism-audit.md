@@ -15,7 +15,7 @@ However, an external engineer evaluating the repository encounters concrete cont
 1. **Broken or outdated examples in `EXAMPLES.md`**: GitHub Actions workflows specify `node-version: '20'` despite `package.json` requiring `node >= 22.0.0` (dropped in PR #100); Pattern 3 instructs users to run `agentctl merge-swarm` (a command that does not exist in `bin/agentctl.mjs`) and claims the kit executes tasks across isolated git worktrees (which `docs/architecture.md:310` explicitly notes the codebase does not do); Pattern 4 claims `agentctl dispatch` runs an automatic test verification and auto-fix loop (which `docs/architecture.md:8,316` explicitly refutes).
 2. **Documentation drift after the `v0.75.9`/`v0.76.0` surface contraction**: PRs #107, #108, and #109 removed `agentctl prune`, `archiveSession()`, `deleteSession()`, and `agent_prune_sessions`, but `docs/architecture.md:48,81-82`, `docs/providers/jules.md:38`, and `docs/configuration.md:103` still document them as active capabilities. Similarly, `docs/architecture.md:316` still states *"The OODA loop is a property of `gate --fix`"* even though `gate --fix` now exits with code `2` (`bin/agentctl.mjs:29`).
 3. **Self-hosting configuration dogfooding gap**: The repository's own `.agent/config.yml` is stated as the canonical v1 source of truth (`ROADMAP_V1.md:57`), while `.agent/jules.yml` is deprecated as a read-only 0.x legacy input. Yet this repository itself only tracks `.agent/jules.yml` (`version: 2`) and has no `.agent/config.yml`.
-4. **Stale contributor snapshot and unverified signing claims**: `CONTRIBUTORS.md` is frozen at a `2026-09-09 · v0.72.3 · 448 commits` snapshot with line-level agent statistics, omits `Claude Opus 5` / `Claude Sonnet 5` (`<noreply@anthropic.com>`, 78 co-authored commits), and `CONTRIBUTING.md:66,139` claims every commit since `2026-09-09` is signed, whereas 450 of 532 commits on `main` are unsigned and the 82 signed commits are only GitHub web-flow merge commits (`noreply@github.com`).
+4. **Stale contributor snapshot and commit-signing environment observation**: `CONTRIBUTORS.md` is frozen at a `2026-09-09 · v0.72.3 · 448 commits` snapshot with line-level agent statistics and omits `Claude Opus 5` / `Claude Sonnet 5` (`<noreply@anthropic.com>`, 78 co-authored commits). Additionally, while `CONTRIBUTING.md:66,139` mandates signed commits from `2026-09-09` onward, the 82 signed commits on `main` are GitHub web-flow merge/squash commits (`noreply@github.com`), as ephemeral agent sandboxes do not hold private signing keys. Because commit-signing rules are repository governance, `CONTRIBUTING.md`'s mandatory signing requirement is preserved and any policy adjustment is deferred for explicit maintainer decision.
 
 ---
 
@@ -66,9 +66,9 @@ Every finding is classified by both **Severity** (`Critical`, `High`, `Medium`, 
     (exit code 1)
     ```
   - `package.json:48` defines `"jules:merge-swarm": "node scripts/jules-merge-swarm.mjs"`, and the CLI command for PR harvesting is `agentctl pr harvest`.
-- **Recommended change**: Replace `agentctl merge-swarm` in `EXAMPLES.md` with the actual CLI command (`agentctl pr harvest` or `npm run jules:merge-swarm`) and remove the false claim that `agentctl swarm` provisions isolated git worktrees.
+- **Recommended change**: Replace `agentctl merge-swarm` in `EXAMPLES.md` with the actual CLI command (`agentctl pr harvest --dry-run`) and remove the false claim that `agentctl swarm` provisions isolated git worktrees.
 - **Compatibility / security risk**: None.
-- **Verification method**: Run every CLI command shown in `EXAMPLES.md` against `node bin/agentctl.mjs <cmd> --help`.
+- **Verification method**: Run every CLI command shown in `EXAMPLES.md` against `node bin/agentctl.mjs <cmd> --help` and execute in dry-run mode.
 
 ---
 
@@ -82,9 +82,10 @@ Every finding is classified by both **Severity** (`Critical`, `High`, `Medium`, 
 - **Evidence**:
   - `src/engine.mjs` `dispatch()` sends the task payload to `provider.dispatch()` and returns the session result without calling `gate()` or `repair()`.
   - `bin/agentctl.mjs:29-31` rejects `gate --fix` and directs users to `agentctl repair`.
-- **Recommended change**: Rewrite `EXAMPLES.md` Pattern 4 to show the actual two-step verification and explicit repair workflow (`agentctl gate` followed by `agentctl repair --cmd "npm test"`).
+  - `bin/agentctl.mjs:1074-1087` requires failure text from stdin, positional arguments, `--input`, or `--file`.
+- **Recommended change**: Rewrite `EXAMPLES.md` Pattern 4 to show the actual verification and explicit repair workflow (`agentctl gate` followed by `npm test 2>&1 | agentctl repair --cmd "npm test"`).
 - **Compatibility / security risk**: None.
-- **Verification method**: Verify `node bin/agentctl.mjs repair --help` and `node bin/agentctl.mjs gate --help` match the example.
+- **Verification method**: Verify `printf 'Error\n' | JULES_TIER=pro node bin/agentctl.mjs repair --cmd "npm test" --dry-run` and `node bin/agentctl.mjs gate --help`.
 
 ---
 
@@ -108,23 +109,23 @@ Every finding is classified by both **Severity** (`Critical`, `High`, `Medium`, 
 
 ---
 
-### F-05 — `CONTRIBUTORS.md` and `CONTRIBUTING.md` contain a stale snapshot, omit Claude co-authorship, and overstate commit-signing enforcement
+### F-05 — `CONTRIBUTORS.md` contains a stale point-in-time snapshot and omits Claude co-authorship
 
 - **Severity**: Medium
-- **Category**: Project maintenance & governance (`CONTRIBUTORS.md`, `CONTRIBUTING.md`)
+- **Category**: Project maintenance & governance (`CONTRIBUTORS.md`)
 - **Finding Type**: Documentation mismatch
-- **Location**: `CONTRIBUTORS.md:11-97`, `CONTRIBUTING.md:64-82,139`
+- **Location**: `CONTRIBUTORS.md:11-97`
 - **Why it matters**:
   1. `CONTRIBUTORS.md` presents a frozen snapshot from `2026-09-09 · v0.72.3 · 448 commits · 110 release tags` with hardcoded commit percentages and line counts that go stale on every commit (currently 532 commits on `main` and 124 tags).
   2. `CONTRIBUTORS.md` omits `Claude Opus 5 <noreply@anthropic.com>` (76 `Co-Authored-By:` trailers on `main`) and `Claude Sonnet 5 <noreply@anthropic.com>` (2 `Co-Authored-By:` trailers on `main`), which is the exact reason GitHub displays `claude` in the repository's Contributors sidebar.
-  3. `CONTRIBUTORS.md:84-86` and `CONTRIBUTING.md:66,81` state that all commits after the 448th commit (`2026-09-09`) must be cryptographically signed so human vs. agent authorship is verifiable. In reality, `git log main --format="%G?"` shows 450 unsigned commits (`N`) and 82 signed commits (`U`), where all 82 signed commits are GitHub web-UI merge/squash commits signed by GitHub's key (`GitHub <noreply@github.com>`), not local GPG/SSH developer or agent keys.
+  3. While `CONTRIBUTING.md:66,81` requires new commits to be signed (`git commit -S`), `git log main --format="%G?"` shows 450 unsigned commits (`N`) and 82 signed commits (`U`, all signed by `GitHub <noreply@github.com>` via web merges) because ephemeral agent sandboxes do not hold private GPG/SSH keys. That environment limitation should be noted in audit/PR reports without weakening the mandatory commit-signing policy in `CONTRIBUTING.md`.
 - **Evidence**:
   - `git rev-list --count main` → `532`; `git tag | wc -l` → `124`.
   - `git log main --format="%B" | grep -i "^Co-authored-by:" | sort | uniq -c` → `76 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`, `2 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
   - `git log main --format="%G? | %cn <%ce>" | grep "^U" | sort -u` → `U | GitHub <noreply@github.com>`.
-- **Recommended change**: Simplify `CONTRIBUTORS.md` into an evergreen provenance and governance document that accurately records all human and agent identities (including how `Co-authored-by` trailers map to GitHub accounts) without brittle commit/line-count tables, and align `CONTRIBUTING.md`'s commit-signing section with actual repository practice (recommended/supported for releases and merges rather than claiming every historical commit since September 9 is locally signed).
-- **Compatibility / security risk**: None. Preserves full provenance transparency without rewriting Git history.
-- **Verification method**: Verify `CONTRIBUTORS.md` and `CONTRIBUTING.md` against `git shortlog -sne main` and `git log main --grep="Co-authored-by" -i`.
+- **Recommended change**: Simplify `CONTRIBUTORS.md` into an evergreen provenance and governance document that records all human and agent identities (including how `Co-authored-by` trailers map to GitHub accounts), keeps verification requirements aligned with `AGENTS.md:57-61`, and preserves the commit-signing policy in `CONTRIBUTING.md`.
+- **Compatibility / security risk**: None. Preserves full provenance transparency and existing governance policies without rewriting Git history.
+- **Verification method**: Verify `CONTRIBUTORS.md` and `CONTRIBUTING.md` against `AGENTS.md`, `git shortlog -sne main`, and `git log main --grep="Co-authored-by" -i`.
 
 ---
 

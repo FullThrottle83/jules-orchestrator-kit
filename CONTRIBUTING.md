@@ -63,7 +63,7 @@ Every commit message must follow the **Conventional Commits** specification:
 
 ## 🔏 Commit Signing
 
-Commit signing (GPG or SSH) is encouraged for local commits and release tags, and GitHub automatically signs squash/merge commits performed through the GitHub review interface:
+Provenance governance requires that every **new** commit be **signed**, so authorship (human vs. autonomous agent) is cryptographically verifiable end-to-end:
 
 ```bash
 # Configure signing once
@@ -77,7 +77,8 @@ git commit -S -m "fix(engine): …"
 git log --show-signature
 ```
 
-- **History is permanent and is never rewritten.** Historical unsigned commits (including autonomous agent commits produced in ephemeral sandboxes without signing keys) remain as authored; do not rebase, filter, or force-push to backfill signatures.
+- Release tags are signed as well (`git tag -s`).
+- **History is permanent and will not be rewritten.** The 448 commits that predate this policy (2026-07-26 → 2026-09-09) are unsigned and remain exactly as authored; do NOT rebase, filter, or force-push to backfill signatures. The policy applies to commits created from now on.
 
 ---
 
@@ -94,7 +95,7 @@ npm ci
 ```
 
 ### 2. Run Verification Suite
-Before opening a PR, execute the complete verification suite:
+Before opening a PR, execute the verification suite required by [`AGENTS.md`](AGENTS.md):
 ```bash
 # Run unit tests
 npm test
@@ -105,8 +106,13 @@ npm run lint
 # Run documentation/version consistency gate
 npm run jules:doc-sync
 
-# Run agent rule budget check, package integrity, and guard reachability
+# Run agent rule budget check
 npm run jules:rules-lint
+
+# Run pre-flight self-audit
+node scripts/jules-self-audit.mjs --preflight
+
+# For packaging or guard changes, also run:
 npm run package-integrity
 npm run guard-reach
 ```
@@ -137,18 +143,19 @@ Every Pull Request is categorized into a **Risk Tier**:
 ### Pull Request Checklist
 - [ ] Branch pushed from latest `origin/main`; never committed directly to `main`.
 - [ ] Conventional Commit title per the [commit conventions](#commit-conventions-conventional-commits) above.
+- [ ] Every commit signed (`git log --show-signature` clean).
 - [ ] Attached full terminal output of `npm test` and `npm run lint` (and `npm run jules:doc-sync` for doc changes).
-- [ ] Verified CBEE execution envelope compliance (no unauthorized protected-path modifications).
+- [ ] Verified CBEE execution envelope compliance (no forbidden path modifications).
 - [ ] Added or updated unit tests in `test/` for new functionality.
-- [ ] Attribution preserved per [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
+- [ ] Attribution recorded: humans added to `CONTRIBUTORS.md` (optional but encouraged); agent authorship left intact in git metadata.
 
 ---
 
 ## 🙋 Attribution & Provenance
 
-- [`CONTRIBUTORS.md`](CONTRIBUTORS.md) documents the project's provenance and authorship rules for human maintainers and autonomous coding agents.
-- **Never rewrite history or authorship.** Do not falsify `Author`/`Committer` metadata or rewrite published commits.
-- Agent contributors do not self-attest; maintainers review and merge agent work from verified PR diffs and CI checks.
+- [`CONTRIBUTORS.md`](CONTRIBUTORS.md) is the attribution and provenance record for human maintainers and autonomous coding agents (`jules-agent`, Arena Agent, and Claude co-author trailers).
+- **Never rewrite history or authorship.** Do not change `Author`/`Committer` metadata, do not squash away `Co-authored-by:` trailers, and do not amend agent commits to hide their origin.
+- Agent contributors do not self-attest; maintainers record agent work from the verified commit metadata and PR audit trail.
 
 ---
 

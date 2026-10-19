@@ -52,23 +52,30 @@ git log main --format="%B" | grep -i "^Co-authored-by:" | sort | uniq -c | sort 
 
 ## 3. Provenance & Authorship Governance
 
-1. **No history rewriting**: Historical commit `Author`, `Committer`, and
-   `Co-authored-by:` metadata is never rewritten, filtered, or force-pushed.
-2. **Consistent future attribution**:
-   - Human commits use the maintainer's GitHub-linked identity
-     (`Jonas Pudas <110360247+FullThrottle83@users.noreply.github.com>`).
-   - Avoid adding external `<id>+<login>@users.noreply.github.com` or
-     `<noreply@anthropic.com>` `Co-authored-by:` trailers unless linking a
-     separate GitHub user account in the Contributors sidebar is intended.
-3. **Verification before merge**: Every contribution—whether authored by a human
-   or an autonomous agent—must pass the repository verification suite (`npm test`,
-   `npm run lint`, `npm run jules:doc-sync`, `npm run jules:rules-lint`,
-   `npm run package-integrity`, and `npm run guard-reach`) and human review
-   before merging to `main`.
+- **Author metadata** — commit `Author` name/email is the primary record and is
+  never rewritten (no history rewrites, no author normalization).
+- **Co-author trailers** — multi-agent or agent+maintainer commits carry
+  `Co-authored-by:` lines in the commit body.
+- **PR audit trail** — GitHub PRs reference task envelopes; CI runs and merge
+  reviews are linked from each merge commit.
+- **Verification before merge** — every contribution, whether authored by a
+  human or an autonomous agent, must pass the repository verification checks
+  defined in [`AGENTS.md`](AGENTS.md) (`npm test`, `npm run lint`,
+  `npm run jules:doc-sync`, and `npm run jules:rules-lint`; plus
+  `npm run package-integrity` and `npm run guard-reach` for packaging or guard
+  changes) and human review per [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 
-## 4. License & Copyright
+## 4. Commit Signing Policy
+
+Historical commits that predate the signing policy are **unsigned** and are
+preserved as-is (history is permanent). New commits must be signed (GPG/SSH) per
+the commit-signing rules in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+---
+
+## 5. License & Copyright
 
 This project is licensed under the **MIT License** (see [`LICENSE`](LICENSE)).
 
