@@ -12,7 +12,7 @@
 
 However, an external engineer evaluating the repository encounters concrete contradictions left behind by rapid iteration between `v0.50.x` and `v0.76.0`:
 
-1. **Broken or outdated examples in `EXAMPLES.md`**: GitHub Actions workflows specify `node-version: '20'` despite `package.json` requiring `node >= 22.0.0` (dropped in PR #100); Pattern 3 instructs users to run `agentctl merge-swarm` (a command that does not exist in `bin/agentctl.mjs`) and claims the kit executes tasks across isolated git worktrees (which `docs/architecture.md:310` explicitly notes the codebase does not do); Pattern 4 claims `agentctl dispatch` runs an automatic test verification and auto-fix loop (which `docs/architecture.md:8,316` explicitly refutes).
+1. **Broken or outdated examples in `EXAMPLES.md`**: GitHub Actions workflows specify `node-version: '20'` despite `package.json` requiring `node >= 22.0.0` (dropped in PR #100); Pattern 1 claims `agentctl scan` generates task envelopes when `bin/agentctl.mjs:2578-2590` only prints up to 10 `TODO`/`FIXME` lines; Pattern 3 writes `swarm-batch.json` even though `src/engine.mjs:72-83` (`isTaskFile()`) ignores `.json` files in `agentctl swarm`, instructs users to run non-existent `agentctl merge-swarm`, and claims the kit provisions isolated git worktrees; Pattern 4 claims `agentctl dispatch` runs an automatic test verification and auto-fix loop.
 2. **Documentation drift after the `v0.75.9`/`v0.76.0` surface contraction**: PRs #107, #108, and #109 removed `agentctl prune`, `archiveSession()`, `deleteSession()`, and `agent_prune_sessions`, but `docs/architecture.md:48,81-82`, `docs/providers/jules.md:38`, and `docs/configuration.md:103` still document them as active capabilities. Similarly, `docs/architecture.md:316` still states *"The OODA loop is a property of `gate --fix`"* even though `gate --fix` now exits with code `2` (`bin/agentctl.mjs:29`).
 3. **Self-hosting configuration dogfooding gap**: The repository's own `.agent/config.yml` is stated as the canonical v1 source of truth (`ROADMAP_V1.md:57`), while `.agent/jules.yml` is deprecated as a read-only 0.x legacy input. Yet this repository itself only tracks `.agent/jules.yml` (`version: 2`) and has no `.agent/config.yml`.
 4. **Stale contributor snapshot and commit-signing environment observation**: `CONTRIBUTORS.md` is frozen at a `2026-09-09 · v0.72.3 · 448 commits` snapshot with line-level agent statistics and omits `Claude Opus 5` / `Claude Sonnet 5` (`<noreply@anthropic.com>`, 78 co-authored commits). Additionally, while `CONTRIBUTING.md:66,139` mandates signed commits from `2026-09-09` onward, the 82 signed commits on `main` are GitHub web-flow merge/squash commits (`noreply@github.com`), as ephemeral agent sandboxes do not hold private signing keys. Because commit-signing rules are repository governance, `CONTRIBUTING.md`'s mandatory signing requirement is preserved and any policy adjustment is deferred for explicit maintainer decision.
@@ -34,41 +34,40 @@ Every finding is classified by both **Severity** (`Critical`, `High`, `Medium`, 
 
 ## Prioritized Findings
 
-### F-01 — `EXAMPLES.md` workflows use unsupported Node.js 20 and fail on `engines.node >= 22.0.0`
+### F-01 — `EXAMPLES.md` workflows use unsupported Node.js 20 and misstate `agentctl scan` behavior
 
 - **Severity**: High
 - **Category**: README and documentation (`EXAMPLES.md`)
 - **Finding Type**: Confirmed defect / Documentation mismatch
-- **Location**: `EXAMPLES.md:29`, `EXAMPLES.md:69`, `package.json:63-65`
-- **Why it matters**: An external developer copying Pattern 1 or Pattern 2 into `.github/workflows/` runs the kit on Node.js 20, which violates `engines.node: ">=22.0.0"` (Node 20 support was dropped in commit `fb9b859` / PR #100).
+- **Location**: `EXAMPLES.md:9,29,37-41,69`, `package.json:63-65`, `bin/agentctl.mjs:2578-2590`
+- **Why it matters**:
+  1. Copying Pattern 1 or Pattern 2 into `.github/workflows/` runs the kit on Node.js 20, which violates `engines.node: ">=22.0.0"` (Node 20 support was dropped in commit `fb9b859` / PR #100).
+  2. Pattern 1 claims `agentctl scan` *"generates structured task envelopes, and processes them automatically"* when followed by `agentctl queue`. In reality, `bin/agentctl.mjs:2578-2590` calls `scanCodebaseForTodos(root)` and prints up to 10 `TODO`/`FIXME` matches to stdout without writing any files to `.agent/jules-queue/`.
 - **Evidence**:
   - `package.json:63-65`: `"engines": { "node": ">=22.0.0" }`
-  - `EXAMPLES.md:27-29` and `67-69`: `uses: actions/setup-node@v4` with `node-version: '20'`.
-- **Recommended change**: Update `node-version` in `EXAMPLES.md` Patterns 1 and 2 to `'22'`.
+  - `bin/agentctl.mjs:2578-2590`: `scan` logs `Scanned ${todos.length} TODO/FIXME annotation(s)` and exits `0` without touching `.agent/jules-queue/`.
+- **Recommended change**: Update `node-version` in `EXAMPLES.md` Patterns 1 and 2 to `'22'`, and clarify in Pattern 1 that `scan` prints diagnostic `TODO`/`FIXME` output while `queue` dispatches Markdown task envelopes in `.agent/jules-queue/`.
 - **Compatibility / security risk**: None (documentation only).
-- **Verification method**: Inspect `EXAMPLES.md` for `node-version` and verify agreement with `package.json` and `.github/workflows/jules-audit.yml`.
+- **Verification method**: Run `agentctl scan` and `agentctl queue --dry-run` in a temporary repository and verify queue behavior.
 
 ---
 
-### F-02 — `EXAMPLES.md` Pattern 3 instructs users to run non-existent `agentctl merge-swarm` and misstates worktree behavior
+### F-02 — `EXAMPLES.md` Pattern 3 writes `.json` files ignored by `agentctl swarm`, invokes removed `agentctl merge-swarm`, and misstates worktree behavior
 
 - **Severity**: High
 - **Category**: README and documentation (`EXAMPLES.md`)
 - **Finding Type**: Confirmed defect / Documentation mismatch
-- **Location**: `EXAMPLES.md:82`, `EXAMPLES.md:107`, `bin/agentctl.mjs`, `docs/architecture.md:310`
-- **Why it matters**: Running `agentctl merge-swarm` fails immediately with `Exit Code 1` (`Unknown command: "merge-swarm"`). Furthermore, Pattern 3 claims `agentctl swarm` executes batches *"concurrently across isolated git worktrees"*, which `docs/architecture.md:310` explicitly refutes (*"It does not provision git worktrees... Nothing in the codebase runs `git worktree add`"*).
+- **Location**: `EXAMPLES.md:82-108`, `src/engine.mjs:72-83`, `bin/agentctl.mjs:1495-1505`, `docs/architecture.md:310`
+- **Why it matters**:
+  1. Pattern 3 writes `.agent/jules-queue/swarm-batch.json` and runs `agentctl swarm`. However, `bin/agentctl.mjs:1496` filters `.agent/jules-queue/` using `isTaskFile(f, queueDir)`, and `src/engine.mjs:81` rejects any file that does not end with `.md` (`if (!lower.endsWith(".md")) return false;`). Running Pattern 3 therefore prints `No pending tasks found for swarm.` and processes `0` tasks.
+  2. Step 3 runs `agentctl merge-swarm`, which fails with `Exit Code 1` (`Command "merge-swarm" is not part of the supported v1 CLI surface`).
+  3. Pattern 3 claims `swarm` executes batches *"concurrently across isolated git worktrees"*, which `docs/architecture.md:310` explicitly refutes.
 - **Evidence**:
-  - Reproducible command:
-    ```text
-    $ node bin/agentctl.mjs merge-swarm
-    Unknown command: "merge-swarm".
-    Run 'agentctl --help' to see all available commands.
-    (exit code 1)
-    ```
-  - `package.json:48` defines `"jules:merge-swarm": "node scripts/jules-merge-swarm.mjs"`, and the CLI command for PR harvesting is `agentctl pr harvest`.
-- **Recommended change**: Replace `agentctl merge-swarm` in `EXAMPLES.md` with the actual CLI command (`agentctl pr harvest --dry-run`) and remove the false claim that `agentctl swarm` provisions isolated git worktrees.
+  - `src/engine.mjs:81-83`: `if (!lower.endsWith(".md")) { return false; }`
+  - `node bin/agentctl.mjs merge-swarm` exits `1`.
+- **Recommended change**: Replace `cat << 'EOF' > .agent/jules-queue/swarm-batch.json` in Pattern 3 with `agentctl task create`, use `agentctl swarm --concurrency 2`, replace `agentctl merge-swarm` with `agentctl pr harvest --dry-run`, and remove the false git worktree claim.
 - **Compatibility / security risk**: None.
-- **Verification method**: Run every CLI command shown in `EXAMPLES.md` against `node bin/agentctl.mjs <cmd> --help` and execute in dry-run mode.
+- **Verification method**: Run `agentctl task create` twice followed by `agentctl swarm --concurrency 2 --dry-run` in an isolated temporary repository and verify both tasks are discovered and previewed.
 
 ---
 
@@ -77,15 +76,15 @@ Every finding is classified by both **Severity** (`Critical`, `High`, `Medium`, 
 - **Severity**: High
 - **Category**: Product positioning & documentation (`EXAMPLES.md`)
 - **Finding Type**: Documentation mismatch
-- **Location**: `EXAMPLES.md:112-126`, `README.md:15-18`, `docs/architecture.md:8,144-147`
-- **Why it matters**: Pattern 4 states: *"Dispatch task with automatic test verification and auto-repair: `JULES_DRY_RUN=0 agentctl dispatch ...` If tests fail, the orchestrator feeds `stderr` back into repair attempts"*. In reality, `dispatch` only sends the task to the provider; it never runs verification or repair (`docs/architecture.md:8`: *"`dispatch()` never invokes the gate; `repair()` owns the bounded OODA loop"*). This directly contradicts the core v1 trust boundary stated in `README.md:15`.
+- **Location**: `EXAMPLES.md:112-136`, `README.md:15-18`, `docs/architecture.md:8,144-147`
+- **Why it matters**: Pattern 4 states: *"Dispatch task with automatic test verification and auto-repair: `JULES_DRY_RUN=0 agentctl dispatch ...` If tests fail, the orchestrator feeds `stderr` back into repair attempts"*. In reality, `dispatch` only sends the task to the provider; it never runs verification or repair (`docs/architecture.md:8`: *"`dispatch()` never invokes the gate; `repair()` owns the bounded OODA loop"*). Furthermore, an independent `agentctl gate` check must remain separate from an operator-authorized `agentctl repair`, and final acceptance after repair must still pass `agentctl gate`.
 - **Evidence**:
   - `src/engine.mjs` `dispatch()` sends the task payload to `provider.dispatch()` and returns the session result without calling `gate()` or `repair()`.
   - `bin/agentctl.mjs:29-31` rejects `gate --fix` and directs users to `agentctl repair`.
   - `bin/agentctl.mjs:1074-1087` requires failure text from stdin, positional arguments, `--input`, or `--file`.
-- **Recommended change**: Rewrite `EXAMPLES.md` Pattern 4 to show the actual verification and conditional repair workflow (`agentctl gate`, capturing failed test output to a temp file and running `agentctl repair --file "$fail_log" --cmd "npm test"` only when `npm test` exits non-zero).
+- **Recommended change**: Rewrite `EXAMPLES.md` Pattern 4 into two distinct steps: (1) `agentctl dispatch` followed by the independent non-mutating `agentctl gate`, and (2) when bounded repair is explicitly authorized for a test failure, capturing failed test output to a temp file, invoking `agentctl repair --file "$fail_log" --cmd "npm test" || exit $?`, and re-running `agentctl gate` as the final acceptance check.
 - **Compatibility / security risk**: None.
-- **Verification method**: Verify both passing (`exit 0`, `repair` not invoked) and failing (`exit != 0`, `repair --file` invoked) paths against `bin/agentctl.mjs`.
+- **Verification method**: Verify end-to-end in a temporary repository across passing gate, failing test → repair, and failing scope/secret gate with passing tests (confirming `agentctl gate` still blocks acceptance).
 
 ---
 
