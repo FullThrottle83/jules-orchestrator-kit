@@ -117,10 +117,28 @@ agentctl task create --non-interactive --title "Wave 1: backend contract" \
   --verify-cmd "npm test" --require-plan-approval --auto-pr
 
 agentctl queue --dry-run
-agentctl queue --dag --concurrency 1
+agentctl queue --dag --serialize dispatched --concurrency 1
 ```
 
-`queue --dag` in JOK v0.76.0 orders **dispatch**, not merge completion. Its present behavior does **not** guarantee that a dependent hosted Jules session starts from newly merged code, even with `--concurrency 1`. Use separate queue runs for dependent waves. Increase concurrency *within* a wave only after verifying task independence.
+JOK v0.76.1 supports three DAG dependency wait modes (PR #121):
+
+| Mode | When a dependent task can start |
+| --- | --- |
+| `--serialize dispatched` (default) | After its prerequisite was dispatched successfully |
+| `--serialize completed` | After the prerequisite provider session reaches terminal completion |
+| `--serialize merged` | After the prerequisite provider session finishes and all discovered PRs are merged |
+
+For an *explicitly linked* producer → consumer dependency, `--serialize merged` is the safer single-run option. For example, after reviewing the task plan and ensuring `dependsOn` references the actual upstream task ID:
+
+```sh
+agentctl queue --dag --serialize merged --serialize-timeout 240 --concurrency 2
+```
+
+`--serialize-timeout` is a per-task wait timeout in **minutes** (default 15); choose it deliberately if a human may need to review PRs before the next task is dispatched. A closed-unmerged PR, no discovered PR URL, a failed provider session, or timeout blocks dependent tasks; check the recorded evidence instead of blindly rerunning.
+
+**Important:** `merged` checks provider/PR state; it does *not* run `agentctl gate`, grant merge approval, guarantee CI/branch protection, or prove that the next remote session uses a refreshed base commit. Configure independent CI/branch protection and require human review as appropriate. Re-fetch `main` and reassess base drift/contract compatibility before dependent work. Where that cannot be guaranteed, **keep sequential waves as separate, manually reviewed queue runs**.
+
+Only parallelize independent tasks when neither file scopes nor shared contracts conflict.
 
 Before releasing wave 2:
 
@@ -130,7 +148,7 @@ Before releasing wave 2:
 4. Fetch the updated base branch, rerun the relevant full/integration tests (including cross-layer seams), and revise wave 2 prompts against the new SHA. Stop if contracts changed unexpectedly.
 5. Only then create and dispatch the next wave's task envelopes.
 
-If the base branch advances after task planning, re-evaluate affected paths and contracts before dispatch. Proposed changes to dispatch drift detection or merge-wait serialization in pending PRs should not be documented or relied upon as released behavior.
+If the base branch advances after task planning, re-evaluate affected paths and contracts before dispatch. JOK v0.76.1 includes opt-in base-drift preflight (PR #120), but a drift check is not a substitute for refreshing the planning baseline, verifying the actual new contract, or independently reviewing candidate code.
 
 ## Completion and handover
 
