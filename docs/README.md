@@ -22,6 +22,7 @@ Start here. Find the page that matches what you are trying to do; every path is 
 - [README → Key Workflows](../README.md#key-workflows) — everyday commands and task selection (what to dispatch vs. keep human-in-the-loop).
 - [docs/COMMAND_REFERENCE.md](COMMAND_REFERENCE.md) — `task create`, `task template`, `dispatch`, `queue`, `swarm`, `retry`, `pr harvest`.
 - [EXAMPLES.md](../EXAMPLES.md) — envelope formats, roles, and templates.
+- [Roadmap-to-wave execution recipe](recipes/roadmap-waves.md) — optional planning prompt, active-intent structure, contract-aware wave boundaries and safe staged dispatch.
 
 ### …understand how the system works
 - **[docs/architecture.md](architecture.md)** — the two-pipeline model (Dispatch vs Verification), provider execution models and Provider Lifecycle Contract, sequence diagrams, exit codes, and what the orchestrator deliberately does not do.
