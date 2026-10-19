@@ -30,7 +30,7 @@ Because this framework delegates code execution to autonomous AI agents (such as
 
 ### 1. Responsible Autonomous Operation
 - **Scope Compliance:** Agents and prompt dispatches must operate strictly within declared `allow_paths`. Attempts to manipulate prompts to breach `forbidden_paths` or modify security rule files (`.agent/rules/`, `.github/`) are strictly forbidden.
-- **CBEE Envelope Integrity:** Never attempt to bypass or disable Capability-Bounded Execution Envelopes (`execution_envelope.mjs`). All session dispatches must remain immutably bound to their base SHA and verified config.
+- **CBEE Envelope Integrity:** Never attempt to bypass or disable Capability-Bounded Execution Envelopes (`src/execution-envelope.mjs`). All session dispatches must remain immutably bound to their base SHA and verified config.
 
 ### 2. Evidence-Based & Falsifiable Engineering
 - **No Assertion Weakening:** Never attempt to make unit tests or CI pipelines pass by deleting test assertions, commenting out checks, or swallowing runtime errors.

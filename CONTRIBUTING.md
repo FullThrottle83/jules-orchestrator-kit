@@ -63,7 +63,7 @@ Every commit message must follow the **Conventional Commits** specification:
 
 ## 🔏 Commit Signing
 
-Provenance governance requires that every **new** commit be **signed**, so authorship (human vs. autonomous agent) is cryptographically verifiable end-to-end:
+Commit signing (GPG or SSH) is encouraged for local commits and release tags, and GitHub automatically signs squash/merge commits performed through the GitHub review interface:
 
 ```bash
 # Configure signing once
@@ -77,8 +77,7 @@ git commit -S -m "fix(engine): …"
 git log --show-signature
 ```
 
-- Release tags are signed as well (`git tag -s`).
-- **History is permanent and will not be rewritten.** The 448 commits that predate this policy (2026-07-26 → 2026-09-09) are unsigned and remain exactly as authored; do NOT rebase, filter, or force-push to backfill signatures. The policy applies to commits created from now on.
+- **History is permanent and is never rewritten.** Historical unsigned commits (including autonomous agent commits produced in ephemeral sandboxes without signing keys) remain as authored; do not rebase, filter, or force-push to backfill signatures.
 
 ---
 
@@ -91,7 +90,7 @@ git clone https://github.com/FullThrottle83/jules-orchestrator-kit.git
 cd jules-orchestrator-kit
 
 # Install dev dependencies (ESLint)
-npm install
+npm ci
 ```
 
 ### 2. Run Verification Suite
@@ -106,8 +105,10 @@ npm run lint
 # Run documentation/version consistency gate
 npm run jules:doc-sync
 
-# Run pre-flight self-audit
-node scripts/jules-self-audit.mjs --preflight
+# Run agent rule budget check, package integrity, and guard reachability
+npm run jules:rules-lint
+npm run package-integrity
+npm run guard-reach
 ```
 
 ### 3. Subscription Tier Testing (`JULES_TIER`)
@@ -130,25 +131,24 @@ Every Pull Request is categorized into a **Risk Tier**:
 | :--- | :--- | :--- | :--- |
 | **`R0`** | **Cosmetic** | Documentation, markdown formatting, SVG assets. | Auto-merge eligible |
 | **`R1`** | **Routine** | Isolated package logic with unit tests. | 1 Standard Review |
-| **`R2`** | **Consequential** | Core engine updates (`engine.mjs`), CLI changes. | 1 Maintainer Review |
-| **`R3`** | **Restricted** | Security modules (`security.mjs`, `execution_envelope.mjs`), CI workflows. | Security Review Required |
+| **`R2`** | **Consequential** | Core engine updates (`src/engine.mjs`), CLI changes. | 1 Maintainer Review |
+| **`R3`** | **Restricted** | Security modules (`src/security.mjs`, `src/execution-envelope.mjs`), CI workflows. | Security Review Required |
 
 ### Pull Request Checklist
 - [ ] Branch pushed from latest `origin/main`; never committed directly to `main`.
 - [ ] Conventional Commit title per the [commit conventions](#commit-conventions-conventional-commits) above.
-- [ ] Every commit signed (`git log --show-signature` clean).
 - [ ] Attached full terminal output of `npm test` and `npm run lint` (and `npm run jules:doc-sync` for doc changes).
-- [ ] Verified CBEE execution envelope compliance (no forbidden path modifications).
+- [ ] Verified CBEE execution envelope compliance (no unauthorized protected-path modifications).
 - [ ] Added or updated unit tests in `test/` for new functionality.
-- [ ] Attribution recorded: humans added to `CONTRIBUTORS.md` (optional but encouraged); agent authorship left intact in git metadata.
+- [ ] Attribution preserved per [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
 
 ---
 
 ## 🙋 Attribution & Provenance
 
-- [`CONTRIBUTORS.md`](CONTRIBUTORS.md) is the attribution ledger: human maintainers, autonomous coding agents (`jules-agent`, Arena Agent), and per-identity statistics from `git log`.
-- **Never rewrite history or authorship.** Do not change `Author`/`Committer` metadata, do not squash away `Co-authored-by:` trailers, and do not amend agent commits to hide their origin.
-- Agent contributors do not self-attest; maintainers record agent work from the verified commit metadata and PR audit trail.
+- [`CONTRIBUTORS.md`](CONTRIBUTORS.md) documents the project's provenance and authorship rules for human maintainers and autonomous coding agents.
+- **Never rewrite history or authorship.** Do not falsify `Author`/`Committer` metadata or rewrite published commits.
+- Agent contributors do not self-attest; maintainers review and merge agent work from verified PR diffs and CI checks.
 
 ---
 

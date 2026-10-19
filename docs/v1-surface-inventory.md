@@ -201,8 +201,8 @@ Examines files and configuration written by `bin/init.js`, `agentctl init`, `src
 The following inventory points were identified as ambiguous or requiring explicit owner decision during v1 planning:
 
 1. **`agentctl repair` vs. `agentctl fix`**:
-   - `repair` is the registered command ID in `COMMAND_REGISTRY`, while `fix` exists as a shortcut/alias and as a mutating flag on `gate (--fix)`.
-   - *Owner Decision Needed*: Should `gate` be strictly non-mutating with `--fix` removed, making `repair` the sole mutating repair primitive, and should the CLI shortcut `fix` be deprecated or retained as a shortcut for `repair`?
+   - **Shipped (`v0.75.x`+)**: `gate` is strictly non-mutating (`gate --fix` is rejected with exit code `2` and directs users to `agentctl repair`).
+   - *Remaining Owner Decision*: Should the top-level CLI alias `agentctl fix` be deprecated before v1.0 or retained as a convenience alias for `agentctl repair`?
 
 2. **Command Consolidation (`queue` / `swarm` vs. `dispatch --queue`)**:
    - `agentctl queue` and `agentctl swarm` currently execute pending tasks.
@@ -221,5 +221,5 @@ The following inventory points were identified as ambiguous or requiring explici
    - *Owner Decision Needed*: Should `jules_*` tool names be deprecated in favor of provider-neutral `agent_*` names, or retained for backwards compatibility with existing MCP clients?
 
 6. **Default Init Asset Scope**:
-   - Currently `bin/init.js` writes `.agent/config.yml`, `.agent/jules.yml`, `AGENTS.md`, `.agent/prompts/`, `.agent/rules/`, `.agent/workflows/`, `.github/workflows/agent-gate.yml`, and `.agent/JULES_WEB_SETUP.md`.
-   - *Owner Decision Needed*: Confirm that minimal v1 `agentctl init` should write *only* `.agent/config.yml` and `.gitignore` entries by default, making all other assets opt-in.
+   - **Shipped (`v0.75.9`+)**: Default `agentctl init` writes only `.agent/config.yml` and the runtime `.gitignore` block; legacy full-scaffold assets (`AGENTS.md`, `.agent/prompts/`, `.agent/rules/`, `.agent/workflows/`) require explicit `agentctl init --force` or `jules-init`.
+   - *Remaining Owner Decision*: Confirm the v1.0 removal timeline for the `jules-init` compatibility entry point and `init --force` legacy scaffold assets.

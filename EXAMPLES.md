@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Scan Codebase & Dispatch Tasks
         env:
@@ -66,7 +66,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Run Safety & Verification Audit
         run: |
@@ -79,7 +79,7 @@ jobs:
 
 ![Multi-Agent Parallel Swarm Topology](docs/assets/swarm-topology.svg?v=3)
 
-Execute multi-task batches concurrently across isolated git worktrees:
+Dispatch queued task batches concurrently across worker slots, then audit and harvest verified pull requests:
 
 ### CLI Swarm Command
 
@@ -100,29 +100,35 @@ cat << 'EOF' > .agent/jules-queue/swarm-batch.json
 ]
 EOF
 
-# 2. Launch parallel swarm execution
+# 2. Launch parallel swarm dispatch across worker slots
 JULES_SWARM_CONCURRENCY=2 agentctl swarm
 
-# 3. Perform structural merge on completed swarm PRs
-agentctl merge-swarm
+# 3. Audit and harvest verified agent pull requests
+agentctl pr harvest --dry-run
 ```
 
 ---
 
-## Pattern 4: Automated Verification Loop with Auto-Fix
+## Pattern 4: Non-Mutating Gate & Bounded Repair Loop
 
 ![Autonomous Verification Loop](docs/assets/ooda-loop-cycle.svg?v=3)
 
-Execute repair loops with thrash detection to preserve API quotas:
+Verify candidate changes locally with `gate`, and invoke `repair` explicitly when a failing command needs bounded automated remediation:
 
 ```bash
-# Dispatch task with automatic test verification and auto-repair
-JULES_DRY_RUN=0 agentctl dispatch \
+# 1. Dispatch a scoped task to the configured provider
+agentctl dispatch \
   --title "Fix Security Sanitizer" \
   --prompt "Sanitize user inputs in src/security.mjs and ensure all tests pass cleanly"
+
+# 2. Run the non-mutating verification gate against the resulting changes
+agentctl gate
+
+# 3. If verification fails, run an explicit bounded repair loop
+agentctl repair --cmd "npm test"
 ```
 
-If tests fail, the orchestrator feeds `stderr` back into repair attempts (up to `limits.repairAttempts`), aborting early on persistent regressions (`Exit Code 4`).
+During `agentctl repair`, the orchestrator feeds failure diagnostics back into bounded repair attempts (up to `limits.repairAttempts`) and halts early if the failure fingerprint repeats (`Exit Code 4`).
 
 ---
 

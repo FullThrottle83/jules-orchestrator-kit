@@ -109,16 +109,22 @@ For direct `agentctl` commands, install globally with
 
 ## Key workflows
 
-| Goal | Command |
+|Command | Description |
 | --- | --- |
-| Interactive terminal navigation | `agentctl menu` (or `agentctl -i`) |
-| Inspect provider setup | `agentctl providers` |
-| Create a scoped task | `agentctl task create` |
-| Preview queued work | `agentctl queue --dry-run` |
-| Check changes locally | `agentctl gate` |
-| Start an explicit repair workflow | `agentctl repair --input "<failure>" --task` |
-| Diagnose setup | `agentctl doctor` |
-| Inspect a command's flags | `agentctl help <command>` |
+| `menu` | Interactive terminal navigation hub (`agentctl menu` or `agentctl -i`). |
+| `providers` | Check configured and available agent providers (`agentctl providers`). |
+| `task create` | Author a scoped task envelope (`agentctl task create`). |
+| `queue` | Preview (`agentctl queue --dry-run`), list (`agentctl queue list`), or dispatch queued tasks. |
+| `dispatch` | Send a single task or envelope to the configured provider (`agentctl dispatch`). |
+| `gate` | Run configured scope, secret, payload, and test checks locally (`agentctl gate`). |
+| `repair` | Run an explicit bounded repair workflow (`agentctl repair --input "<failure>" --task`). |
+| `doctor` | Diagnose repository, oracle, and provider setup (`agentctl doctor`). |
+| `dashboard` | Local telemetry viewer; default port 4100. Set another port with `--port <n>`. |
+| `help <command>` | Inspect a command's flags and examples (`agentctl help <command>`). |
+
+The [command reference](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/COMMAND_REFERENCE.md)
+is generated from the registry used by `--help`. It covers dispatch, queues,
+verification, evidence, diagnostics and the supported aliases.
 
 Start with small changes and an observable acceptance condition. Visual decisions,
 production credentials and integration environments need explicit human setup.
@@ -150,18 +156,6 @@ stdio MCP server alongside the CLI.
 See [architecture and exit codes](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/architecture.md)
 and [SDK/MCP integration](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/sdk.md).
 
-## CLI
-
-| Command | Description |
-| --- | --- |
-| `menu` | Interactive terminal navigation hub; browse commands and launch workflows without typing arguments. |
-| `dashboard` | Local telemetry viewer; default port 4100. Set another port with `--port <n>`. |
-
-
-The [command reference](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/COMMAND_REFERENCE.md)
-is generated from the registry used by `--help`. It covers dispatch, queues,
-verification, evidence, diagnostics and the supported aliases.
-
 ## Development and verification
 
 Clone this repository to run its tests; the npm package excludes the test suite.
@@ -182,26 +176,26 @@ provider or project. See
 [contributing](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTING.md)
 for the review process.
 
-## Documentation and removal
+## Documentation
 
 - [Documentation index](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/README.md)
 - [Configuration](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/configuration.md)
-- [Uninstall and generated-file inventory](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/uninstall.md)
+- [Command reference](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/COMMAND_REFERENCE.md)
 - [Changelog](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CHANGELOG.md)
 - [Security policy](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/SECURITY.md)
 
 ## Complete Uninstall / Removing the Kit (Undo Init)
 
 `agentctl clean` performs operational maintenance; it is not an uninstaller.
-First identify which files setup created and which files already belonged to your
-project. For shared files, remove only the kit's additions using Git history.
+Use `agentctl uninstall` (or `agentctl uninstall --dry-run`) to remove the
+default minimal setup (`.agent/config.yml` and the kit's runtime-state block in
+`.gitignore`) while preserving unrelated project files.
 
-For the default minimal setup, remove `.agent/config.yml` and the kit's
-runtime-state block from `.gitignore`. Repositories that previously used the
-legacy full scaffold may also contain AGENTS.md, prompts, rules, workflows and
-contract files; remove those only after confirming ownership.
-
-See the uninstall guide for the complete inventory and legacy cleanup steps.
+Repositories that previously used the legacy full scaffold may also contain
+`AGENTS.md`, prompts, rules, workflows and contract files; remove those only
+after confirming ownership in Git history. See the
+[uninstall and generated-file inventory](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/uninstall.md)
+for the complete removal steps.
 
 ## Limitations and attribution
 
