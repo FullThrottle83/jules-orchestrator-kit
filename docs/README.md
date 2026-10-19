@@ -48,7 +48,6 @@ Start here. Find the page that matches what you are trying to do; every path is 
 - [SECURITY.md](../SECURITY.md) — supported versions and vulnerability disclosure.
 - [Release procedure](releasing.md) — changelog-first version bumps and `npm run release` gates.
 - [npm payload audit](package-payload.md) — file reachability and packed-package verification.
-- [Repository professionalism audit](audits/repository-professionalism-audit.md) — prioritized evidence-based repository and attribution audit.
 - [Historical reports](archive/README.md) — earlier audits retained for traceability.
 
 ### …read history and plans

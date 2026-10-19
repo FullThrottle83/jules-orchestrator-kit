@@ -83,9 +83,9 @@ Every finding is classified by both **Severity** (`Critical`, `High`, `Medium`, 
   - `src/engine.mjs` `dispatch()` sends the task payload to `provider.dispatch()` and returns the session result without calling `gate()` or `repair()`.
   - `bin/agentctl.mjs:29-31` rejects `gate --fix` and directs users to `agentctl repair`.
   - `bin/agentctl.mjs:1074-1087` requires failure text from stdin, positional arguments, `--input`, or `--file`.
-- **Recommended change**: Rewrite `EXAMPLES.md` Pattern 4 to show the actual verification and explicit repair workflow (`agentctl gate` followed by `npm test 2>&1 | agentctl repair --cmd "npm test"`).
+- **Recommended change**: Rewrite `EXAMPLES.md` Pattern 4 to show the actual verification and conditional repair workflow (`agentctl gate`, capturing failed test output to a temp file and running `agentctl repair --file "$fail_log" --cmd "npm test"` only when `npm test` exits non-zero).
 - **Compatibility / security risk**: None.
-- **Verification method**: Verify `printf 'Error\n' | JULES_TIER=pro node bin/agentctl.mjs repair --cmd "npm test" --dry-run` and `node bin/agentctl.mjs gate --help`.
+- **Verification method**: Verify both passing (`exit 0`, `repair` not invoked) and failing (`exit != 0`, `repair --file` invoked) paths against `bin/agentctl.mjs`.
 
 ---
 
