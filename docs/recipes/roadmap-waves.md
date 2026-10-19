@@ -134,7 +134,7 @@ For an *explicitly linked* producer → consumer dependency, `--serialize merged
 agentctl queue --dag --serialize merged --serialize-timeout 240 --concurrency 2
 ```
 
-`--serialize-timeout` is a per-task wait timeout in **minutes** (default 15); choose it deliberately if a human may need to review PRs before the next task is dispatched. A closed-unmerged PR, no discovered PR URL, a failed provider session, or timeout blocks dependent tasks; check the recorded evidence instead of blindly rerunning.
+`--serialize-timeout` is a configured wait timeout in **minutes** (default 15), but v0.76.1 also applies an independent **1,000-attempt session polling cap** (default 50 ms spacing plus provider latency). A long value such as 240 minutes therefore does **not** guarantee that an active session will be watched for four hours; see [issue #126](https://github.com/FullThrottle83/jules-orchestrator-kit/issues/126). Prefer separately approved waves for long-running hosted work until the limits are reconciled. A closed-unmerged PR, no discovered PR URL, a failed provider session, or timeout blocks dependent tasks; check the recorded evidence instead of blindly rerunning.
 
 **Important:** `merged` checks provider/PR state; it does *not* run `agentctl gate`, grant merge approval, guarantee CI/branch protection, or prove that the next remote session uses a refreshed base commit. Configure independent CI/branch protection and require human review as appropriate. Re-fetch `main` and reassess base drift/contract compatibility before dependent work. Where that cannot be guaranteed, **keep sequential waves as separate, manually reviewed queue runs**.
 
