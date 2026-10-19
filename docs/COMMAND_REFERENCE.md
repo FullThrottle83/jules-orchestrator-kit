@@ -134,6 +134,8 @@ Execute pending task envelopes: dispatches each to the provider and moves it out
 | Flag | Type | Description |
 | :--- | :--- | :--- |
 | `--dag` | boolean | Resolve depends-on order via Kahn's algorithm before running |
+| `--serialize` | string | DAG dependency completion gate: dispatched | completed | merged (default: dispatched) |
+| `--serialize-timeout` | string | Per-task DAG serialize wait timeout in minutes (default: 15) |
 | `--concurrency` | string | Parallel worker slots (defaults to limits.concurrency) (-c) |
 | `--dry-run` | boolean | Report what would run without dispatching or moving anything (-d) |
 | `--json` | boolean | Output structured JSON queue snapshot (-j) |

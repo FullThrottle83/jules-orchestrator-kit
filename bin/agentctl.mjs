@@ -1360,12 +1360,28 @@ async function main() {
         args: args.slice(1),
         options: {
           dag: { type: "boolean" },
+          serialize: { type: "string" },
+          "serialize-timeout": { type: "string" },
           concurrency: { type: "string", short: "c" },
           "dry-run": { type: "boolean", short: "d" },
           json: { type: "boolean", short: "j" },
         },
         allowPositionals: true,
       });
+
+      if (values.serialize !== undefined) {
+        const { VALID_SERIALIZE_MODES } = await import("../src/dag-engine.mjs");
+        const mode = String(values.serialize).trim().toLowerCase();
+        if (!VALID_SERIALIZE_MODES.includes(mode)) {
+          const msg = `Invalid --serialize mode '${values.serialize}'. Valid values: ${VALID_SERIALIZE_MODES.join(", ")}`;
+          if (values.json) {
+            console.log(JSON.stringify({ ok: false, error: msg, validValues: VALID_SERIALIZE_MODES }, null, 2));
+          } else {
+            console.error(`Error: ${msg}`);
+          }
+          process.exit(1);
+        }
+      }
 
       const queueDir = getQueueDir(root);
       // The DAG runner accepts `.json` and `.task` envelopes as well as
@@ -1441,10 +1457,13 @@ async function main() {
         process.exit(0);
       }
       const concurrency = values.concurrency ? Number(values.concurrency) : undefined;
+      const serializeTimeout = values["serialize-timeout"] ? Number(values["serialize-timeout"]) : undefined;
       const results = await run(null, {
         root,
         config,
         dag: values.dag,
+        serialize: values.serialize,
+        serializeTimeout,
         concurrency,
         dryRun: values["dry-run"],
       });
