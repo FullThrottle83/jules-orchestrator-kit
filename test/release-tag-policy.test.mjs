@@ -57,17 +57,11 @@ test("lightweight tag cannot pass as a signed release", (t) => {
 
 test("SSH-signed tags are verified, reusable, and never rewritten", (t) => {
   const probe = spawnSync("ssh-keygen", ["-V"], { encoding: "utf8" });
-  if (probe.error?.code === "ENOENT") {
-    t.skip("ssh-keygen unavailable on this platform");
-    return;
-  }
+  assert.ifError(probe.error);
   const root = fixture(t);
   const key = join(root, "release-test-key");
   const makeKey = spawnSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", "release-test@example.com", "-f", key], { encoding: "utf8" });
-  if (makeKey.status !== 0) {
-    t.skip("SSH signing fixture unsupported: " + (makeKey.stderr || "").trim());
-    return;
-  }
+  assert.equal(makeKey.status, 0, (makeKey.stderr || "").trim());
   const allowed = join(root, "allowed-signers");
   writeFileSync(allowed, "release-test@example.com " + readFileSync(key + ".pub", "utf8"));
   git(root, ["config", "gpg.format", "ssh"]);
