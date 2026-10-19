@@ -9,6 +9,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execSync, execFileSync } from "node:child_process";
 import { resolveRoot } from "../src/config.mjs";
+import { ensureSignedReleaseTag } from "./release-tag-policy.mjs";
 
 const root = resolveRoot();
 const pkgPath = join(root, "package.json");
@@ -164,28 +165,15 @@ if (!notes) {
   console.log("   ✅ Extracted release notes from CHANGELOG.md.\n");
 }
 
-// 3. Create Git Tag if not exists (or update if version mismatch)
-console.log(`3. Checking Git tag ${tagName}...`);
+// 3. Require a signed, verifiable and immutable release tag before any push.
+// Never force-move an existing version tag, including a tag pointing to the same
+// package version but a different commit. Historic unsigned tags stay intact.
+console.log(`3. Verifying signed Git tag ${tagName}...`);
 try {
-  const tags = execSync("git tag -l", { cwd: root, encoding: "utf-8" }).split("\n").map((t) => t.trim());
-  if (tags.includes(tagName)) {
-    let taggedVersion = "";
-    try {
-      const rawPkg = execFileSync("git", ["show", `${tagName}:package.json`], { cwd: root, encoding: "utf-8" });
-      taggedVersion = JSON.parse(rawPkg).version;
-    } catch (_) {}
-    if (taggedVersion && taggedVersion !== version) {
-      console.log(`   ⚠️ Tag ${tagName} points to package.json version ${taggedVersion}. Updating tag to HEAD (${version})...`);
-      execFileSync("git", ["tag", "-f", "-a", tagName, "-m", `${pkg.name} ${tagName}`], { cwd: root, stdio: "inherit" });
-    } else {
-      console.log(`   ℹ️ Git tag ${tagName} already exists.`);
-    }
-  } else {
-    execFileSync("git", ["tag", "-a", tagName, "-m", `${pkg.name} ${tagName}`], { cwd: root, stdio: "inherit" });
-    console.log(`   ✅ Created Git tag ${tagName}.`);
-  }
+  const result = ensureSignedReleaseTag(root, tagName, `${pkg.name} ${tagName}`);
+  console.log(`   ✅ ${result.created ? "Created and verified" : "Verified existing"} signed tag ${tagName} for HEAD ${result.commit.slice(0, 12)}.\n`);
 } catch (err) {
-  console.error(`❌ Tagging failed: ${err.message}`);
+  console.error(`❌ Release Aborted: ${err.message}`);
   process.exit(1);
 }
 
