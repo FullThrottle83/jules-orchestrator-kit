@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.1] - 2026-10-19
+
+### Added
+- **DAG Queue Serialization Modes (`src/dag-engine.mjs`, `bin/agentctl.mjs`, `src/ops/command-registry.mjs`, #121)**: Added `--serialize <dispatched|completed|merged>` (and `--serialize-timeout`) to `agentctl queue --dag` to gate dependent task waves on remote session completion or pull-request merge state.
+- **Opt-In Base Drift Preflight (`src/engine.mjs`, #120)**: Added opt-in pre-dispatch base-branch drift verification so queued dispatches can fail fast when the local base ref lags behind the remote target branch.
+
+### Fixed
+- **Prompt-Guard Evasion Hardening (`src/prompt-guard.mjs`, #116, #119)**: Hardened prompt-injection scanning against Unicode homoglyphs, bidirectional override characters (`RLO`), base64-encoded payloads, and inline/fenced code-span splitting.
+- **Documentation & Workflow Alignment (`EXAMPLES.md`, `README.md`, `CONTRIBUTORS.md`, `CONTRIBUTING.md`, `docs/`, #123)**: Updated workflow examples to Node.js 22+, replaced removed `merge-swarm`/`session prune`/`gate --fix` references with supported v1 commands (`task create`, `swarm`, `pr harvest`, `gate`, conditional `repair --file`), documented `--dry-run`/`--yes` for `agentctl uninstall`, and replaced the static contributor snapshot with an evergreen provenance record.
+
 ## [0.76.0] - 2026-10-18
 
 ### Added
