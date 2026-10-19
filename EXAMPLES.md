@@ -4,9 +4,9 @@ This document details production deployment patterns for `jules-orchestrator-kit
 
 ---
 
-## Pattern 1: Automated Nightly Task Remediation
+## Pattern 1: Scheduled Queue Dispatch & TODO Audit
 
-Scan your codebase for technical debt markers, generate structured task envelopes, and process them automatically:
+Report `TODO`/`FIXME` annotations in workflow logs (`scan` prints findings to stdout and does not create task files) and dispatch pending Markdown task envelopes from `.agent/jules-queue/`:
 
 ### GitHub Actions Workflow (`.github/workflows/jules-nightly-remediation.yml`)
 
@@ -26,18 +26,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: Scan Codebase & Dispatch Tasks
+      - name: Report TODOs & Dispatch Queued Tasks
         env:
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
           JULES_REPO: ${{ github.repository }}
           JULES_TIER: pro
         run: |
-          # 1. Scan codebase for TODO/FIXME markers
+          # 1. Print TODO/FIXME annotations for triage (diagnostic output only)
           npx jules-orchestrator-kit scan
 
-          # 2. Process pending tasks from queue
+          # 2. Dispatch pending Markdown task envelopes in .agent/jules-queue/
           npx jules-orchestrator-kit queue
 ```
 
@@ -66,7 +66,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Run Safety & Verification Audit
         run: |
@@ -79,50 +79,60 @@ jobs:
 
 ![Multi-Agent Parallel Swarm Topology](docs/assets/swarm-topology.svg?v=3)
 
-Execute multi-task batches concurrently across isolated git worktrees:
+Queue scoped Markdown task envelopes with `task create`, dispatch them concurrently across worker slots with `swarm`, and audit verified pull requests:
 
 ### CLI Swarm Command
 
 ```bash
-# 1. Create task batch envelope in .agent/jules-queue/
-cat << 'EOF' > .agent/jules-queue/swarm-batch.json
-[
-  {
-    "id": "TASK-101",
-    "title": "Refactor Auth Module",
-    "prompt": "Convert auth callbacks to async/await in src/auth.mjs with unit tests"
-  },
-  {
-    "id": "TASK-102",
-    "title": "Add Rate Limiter",
-    "prompt": "Implement token-bucket rate limiting in src/security.mjs with unit tests"
-  }
-]
-EOF
+# 1. Create Markdown task envelopes in .agent/jules-queue/
+agentctl task create \
+  --title "Refactor Auth Module" \
+  --prompt "Convert auth callbacks to async/await in src/auth.mjs with unit tests" \
+  --verify "npm test"
 
-# 2. Launch parallel swarm execution
-JULES_SWARM_CONCURRENCY=2 agentctl swarm
+agentctl task create \
+  --title "Add Rate Limiter" \
+  --prompt "Implement token-bucket rate limiting in src/security.mjs with unit tests" \
+  --verify "npm test"
 
-# 3. Perform structural merge on completed swarm PRs
-agentctl merge-swarm
+# 2. Launch parallel swarm dispatch across worker slots (pass --dry-run to preview)
+agentctl swarm --concurrency 2
+
+# 3. Audit and harvest verified agent pull requests
+agentctl pr harvest --dry-run
 ```
 
 ---
 
-## Pattern 4: Automated Verification Loop with Auto-Fix
+## Pattern 4: Non-Mutating Gate & Bounded Repair Loop
 
 ![Autonomous Verification Loop](docs/assets/ooda-loop-cycle.svg?v=3)
 
-Execute repair loops with thrash detection to preserve API quotas:
+Verify candidate changes locally with the non-mutating `gate`:
 
 ```bash
-# Dispatch task with automatic test verification and auto-repair
-JULES_DRY_RUN=0 agentctl dispatch \
+# 1. Dispatch a scoped task to the configured provider
+agentctl dispatch \
   --title "Fix Security Sanitizer" \
   --prompt "Sanitize user inputs in src/security.mjs and ensure all tests pass cleanly"
+
+# 2. Run the independent, non-mutating verification gate (scope, secrets, diff budget, and tests)
+agentctl gate
 ```
 
-If tests fail, the orchestrator feeds `stderr` back into repair attempts (up to `limits.repairAttempts`), aborting early on persistent regressions (`Exit Code 4`).
+If `agentctl gate` rejects the change due to a test failure (rather than a scope, secret, or tamper violation) and you explicitly authorize bounded remediation, capture the failing test output, run `agentctl repair`, and re-run `agentctl gate` as the acceptance check:
+
+```bash
+fail_log="$(mktemp)"
+trap 'rm -f "$fail_log"' EXIT
+if ! npm test >"$fail_log" 2>&1; then
+  cat "$fail_log" >&2
+  agentctl repair --file "$fail_log" --cmd "npm test" || exit $?
+fi
+agentctl gate
+```
+
+During `agentctl repair`, the orchestrator feeds failure diagnostics back into bounded repair attempts (up to `limits.repairAttempts`) and halts early if the failure fingerprint repeats (`Exit Code 4`). Final acceptance still requires `agentctl gate` to pass.
 
 ---
 

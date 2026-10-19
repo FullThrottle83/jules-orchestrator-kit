@@ -100,7 +100,7 @@ router:
    - **Utilization Balancing**: Round-robin selection prioritizes keys with lowest 24h utilization.
 
 4. **Warm Resumption & Session Management**:
-   Remote sessions (`jules`) support multi-turn continuation (`agentctl resume <sessionId> --response "..."`), plan approval (`agentctl plan approve <sessionId>`), activity inspection, and pruning.
+   Remote sessions (`jules`) support multi-turn continuation (`agentctl resume <sessionId> --response "..."`), plan approval (`agentctl plan approve <sessionId>`), and session/activity inspection (`agentctl session get`, `agentctl session list`).
 
 ```bash
 # Inspect provider readiness and connectivity across local PATH binaries and hosted API credentials

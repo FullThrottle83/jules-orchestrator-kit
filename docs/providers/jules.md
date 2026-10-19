@@ -35,7 +35,7 @@ POST /v1alpha/sessions/{id}:sendMessage (warm resumption)
 2. **Server-Side PR Creation**: When `autoPr: true` (or `--auto-pr`) is passed, the dispatch payload includes `automationMode: "AUTO_CREATE_PR"`. Jules executes server-side on Google Cloud and opens the PR directly.
 3. **Plan Approval**: If `requirePlanApproval: true` is configured, the session pauses at `AWAITING_PLAN_APPROVAL`. Resume execution via `agentctl plan approve <sessionId>` or MCP tool `agent_approve_plan`.
 4. **Warm Resumption (`resume`)**: Send follow-up prompts or steering to active sessions via `agentctl resume <sessionId> --response "..."` (`POST /v1alpha/sessions/{id}:sendMessage`). If the remote session is expired or closed (HTTP 400/404), the kit fails soft and falls back to a cold dispatch.
-5. **Session Management**: Programmatically inspect or prune sessions using `agentctl session get`, `agentctl session list`, and `agentctl session prune` (or corresponding MCP `agent_*_session` tools).
+5. **Session Inspection**: Programmatically inspect sessions and activities using `agentctl session get <sessionId>` and `agentctl session list` (or corresponding MCP tools `agent_list_sessions`, `agent_list_activities`, `agent_get_session_output`).
 
 ## Google-first Jules workflow
 

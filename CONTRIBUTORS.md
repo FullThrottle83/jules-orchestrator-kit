@@ -3,94 +3,84 @@
 Provenance and governance record for **jules-orchestrator-kit**.
 
 This repository is developed by a human maintainer together with supervised
-autonomous coding agents. Git history is the authoritative attribution
-ledger: every commit's `Author` metadata is preserved exactly as written, and
-history is never rewritten. This document is a human-readable summary of that
-ledger plus the governance rules that keep it trustworthy.
-
-> Snapshot: 2026-09-09 · v0.72.3 · 448 commits · 110 release tags
-> (`git log`, all branches of the `FullThrottle83/jules-orchestrator-kit`
-> repository, first commit 2026-07-26 → snapshot date).
+autonomous coding agents. Git history is the authoritative attribution ledger:
+every commit's `Author`, `Committer`, and `Co-authored-by:` metadata is
+preserved as written, and history is never rewritten.
 
 ---
 
-## 1. Maintainers (human)
+## 1. Human Maintainer
 
-| Identity | Role | Contact |
+| Identity | Role | Git Author Identities in History |
 | :--- | :--- | :--- |
-| **Jonas Pudas** | Lead maintainer & project author | `jonas@joid.se` |
-| **FullThrottle83** | Maintainer, repository owner & publisher (npm `author`, GitHub account) | GitHub: [FullThrottle83](https://github.com/FullThrottle83) |
+| **Jonas Pudas** ([`@FullThrottle83`](https://github.com/FullThrottle83)) | Lead maintainer, project author, reviewer & publisher | `Jonas Pudas <110360247+FullThrottle83@users.noreply.github.com>`<br/>`FullThrottle83 <110360247+FullThrottle83@users.noreply.github.com>`<br/>`Jonas <jonas@joid.se>` |
 
-The human maintainers own the project direction, review and merge all
-changes, operate the release pipeline, and hold the copyright.
+The human maintainer defines the product architecture and roadmap, reviews and
+merges changes, operates the release pipeline, and holds the copyright.
 
-In `git log` the human maintainer leadership appears under three author-name
-spellings that resolve to the two identities above:
+---
 
-| Git author | Email | Commits | Notes |
-| :--- | :--- | ---: | :--- |
-| `Jonas` | `jonas@joid.se` | 64 | Includes the initial commit `dfb3054` (2026-07-26) |
-| `FullThrottle83` | `110360247+FullThrottle83@users.noreply.github.com` | 11 | GitHub account identity |
-| `Jonas Pudas` | `110360247+FullThrottle83@users.noreply.github.com` | 7 | Real name on the same GitHub account |
+## 2. Autonomous Coding Agents & Automation Identities
 
-## 2. Autonomous coding agents (AI contributors)
+Agent contributions operate under human supervision inside the repository's
+task-envelope and verification gates (`AGENTS.md`, `.agent/protected-paths.json`,
+and CI checks). Nothing in this repository hides or relabels agent-authored work.
 
-| Identity | Operator | Commits | Notes |
-| :--- | :--- | ---: | :--- |
-| **jules-agent** | Google Jules (`jules@agent.ai`) | 358 | Majority author; first agent commit 2026-07-31 |
-| **Arena Agent** | Arena.ai (`arena@arena.ai`) | 8 | Authored as `Arena Agent <arena@arena.ai>` (1) and as the `arena-ai-coding-agent[bot]` GitHub automation account (7); `arena-agent` additionally appears as `Co-authored-by` (see below) |
+Because GitHub's Contributors view links both commit `Author` emails and
+`Co-authored-by:` trailer emails to registered GitHub accounts, the following
+automated identities appear in `git log` or in the GitHub UI:
 
-Agent contributions are **autonomous but supervised**: agents work inside the
-task-envelope and verification framework defined in `AGENTS.md` and
-`.agent/rules/`, their work is gated by CI (test suite, lint, doc-sync,
-guard-reach) before merge, and merging happens under maintainer oversight per
-the review tiers in `CONTRIBUTING.md`. Agent authorship is disclosed in the
-commit metadata itself; nothing in this project hides or relabels it.
+| Identity | Role in Git Metadata | GitHub Account Resolution |
+| :--- | :--- | :--- |
+| **Google Jules** (`jules-agent <jules@agent.ai>`) | Commit `Author`, `Committer`, and `Co-authored-by:` on autonomous task and repair branches | Unlinked email (`jules@agent.ai`); appears in `git shortlog -sne` and GitHub's anonymous contributors API, not as a linked GitHub user account |
+| **Arena Coding Agent** (`arena-ai-coding-agent[bot] <298482267+arena-ai-coding-agent[bot]@users.noreply.github.com>` and `Arena Agent <arena@arena.ai>`) | Commit `Author` on Arena sandbox PRs | Resolves to the GitHub Bot account [`arena-ai-coding-agent[bot]`](https://github.com/apps/arena-ai-coding-agent) (`arena@arena.ai` is unlinked) |
+| **arena-agent** (`arena-agent <297053741+arena-agent@users.noreply.github.com>`) | `Co-authored-by:` trailer on Arena-assisted commits | Resolves to the GitHub User account [`@arena-agent`](https://github.com/arena-agent) |
+| **Claude** (`Claude Opus 5 <noreply@anthropic.com>`, `Claude Sonnet 5 <noreply@anthropic.com>`) | `Co-authored-by:` trailer on commits authored with Anthropic Claude assistance | Resolves to the GitHub User account [`@claude`](https://github.com/claude) because `noreply@anthropic.com` is associated with that GitHub profile |
 
-Across the history, `Co-authored-by:` trailers document mixed authorship on
-commits whose author line is a different identity:
+To inspect live commit and co-author counts at any revision without relying on
+static snapshot numbers:
 
-| Co-author | Total | Break-down by author line |
-| ---: | :--- | :--- |
-| `arena-agent` | 27 | 18 on `arena-ai-coding-agent[bot]` commits, 8 on `FullThrottle83` commits, 1 on `Arena Agent` |
-| `jules-agent` | 10 | 6 on `arena-ai-coding-agent[bot]` commits, 4 on `Jonas Pudas` commits |
-| `FullThrottle83` (maintainer) | 7 | 7 on `arena-ai-coding-agent[bot]` commits (maintainer oversight of agent work) |
+```bash
+# Primary commit authors
+git shortlog -sne main
 
-## 3. Attribution statistics (`git log`, 448 commits)
+# Co-authored-by trailers
+git log main --format="%B" | grep -i "^Co-authored-by:" | sort | uniq -c | sort -nr
+```
 
-| Identity | Commits | % | Insertions | Deletions |
-| :--- | ---: | ---: | ---: | ---: |
-| `jules-agent <jules@agent.ai>` | 358 | 79.9% | 82,354 | 61,632 |
-| Human maintainers (all spellings above) | 82 | 18.3% | 43,898 | 2,244 |
-| `arena-ai-coding-agent[bot]` / `Arena Agent <arena@arena.ai>` | 8 | 1.8% | 13,422 | 7,536 |
-| **Total** | **448** | 100% | 139,674 | 71,412 |
+---
 
-Insertions/deletions are approximate (`git log --numstat`, ± diffs excluded).
+## 3. Provenance & Authorship Governance
 
-## 4. How attribution is recorded
-
-- **Author metadata** — commit `Author` name/email is the primary record and
-  is never rewritten (no history rewrites, no author normalization).
+- **Author metadata** — commit `Author` name/email is the primary record and is
+  never rewritten (no history rewrites, no author normalization).
 - **Co-author trailers** — multi-agent or agent+maintainer commits carry
-  `Co-authored-by:` lines in the commit body (e.g. `arena-agent` on P05/P06
-  merge commits).
-- **PR audit trail** — GitHub PRs reference task envelopes; CI runs and
-  merge reviews are linked from each merge commit.
-- **Code of conduct & contribution rules** — see `CODE_OF_CONDUCT.md`,
-  `CONTRIBUTING.md` and `AGENTS.md`.
+  `Co-authored-by:` lines in the commit body.
+- **PR audit trail** — GitHub PRs reference task envelopes; CI runs and merge
+  reviews are linked from each merge commit.
+- **Verification before merge** — every contribution, whether authored by a
+  human or an autonomous agent, must pass the repository verification checks
+  defined in [`AGENTS.md`](AGENTS.md) (`npm test`, `npm run lint`,
+  `npm run jules:doc-sync`, and `npm run jules:rules-lint`; plus
+  `npm run package-integrity` and `npm run guard-reach` for packaging or guard
+  changes) and human review per [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## 5. Commit signing policy
+---
 
-All 448 historical commits predate the signing policy and are **unsigned**;
-they are preserved as-is (history is permanent). New commits must be signed
-(GPG/SSH) per the commit-signing rules in `CONTRIBUTING.md`.
+## 4. Commit Signing Policy
 
-## 6. License & copyright
+Historical commits that predate the signing policy are **unsigned** and are
+preserved as-is (history is permanent). New commits must be signed (GPG/SSH) per
+the commit-signing rules in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-The project is licensed under the **MIT License** (see `LICENSE`).
+---
+
+## 5. License & Copyright
+
+This project is licensed under the **MIT License** (see [`LICENSE`](LICENSE)).
 
 Copyright (c) 2026 Jonas Pudas (FullThrottle83).
 
-Autonomous coding agents are tooling operated by and on behalf of the human
-maintainers; they hold no copyright interest, and agent-generated
-contributions fall under the project's MIT license like all other content.
+Autonomous coding agents are software tools operated on behalf of the human
+maintainer; they are not legal persons, hold no copyright interest, and their
+output is distributed under the repository's MIT License.

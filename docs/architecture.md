@@ -45,7 +45,7 @@ Under `.agent/config.yml` semantics, every provider adapter adheres to a version
    ↓
 5. Continuation / Plan Approval (HTTP resume & approvePlan)
    ↓
-6. Session Housekeeping (list / inspect / archive / delete / prune)
+6. Session Inspection (list / inspect / activities / sources)
 ```
 
 ### 1. Configuration & Resolution
@@ -77,9 +77,9 @@ Under `.agent/config.yml` semantics, every provider adapter adheres to a version
 - **Warm Resumption (`provider.resume()`)**: Sends feedback/instructions to an existing session via `POST /v1alpha/sessions/{id}:sendMessage`. If the remote session is expired or closed (HTTP 400/404), `resume()` fails soft and re-dispatches as a cold session.
 - **Plan Approval (`provider.approvePlan()`)**: When `requirePlanApproval: true` is set, the session pauses for human approval and resumes via `POST /v1alpha/sessions/{id}:approvePlan`.
 
-### 6. Session Housekeeping
-- HTTP providers support programmatic inspection and maintenance via `getSession()`, `listSessions()`, `listActivities()`, `archiveSession()`, `deleteSession()`, and `listSources()`.
-- Unused or terminal sessions can be safely pruned (`agentctl session prune` / `agent_prune_sessions`).
+### 6. Session Inspection
+- HTTP providers support programmatic session and source inspection via `getSession()`, `listSessions()`, `listActivities()`, and `listSources()`.
+- Destructive remote account housekeeping (`archive`, `delete`, bulk `prune`) is intentionally excluded from the provider adapter and MCP surface.
 
 ---
 
@@ -313,4 +313,4 @@ Stated explicitly, because earlier revisions of this document described machiner
 - **It does not commit, push, or open pull requests.** For `type: "http"`, Jules does this server-side via `automationMode`. For `type: "exec"`, the changes are simply left in the working tree for you to review.
 - **`run()` does not verify.** It dispatches each queued task, moves the envelope to `.agent/jules-queue/completed/`, and appends to the ledger. Verification is a separate `agentctl gate` invocation.
 - **`--dry-run` writes nothing.** It previews the dispatch of every queued task and then leaves the filesystem exactly as it found it — no move to `completed/`, no directory creation, no ledger entry — so the same queue can be previewed repeatedly.
-- **The OODA loop is a property of `gate --fix`, not of dispatch.** A plain `agentctl dispatch` never self-heals.
+- **The OODA loop belongs to explicit `agentctl repair`, not `dispatch` or `gate`.** Neither `agentctl dispatch` nor `agentctl gate` mutates source code to self-heal.

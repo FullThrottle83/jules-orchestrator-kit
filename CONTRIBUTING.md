@@ -91,11 +91,11 @@ git clone https://github.com/FullThrottle83/jules-orchestrator-kit.git
 cd jules-orchestrator-kit
 
 # Install dev dependencies (ESLint)
-npm install
+npm ci
 ```
 
 ### 2. Run Verification Suite
-Before opening a PR, execute the complete verification suite:
+Before opening a PR, execute the verification suite required by [`AGENTS.md`](AGENTS.md):
 ```bash
 # Run unit tests
 npm test
@@ -106,8 +106,15 @@ npm run lint
 # Run documentation/version consistency gate
 npm run jules:doc-sync
 
+# Run agent rule budget check
+npm run jules:rules-lint
+
 # Run pre-flight self-audit
 node scripts/jules-self-audit.mjs --preflight
+
+# For packaging or guard changes, also run:
+npm run package-integrity
+npm run guard-reach
 ```
 
 ### 3. Subscription Tier Testing (`JULES_TIER`)
@@ -130,8 +137,8 @@ Every Pull Request is categorized into a **Risk Tier**:
 | :--- | :--- | :--- | :--- |
 | **`R0`** | **Cosmetic** | Documentation, markdown formatting, SVG assets. | Auto-merge eligible |
 | **`R1`** | **Routine** | Isolated package logic with unit tests. | 1 Standard Review |
-| **`R2`** | **Consequential** | Core engine updates (`engine.mjs`), CLI changes. | 1 Maintainer Review |
-| **`R3`** | **Restricted** | Security modules (`security.mjs`, `execution_envelope.mjs`), CI workflows. | Security Review Required |
+| **`R2`** | **Consequential** | Core engine updates (`src/engine.mjs`), CLI changes. | 1 Maintainer Review |
+| **`R3`** | **Restricted** | Security modules (`src/security.mjs`, `src/execution-envelope.mjs`), CI workflows. | Security Review Required |
 
 ### Pull Request Checklist
 - [ ] Branch pushed from latest `origin/main`; never committed directly to `main`.
@@ -146,7 +153,7 @@ Every Pull Request is categorized into a **Risk Tier**:
 
 ## 🙋 Attribution & Provenance
 
-- [`CONTRIBUTORS.md`](CONTRIBUTORS.md) is the attribution ledger: human maintainers, autonomous coding agents (`jules-agent`, Arena Agent), and per-identity statistics from `git log`.
+- [`CONTRIBUTORS.md`](CONTRIBUTORS.md) is the attribution and provenance record for human maintainers and autonomous coding agents (`jules-agent`, Arena Agent, and Claude co-author trailers).
 - **Never rewrite history or authorship.** Do not change `Author`/`Committer` metadata, do not squash away `Co-authored-by:` trailers, and do not amend agent commits to hide their origin.
 - Agent contributors do not self-attest; maintainers record agent work from the verified commit metadata and PR audit trail.
 
