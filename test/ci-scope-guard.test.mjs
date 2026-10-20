@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -47,6 +47,32 @@ test("CI Agent Scope Guard", async (t) => {
   await t.test("blocks an exact-path match", () => {
     const res = evaluateScopeGuard(["package.json"], PATTERNS);
     assert.equal(res.ok, false);
+
+    // Regression for JOK-001: the CI manifest must cover the actual imported
+    // security gate, its implementation and the canonical config (not only
+    // historical shims). A normal feature module remains editable.
+    const manifest = JSON.parse(readFileSync(
+      new URL("../.agent/protected-paths.json", import.meta.url), "utf8"
+    ));
+    const controlPlane = [
+      ".agent/config.yml", "eslint.config.mjs",
+      "src/self-audit.mjs", "src/engine.mjs", "src/security.mjs",
+      "src/scope-guard.mjs", "src/config.mjs", "src/git.mjs",
+      "src/evidence.mjs", "src/guard-policy.mjs", "src/test-paths.mjs",
+      "src/prompt-guard.mjs", "src/secret-scanner.mjs",
+    ];
+    for (const file of controlPlane) {
+      assert.equal(
+        evaluateScopeGuard([file], manifest.protected).ok,
+        false,
+        `Missing CI protection for ${file}`
+      );
+    }
+    assert.equal(
+      evaluateScopeGuard(["src/ordinary-feature.mjs"], manifest.protected).ok,
+      true,
+      "Protect security gates, not every feature module"
+    );
   });
 
   // The bash predecessor built a case-sensitive regex while the local gate
