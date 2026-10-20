@@ -86,8 +86,10 @@ function decodeHtmlNumericEntities(str) {
 
 function neutralizeBase64Directives(text) {
   let examined = 0;
-  return text.replace(/\b[A-Za-z0-9+/]{20,}={0,2}\b/g, (token) => {
-    if (examined >= 32 || token.length > 4096 || token.length % 4 === 1) return token;
+  return text.replace(/(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{20,}={0,2}(?![A-Za-z0-9+/=])/g, (token) => {
+    if (token.length % 4 === 1) return token;
+    // Scan limits must not turn into a bypass for subsequent opaque payloads.
+    if (examined >= 32 || token.length > 4096) return "[UNINSPECTED_BASE64]";
     examined++;
     try {
       const buf = Buffer.from(token, "base64");
