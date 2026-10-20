@@ -60,6 +60,18 @@ export function findPathObstructions(root, statusLines = []) {
     const rawFile = line.slice(3).trim();
     if (code === "??") continue;
 
+    // Porcelain v1 quotes filenames and renders renames as "old -> new".
+    // A path obstruction on the old side would be lost by the split below.
+    // Until rollback has a lossless -z status parser, fail closed for every
+    // tracked rename/copy rather than risk deleting ignored local work.
+    if (/[RC]/.test(code)) {
+      obstructions.push({
+        path: rawFile,
+        reason: `rename/copy status ${code.trim()} cannot be safely checked for destructive rollback; resolve it manually`,
+      });
+      continue;
+    }
+
     const cleanFile = rawFile.replace(/^"(.*)"$/, "$1");
     const file = cleanFile.includes(" -> ")
       ? cleanFile.split(" -> ").pop().trim().replace(/^"(.*)"$/, "$1")
