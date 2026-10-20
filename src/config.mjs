@@ -1281,7 +1281,7 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
       teardown: rawTeardown ?? autoVerify.teardown ?? "",
       build: rawBuild ?? autoVerify.build,
       passEnv: Array.isArray(parsed.verify?.pass_env) ? parsed.verify.pass_env : [],
-    policy: parsed.verify?.policy ?? autoVerify.policy,
+      policy: parsed.verify?.policy ?? autoVerify.policy,
       scope: parsed.verify?.scope === "affected" ? "affected" : "global",
       required: parsed.verify?.required !== undefined ? parsed.verify.required !== false : true,
       minTests: parsed.verify?.minTests ?? parsed.verify?.min_tests ?? 1,
