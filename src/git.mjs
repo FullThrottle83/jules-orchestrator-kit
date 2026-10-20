@@ -83,6 +83,20 @@ export function buildVerificationEnv(opts = {}) {
   const term = findAmbientKey("TERM");
   if (term !== undefined) env.TERM = String(term);
 
+  // Only explicitly trusted toolchain variables can cross into verification.
+  // Arbitrary ambient names and provider/cloud credentials stay excluded.
+  const toolchainVars = new Set([
+    "JAVA_HOME", "ANDROID_HOME", "ANDROID_SDK_ROOT", "SDKROOT",
+    "CARGO_HOME", "RUSTUP_HOME", "GOPATH", "GOROOT", "VIRTUAL_ENV",
+  ]);
+  for (const requested of Array.isArray(opts.passEnv) ? opts.passEnv : []) {
+    if (typeof requested !== "string") continue;
+    const key = requested.toUpperCase();
+    if (!toolchainVars.has(key)) continue;
+    const value = findAmbientKey(key);
+    if (value !== undefined) env[key] = String(value);
+  }
+
   env.CI = "true";
   const nodeEnv = findAmbientKey("NODE_ENV");
   if (nodeEnv !== undefined) env.NODE_ENV = String(nodeEnv);
