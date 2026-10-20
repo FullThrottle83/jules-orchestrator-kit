@@ -525,6 +525,28 @@ test("Checkpoint Fail-Closed & Lossless Preflight Guard (Issue #70)", async (t) 
         "benign build cache\n",
         "benign ignored file must remain untouched"
       );
+
+      // JOK-006: Porcelain v1's "old -> new" rename spelling loses the old
+      // path. Until both paths can be parsed losslessly, refuse --force.
+      const oldDir = join(tmpDir, "old-dir");
+      const newDir = join(tmpDir, "new-dir");
+      mkdirSync(oldDir, { recursive: true });
+      mkdirSync(newDir, { recursive: true });
+      writeFileSync(join(oldDir, "tracked.txt"), "tracked content\n");
+      writeFileSync(gitignorePath, readText(gitignorePath) + "old-dir/ignored.txt\n");
+      gitExec(tmpDir, ["add", "-A"]);
+      gitExec(tmpDir, ["commit", "-m", "Track source of rename"]);
+      const renameSnap = createCheckpoint("session-rename", { root: tmpDir });
+      assert.equal(renameSnap.clean, true);
+      gitExec(tmpDir, ["mv", "old-dir/tracked.txt", "new-dir/tracked.txt"]);
+      const ignoredOldPath = join(oldDir, "ignored.txt");
+      writeFileSync(ignoredOldPath, "must survive\n");
+      const forcedRename = restoreCheckpoint("session-rename", { root: tmpDir, force: true });
+      assert.equal(forcedRename.ok, false);
+      assert.equal(forcedRename.canRestore, false);
+      assert.match(forcedRename.reason, /rename\/copy status/);
+      assert.equal(readText(ignoredOldPath), "must survive\n");
+      assert.equal(readText(join(newDir, "tracked.txt")), "tracked content\n");
     }
   );
 });
