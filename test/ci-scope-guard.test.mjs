@@ -55,11 +55,12 @@ test("CI Agent Scope Guard", async (t) => {
       new URL("../.agent/protected-paths.json", import.meta.url), "utf8"
     ));
     const controlPlane = [
-      ".agent/config.yml", "eslint.config.mjs",
+      ".agent/config.yml", ".agent/config.json", "eslint.config.mjs",
       "src/self-audit.mjs", "src/engine.mjs", "src/security.mjs",
       "src/scope-guard.mjs", "src/config.mjs", "src/git.mjs",
       "src/evidence.mjs", "src/guard-policy.mjs", "src/test-paths.mjs",
       "src/prompt-guard.mjs", "src/secret-scanner.mjs",
+      "src/test-tamper-guard.mjs",
     ];
     for (const file of controlPlane) {
       assert.equal(
