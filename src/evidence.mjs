@@ -233,7 +233,7 @@ export function computeDirectoryHash(root, options = {}) {
     // Candidate verification must hash symlink identity, not just the bytes
     // reachable through it. Two targets can have identical contents.
     const hash = stat?.isSymbolicLink()
-      ? "sha256:" + sha256(readlinkSync(fullPath))
+      ? "sha256:" + sha256(readlinkSync(fullPath) + "\0" + (computeFileHash(fullPath) || "unreadable"))
       : computeFileHash(fullPath);
     if (hash) {
       fileHashes[relPath] = hash;
