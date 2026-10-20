@@ -365,6 +365,7 @@ export async function gate(opts = {}) {
 
   const testEnv = buildVerificationEnv({
     netGuard: true,
+    passEnv: trustedVerify.passEnv,
   });
 
   let flakyVerdictResult = null;
