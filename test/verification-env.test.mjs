@@ -15,6 +15,9 @@ describe("P0-11: Verification Subprocess Environment Isolation", () => {
         TOTALLY_UNKNOWN_SECRET_84721: "sentinel_value_123",
         MY_RANDOM_VALUE: "super-secret-sentinel",
         SOME_INTERNAL_FLAG: "do_not_leak",
+        JAVA_HOME: "/opt/jdk",
+        CARGO_HOME: "/home/developer/.cargo",
+        GITHUB_TOKEN: "must-not-forward",
       };
 
       const env = buildVerificationEnv({ ambientEnv: ambient, platform: "linux" });
@@ -24,6 +27,19 @@ describe("P0-11: Verification Subprocess Environment Isolation", () => {
       assert.equal(env.SOME_INTERNAL_FLAG, undefined);
       assert.equal(env.PATH, "/usr/bin:/bin");
       assert.equal(env.CI, "true");
+      assert.equal(env.JAVA_HOME, undefined, "toolchain variables stay off by default");
+
+      // JOK-007: trusted configuration can explicitly pass toolchain paths,
+      // but must not become a generic arbitrary/secret environment passthrough.
+      const optedIn = buildVerificationEnv({
+        ambientEnv: ambient,
+        platform: "linux",
+        passEnv: ["JAVA_HOME", "CARGO_HOME", "GITHUB_TOKEN", "TOTALLY_UNKNOWN_SECRET_84721"],
+      });
+      assert.equal(optedIn.JAVA_HOME, "/opt/jdk");
+      assert.equal(optedIn.CARGO_HOME, "/home/developer/.cargo");
+      assert.equal(optedIn.GITHUB_TOKEN, undefined);
+      assert.equal(optedIn.TOTALLY_UNKNOWN_SECRET_84721, undefined);
     });
 
     it("omits all known cloud, package, database, and provider secrets by default", () => {

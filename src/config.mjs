@@ -760,6 +760,7 @@ export function loadConfig(root = resolveRoot(), explicitPath = null) {
     e2e: rawE2e ?? autoVerify.e2e ?? "",
     teardown: rawTeardown ?? autoVerify.teardown ?? "",
     build: rawBuild ?? autoVerify.build,
+    passEnv: Array.isArray(parsed.verify?.pass_env) ? parsed.verify.pass_env : [],
     policy: parsed.verify?.policy ?? autoVerify.policy,
     // "global" runs the repository's own verify commands; "affected" resolves
     // the changed files to their sub-projects and runs only those suites. Opt-in
@@ -1279,6 +1280,7 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
       e2e: rawE2e ?? autoVerify.e2e ?? "",
       teardown: rawTeardown ?? autoVerify.teardown ?? "",
       build: rawBuild ?? autoVerify.build,
+      passEnv: Array.isArray(parsed.verify?.pass_env) ? parsed.verify.pass_env : [],
       policy: parsed.verify?.policy ?? autoVerify.policy,
       scope: parsed.verify?.scope === "affected" ? "affected" : "global",
       required: parsed.verify?.required !== undefined ? parsed.verify.required !== false : true,
@@ -1407,6 +1409,7 @@ export function resolveTrustedPolicy(root = process.cwd(), baseRef = null, mode 
     e2e: rawE2e ?? autoVerify.e2e ?? "",
     teardown: rawTeardown ?? autoVerify.teardown ?? "",
     build: rawBuild ?? autoVerify.build,
+    passEnv: Array.isArray(pConfig.verify?.pass_env) ? pConfig.verify.pass_env : [],
     policy: pConfig.verify?.policy ?? autoVerify.policy,
     scope: pConfig.verify?.scope === "affected" ? "affected" : "global",
     required: pConfig.verify?.required !== undefined ? pConfig.verify.required !== false : true,

@@ -35,6 +35,9 @@ verify:
   build: "npm run build"
   timeout_ms: 300000     # Per-stage kill time in ms (default 300000)
   minTests: 1            # Floor for "the suite actually ran" (0 disables)
+  pass_env:              # Explicit, trusted non-secret toolchain paths only
+    - JAVA_HOME
+    - CARGO_HOME
   required: true         # false = this repo uses only the scope/secret phases
 
 # Scope protection rules (Deny-first evaluation)
