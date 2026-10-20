@@ -1663,10 +1663,12 @@ export async function dispatch(task = {}, opts = {}) {
       let diffFiles = [];
       let diffFailed = false;
       try {
-        const rawDiff = git(["diff", "--name-only", `${resolvedBaseSha}..${remoteTip}`], { cwd: root });
+        // NUL paths are unambiguous for Unicode, whitespace and quoting.
+        // Disable rename detection so both old and new paths are checked.
+        const rawDiff = git(["-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", `${resolvedBaseSha}..${remoteTip}`], { cwd: root, raw: true });
         diffFiles = rawDiff
-          .split(/\r?\n/)
-          .map((f) => normalizePath(f.trim()))
+          .split("\0")
+          .map((f) => normalizePath(f))
           .filter(Boolean);
       } catch (_) {
         diffFailed = true;

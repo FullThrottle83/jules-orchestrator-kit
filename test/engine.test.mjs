@@ -392,6 +392,41 @@ describe("dispatch base drift preflight", () => {
     } finally {
       f.cleanup();
     }
+    const renamed = setupDriftFixture();
+    try {
+      execFileSync("git", ["mv", "src/target.mjs", "src/renamed.mjs"], { cwd: renamed.peerDir });
+      execFileSync("git", ["commit", "-qm", "rename target"], { cwd: renamed.peerDir });
+      execFileSync("git", ["push", "-q", "origin", "main"], { cwd: renamed.peerDir });
+      let dispatched = 0;
+      const res = await dispatch(
+        { id: "T4-rename", prompt: "Edit original path", baseSha: renamed.baseSha, targetFiles: ["src/target.mjs"] },
+        { root: renamed.workDir, provider: { dispatch: async () => { dispatched++; return { id: "unsafe" }; } }, driftCheck: "block", checkpoint: false }
+      );
+      assert.equal(res.status, "BASE_DRIFT");
+      assert.ok(res.drifted.includes("src/target.mjs"), "rename must expose original path");
+      assert.equal(dispatched, 0);
+    } finally {
+      renamed.cleanup();
+    }
+
+    const unicode = setupDriftFixture();
+    try {
+      writeFileSync(join(unicode.peerDir, "src", "café.mjs"), "export const changed = true;\\n");
+      execFileSync("git", ["add", "-A"], { cwd: unicode.peerDir });
+      execFileSync("git", ["commit", "-qm", "add Unicode path"], { cwd: unicode.peerDir });
+      execFileSync("git", ["push", "-q", "origin", "main"], { cwd: unicode.peerDir });
+      let dispatched = 0;
+      const res = await dispatch(
+        { id: "T4-unicode", prompt: "Edit Unicode path", baseSha: unicode.baseSha, targetFiles: ["src/café.mjs"] },
+        { root: unicode.workDir, provider: { dispatch: async () => { dispatched++; return { id: "unsafe" }; } }, driftCheck: "block", checkpoint: false }
+      );
+      assert.equal(res.status, "BASE_DRIFT");
+      assert.deepEqual(res.drifted, ["src/café.mjs"]);
+      assert.equal(dispatched, 0);
+    } finally {
+      unicode.cleanup();
+    }
+
   });
 
   it("5. Mode warn: dispatches and emits dispatch_base_drift", async () => {
