@@ -228,6 +228,30 @@ test("src/git.mjs Unit Tests", async (t) => {
     const stagedDiff = diffText(tmpRoot, "main", "staged");
     assert.ok(stagedDiff.includes("staged content"), "staged diffText must include cached index additions");
     assert.ok(stagedDiff.includes("feature content"), "staged diffText must include branch commits against base");
+
+    // JOK-009: --text already includes binary bytes. Do not add blob size a
+    // second time or reject an otherwise in-budget 40 KiB binary fixture.
+    const binaryRoot = mkdtempSync(join(tmpdir(), "jok-binary-budget-"));
+    try {
+      runCmd(["git", "init", "-b", "main"], { cwd: binaryRoot });
+      runCmd(["git", "config", "user.name", "Tester"], { cwd: binaryRoot });
+      runCmd(["git", "config", "user.email", "test@example.com"], { cwd: binaryRoot });
+      writeFileSync(join(binaryRoot, "base.txt"), "baseline\\n");
+      git(["add", "-A"], { cwd: binaryRoot });
+      git(["commit", "-m", "base"], { cwd: binaryRoot });
+      const baseSha = git(["rev-parse", "HEAD"], { cwd: binaryRoot });
+      git(["checkout", "-b", "binary-feature"], { cwd: binaryRoot });
+      writeFileSync(join(binaryRoot, "payload.bin"), Buffer.alloc(40 * 1024));
+      git(["add", "-A"], { cwd: binaryRoot });
+      git(["commit", "-m", "binary fixture"], { cwd: binaryRoot });
+      const diff = diffText(binaryRoot, baseSha, "committed");
+      const measured = diffBytes(binaryRoot, baseSha, "committed");
+      assert.equal(measured, Buffer.byteLength(diff, "utf8"));
+      assert.ok(measured > 40 * 1024, "forced text must include the binary contents");
+      assert.ok(measured < 50 * 1024, `binary fixture counted twice: ${measured} bytes`);
+    } finally {
+      rmSync(binaryRoot, { recursive: true, force: true });
+    }
   });
 
   await t.test("worktreeRemove and worktreePrune helpers", () => {
