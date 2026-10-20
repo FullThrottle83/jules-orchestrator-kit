@@ -414,7 +414,7 @@ export async function gate(opts = {}) {
   let postSourceHashResult = preSourceHashResult;
   let postSourceHash = preSourceHash;
   const preCandidateFilesHash = files.length > 0
-    ? computeDirectoryHash(snapshot.cwd, { paths: files }).treeHash
+    ? computeDirectoryHash(snapshot.cwd, { paths: files, includeMetadata: true }).treeHash
     : null;
   let postCandidateFilesHash = preCandidateFilesHash;
   const executionRecords = [];
@@ -561,7 +561,7 @@ export async function gate(opts = {}) {
     postSourceHashResult = computeDirectoryHash(snapshot.cwd);
     postSourceHash = postSourceHashResult.treeHash;
     postCandidateFilesHash = files.length > 0
-      ? computeDirectoryHash(snapshot.cwd, { paths: files }).treeHash
+      ? computeDirectoryHash(snapshot.cwd, { paths: files, includeMetadata: true }).treeHash
       : null;
     if (trustedEvidence.strictTestLock && !opts.allowTestModifications && preTestHashResult.fileCount > 0) {
       const changedTestFile = files.find((f) => isTestPath(f));

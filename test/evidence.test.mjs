@@ -17,7 +17,7 @@ import {
   planEvidenceShow,
 } from "../src/ops/evidence-actions.mjs";
 import { pruneTelemetry } from "../src/telemetry.mjs";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync, existsSync, chmodSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -50,6 +50,47 @@ describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
 
       const res2 = computeDirectoryHash(tmp, { testOnly: true });
       assert.equal(res1.treeHash, res2.treeHash, "Tree hash must be deterministic across calls");
+
+      // JOK-004: changing executable mode must be visible even if bytes match.
+      // Keep the default evidence hash content-only for compatibility.
+      if (process.platform !== "win32") {
+        const script = join(tmp, "script.sh");
+        writeFileSync(script, "#!/bin/sh\\nexit 0\\n");
+        chmodSync(script, 0o644);
+        const contentBefore = computeDirectoryHash(tmp, { paths: ["script.sh"] }).treeHash;
+        const modeBefore = computeDirectoryHash(tmp, {
+          paths: ["script.sh"], includeMetadata: true,
+        }).treeHash;
+        chmodSync(script, 0o755);
+        const contentAfter = computeDirectoryHash(tmp, { paths: ["script.sh"] }).treeHash;
+        const modeAfter = computeDirectoryHash(tmp, {
+          paths: ["script.sh"], includeMetadata: true,
+        }).treeHash;
+        assert.equal(contentBefore, contentAfter);
+        assert.notEqual(modeBefore, modeAfter, "candidate chmod must invalidate the tree hash");
+
+        // Symlink retargeting between identical-content files must also fail.
+        writeFileSync(join(tmp, "one.txt"), "same contents");
+        writeFileSync(join(tmp, "two.txt"), "same contents");
+        const link = join(tmp, "active.txt");
+        symlinkSync("one.txt", link);
+        const linkBefore = computeDirectoryHash(tmp, {
+          paths: ["active.txt"], includeMetadata: true,
+        });
+        unlinkSync(link);
+        symlinkSync("two.txt", link);
+        const linkAfter = computeDirectoryHash(tmp, {
+          paths: ["active.txt"], includeMetadata: true,
+        });
+        assert.equal(linkBefore.fileCount, 1);
+        assert.equal(linkAfter.fileCount, 1);
+        assert.notEqual(linkBefore.treeHash, linkAfter.treeHash);
+        writeFileSync(join(tmp, "two.txt"), "changed contents");
+        const changedTarget = computeDirectoryHash(tmp, {
+          paths: ["active.txt"], includeMetadata: true,
+        });
+        assert.notEqual(linkAfter.treeHash, changedTarget.treeHash, "target contents remain part of the candidate identity");
+      }
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
