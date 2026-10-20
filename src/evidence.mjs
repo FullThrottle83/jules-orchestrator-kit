@@ -4,6 +4,8 @@ import {
   existsSync,
   readdirSync,
   statSync,
+  lstatSync,
+  readlinkSync,
   unlinkSync,
 } from "node:fs";
 import { join, resolve, relative, isAbsolute, extname } from "node:path";
@@ -121,7 +123,14 @@ export function computeDirectoryHash(root, options = {}) {
   if (Array.isArray(options.paths) && options.paths.length > 0) {
     fileList = options.paths
       .map((p) => normalizePath(p))
-      .filter((p) => existsSync(join(root, p)) && statSync(join(root, p)).isFile())
+      .filter((p) => {
+        try {
+          const entry = lstatSync(join(root, p));
+          return entry.isFile() || entry.isSymbolicLink();
+        } catch {
+          return false;
+        }
+      })
       .sort();
   } else {
     // A sixth spelling of "where do the tests live?", and the one that got
@@ -214,10 +223,24 @@ export function computeDirectoryHash(root, options = {}) {
 
   for (const relPath of fileList) {
     const fullPath = join(root, relPath);
-    const hash = computeFileHash(fullPath);
+    let stat;
+    try {
+      stat = options.includeMetadata ? lstatSync(fullPath) : null;
+    } catch {
+      // A file removed during verification must not preserve its old hash.
+      continue;
+    }
+    // Candidate verification must hash symlink identity, not just the bytes
+    // reachable through it. Two targets can have identical contents.
+    const hash = stat?.isSymbolicLink()
+      ? "sha256:" + sha256(readlinkSync(fullPath))
+      : computeFileHash(fullPath);
     if (hash) {
       fileHashes[relPath] = hash;
-      hashLines.push(`${relPath}:${hash}`);
+      const identity = options.includeMetadata
+        ? `${stat.isSymbolicLink() ? "symlink" : "file"}:${stat.mode & 0o7777}:${hash}`
+        : hash;
+      hashLines.push(`${relPath}:${identity}`);
     }
   }
 
