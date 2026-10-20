@@ -1004,23 +1004,14 @@ export function binaryDiffEntries(root = process.cwd(), base = "main", mode = "c
 }
 
 /**
- * Total bytes this change actually carries.
+ * Size of the full rendered diff used by the payload governor.
  *
- * The diff text plus the real size of every binary blob it only summarised.
- * Without the second term the payload governor could be walked straight past
- * with a committed binary of any size.
+ * PINNED_DIFF_FLAGS forces --text, including binary file contents instead of
+ * Git's short "Binary files differ" summary. Adding binary blob sizes again
+ * double-counts the same payload (JOK-009).
  */
 export function diffBytes(root = process.cwd(), base = "main", mode = "committed", head = "HEAD") {
-  const text = diffText(root, base, mode, head);
-  let bytes = Buffer.byteLength(text, "utf-8");
-  try {
-    for (const entry of binaryDiffEntries(root, base, mode, head)) bytes += entry.bytes;
-  } catch (_) {
-    // A payload figure that is too low is the dangerous direction, but throwing
-    // here would break every gate on a repo git cannot describe. The text-only
-    // number is still returned.
-  }
-  return bytes;
+  return Buffer.byteLength(diffText(root, base, mode, head), "utf-8");
 }
 
 export function showFromOrigin(root = process.cwd(), base = "main", filePath = "") {
