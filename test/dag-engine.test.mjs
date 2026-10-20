@@ -475,6 +475,32 @@ Test/Verification Command: npm test
       "poll:sess-TASK-B:COMPLETED",
     ]);
 
+    // JOK-002: the real poller must receive the exact provider selected
+    // during dispatch, not an absent options.provider from the CLI.
+    const providerRoot = join(testDir, "selected-provider-sub");
+    const providerQueue = join(providerRoot, ".agent", "jules-queue");
+    mkdirSync(providerQueue, { recursive: true });
+    writeFileSync(join(providerQueue, "TASK-REMOTE.json"), JSON.stringify({
+      id: "TASK-REMOTE", title: "Remote", prompt: "Poll remote completion",
+    }));
+    const polledSessions = [];
+    const selectedProvider = {
+      async getSession(id) {
+        polledSessions.push(id);
+        return { id, status: "COMPLETED" };
+      },
+    };
+    const providerRes = await executeQueueDag(providerRoot, {
+      serialize: "completed",
+      pollIntervalMs: 5,
+      dispatchFn: async (_task, ctx) => {
+        ctx.onProviderResolved(selectedProvider);
+        return { id: "live-session", status: "IN_PROGRESS" };
+      },
+    });
+    assert.equal(providerRes.processed, 1);
+    assert.deepEqual(polledSessions, ["live-session"]);
+
     // Also verify blockedOn fails with that status in the message and stops dependents
     const blockedDir = join(testDir, "blocked-sub");
     const blockedQueue = join(blockedDir, ".agent", "jules-queue");
