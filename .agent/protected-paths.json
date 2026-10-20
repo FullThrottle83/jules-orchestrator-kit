@@ -26,6 +26,8 @@
     "src/guard-policy.mjs",
     "src/test-paths.mjs",
     "src/prompt-guard.mjs",
-    "src/secret-scanner.mjs"
+    "src/secret-scanner.mjs",
+    ".agent/config.json",
+    "src/test-tamper-guard.mjs"
   ]
 }
