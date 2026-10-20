@@ -85,6 +85,11 @@ describe("src/evidence.mjs & Evidence Gate Subsystem", () => {
         assert.equal(linkBefore.fileCount, 1);
         assert.equal(linkAfter.fileCount, 1);
         assert.notEqual(linkBefore.treeHash, linkAfter.treeHash);
+        writeFileSync(join(tmp, "two.txt"), "changed contents");
+        const changedTarget = computeDirectoryHash(tmp, {
+          paths: ["active.txt"], includeMetadata: true,
+        });
+        assert.notEqual(linkAfter.treeHash, changedTarget.treeHash, "target contents remain part of the candidate identity");
       }
     } finally {
       rmSync(tmp, { recursive: true, force: true });
