@@ -17,7 +17,7 @@
  */
 import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmdirSync, rmSync, existsSync, readFileSync, writeFileSync, symlinkSync, renameSync, appendFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmdirSync, rmSync, existsSync, readFileSync, writeFileSync, symlinkSync, renameSync, appendFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -876,6 +876,10 @@ describe("Kernel Hardening & Concurrency Safety", () => {
     mkdirSync(testDir, { recursive: true });
     const mutexDir = join(testDir, ".test.mutex");
     mkdirSync(mutexDir); // Simulate mutex lock already held by another process
+    // JOK-005: a lock older than the old 2s threshold may still be held.
+    // A competing process must fail closed rather than steal it.
+    const oldTime = new Date(Date.now() - 60_000);
+    utimesSync(mutexDir, oldTime, oldTime);
 
     let callbackExecuted = false;
 

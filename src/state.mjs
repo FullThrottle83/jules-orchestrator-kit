@@ -233,8 +233,10 @@ export function withVfsMutex(mutexDir, fn, opts = {}) {
   const maxRetries = opts.maxRetries || 200;
   const retryDelayMs = opts.retryDelayMs || 10;
 
-  const staleMs = opts.staleMs || 2000;
-
+  // An old directory is not proof its owner died: callbacks can legitimately
+  // exceed two seconds. Never reap a mutex by mtime alone (JOK-005). An
+  // abandoned directory must be examined and removed by the operator until
+  // an owner-verified recovery protocol is implemented.
   for (let i = 0; i < maxRetries; i++) {
     let acquired = false;
     try {
@@ -242,11 +244,6 @@ export function withVfsMutex(mutexDir, fn, opts = {}) {
       acquired = true;
     } catch (err) {
       if (err.code === "EEXIST") {
-        try {
-          if (Date.now() - statSync(mutexDir).mtimeMs > staleMs) {
-            rmdirSync(mutexDir);
-          }
-        } catch (_) {}
         const deadline = Date.now() + retryDelayMs;
         while (Date.now() < deadline) {}
         continue;
