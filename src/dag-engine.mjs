@@ -738,11 +738,18 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
         const srcPath = t.fullPath;
         const taskObj = { id: t.taskId, title: t.title, prompt: t.prompt, role: t.role, tier: t.tier };
         let session;
+        let pollingProvider = options.provider || null;
+        const onProviderResolved = (provider) => { pollingProvider = provider; };
         if (typeof options.dispatchFn === "function") {
-          session = await options.dispatchFn(taskObj, { root, config: options.config, dryRun: options.dryRun });
+          session = await options.dispatchFn(taskObj, {
+            root, config: options.config, dryRun: options.dryRun, onProviderResolved,
+          });
         } else {
           const { dispatch } = await import("./engine.mjs");
-          session = await dispatch(taskObj, { root, config: options.config, dryRun: options.dryRun });
+          session = await dispatch(taskObj, {
+            root, config: options.config, dryRun: options.dryRun,
+            provider: options.provider, onProviderResolved,
+          });
         }
 
         if (session && session.ok === false) {
@@ -763,13 +770,15 @@ export async function executeQueueDag(root = process.cwd(), options = {}) {
 
         if (!options.dryRun && (serializeMode === "completed" || serializeMode === "merged")) {
           const { pollSessionState } = await import("./engine.mjs");
-          const pollVerdict = await pollSessionState(options.provider || null, session, {
+          const pollTimeoutMs = customTimeoutMs || 15 * 60 * 1000;
+          const pollIntervalMs = options.pollIntervalMs ?? 5_000;
+          const pollVerdict = await pollSessionState(pollingProvider, session, {
             root,
             dryRun: false,
             pollFn: options.pollFn,
-            pollIntervalMs: options.pollIntervalMs ?? 50,
-            maxPollAttempts: options.maxPollAttempts ?? 1000,
-            pollTimeoutMs: customTimeoutMs || 15 * 60 * 1000,
+            pollIntervalMs,
+            maxPollAttempts: options.maxPollAttempts ?? Math.ceil(pollTimeoutMs / Math.max(1, pollIntervalMs)) + 1,
+            pollTimeoutMs,
             task: taskObj,
           });
 

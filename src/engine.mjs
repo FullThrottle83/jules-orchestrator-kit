@@ -1512,6 +1512,7 @@ export async function dispatch(task = {}, opts = {}) {
   // exercise dispatch without reaching a live provider.
   const resolved = resolveRoutedProvider(task, config);
   const provider = opts.provider || resolved.provider;
+  if (typeof opts.onProviderResolved === "function") opts.onProviderResolved(provider);
   const routed = opts.provider ? false : resolved.routed;
   const classification = opts.provider ? null : resolved.classification;
   if (routed && classification) {
