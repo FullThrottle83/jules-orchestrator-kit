@@ -8,6 +8,8 @@
 1. **Reproduce Before Fixing:**
    - Always reproduce the failure with an automated test, repro script, or concrete invocation before modifying implementation code.
    - If an automated test cannot be constructed immediately, record the exact command, input payload, and terminal output demonstrating the failure.
+   - Trace the likely root cause through affected callers and state transitions. Separate observed facts from assumptions, and cite the paths or outputs supporting the leading hypothesis.
+   - Before editing production code, attempt a bounded counterexample that could disprove that hypothesis (such as an alternate input, timing, or error path). Record its result; if it cannot be tested, state why and label the root cause unverified rather than claiming certainty.
 
 2. **Minimal Surgical Fix:**
    - Implement the smallest safe, complete fix required to resolve the defect.
