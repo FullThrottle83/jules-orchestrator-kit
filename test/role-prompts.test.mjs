@@ -40,12 +40,23 @@ test("Role prompts are stack-neutral", async (t) => {
     }
   });
 
-  await t.test("operator shortcuts resolve to canonical prompt files", () => {
+  await t.test("operator shortcuts resolve to canonical, evidence-grounded prompts", () => {
     const shortcuts = ["perf", "sec", "db", "cleanup", "accessibility", "visual", "debug"];
     for (const sc of shortcuts) {
       const resolved = resolveRolePrompt(process.cwd(), sc);
       assert.ok(resolved, `shortcut "${sc}" must resolve`);
     }
+
+    const debuggerPrompt = resolveRolePrompt(process.cwd(), "debug").content;
+    assert.match(debuggerPrompt, /root cause.*hypothesis/i);
+    assert.match(debuggerPrompt, /counterexample.*disprove/i);
+    assert.match(debuggerPrompt, /unverified/i);
+
+    const performancePrompt = resolveRolePrompt(process.cwd(), "perf").content;
+    assert.match(performancePrompt, /baseline and candidate revisions/i);
+    assert.match(performancePrompt, /raw samples with the sample size/i);
+    assert.match(performancePrompt, /p99.*statistical significance/i);
+    assert.match(performancePrompt, /measurement noise.*inconclusive/i);
   });
 
   await t.test("no shipped role prompt hardcodes an ecosystem's commands", () => {
