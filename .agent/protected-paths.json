@@ -13,6 +13,21 @@
     "scripts/guard-reach-check.mjs",
     "scripts/jules-self-audit.mjs",
     "scripts/package-integrity-check.mjs",
-    "scripts/run-tests.mjs"
+    "scripts/run-tests.mjs",
+    ".agent/config.yml",
+    "eslint.config.mjs",
+    "src/self-audit.mjs",
+    "src/engine.mjs",
+    "src/security.mjs",
+    "src/scope-guard.mjs",
+    "src/config.mjs",
+    "src/git.mjs",
+    "src/evidence.mjs",
+    "src/guard-policy.mjs",
+    "src/test-paths.mjs",
+    "src/prompt-guard.mjs",
+    "src/secret-scanner.mjs",
+    ".agent/config.json",
+    "src/test-tamper-guard.mjs"
   ]
 }
