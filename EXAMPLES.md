@@ -3,7 +3,7 @@
 Start with the [quickstart](README.md#quickstart). These examples assume reviewed,
 committed configuration and installed test dependencies. The `agentctl` spelling
 requires an installed package; the equivalent one-off command is
-`npx jules-orchestrator-kit@0.76.1 <command>`.
+`npx jules-orchestrator-kit@0.76.2 <command>`.
 
 ## Verify a local change without a provider
 

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.2] - 2026-10-24
+
+### Changed
+- Focused the selected-developer 0.x preview on one task, one provider, independent verification, evidence inspection and human review. Updated CLI help, SDK guidance, pinned examples and documentation navigation (#139).
+- Clarified the limits of provider readiness, verification isolation, heuristic detectors and evidence hashes. Removed unsupported security guarantees and response-time promises (#139).
+- Required clean `main` and signed, immutable release tags at the exact verified commit. Pinned tag creation and the main push to that SHA, propagated GitHub Release failures and always cleaned temporary notes (#140).
+
+### Fixed
+- Refused ambiguous rename restores, detected symlink retargeting and executable mode changes, and counted binary diff payloads only once (#128, #134, #135).
+- Failed closed on renamed or Unicode upstream paths, exhausted prompt-decoding scan limits and stale VFS mutex ownership (#129, #131, #133).
+- Kept DAG session polling bound to the dispatched provider and timeout budget, and added explicit trusted toolchain environment forwarding for verification (#130, #132).
+- Expanded installed-package coverage through offline dispatch, changed-source gates, evidence verification, negative cases and real uninstall with user-file preservation. Preserved complete Windows prompt and verification arguments across npm/npx shims (#139).
+
 ## [0.76.1] - 2026-10-19
 
 ### Added
