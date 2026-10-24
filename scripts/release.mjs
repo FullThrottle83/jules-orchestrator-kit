@@ -2,13 +2,14 @@
 
 /**
  * Automated Release Orchestrator script for jules-orchestrator-kit.
- * Verifies test suite, updates git tags, and creates GitHub Release via gh CLI.
+ * Verifies the release commit, validates its signed tag and creates a GitHub Release.
  */
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { execSync, execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { resolveRoot } from "../src/config.mjs";
+import { readReleaseHead, ensureReleaseTag, pushReleaseRefs, createGithubRelease } from "./release-control.mjs";
 
 const root = resolveRoot();
 const pkgPath = join(root, "package.json");
@@ -25,6 +26,14 @@ const tagName = `v${version}`;
 
 console.log(`🚀 Automated Release Pipeline for ${pkg.name} (${tagName})`);
 console.log("-------------------------------------------------------");
+
+let verifiedHead;
+try {
+  verifiedHead = readReleaseHead(root);
+} catch (err) {
+  console.error(`Release aborted: ${err.message}`);
+  process.exit(1);
+}
 
 // 1. Verify test suite. Output is captured (not inherited) so the doc-sync gate
 //    below can reuse the counts instead of running the suite a second time.
@@ -100,7 +109,7 @@ console.log("1c. Verifying CI is green for HEAD...");
 if (process.argv.includes("--skip-ci-check")) {
   console.log("   ⚠️ Skipped via --skip-ci-check.\n");
 } else {
-  const headSha = execSync("git rev-parse HEAD", { cwd: root, encoding: "utf-8" }).trim();
+  const headSha = verifiedHead;
   let runs;
   try {
     const raw = execSync("gh run list --limit 40 --json headSha,status,conclusion,workflowName,url", {
@@ -111,13 +120,13 @@ if (process.argv.includes("--skip-ci-check")) {
     runs = JSON.parse(raw).filter((r) => r.headSha === headSha);
   } catch {
     console.error("❌ Release Aborted: could not query CI status via `gh`.");
-    console.error("   Run `gh auth login`, or re-run with --skip-ci-check to release without it.");
+    console.error("   Restore gh access, or independently verify CI for this exact commit before using --skip-ci-check.");
     process.exit(1);
   }
 
   if (runs.length === 0) {
     console.error(`❌ Release Aborted: no CI run found for HEAD (${headSha.slice(0, 7)}).`);
-    console.error("   Push the commit and let CI finish first, or re-run with --skip-ci-check.");
+    console.error("   Push the commit and let CI finish for this exact HEAD before releasing.");
     process.exit(1);
   }
 
@@ -164,36 +173,19 @@ if (!notes) {
   console.log("   ✅ Extracted release notes from CHANGELOG.md.\n");
 }
 
-// 3. Create Git Tag if not exists (or update if version mismatch)
-console.log(`3. Checking Git tag ${tagName}...`);
+// 3. Bind a signed tag to the exact clean main commit verified above.
+console.log(`3. Checking signed Git tag ${tagName}...`);
 try {
-  const tags = execSync("git tag -l", { cwd: root, encoding: "utf-8" }).split("\n").map((t) => t.trim());
-  if (tags.includes(tagName)) {
-    let taggedVersion = "";
-    try {
-      const rawPkg = execFileSync("git", ["show", `${tagName}:package.json`], { cwd: root, encoding: "utf-8" });
-      taggedVersion = JSON.parse(rawPkg).version;
-    } catch (_) {}
-    if (taggedVersion && taggedVersion !== version) {
-      console.log(`   ⚠️ Tag ${tagName} points to package.json version ${taggedVersion}. Updating tag to HEAD (${version})...`);
-      execFileSync("git", ["tag", "-f", "-a", tagName, "-m", `${pkg.name} ${tagName}`], { cwd: root, stdio: "inherit" });
-    } else {
-      console.log(`   ℹ️ Git tag ${tagName} already exists.`);
-    }
-  } else {
-    execFileSync("git", ["tag", "-a", tagName, "-m", `${pkg.name} ${tagName}`], { cwd: root, stdio: "inherit" });
-    console.log(`   ✅ Created Git tag ${tagName}.`);
-  }
+  ensureReleaseTag(root, { tagName, headSha: verifiedHead, packageName: pkg.name });
 } catch (err) {
-  console.error(`❌ Tagging failed: ${err.message}`);
+  console.error(`Release aborted: ${err.message}`);
   process.exit(1);
 }
 
 // 4. Push git commits and tag to origin
 console.log(`4. Pushing main and tag ${tagName} to origin...`);
 try {
-  execFileSync("git", ["push", "origin", "main"], { cwd: root, stdio: "inherit" });
-  execFileSync("git", ["push", "origin", tagName], { cwd: root, stdio: "inherit" });
+  pushReleaseRefs(root, { headSha: verifiedHead, tagName });
   console.log("   ✅ Pushed commits and tag to origin.\n");
 } catch (err) {
   console.error(`❌ Push failed: ${err.message}`);
@@ -203,19 +195,11 @@ try {
 // 5. Create GitHub Release via gh CLI
 console.log(`5. Creating GitHub Release via gh CLI...`);
 try {
-  const notesFile = join(root, ".agent", "temp_release_notes.txt");
-  const fs = await import("node:fs");
-  fs.writeFileSync(notesFile, notes, "utf-8");
-  
-  execFileSync("gh", ["release", "create", tagName, "--title", tagName, "--notes-file", notesFile], {
-    cwd: root,
-    stdio: "inherit",
-  });
-  
-  if (fs.existsSync(notesFile)) fs.unlinkSync(notesFile);
-  console.log(`   🎉 GitHub Release ${tagName} created successfully!`);
+  createGithubRelease(root, { tagName, notes });
+  console.log(`GitHub Release ${tagName} created successfully.`);
 } catch (err) {
-  console.log(`   ℹ️ Note: gh release creation finished or already exists.`);
+  console.error(`Release aborted: GitHub Release creation failed: ${err.message}`);
+  process.exit(1);
 }
 
 console.log("-------------------------------------------------------");
