@@ -582,7 +582,12 @@ async function main() {
 
       if (values.json) {
         res.overrides = overrides;
-        console.log(JSON.stringify(res, null, 2));
+        // A pipe can still be draining a large verification report when
+        // process.exit runs. Exit only after stdout has accepted every byte.
+        process.stdout.write(JSON.stringify(res, null, 2) + "\n", () => {
+          process.exit(typeof res.code === "number" ? res.code : 0);
+        });
+        return;
       } else {
         const reportedBase = res.base || values.base || "main";
         console.log(`\n🛡️ agentctl Safety Gate Audit Results (Base: ${reportedBase}, Mode: ${selectedMode})`);
