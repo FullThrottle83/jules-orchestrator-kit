@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.3] - 2026-10-25
+
+### Fixed
+- Preserved complete piped JSON reports from `gate`, `check` and `audit` by waiting for stdout to drain before exiting. Kept gate decisions, report fields and exit codes unchanged; added six regressions for large approved and rejected reports with explicit cross-version reporter selection (#142).
+
+### Changed
+- Distinguished repository-connected Jules dispatch from explicit repoless mode and clarified review of canonical changesets, branch diffs, authorship and signatures before import or merge (#143).
+
 ## [0.76.2] - 2026-10-24
 
 ### Changed

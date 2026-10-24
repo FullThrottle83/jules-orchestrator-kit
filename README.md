@@ -17,7 +17,7 @@ You can also run local checks without connecting an agent provider.
 `agentctl repair` explicitly for repair workflows. Provider output and passing
 checks still need review before merging.
 
-The current release is **v0.76.2**, a **0.x preview for selected developers**
+The current release is **v0.76.3**, a **0.x preview for selected developers**
 working in Git repositories with existing tests. Start with one small task and
 one provider. Review the changelog before upgrading and pin the package version
 in repeatable workflows. The CLI, SDK and MCP surfaces are being refined toward a
@@ -47,7 +47,7 @@ your project's own runtime and test tools must also be installed.
 ### 1. Configure the repository
 
 ```bash
-npx jules-orchestrator-kit@0.76.2 init
+npx jules-orchestrator-kit@0.76.3 init
 ```
 
 The wizard detects the project and asks about provider and verification settings.
@@ -76,7 +76,7 @@ by the default path. `--force` deliberately opts back into the legacy full scaff
 ### 2. Check provider readiness
 
 ```bash
-npx jules-orchestrator-kit@0.76.2 providers
+npx jules-orchestrator-kit@0.76.3 providers
 ```
 
 This checks local prerequisites: credential presence for hosted Jules and CLI
@@ -89,7 +89,7 @@ Never commit API keys.
 ### 3. Create and review a task
 
 ```bash
-npx jules-orchestrator-kit@0.76.2 task create \
+npx jules-orchestrator-kit@0.76.3 task create \
   --prompt "Refactor invoice calculation without changing totals" \
   --verify "npm test"
 ```
@@ -100,10 +100,10 @@ objective, scope and verification command. Review it before sending it to an age
 
 ```bash
 # Preview queued work without dispatching it
-npx jules-orchestrator-kit@0.76.2 queue --dry-run
+npx jules-orchestrator-kit@0.76.3 queue --dry-run
 
 # Send the reviewed task, using the path printed by task create
-npx jules-orchestrator-kit@0.76.2 dispatch ".agent/jules-queue/TASK-<id>.md"
+npx jules-orchestrator-kit@0.76.3 dispatch ".agent/jules-queue/TASK-<id>.md"
 ```
 
 Replace `TASK-<id>.md` with the actual filename. Dispatch can use provider quota
@@ -115,7 +115,7 @@ or incur provider costs. Jules can pause for plan approval; see the
 Once the provider's changes are available on your local branch:
 
 ```bash
-npx jules-orchestrator-kit@0.76.2 gate
+npx jules-orchestrator-kit@0.76.3 gate
 ```
 
 Inspect the gate report and the complete diff before merging. For hosted Jules,
@@ -123,7 +123,7 @@ fetch and check out the resulting branch first; local CLI providers leave change
 in the working tree. Creating or dispatching an envelope does not verify the result.
 
 For direct `agentctl` commands, install globally with
-`npm install -g jules-orchestrator-kit@0.76.2`. All examples above also work as
+`npm install -g jules-orchestrator-kit@0.76.3`. All examples above also work as
 `agentctl <command>` after installation.
 
 ## Key workflows
