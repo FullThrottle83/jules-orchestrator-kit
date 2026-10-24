@@ -1,10 +1,53 @@
-# SDK & MCP Integrations
+# SDK and MCP
 
-Programmatic usage of `jules-orchestrator-kit` from Node.js, plus the Model Context Protocol (MCP) server surface. All exports come from the package root (`index.mjs`) and carry zero runtime dependencies.
+The ESM SDK and stdio MCP server use the same dispatch and verification core as
+the CLI. Imports come from `jules-orchestrator-kit`; there are no third-party
+runtime dependencies. Pin the package version for integrations during 0.x and
+review the changelog before upgrading. The existing export list is broader than
+the proposed long-term API; see the [surface inventory](v1-surface-inventory.md).
+
+## Verify candidate changes
+
+Run this in an initialized repository with reviewed, committed policy and
+installed verification dependencies:
+
+```javascript
+import { gate } from "jules-orchestrator-kit";
+
+const result = await gate({ root: process.cwd() });
+console.log(JSON.stringify(result, null, 2));
+process.exitCode = result.code;
+```
+
+`result.ok` and `result.code` describe the independent gate outcome. `phases`
+contains diagnostics, and `evidence` is present when verification reaches that
+phase. Gate execution runs configured project commands and may write runtime
+state and evidence; it does not dispatch repair.
+
+## Dispatch one task
+
+```javascript
+import { dispatch } from "jules-orchestrator-kit";
+
+const result = await dispatch(
+  { title: "Handle empty input", prompt: "Make parseRows handle empty input and add a regression test." },
+  { root: process.cwd() }
+);
+console.log(result.kind, result.provider, result.id, result.status);
+```
+
+`kind: "local-result"` means a local CLI finished; candidate changes are in the
+checkout. `kind: "remote-session"` means hosted work continues elsewhere. Inspect
+and retrieve that result before invoking `gate()` on the candidate revision.
+Dispatch can consume provider quota or incur charges. Its completion status is
+separate from independent verification and merge approval.
+
+The [threat model](../SECURITY.md) also applies to SDK and MCP use. Verification
+commands execute with the runner account's OS permissions.
 
 ---
 
-## Multi-Provider Failover SDK (`createFailoverProvider`)
+## Optional provider failover (`createFailoverProvider`)
 
 ```javascript
 import { createFailoverProvider, loadConfig } from "jules-orchestrator-kit";
@@ -18,7 +61,7 @@ const result = await provider.dispatch(
 );
 ```
 
-## Cost Router SDK (`resolveRoutedProvider`)
+## Optional task routing (`resolveRoutedProvider`)
 
 Routes mechanical tasks to a lightweight "fast" tier and reserves the primary model for complex work. Requires `router.enabled: true` in `.agent/config.yml` (see [Configuration Reference](configuration.md#agent-configyml-reference)).
 
@@ -33,7 +76,7 @@ const { provider, classification } = resolveRoutedProvider(
 console.log(classification.tier); // "fast" | "complex"
 ```
 
-## Syntax-Verified FAST Tier (`createSyntaxVerifiedProvider`)
+## Optional syntax checks for local fast providers (`createSyntaxVerifiedProvider`)
 
 `resolveRoutedProvider()` already wraps the FAST tier with this; use it directly only when composing your own provider cascade.
 

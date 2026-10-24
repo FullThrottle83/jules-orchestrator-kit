@@ -2,7 +2,7 @@
  * ROADMAP_V1 packed-package downstream fixture.
  *
  * Exercises the consumer lifecycle against a real `npm pack` artifact:
- *   init → doctor → task create → gate → uninstall
+ *   init → doctor → task create → dispatch(fake) → gate → evidence → uninstall
  *
  * Zero runtime deps: node builtins only. Packs once from the repository root
  * and installs into a temporary git consumer so doctor/gate see a real repo
@@ -19,11 +19,11 @@ import {
   readFileSync,
   rmSync,
   readdirSync,
-  unlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveWindowsSpawn } from "../src/git.mjs";
 
 const KIT_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const GITIGNORE_BLOCK_HEADER = "# Jules Orchestrator runtime state & credentials";
@@ -40,14 +40,17 @@ function run(cmd, args, opts = {}) {
   // Isolate downstream child processes from verification net-guard preload
   delete env.NODE_OPTIONS;
 
-  const isNpmCmd = isWin && (cmd === "npm" || cmd === "npx");
-  const actualCmd = isNpmCmd ? `${cmd}.cmd` : cmd;
-  return spawnSync(actualCmd, args, {
+  // Package-manager .cmd shims need per-argument quoting. shell: true would
+  // split task prompts and verification commands containing spaces.
+  const winSpawn = isWin && (cmd === "npm" || cmd === "npx")
+    ? resolveWindowsSpawn(cmd, args, env)
+    : null;
+  return spawnSync(winSpawn ? winSpawn.file : cmd, winSpawn ? winSpawn.args : args, {
     cwd: opts.cwd,
     encoding: "utf-8",
     timeout: opts.timeout ?? 120_000,
     env,
-    shell: isNpmCmd,
+    windowsVerbatimArguments: Boolean(winSpawn?.verbatim),
     maxBuffer: 16 * 1024 * 1024,
   });
 }
@@ -97,7 +100,7 @@ function stripKitGitignoreBlock(content) {
 }
 
 test(
-  "ROADMAP_V1 downstream packed-package fixture: init → doctor → task → gate → uninstall",
+  "ROADMAP_V1 downstream packed-package fixture: init → doctor → task → dispatch → gate → evidence → uninstall",
   { timeout: 300_000 },
   () => {
     const packDir = mkdtempSync(join(tmpdir(), "kit-downstream-pack-"));
@@ -264,6 +267,34 @@ test(
       );
       const envelopeBody = readFileSync(join(queueDir, envelopes[0]), "utf-8");
       assert.ok(envelopeBody.length > 0, "task envelope should be non-empty");
+      assert.ok(envelopeBody.includes("E2E lifecycle verification"), "task create must preserve the complete prompt argument");
+      assert.ok(envelopeBody.includes("npm test"), "task create must preserve the complete verification command");
+
+      // Dispatch through the installed SDK with an injected, offline provider.
+      // This must produce a source diff; a clean-tree gate alone cannot prove
+      // that the published package verifies agent-produced changes.
+      const candidateSource = "export const add = (a, b) => Number(a) + Number(b);\n";
+      const dispatch = run("node", ["--input-type=module", "--eval", `
+        import assert from "node:assert/strict";
+        import { readFileSync, writeFileSync } from "node:fs";
+        import { dispatch } from "jules-orchestrator-kit";
+        const prompt = readFileSync(${JSON.stringify(join(queueDir, envelopes[0]))}, "utf-8");
+        const provider = {
+          name: "preview-fixture",
+          async dispatch(task, ctx) {
+            assert.ok(task.prompt.includes("E2E lifecycle verification"));
+            assert.equal(ctx.root, process.cwd());
+            writeFileSync("index.mjs", ${JSON.stringify(candidateSource)});
+            return { id: "preview-session", status: "completed", kind: "local-result", provider: "preview-fixture" };
+          },
+        };
+        const result = await dispatch({ title: "E2E lifecycle verification", prompt }, { root: process.cwd(), provider });
+        assert.equal(result.kind, "local-result");
+        assert.equal(result.status, "completed");
+      `], { cwd: consumer });
+      assertOk(dispatch, "installed SDK dispatch through offline provider");
+      assert.equal(readFileSync(join(consumer, "index.mjs"), "utf-8"), candidateSource);
+      assert.match(git(consumer, ["diff", "--", "index.mjs"]).stdout, /Number\(a\)/);
 
       // --- i. gate --dry-run and gate ---
       const gateDry = run("npx", ["agentctl", "gate", "--dry-run"], {
@@ -278,10 +309,62 @@ test(
       });
       assertOk(gate, "npx agentctl gate");
 
+      const evidence = run("npx", ["agentctl", "evidence", "verify", "--json"], { cwd: consumer });
+      assertOk(evidence, "npx agentctl evidence verify --json");
+      assert.equal(JSON.parse(evidence.stdout).ok, true);
+
+      // The same installed artifact must reject changed behavior, test
+      // weakening, policy edits and synthetic credentials, with the actual
+      // configured oracle and without any live provider or weakened checks.
+      writeFileSync(join(consumer, "index.mjs"), "export const add = (a, b) => a - b;\n");
+      const broken = run("npx", ["agentctl", "gate", "--json"], { cwd: consumer });
+      assert.equal(broken.status, 4, broken.stdout + broken.stderr);
+      const failedEvidence = run("npx", ["agentctl", "evidence", "verify", "--json"], { cwd: consumer });
+      assert.equal(failedEvidence.status, 1, failedEvidence.stdout + failedEvidence.stderr);
+      assert.equal(JSON.parse(failedEvidence.stdout).ok, false);
+      writeFileSync(join(consumer, "index.mjs"), candidateSource);
+
+      const testPath = join(consumer, "test", "add.test.mjs");
+      const originalTest = readFileSync(testPath, "utf-8");
+      writeFileSync(testPath, originalTest.replace("add(1, 2), 3", "add(1, 2), -1"));
+      const tampered = run("npx", ["agentctl", "gate", "--json"], { cwd: consumer });
+      assert.equal(tampered.status, 6, tampered.stdout + tampered.stderr);
+      writeFileSync(testPath, originalTest);
+
       // --- j. Uninstall per docs/uninstall.md ---
       const configPath = join(consumer, ".agent", "config.yml");
       assert.ok(existsSync(configPath), "precondition: config exists before uninstall");
-      unlinkSync(configPath);
+      const originalConfig = readFileSync(configPath, "utf-8");
+      writeFileSync(configPath, `${originalConfig}\n# candidate policy edit\n`);
+      const policyEdit = run("npx", ["agentctl", "gate", "--json"], { cwd: consumer });
+      assert.equal(policyEdit.status, 3, policyEdit.stdout + policyEdit.stderr);
+      writeFileSync(configPath, originalConfig);
+
+      const syntheticToken = "ghp_" + "A".repeat(36);
+      writeFileSync(join(consumer, "index.mjs"), `${candidateSource}export const fixtureToken = "${syntheticToken}";\n`);
+      const secret = run("npx", ["agentctl", "gate", "--json"], { cwd: consumer });
+      assert.equal(secret.status, 6, secret.stdout + secret.stderr);
+      writeFileSync(join(consumer, "index.mjs"), candidateSource);
+
+      const finalGate = run("npx", ["agentctl", "gate"], { cwd: consumer });
+      assertOk(finalGate, "gate after restoring the valid candidate");
+      const userFile = join(consumer, ".agent", "user-notes.txt");
+      writeFileSync(userFile, "User-owned notes\n");
+      const uninstallPreview = run("npx", ["agentctl", "uninstall", "--dry-run", "--json"], { cwd: consumer });
+      assertOk(uninstallPreview, "npx agentctl uninstall --dry-run --json");
+      assert.equal(readFileSync(configPath, "utf-8"), originalConfig);
+      const uninstall = run("npx", ["agentctl", "uninstall", "--yes", "--json"], { cwd: consumer });
+      assertOk(uninstall, "npx agentctl uninstall --yes --json");
+      assert.equal(existsSync(configPath), false);
+      assert.equal(readFileSync(userFile, "utf-8"), "User-owned notes\n");
+      assert.equal(readFileSync(join(consumer, "index.mjs"), "utf-8"), candidateSource);
+      assert.equal(readFileSync(testPath, "utf-8"), originalTest);
+      assert.equal(readFileSync(join(queueDir, envelopes[0]), "utf-8"), envelopeBody);
+      assert.equal(readFileSync(join(consumer, ".gitignore"), "utf-8").includes(GITIGNORE_BLOCK_HEADER), false);
+
+      // Explicit fixture cleanup follows the real uninstall assertions above.
+      // Runtime evidence, queued tasks and user-owned .agent content are
+      // intentionally retained by uninstall; remove them only for teardown.
       rmSync(join(consumer, ".agent"), { recursive: true, force: true });
 
       const gitignorePath = join(consumer, ".gitignore");
