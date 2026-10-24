@@ -5,6 +5,27 @@ planned work below is not a delivery commitment or a claim of enterprise complia
 The runtime will continue to prefer Node.js built-ins without third-party runtime
 dependencies.
 
+## Selected-developer preview (0.x)
+
+The next evaluation stage is a small preview on the existing 0.x line. It does
+not require a v1 release or a commitment to every current command and helper as
+a permanent API.
+
+- Lead with one repository, one scoped task, one provider, an independent gate
+  and reviewable evidence. Keep advanced operations in reference documentation.
+- Exercise the packed npm artifact through dispatch, changed-source verification,
+  evidence inspection and the actual uninstall command. Distinguish this coverage
+  from stack detection and mocked provider tests.
+- Make release failures observable and bind release tags to the verified commit.
+- Evaluate with external developers before expanding the supported workflow.
+  Collect versioned reproductions for setup friction, false positives, provider
+  lifecycle failures and ownership problems during removal.
+
+Minimal default init, explicit gate/repair separation, canonical writable config,
+versioned task envelopes, migration/uninstall operations and provider result kinds
+have already shipped. The remaining v1 work below concerns contract decisions,
+coverage and further contraction rather than reimplementing those operations.
+
 ## V1 direction
 
 V1 is a **contraction and contract release**, not a feature-count milestone.

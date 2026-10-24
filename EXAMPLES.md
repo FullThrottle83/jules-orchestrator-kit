@@ -1,126 +1,64 @@
-# Production Examples & Deployment Patterns
+# Workflow examples
 
-This document details production deployment patterns for `jules-orchestrator-kit`. All patterns follow our strict **Zero External Runtime Dependencies** policy.
+Start with the [quickstart](README.md#quickstart). These examples assume reviewed,
+committed configuration and installed test dependencies. The `agentctl` spelling
+requires an installed package; the equivalent one-off command is
+`npx jules-orchestrator-kit@0.76.1 <command>`.
 
----
+## Verify a local change without a provider
 
-## Pattern 1: Scheduled Queue Dispatch & TODO Audit
-
-Report `TODO`/`FIXME` annotations in workflow logs (`scan` prints findings to stdout and does not create task files) and dispatch pending Markdown task envelopes from `.agent/jules-queue/`:
-
-### GitHub Actions Workflow (`.github/workflows/jules-nightly-remediation.yml`)
-
-```yaml
-name: Nightly Code Remediation
-
-on:
-  schedule:
-    - cron: '0 2 * * *' # Run at 02:00 UTC daily
-  workflow_dispatch:
-
-jobs:
-  remediator:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Report TODOs & Dispatch Queued Tasks
-        env:
-          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
-          JULES_REPO: ${{ github.repository }}
-          JULES_TIER: pro
-        run: |
-          # 1. Print TODO/FIXME annotations for triage (diagnostic output only)
-          npx jules-orchestrator-kit scan
-
-          # 2. Dispatch pending Markdown task envelopes in .agent/jules-queue/
-          npx jules-orchestrator-kit queue
-```
-
----
-
-## Pattern 2: CI Security & Safety Gatekeeper
-
-Block PRs containing secret leaks, scope violations, oversized diff payloads, or test regressions before merging to `main`:
-
-### GitHub Actions Workflow (`.github/workflows/jules-pr-gate.yml`)
-
-```yaml
-name: Security & Verification Gatekeeper
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-
-jobs:
-  gatekeeper:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetch git history for merge-base check
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Run Safety & Verification Audit
-        run: |
-          npx jules-orchestrator-kit gate --base ${{ github.event.pull_request.base.ref || 'main' }}
-```
-
----
-
-## Pattern 3: Multi-Agent Parallel Swarm Execution
-
-![Multi-Agent Parallel Swarm Topology](docs/assets/swarm-topology.svg?v=3)
-
-Queue scoped Markdown task envelopes with `task create`, dispatch them concurrently across worker slots with `swarm`, and audit verified pull requests:
-
-### CLI Swarm Command
+Make a small source change in your own repository, then run:
 
 ```bash
-# 1. Create Markdown task envelopes in .agent/jules-queue/
-agentctl task create \
-  --title "Refactor Auth Module" \
-  --prompt "Convert auth callbacks to async/await in src/auth.mjs with unit tests" \
-  --verify "npm test"
-
-agentctl task create \
-  --title "Add Rate Limiter" \
-  --prompt "Implement token-bucket rate limiting in src/security.mjs with unit tests" \
-  --verify "npm test"
-
-# 2. Launch parallel swarm dispatch across worker slots (pass --dry-run to preview)
-agentctl swarm --concurrency 2
-
-# 3. Audit and harvest verified agent pull requests
-agentctl pr harvest --dry-run
+agentctl gate --json
+agentctl evidence show
 ```
 
----
+The gate checks scope, diff size, secrets, test integrity and configured commands.
+A failure produces a nonzero exit code and diagnostics. Evidence is written when
+verification reaches that phase and persistence is enabled; an early scope or
+secret failure may have no new manifest. Inspect the report and diff before
+accepting the change.
 
-## Pattern 4: Non-Mutating Gate & Bounded Repair Loop
+## Dispatch one scoped task
 
-![Autonomous Verification Loop](docs/assets/ooda-loop-cycle.svg?v=3)
-
-Verify candidate changes locally with the non-mutating `gate`:
+Use a concrete acceptance condition and your project's actual test command:
 
 ```bash
-# 1. Dispatch a scoped task to the configured provider
-agentctl dispatch \
-  --title "Fix Security Sanitizer" \
-  --prompt "Sanitize user inputs in src/security.mjs and ensure all tests pass cleanly"
+agentctl providers
+agentctl task create --title "Handle empty input" \
+  --prompt "Make parseRows return an empty array for empty input. Add a regression test and preserve existing non-empty behavior." \
+  --verify "npm test"
+agentctl queue --dry-run
+```
 
-# 2. Run the independent, non-mutating verification gate (scope, secrets, diff budget, and tests)
+Review the envelope under `.agent/jules-queue/`. Substitute its actual filename
+below; dispatch can consume provider quota or incur charges:
+
+```bash
+agentctl dispatch ".agent/jules-queue/TASK-<id>.md"
+```
+
+A local CLI provider leaves changes in your checkout. Hosted Jules returns a
+session handle and continues remotely; inspect it with
+`agentctl session get <sessionId>`, then fetch and check out the resulting branch.
+Plan approval may be required. See the [Jules notes](docs/providers/jules.md).
+
+Once the candidate changes are local:
+
+```bash
 agentctl gate
+git diff
+agentctl evidence show
 ```
 
-If `agentctl gate` rejects the change due to a test failure (rather than a scope, secret, or tamper violation) and you explicitly authorize bounded remediation, capture the failing test output, run `agentctl repair`, and re-run `agentctl gate` as the acceptance check:
+Dispatch completion alone does not run verification or approve a merge.
+
+## Repair a test failure explicitly
+
+When a gate failure is caused by failing tests, capture the failure and request
+bounded repair. Scope, secret and test-integrity violations need their own
+investigation. This shell example uses POSIX `sh`/Bash:
 
 ```bash
 fail_log="$(mktemp)"
@@ -132,112 +70,42 @@ fi
 agentctl gate
 ```
 
-During `agentctl repair`, the orchestrator feeds failure diagnostics back into bounded repair attempts (up to `limits.repairAttempts`) and halts early if the failure fingerprint repeats (`Exit Code 4`). Final acceptance still requires `agentctl gate` to pass.
+Repair can edit code and dispatch paid work. Attempts are bounded by repository
+configuration and stop on repeated failure fingerprints. Review the final diff
+and independent gate result.
 
----
+## Add verification to CI
 
-## Pattern 5: Stdio Model Context Protocol (MCP) Integration
-
-Connect `jules-orchestrator-kit` directly as a stdio Model Context Protocol server to **Claude Desktop**, **Cursor**, or **Antigravity**:
-
-### MCP Client Configuration (`mcpSettings.json`)
-
-```json
-{
-  "mcpServers": {
-    "jules-orchestrator": {
-      "command": "npx",
-      "args": ["-y", "jules-orchestrator-kit", "mcp"],
-      "env": {
-        "JULES_API_KEY": "YOUR_JULES_API_KEY",
-        "JULES_REPO": "owner/repo",
-        "JULES_TIER": "ultra"
-      }
-    }
-  }
-}
-```
-
----
-
-## Pattern 6: Specialist Agent Roles
-
-Leverage pre-configured specialist role prompts from `.agent/prompts/`. Every
-role is stack-neutral: the prompt hydrates `{{VERIFY_TEST}}`,
-`{{VERIFY_LINT}}`, `{{DIFF_KB}}` and `{{BASE_BRANCH}}` from your repository's
-config, so a Cargo or pyproject checkout gets `cargo test`/`pytest`, not
-`npm test`.
+Generate and review a workflow suited to your repository:
 
 ```bash
-# Dispatch performance optimization using performance role
-agentctl dispatch --role performance \
-  --prompt "Optimize JSON parser throughput in src/mcp.mjs"
-
-# Dispatch security vulnerability patch using security role
-agentctl dispatch --role security \
-  --prompt "Audit and fix prototype pollution risks in src/state.mjs"
-
-# Dispatch tech debt cleanup using hygiene role
-agentctl dispatch --role hygiene \
-  --prompt "Remove dead code and unused imports in src/utils.mjs"
-
-# Audit accessibility (A11y), metadata (docs), E2E (e2e), or
-# review a database migration (database) — role names are case-insensitive.
-agentctl dispatch --role a11y --prompt "Audit focus management in the checkout modal"
-agentctl dispatch --role docs --prompt "Audit canonical URLs and OpenGraph tags on /pricing"
-agentctl dispatch --role e2e --prompt "Add headless multi-viewport regression tests for the nav"
-agentctl dispatch --role database --prompt "Review the new migration for reversibility and data-loss risk"
+agentctl ci init --dry-run
 ```
 
----
+Inspect checkout, toolchain setup, dependency installation, base branch,
+permissions and the gate invocation before writing or enabling it. Pin the kit
+version used by CI. Tests execute candidate code, so use disposable runners and
+keep production credentials out of pull-request jobs. Make the gate a required
+check in branch rules if it should block merging.
 
-## Pattern 7: Web Development Task Envelopes
+## Connect an MCP client
 
-Leverage specialized web envelopes (`web-cwv`, `web-wcag`, `web-seo`, `web-playwright`, `web-flaky-heal`):
+Use `agentctl mcp init --target <client> --dry-run` to preview client configuration
+for `cursor`, `vscode` or `claude`. Review tool inputs and client approval settings:
+exposed operations can dispatch work and apply changes. Put credentials in the
+client environment rather than checked-in configuration.
 
-```bash
-# 1. List available web development templates
-agentctl task template --list
+See the [SDK and MCP guide](docs/sdk.md) for provider lifecycles and aliases.
 
-# 2. Synthesize a Core Web Vitals & Lighthouse envelope
-agentctl task template web-cwv
+## Additional operations
 
-# 3. Create and queue a WCAG 2.2 accessibility audit task
-agentctl task create --template web-wcag
+Queues, routing, specialist roles, task templates and quality probes are listed
+in the generated [command reference](docs/COMMAND_REFERENCE.md). Configure them
+against your repository and toolchain before unattended use.
 
-# 4. Optimize a frontend prompt with structured verification probes
-agentctl task optimize "Audit Core Web Vitals and optimize LCP in src/dashboard.mjs" --fix
-```
+For a task that benefits from the packaged testing instructions, add
+`--role testing` to dispatch and review the role's prompt alongside your task.
 
----
-
-## Pattern 8: Universal, Stack-Agnostic Task Envelopes
-
-Four templates work in **any** language the stack detector recognises — Cargo,
-Go, Python, PHP, .NET, Java, Ruby, Elixir and Node alike — because their
-verification command is hydrated from your `.agent/config.yml` rather than
-hardcoded. Each carries a locally-falsifiable oracle rather than a
-"best-practice" claim no test can exercise.
-
-```bash
-# Dependency / supply-chain integrity: pinned, checksummed resolution,
-# stale-lockfile gate, install-script scrutiny (offline — no advisory API calls).
-agentctl task create --template agent-dep-audit
-
-# Documentation / command-surface drift: reconcile documented CLI flags,
-# environment variables and SDK exports against what actually ships.
-agentctl task create --template agent-doc-drift
-
-# Configuration & secret hygiene: typed config loading, fail-closed defaults,
-# and verification that secrets are redacted from logs and error messages.
-agentctl task create --template agent-config-audit
-
-# API contract consistency: route/handler parity, boundary input validation,
-# and one documented error shape across a REST or RPC surface.
-agentctl task create --template agent-api-contract
-```
-
-The verify command for a non-Node project is picked up automatically — for
-example, a Rust repository dispatches `cargo test --workspace` against the
-same envelope without the template ever naming Cargo.
-
+For removal, preview `agentctl uninstall --dry-run`, inspect the ownership report,
+then use `agentctl uninstall --yes`. The [removal guide](docs/uninstall.md) describes
+legacy scaffold assets and user-owned files that need separate review.

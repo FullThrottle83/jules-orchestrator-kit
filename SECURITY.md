@@ -1,83 +1,87 @@
-# Security Policy & Zero-Trust Threat Model
+# Security policy and threat model
 
-## Prompt Sanitization & Content Filters
+The kit checks candidate changes against repository policy and runs configured
+verification commands. It is a control plane running with the operator's OS
+permissions. Use a disposable runner without production credentials for untrusted
+candidate code; the kit does not supply a process, filesystem or container sandbox.
 
-`sanitizePromptVocabulary()` in `src/prompt-guard.mjs` transforms high-trigger
-operational terms in prompt prose to reduce false-positive provider content
-filter refusals. For example, prose containing `kill -9` becomes
-`terminate with SIGTERM`, and `SIGKILL` becomes `SIGTERM`. These substitutions
-can change technical meaning: SIGTERM is not equivalent to SIGKILL.
+## Supported versions
 
-Fenced code blocks (triple backticks) and inline backtick code spans are
-preserved verbatim by this vocabulary transformation (commit `ad2011a`). Put
-exact commands and identifiers in code spans or blocks when their spelling
-matters. This preservation does not exempt content from other prompt guards
-or secret redaction.
-
-Vocabulary rewriting is not a security boundary, a guarantee of provider
-acceptance, or a replacement for provider content filters. Review transformed
-prompt text when exact operational semantics matter; scope checks, execution
-envelopes, and verification remain separate controls.
-
-## 🛡️ Core Security Vision
-
-**Jules Orchestrator Kit** acts as a control plane for autonomous AI agents executing code inside developer repositories. Because AI agents receive instructions via prompts and make programmatic edits, security must be **enforced cryptographically and structural**, never relying solely on LLM prompt compliance.
-
----
-
-## 🔒 Security Guarantees & Threat Model
-
-The orchestrator enforces 5 non-negotiable security invariants:
-
-### 1. Capability-Bounded Execution Envelope (CBEE)
-`createExecutionEnvelope()` (`src/execution-envelope.mjs`) builds an immutable JSON execution manifest containing:
-- `baseSha`: the resolved Git commit SHA of the base branch.
-- `configSha`: SHA-256 hash of the JSON-serialized scope triple `{ denyPaths, allowPaths, protectPaths }` (`hashConfigScope`, `src/execution-envelope.mjs:44`) — the normalized scope only, not the literal `.agent/jules.yml` file or the entire configuration.
-- `scope`: Normalized `allow_paths`, `deny_paths`, and `protect_paths`.
-- `verify`: the resolved `test_cmd` and `build_cmd`.
-
-The envelope is deep-frozen (`Object.freeze`) and carries a self-verifying `hash`; `verifyExecutionEnvelope()` recomputes and compares it, so any in-memory mutation is detectable. The gate enforces the scope contract on every changed path through `checkScope()` (`src/scope-guard.mjs`): touching a denied path, a protected path (`.agent/config.yml`, `package.json`, CI definitions, `.agent/rules/**`), or a path that escapes the repository root fails closed with `Exit Code 3: Scope Violation`.
-
-### 2. Zero-Trust Base Branch Resolution
-The authoritative security policy — `.agent/config.yml` / `.agent/jules.yml` (scope deny/protect/allow and verification commands) — is read from the trusted base commit via `resolveTrustedPolicy()` → `showFromOrigin()` (`git show <base>:<file>`, `src/git.mjs:761`), never from the working tree under review. `resolveBase()` (`src/git.mjs:352`) prefers `origin/<base>`, then `refs/remotes/origin/<base>`, and only falls back to a bare local ref when the remote ref is unavailable.
-- **Bootstrap exception:** when the base commit carries no config yet, a proposed scaffold is accepted only if it passes `checkBootstrapPolicyIntegrity()` (no placeholder/empty verification, no `minimal` profile downgrade, no `verify.required: false`, and `base_branch` cannot be `HEAD`).
-- **Threat Mitigated:** An untrusted PR branch modified by an agent cannot overwrite security rules to grant itself elevated permissions.
-
-### 3. Secret Scanning & PII Redaction
-Added diff lines pass through `scanDiff()`; outbound prompt payloads pass through `redactSecrets()` and `anonymizePii()` (all in `src/secret-scanner.mjs`):
-- **Structured high-confidence secrets** (`hasHighConfidenceSecret`, line 71): regex patterns for AWS keys, private-key PEM blocks, GitHub/Slack/Stripe/OpenAI tokens, JWTs, etc. `hasEncodedSecret()` (line 399) decodes base64 blobs and applies the same patterns.
-- **Entropy-based token detection** (`hasHighEntropyToken`, line 475): added-line tokens of ≥ 24 characters with Shannon entropy > `4.5 bits/char` are flagged as potential unstructured secrets.
-- **Environment-variable redaction** (`redactSecrets`, line 91): an environment value is scrubbed from outbound text when it is ≥ 20 characters or exceeds `3.6 bits/char` entropy, and its key name matches a credential heuristic (`KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH|…`).
-- **PII Masking** (`anonymizePii`): emails, IPv4/IPv6 addresses, and phone numbers are automatically redacted before transmission to remote LLM APIs.
-
-### 4. SHA-256 Hash-Chained Audit Ledger
-State transitions, budget reservations, and session/task events are appended to a date-scoped ledger `.agent/state/ledger-<YYYY-MM-DD>.jsonl` (`getDailyLedgerPath`, `src/state.mjs:55`) using cryptographic hash-chaining (`prevHash` + `hash`). `appendLedger()` refuses to follow a symlinked ledger path.
-- **Threat Mitigated:** Any manual tampering, line deletion, or log reordering invalidates the chain — `verifyLedgerIntegrity()` (`src/state.mjs:308`) reports `BROKEN_PREV_HASH` or `CORRUPTED_ENTRY_HASH`.
-
-### 5. OODA Thrash & State Fingerprinting
-Failed agent executions generate a 16-character SHA-256 state fingerprint (`fingerprintFailureState`, `src/engine.mjs:138`) from a normalized stderr trace plus the diff's added/removed line counts.
-- **Threat Mitigated:** If an agent enters a repair loop producing identical failures, the sliding-window `OODACircuitBreaker` (threshold 2) trips and `repair()` halts early (`DETERMINISTIC_REGRESSION`, `src/engine.mjs:942`); the gate surfaces this as `Exit Code 4` (`src/engine.mjs:731`) to prevent token burning.
-
----
-
-## 📋 Supported Versions
-
-| Version | Status | Security Maintenance |
+| Version | Status | Security maintenance |
 | :--- | :--- | :--- |
-| `v0.76.x` (Latest) | 🟢 Active | Full security updates & CBEE enforcement |
-| `< v0.76.0` | 🔴 Deprecated | Upgrade to >= v0.76.0 recommended |
+| `v0.76.x` (Latest) | Active | Security fixes are delivered in this series |
+| `< v0.76.0` | Superseded | Upgrade before evaluating the preview |
 
----
+The package remains pre-1.0. Review release notes and pin a version in CI and MCP
+client configuration. A passing local check does not certify a provider, project
+or deployment environment.
 
-## 🚨 Reporting Vulnerabilities
+## Trust boundaries
 
-If you discover a security vulnerability, scope bypass, or secret leak issue within this orchestrator:
+Repository policy is the authority for scope, verification commands and limits.
+`resolveTrustedPolicy()` reads it from the selected trusted base commit rather
+than accepting candidate working-tree changes as permission to widen policy.
+`resolveBase()` prefers the configured remote-tracking base and can fall back to
+a local base when that remote ref is unavailable. Keep refs current and verify
+the selected base before accepting results. Initial setup has a constrained
+bootstrap path; review and commit generated configuration before normal use.
 
-1. **Do NOT open a public GitHub issue.**
-2. Report the vulnerability privately via **[GitHub Security Advisories](https://github.com/FullThrottle83/jules-orchestrator-kit/security/advisories/new)**.
-3. Include:
-   - Orchestrator version (`agentctl --version`).
-   - Reproduction steps or payload snippet.
-   - Expected vs actual isolation behavior.
+Task envelopes may narrow policy and add verification. Provider output, prompts,
+completion status and generated evidence do not authorize policy changes or
+merges. Local CLI providers edit the checkout; hosted Jules works remotely.
+Retrieve the actual candidate revision and run the independent gate before review.
 
-We acknowledge reports within **24 hours** and provide a resolution timeline within **72 hours**.
+## Checks and their limits
+
+- **Scope and payload:** normalized allow, deny and protected paths, symlink and
+  submodule restrictions, and configured diff-size limits. Protected-path waivers
+  require the existing provenance checks; they are not provider-controlled.
+- **Secrets and prompt content:** diff scanning uses known credential patterns,
+  bounded decoding, normalization and entropy heuristics. Outbound redaction and
+  PII masking reduce exposure. These detectors have false positives and coverage
+  limits; they do not establish that arbitrary content contains no sensitive data.
+- **Test integrity:** diff heuristics detect recognized assertion weakening and
+  discovery changes. Pre/post hashes also detect test or source changes during
+  verification. They do not prove that tests cover the intended behavior.
+- **Verification:** project commands run in a materialized snapshot with an
+  allowlisted environment. Ambient operator credentials are excluded from that
+  environment. Explicit `verify.pass_env` entries are trusted configuration for
+  non-secret toolchain paths, not a way to expose credentials.
+- **Network guard:** the Node preload intercepts supported Node HTTP/fetch calls.
+  It is not an OS network firewall; arbitrary candidate code and other executables
+  must be isolated by the runner when stronger restrictions are needed.
+- **Evidence and ledgers:** SHA-256 digests and hash chains detect inconsistencies
+  against their recorded state. They are not authenticated signatures or remote
+  attestations. A writer able to replace the records can recompute their hashes;
+  retain trusted CI results and control write access to evidence.
+- **Repair:** explicit repair has attempt limits and repeated-failure detection.
+  These bound work, not correctness or total provider cost. Review its diff and
+  rerun the gate before acceptance.
+
+An execution envelope's hash detects changes relative to its recorded digest;
+`Object.freeze()` protects the in-process object. Neither grants authenticity to
+an envelope obtained from an untrusted source. Trusted base selection, enforced
+scope and independent verification remain separate requirements.
+
+## Prompt transformations
+
+`sanitizePromptVocabulary()` in `src/prompt-guard.mjs` rewrites some operational
+terms in prose to reduce provider refusals. Substitutions can change technical
+meaning: `SIGKILL` becoming `SIGTERM` does not preserve signal semantics.
+
+Fenced code blocks and inline backtick spans are preserved by vocabulary
+rewriting. Put exact commands and identifiers there when spelling matters. They
+still pass through other prompt guards and secret redaction. Review transformed
+prompts; vocabulary rewriting is not a security boundary or a guarantee of
+provider acceptance.
+
+## Reporting vulnerabilities
+
+Report suspected scope bypasses, credential exposure or other vulnerabilities
+privately through [GitHub Security Advisories](https://github.com/FullThrottle83/jules-orchestrator-kit/security/advisories/new).
+Include the package version, OS, Node version, affected command, configuration
+with secrets removed, and a minimal reproduction with expected and actual results.
+
+Keep credentials, private source and exploit details out of public issues. The
+maintainer will triage the report and coordinate reproduction, fixes and disclosure
+with the reporter. This preview does not offer a staffed response-time SLA.
