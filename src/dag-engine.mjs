@@ -484,8 +484,10 @@ async function queryPrView(prUrl, root, options = {}) {
   return JSON.parse(res.stdout || "{}");
 }
 
+const DEFAULT_PR_POLL_INTERVAL_MS = 15000;
+
 async function waitForPrsMerged(taskId, prUrls, root, options = {}) {
-  const pollIntervalMs = Number(options.pollIntervalMs ?? options.prPollIntervalMs ?? 1000);
+  const pollIntervalMs = Number(options.pollIntervalMs ?? options.prPollIntervalMs ?? DEFAULT_PR_POLL_INTERVAL_MS);
   const timeoutMinutes = Number(options.serializeTimeout ?? options.serializeTimeoutMinutes ?? 15);
   const timeoutMs = Number(
     options.serializeTimeoutMs ??
