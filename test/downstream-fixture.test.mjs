@@ -23,6 +23,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveWindowsSpawn } from "../src/git.mjs";
 
 const KIT_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const GITIGNORE_BLOCK_HEADER = "# Jules Orchestrator runtime state & credentials";
@@ -39,14 +40,17 @@ function run(cmd, args, opts = {}) {
   // Isolate downstream child processes from verification net-guard preload
   delete env.NODE_OPTIONS;
 
-  const isNpmCmd = isWin && (cmd === "npm" || cmd === "npx");
-  const actualCmd = isNpmCmd ? `${cmd}.cmd` : cmd;
-  return spawnSync(actualCmd, args, {
+  // Package-manager .cmd shims need per-argument quoting. shell: true would
+  // split task prompts and verification commands containing spaces.
+  const winSpawn = isWin && (cmd === "npm" || cmd === "npx")
+    ? resolveWindowsSpawn(cmd, args, env)
+    : null;
+  return spawnSync(winSpawn ? winSpawn.file : cmd, winSpawn ? winSpawn.args : args, {
     cwd: opts.cwd,
     encoding: "utf-8",
     timeout: opts.timeout ?? 120_000,
     env,
-    shell: isNpmCmd,
+    windowsVerbatimArguments: Boolean(winSpawn?.verbatim),
     maxBuffer: 16 * 1024 * 1024,
   });
 }
@@ -263,6 +267,8 @@ test(
       );
       const envelopeBody = readFileSync(join(queueDir, envelopes[0]), "utf-8");
       assert.ok(envelopeBody.length > 0, "task envelope should be non-empty");
+      assert.ok(envelopeBody.includes("E2E lifecycle verification"), "task create must preserve the complete prompt argument");
+      assert.ok(envelopeBody.includes("npm test"), "task create must preserve the complete verification command");
 
       // Dispatch through the installed SDK with an injected, offline provider.
       // This must produce a source diff; a clean-tree gate alone cannot prove
