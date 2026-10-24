@@ -16,7 +16,7 @@ function createFixture(failing) {
   git("config", "user.name", "Test Fixture");
   git("config", "user.email", "fixture@example.com");
   mkdirSync(join(root, ".agent"));
-  writeFileSync(join(root, ".agent", "config.yml"), "version: 1\nbase_branch: main\nverify:\n  test: node --test fixture.test.mjs\n");
+  writeFileSync(join(root, ".agent", "config.yml"), "version: 1\nbase_branch: main\nverify:\n  test: node --test --test-reporter=spec fixture.test.mjs\n");
   writeFileSync(join(root, "source.mjs"), "export const add = (a, b) => a + b;\n");
   writeFileSync(join(root, "fixture.test.mjs"), [
     'import { test } from "node:test";',
