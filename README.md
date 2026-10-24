@@ -17,8 +17,26 @@ You can also run local checks without connecting an agent provider.
 `agentctl repair` explicitly for repair workflows. Provider output and passing
 checks still need review before merging.
 
-The current release is **v0.76.1**, a pre-1.0 release. A long-term stability policy is a
-[v1.0 goal](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/ROADMAP_V1.md).
+The current release is **v0.76.1**, a **0.x preview for selected developers**
+working in Git repositories with existing tests. Start with one small task and
+one provider. Review the changelog before upgrading and pin the package version
+in repeatable workflows. The CLI, SDK and MCP surfaces are being refined toward a
+[smaller long-term contract](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/ROADMAP_V1.md).
+
+## Preview scope
+
+The recommended workflow is task authoring, single-provider dispatch, independent
+verification, evidence inspection and human review. The gate also works on changes
+you made yourself, without any provider credentials.
+
+The CI matrix runs on Linux, macOS and Windows with Node.js 22 and 24. Stack
+detection is broader than the packed-package integration coverage, which currently
+uses a Node.js consumer. Detection does not establish end-to-end compatibility
+with every framework, provider version or external service.
+
+Queue concurrency, routing, specialist prompts, dashboards and additional quality
+probes remain available for existing users. Evaluate them separately after the
+basic workflow succeeds.
 
 ## Quickstart
 
@@ -29,7 +47,7 @@ your project's own runtime and test tools must also be installed.
 ### 1. Configure the repository
 
 ```bash
-npx jules-orchestrator-kit init
+npx jules-orchestrator-kit@0.76.1 init
 ```
 
 The wizard detects the project and asks about provider and verification settings.
@@ -58,19 +76,20 @@ by the default path. `--force` deliberately opts back into the legacy full scaff
 ### 2. Check provider readiness
 
 ```bash
-npx jules-orchestrator-kit providers
+npx jules-orchestrator-kit@0.76.1 providers
 ```
 
-This reports which providers are available and what setup is missing. Remote
-Jules dispatch needs credentials; local CLI providers need their installed,
-authenticated CLI. Follow the
+This checks local prerequisites: credential presence for hosted Jules and CLI
+discovery for local providers. It does not validate credentials, account access
+or quota. Remote Jules dispatch needs valid credentials; local CLI providers need
+their installed, authenticated CLI. Follow the
 [configuration reference](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/docs/configuration.md).
 Never commit API keys.
 
 ### 3. Create and review a task
 
 ```bash
-npx jules-orchestrator-kit task create \
+npx jules-orchestrator-kit@0.76.1 task create \
   --prompt "Refactor invoice calculation without changing totals" \
   --verify "npm test"
 ```
@@ -81,10 +100,10 @@ objective, scope and verification command. Review it before sending it to an age
 
 ```bash
 # Preview queued work without dispatching it
-npx jules-orchestrator-kit queue --dry-run
+npx jules-orchestrator-kit@0.76.1 queue --dry-run
 
 # Send the reviewed task, using the path printed by task create
-npx jules-orchestrator-kit dispatch ".agent/jules-queue/TASK-<id>.md"
+npx jules-orchestrator-kit@0.76.1 dispatch ".agent/jules-queue/TASK-<id>.md"
 ```
 
 Replace `TASK-<id>.md` with the actual filename. Dispatch can use provider quota
@@ -96,7 +115,7 @@ or incur provider costs. Jules can pause for plan approval; see the
 Once the provider's changes are available on your local branch:
 
 ```bash
-npx jules-orchestrator-kit gate
+npx jules-orchestrator-kit@0.76.1 gate
 ```
 
 Inspect the gate report and the complete diff before merging. For hosted Jules,
@@ -104,7 +123,7 @@ fetch and check out the resulting branch first; local CLI providers leave change
 in the working tree. Creating or dispatching an envelope does not verify the result.
 
 For direct `agentctl` commands, install globally with
-`npm install -g jules-orchestrator-kit`. All examples above also work as
+`npm install -g jules-orchestrator-kit@0.76.1`. All examples above also work as
 `agentctl <command>` after installation.
 
 ## Key workflows
@@ -117,6 +136,7 @@ For direct `agentctl` commands, install globally with
 | `queue` | Preview (`agentctl queue --dry-run`), list (`agentctl queue list`), or dispatch queued tasks. |
 | `dispatch` | Send a single task or envelope to the configured provider (`agentctl dispatch`). |
 | `gate` | Run configured scope, secret, payload, and test checks locally (`agentctl gate`). |
+| `evidence show` | Inspect the latest verification evidence (`agentctl evidence show`). |
 | `repair` | Run an explicit bounded repair workflow (`agentctl repair --input "<failure>" --task`). |
 | `doctor` | Diagnose repository, oracle, and provider setup (`agentctl doctor`). |
 | `dashboard` | Local telemetry viewer; default port 4100. Set another port with `--port <n>`. |
@@ -199,9 +219,19 @@ for the complete removal steps.
 
 ## Limitations and attribution
 
-Secret scanning, test-tamper detection and prompt transformations are checks with
-coverage limits, not a security guarantee. Prompt substitutions can change meaning;
-review exact operational instructions. See the Jules notes for details.
+Verification runs project code with the operating-system permissions of the
+account running the kit. The verification snapshot and filtered environment are
+not an OS sandbox. Use a disposable runner without production credentials when
+evaluating untrusted changes. See the
+[threat model](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/SECURITY.md)
+for the boundary and detection limits. Prompt substitutions can change meaning;
+put exact operational commands in code spans or fenced blocks and review them.
+
+For preview feedback, report package, Node, OS and provider CLI versions, the
+command, expected result and a minimal reproduction in a
+[GitHub issue](https://github.com/FullThrottle83/jules-orchestrator-kit/issues).
+Remove credentials and private source. Report vulnerabilities privately using
+the security policy.
 
 Maintained by Jonas Pudas with agent-assisted contributions recorded in Git history
 and the [contributors ledger](https://github.com/FullThrottle83/jules-orchestrator-kit/blob/main/CONTRIBUTORS.md).

@@ -62,9 +62,12 @@ export function printHelp() {
   const CATEGORY_ORDER = ["Create", "Inspect", "Operate", "Repair", "Configure"];
   const lines = [];
   lines.push("");
-  lines.push(`agentctl v${VERSION} — Universal Agent Orchestrator & Safety Gatekeeper`);
+  lines.push(`agentctl v${VERSION} — Task dispatch and local verification for coding agents`);
   lines.push("");
   lines.push("Usage: agentctl <command> [options]");
+  lines.push("");
+  lines.push("Start here: init → providers → task create → dispatch → gate → evidence show");
+  lines.push("Dispatch and verification are separate. Review candidate changes before merging.");
   lines.push("");
   lines.push("Commands:");
   for (const category of CATEGORY_ORDER) {
