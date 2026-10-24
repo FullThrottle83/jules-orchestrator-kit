@@ -31,7 +31,9 @@ Session State: COMPLETED / IN_PROGRESS
 POST /v1alpha/sessions/{id}:sendMessage (warm resumption)
 ```
 
-1. **Source Context Requirement**: Dispatches require a connected GitHub repository source (`sources/github/<owner>/<repo>`), resolved from `JULES_REPO`, `source` in config, or `git remote origin`.
+1. **Source Context Requirement**: Repository-connected dispatches require a connected GitHub repository source (`sources/github/<owner>/<repo>`), resolved from `JULES_REPO`, `source` in config, or `git remote origin`.
+
+   Explicit `--repoless` dispatch omits `sourceContext` and does not return a repository branch. Inspect and import any returned patch before running the local gate.
 2. **Server-Side PR Creation**: When `autoPr: true` (or `--auto-pr`) is passed, the dispatch payload includes `automationMode: "AUTO_CREATE_PR"`. Jules executes server-side on Google Cloud and opens the PR directly.
 3. **Plan Approval**: If `requirePlanApproval: true` is configured, the session pauses at `AWAITING_PLAN_APPROVAL`. Resume execution via `agentctl plan approve <sessionId>` or MCP tool `agent_approve_plan`.
 4. **Warm Resumption (`resume`)**: Send follow-up prompts or steering to active sessions via `agentctl resume <sessionId> --response "..."` (`POST /v1alpha/sessions/{id}:sendMessage`). If the remote session is expired or closed (HTTP 400/404), the kit fails soft and falls back to a cold dispatch.
@@ -57,6 +59,10 @@ For full contract specifications, safety bounds, and operational rules, see the 
 - Put essential task context in the task envelope and root instructions. Do not
   rely on undocumented assumptions about which IDE-specific files a provider reads.
 - Refresh the base branch and review the merge diff before integrating remote work.
+- Treat a returned `changeSet.gitPatch` as API response data, not a request to add
+  a file with that name. Review its base commit and complete file list before
+  applying it. Check the resulting branch's diff, author metadata and signatures
+  independently; session completion and a passing gate do not approve a merge.
 
 ## Prompt transformations
 
