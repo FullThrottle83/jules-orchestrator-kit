@@ -891,6 +891,60 @@ Test/Verification Command: npm test
     ]);
   });
 
+  it("18.5. PR wait polling uses roughly 15s default interval instead of 1s", async (t) => {
+    const { executeQueueDag } = await import("../src/dag-engine.mjs");
+    const queueDir = join(testDir, ".agent", "jules-queue");
+    mkdirSync(queueDir, { recursive: true });
+
+    writeFileSync(
+      join(queueDir, "TASK-A.json"),
+      JSON.stringify({ id: "TASK-A", title: "Task A", prompt: "Work A", targetFiles: ["src/shared.mjs"] })
+    );
+
+    let ghCalls = 0;
+
+    // Enable timer mocks to observe delays
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+
+    const execPromise = executeQueueDag(testDir, {
+      concurrency: 1,
+      serialize: "merged",
+      dispatchFn: async (task) => ({ id: `sess-${task.id}`, status: "COMPLETED", outputs: [{ link: "https://github.com/a/b/pull/10" }] }),
+      pollFn: async () => ({ status: "COMPLETED", outputs: [{ link: "https://github.com/a/b/pull/10" }] }),
+      execGh: async () => {
+        ghCalls++;
+        // Keep it OPEN for the first 2 calls, then MERGED
+        if (ghCalls <= 2) {
+          return { state: "OPEN" };
+        }
+        return { state: "MERGED", mergedAt: "2026-10-18T12:00:00Z" };
+      }
+    });
+
+    // We expect:
+    // gh call 1 (ghCalls=1) -> OPEN
+    // Wait ~15s (15000ms)
+    // gh call 2 (ghCalls=2) -> OPEN
+    // Wait ~15s (15000ms)
+    // gh call 3 (ghCalls=3) -> MERGED -> finishes
+
+    let ticks = 0;
+    // We tick the timers in a loop to advance time without blocking.
+    for (let i = 0; i < 40; i++) {
+      await new Promise(setImmediate);
+      if (ghCalls >= 3) break;
+      t.mock.timers.tick(1000);
+      ticks++;
+    }
+
+    const res = await execPromise;
+    assert.equal(res.processed, 1);
+    assert.equal(ghCalls, 3);
+
+    // We expect roughly 30 ticks for two 15s delays
+    assert.ok(ticks >= 29 && ticks <= 32, `Expected ~30 ticks, got ${ticks}`);
+  });
+
   it("19. Dry run with serialize=merged: no polling, no gh calls, queue files untouched", async () => {
     const { executeQueueDag } = await import("../src/dag-engine.mjs");
     const queueDir = join(testDir, ".agent", "jules-queue");
