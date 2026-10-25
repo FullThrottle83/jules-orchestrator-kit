@@ -518,6 +518,7 @@ async function main() {
           fix: { type: "boolean" },
           "allow-protected": { type: "boolean" },
           "allow-unreadable-tests": { type: "boolean" },
+          task: { type: "string" },
           "strict-locks": { type: "boolean" },
           // The tamper guard has always had an override — `allowTestModifications`
           // — and it was reachable only from JavaScript. So a legitimate change
@@ -552,6 +553,7 @@ async function main() {
         fix: values.fix,
         allowProtected: values["allow-protected"],
         allowUnreadableTests: values["allow-unreadable-tests"],
+        task: values.task,
         allowTestModifications: values["allow-test-modifications"],
         allowTestChanges: values["allow-test-change"],
         strictLocks: values["strict-locks"],
@@ -643,6 +645,21 @@ async function main() {
           }
           if (!p.ok && p.failure) {
             printVerifyFailure(p.failure);
+          }
+        }
+        // Exit 0 is a verdict on the repository policy. Whether the task's own
+        // scope was applied is a separate fact and is stated either way.
+        if (res.taskScope && res.taskScope.checked === false) {
+          console.log(`  Task scope : NOT CHECKED — no --task envelope; exit 0 does not show the task's own scope.allow held`);
+        }
+        const observedCommits = res.commitProvenance?.observed ? res.commitProvenance.commits || [] : [];
+        if (observedCommits.length > 0) {
+          console.log(`  Commit provenance (observed, not enforced):`);
+          for (const c of observedCommits.slice(0, 10)) {
+            console.log(`     - ${String(c.sha).slice(0, 7)} author ${c.author.name} | committer ${c.committer.name} | signature ${c.signature.status} (${c.signature.code})`);
+          }
+          if (observedCommits.length > 10 || res.commitProvenance.truncated) {
+            console.log(`     - … ${observedCommits.length > 10 ? `${observedCommits.length - 10} more commit(s); see --json` : "list truncated; see --json"}`);
           }
         }
         console.log(`-----------------------------------------------------`);

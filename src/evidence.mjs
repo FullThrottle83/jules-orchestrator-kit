@@ -268,6 +268,8 @@ export function computeEvidenceHash(manifest) {
     testIntegrity: manifest.testIntegrity,
     ...(manifest.verification ? { verification: manifest.verification } : {}),
     ...(manifest.sourceIntegrity ? { sourceIntegrity: manifest.sourceIntegrity } : {}),
+    ...(manifest.taskScope ? { taskScope: manifest.taskScope } : {}),
+    ...(manifest.commitProvenance ? { commitProvenance: manifest.commitProvenance } : {}),
     executionRecords: manifest.executionRecords,
     securityChecks: manifest.securityChecks,
     ...(manifest.status ? { status: manifest.status } : {}),
@@ -441,6 +443,11 @@ export function generateEvidenceManifest(root = process.cwd(), options = {}) {
           },
         }
       : {}),
+    // Whether the task's own scope was applied, and who wrote and signed the
+    // commits. Absent on manifests that predate them; `checked: false` is the
+    // honest shape for a run where no task envelope was supplied.
+    ...(options.taskScope ? { taskScope: options.taskScope } : {}),
+    ...(options.commitProvenance ? { commitProvenance: options.commitProvenance } : {}),
     ...(diagnostics.length > 0 ? { diagnostics } : {}),
     ...(Object.keys(metrics).length > 0 ? { metrics } : {}),
   };

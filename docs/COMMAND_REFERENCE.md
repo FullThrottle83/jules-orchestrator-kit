@@ -692,6 +692,7 @@ Run CI security, rules, and stack verification gate
 | `--head` | string | Target commit or ref for committed mode (default: HEAD) |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
+| `--task` | string | Task envelope whose scope.allow/deny must also hold for this candidate |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
 | `--allow-test-change` | string | Waive one tampering check kind (repeatable) |
 | `--strict-locks` | boolean | Enforce strict anti-tampering verification on test files |
@@ -728,6 +729,7 @@ Alias of gate: run all-in-one CI security, rules, and stack verification gate
 | `--head` | string | Target commit or ref for committed mode (default: HEAD) |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
+| `--task` | string | Task envelope whose scope.allow/deny must also hold for this candidate |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
 | `--allow-test-change` | string | Waive one tampering check kind (repeatable) |
 | `--strict-locks` | boolean | Enforce strict anti-tampering verification on test files |
@@ -765,6 +767,7 @@ Alias of gate: run CI security and verification gate against current branch
 | `--head` | string | Target commit or ref for committed mode (default: HEAD) |
 | `--allow-protected` | boolean | Bypass protected path checks for authorized maintainers |
 | `--allow-unreadable-tests` | boolean | Permit unreadable test dialects for this run |
+| `--task` | string | Task envelope whose scope.allow/deny must also hold for this candidate |
 | `--allow-test-modifications` | boolean | Waive every test-tampering check for this run |
 | `--allow-test-change` | string | Waive one tampering check kind (repeatable) |
 | `--strict-locks` | boolean | Enforce strict anti-tampering verification on test files |

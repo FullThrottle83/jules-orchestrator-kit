@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `gate`, `check` and `audit` accept `--task <envelope>` (SDK: `gate({ task })`) to also apply the task's own `scope.allow` / `scope.deny` to the candidate; a violation exits `3`. Reports and evidence now state `taskScope` (`checked: false` when no envelope was supplied) and record `commitProvenance` (author, committer, signature status) as observation only. Existing exit codes and phases are unchanged; manifests written before these fields keep their hash.
+
 ## [0.76.3] - 2026-10-25
 
 ### Fixed
