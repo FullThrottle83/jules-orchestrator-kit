@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -47,6 +47,79 @@ test("CI Agent Scope Guard", async (t) => {
   await t.test("blocks an exact-path match", () => {
     const res = evaluateScopeGuard(["package.json"], PATTERNS);
     assert.equal(res.ok, false);
+  });
+
+  // The CI manifest is read from the base commit, so it is the only thing that
+  // stops a pull request from editing the code that judges it. Each file below
+  // decides a gate, scope, secret, evidence or release outcome; none is listed
+  // because it is merely large or important. Everything else under src/ stays
+  // editable on purpose, so this asserts the boundary in both directions.
+  await t.test("the live manifest protects the verification and release control plane", () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../.agent/protected-paths.json", import.meta.url), "utf8")
+    );
+    const controlPlane = [
+      // canonical local policy and the lint rules CI runs against candidates
+      ".agent/config.yml",
+      "eslint.config.mjs",
+      // gate verdicts: scope, payload, secrets, tamper, collection floor, evidence
+      "src/engine.mjs",
+      "src/security.mjs",
+      "src/scope-guard.mjs",
+      "src/bidi-guard.mjs",
+      "src/secret-scanner.mjs",
+      "src/test-paths.mjs",
+      "src/test-tamper-guard.mjs",
+      "src/ops/test-collection.mjs",
+      "src/evidence.mjs",
+      // trusted policy and base-commit reads that the verdicts depend on
+      "src/config.mjs",
+      "src/git.mjs",
+      "src/preload-net-guard.mjs",
+      // task contract: the parser that turns an envelope into allow/deny lists
+      "src/envelope.mjs",
+      "src/task-scope.mjs",
+      // the checks that audit the gate itself
+      "src/guard-policy.mjs",
+      "src/self-audit.mjs",
+      // release: verifies, signs and publishes
+      "scripts/release.mjs",
+      "scripts/release-control.mjs",
+    ];
+    for (const file of controlPlane) {
+      assert.equal(
+        evaluateScopeGuard([file], manifest.protected).ok,
+        false,
+        `Missing CI protection for ${file}`
+      );
+    }
+    for (const file of ["src/dag-engine.mjs", "src/runtime-env.mjs", "src/ordinary-feature.mjs"]) {
+      assert.equal(
+        evaluateScopeGuard([file], manifest.protected).ok,
+        true,
+        `${file} is not part of the verdict path and must stay editable`
+      );
+    }
+  });
+
+  // A pattern that matches nothing protects nothing and fails silently, so a
+  // typo or a rename would remove protection without any test noticing.
+  await t.test("every literal manifest entry names a file that exists", () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../.agent/protected-paths.json", import.meta.url), "utf8")
+    );
+    const root = new URL("../", import.meta.url);
+    // Protected before they exist, so adding one needs review: other package
+    // managers' lockfiles and tsconfig, and the canonical config, which loadConfig
+    // reads ahead of the committed .agent/jules.yml and so would override it.
+    const absentOnPurpose = new Set(["pnpm-lock.yaml", "yarn.lock", "tsconfig.json", ".agent/config.yml"]);
+    for (const entry of manifest.protected) {
+      if (entry.includes("*") || absentOnPurpose.has(entry)) continue;
+      assert.ok(existsSync(new URL(entry, root)), `Protected path does not exist: ${entry}`);
+    }
+    for (const entry of manifest.protected.filter((e) => e.endsWith("/**"))) {
+      assert.ok(existsSync(new URL(entry.slice(0, -3), root)), `Protected directory does not exist: ${entry}`);
+    }
   });
 
   // The bash predecessor built a case-sensitive regex while the local gate
