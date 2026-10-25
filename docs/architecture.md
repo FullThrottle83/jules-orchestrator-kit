@@ -228,6 +228,44 @@ The gate resolves policy from a trusted base commit, preferring its remote-track
 | **4. Verify** | Staged runner + `preload-net-guard.mjs` | Runs the configured stages as sub-processes with a `NODE_OPTIONS` network guard, honouring `verify.policy.networkAccess`. | `4` (or `8` on flaky quarantine) |
 | **5. Evidence** | `generateEvidenceManifest()` (`src/evidence.mjs`) | SHA-256 manifest of changed files plus pre/post test-file hashes; a mismatch reports changes during verification; hashes do not establish intent or authenticate the writer. | `3` |
 
+### Task scope and commit provenance
+
+Exit `0` is a verdict on the **repository** policy. A task envelope can narrow
+that policy (`scope.allow` / `scope.deny` in its front matter), and the gate
+applies the narrower scope only when you pass it: `agentctl gate --task <envelope>`
+(SDK: `gate({ task })`). The check uses `checkScope()` on the same candidate file
+list and revision as phase 1, so a candidate must satisfy both. A violation is a
+`task_scope` phase failure with exit `3`; no exit code was added.
+
+- The envelope is operator input, and its `envelope.source` says how far it can
+  be trusted. A path the candidate changes is refused
+  (`TASK_ENVELOPE_IN_CANDIDATE`). `base`: tracked on the trusted base and read
+  from that commit. `file`: outside the repository. `worktree`: an untracked
+  file inside it, such as an ignored queue envelope. That last kind is accepted
+  only for a committed candidate (`--committed`); in `working-tree` and `staged`
+  mode the working tree is the candidate, so such a file is refused
+  (`TASK_ENVELOPE_UNTRUSTED_SOURCE`). Limit: a `worktree` envelope is the file
+  on disk, and a local agent that edited it before you reviewed a commit leaves
+  nothing in the diff. Compare `envelope.sha256` with your own copy, or keep the
+  envelope outside the repository.
+- A scope that is present but not a list of non-blank strings (a string, a
+  number, a mixed list) fails closed (`TASK_ENVELOPE_INVALID`) instead of reading
+  as no restriction. A missing or unparseable envelope fails closed as well.
+- Every report carries `taskScope`. Without `--task` it is
+  `{ "checked": false, "reason": "NO_TASK_ENVELOPE" }`, also recorded in the
+  evidence manifest, so a passing gate cannot be mistaken for a task-level pass.
+  An envelope that names no paths reports `unconstrained: true`.
+- Every report carries `commitProvenance`: author, committer and signature status
+  (`%G?`) of each commit in `base..head`. The evidence manifest keeps names but
+  not e-mail addresses; the live report keeps both. It is observation only. It never changes
+  the exit code; whether an unsigned commit is acceptable is the reviewer's call.
+  Signature status depends on the local `gpg.ssh.allowedSignersFile` or keyring.
+
+For a provider candidate, the gate reports these separately from the provider's
+own status: the session being `COMPLETED` (see `session get`), the repository
+gate result, `taskScope`, and `commitProvenance`. None of them is an approval;
+that stays a human decision.
+
 ### Phase 3 is a diff scanner, not only a secret scanner
 
 `scanDiff()` reduces the diff to added lines (`+`, excluding `+++` headers) and emits findings from the detectors below. Blocking findings map to exit `6`:

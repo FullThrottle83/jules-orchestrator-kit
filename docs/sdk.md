@@ -24,6 +24,12 @@ contains diagnostics, and `evidence` is present when verification reaches that
 phase. Gate execution runs configured project commands and may write runtime
 state and evidence; it does not dispatch repair.
 
+`result.ok` is a verdict on the repository policy. Pass
+`gate({ root, task: "<path to task envelope>" })` to also apply that task's
+`scope.allow` / `scope.deny`; `result.taskScope.checked` says whether it ran, and
+`result.commitProvenance` lists author, committer and signature status as
+observation only. See [Task scope and commit provenance](architecture.md#task-scope-and-commit-provenance).
+
 ## Dispatch one task
 
 ```javascript

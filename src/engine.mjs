@@ -4,6 +4,7 @@ import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets, hasHighConfidenceSecret } from "./security.mjs";
 import { matchesGlob } from "./scope-guard.mjs";
+import { loadTaskContract, checkTaskScope, observeCommitProvenance, provenanceForManifest, TASK_SCOPE_NOT_CHECKED } from "./task-scope.mjs";
 import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, gitlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase, buildVerificationEnv, git } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
@@ -200,6 +201,10 @@ export async function gate(opts = {}) {
     return { ok: false, code: 1, phases, error: err.message, base, baseSha, headSha };
   }
 
+  // Who wrote and signed the candidate's commits. Observed and reported, never
+  // enforced: whether an unsigned commit is acceptable is the reviewer's call.
+  const commitProvenance = observeCommitProvenance(root, diffBase, headSha || head);
+
   // Phase 1: Scope Guard
   let symlinks = [];
   try {
@@ -288,13 +293,48 @@ export async function gate(opts = {}) {
     ...(acceptedScaffold.length > 0 ? { setup: acceptedScaffold } : {}),
   });
   appendTelemetry(root, "gate_phase", { phase: "scope", ok: scopeResult.ok });
+
+  // Task scope: the envelope's own scope.allow/deny, applied to the same
+  // candidate list and revision as the repository scope above. Only run when the
+  // operator names an envelope; otherwise the report says it was not checked, so
+  // a clean repository gate cannot be read as a task-level approval.
+  let taskScope = TASK_SCOPE_NOT_CHECKED;
+  if (opts.task !== undefined && opts.task !== null) {
+    const loaded = loadTaskContract(root, opts.task, { base: diffBase, candidateFiles: files, mode });
+    if (!loaded.ok) {
+      taskScope = { checked: true, ok: false, code: loaded.code, error: loaded.error };
+      phases.push({ phase: "task_scope", ok: false, errorCode: loaded.code, error: loaded.error });
+    } else {
+      const { contract } = loaded;
+      const taskResult = checkTaskScope(scopeCandidates, contract);
+      taskScope = {
+        checked: true,
+        ok: taskResult.ok,
+        taskId: contract.taskId,
+        envelope: { path: contract.path, source: contract.source, sha256: contract.sha256 },
+        allow: contract.allow,
+        deny: contract.deny,
+        filesChecked: scopeCandidates.length,
+        ...(taskResult.unconstrained ? { unconstrained: true } : {}),
+        ...(taskResult.ok ? {} : { violations: taskResult.violations }),
+      };
+      phases.push({
+        phase: "task_scope",
+        ok: taskResult.ok,
+        violations: taskResult.violations,
+        ...(taskResult.unconstrained ? { unconstrained: true } : {}),
+      });
+    }
+    appendTelemetry(root, "gate_phase", { phase: "task_scope", ok: taskScope.ok });
+  }
+  const attestations = { taskScope, commitProvenance };
   if (progressBus && progressToken) {
     progressBus.reportProgress(progressToken, 25, 100, "Phase 1/4: Scope Guard verification complete");
   }
 
-  if (!scopeResult.ok) {
+  if (!scopeResult.ok || taskScope.ok === false) {
     appendTelemetry(root, "gate_finished", { ok: false, code: 3 });
-    return { ok: false, code: 3, phases, base, baseSha, headSha };
+    return { ok: false, code: 3, phases, ...attestations, base, baseSha, headSha };
   }
 
   // Phase 2: Diff Payload Governor
@@ -309,7 +349,7 @@ export async function gate(opts = {}) {
 
   if (!payloadOk) {
     appendTelemetry(root, "gate_finished", { ok: false, code: 5 });
-    return { ok: false, code: 5, phases, base, baseSha, headSha };
+    return { ok: false, code: 5, phases, ...attestations, base, baseSha, headSha };
   }
 
   // Phase 3: Diff Secret Scanner & Security Checks
@@ -343,7 +383,7 @@ export async function gate(opts = {}) {
 
   if (!secretsOk) {
     appendTelemetry(root, "gate_finished", { ok: false, code: 6 });
-    return { ok: false, code: 6, phases, base, baseSha, headSha };
+    return { ok: false, code: 6, phases, ...attestations, base, baseSha, headSha };
   }
 
   // Phase 4: Automated Test & Build Verification (Uses trusted verify commands only)
@@ -355,7 +395,7 @@ export async function gate(opts = {}) {
   } catch (snapErr) {
     phases.push({ phase: "verify", ok: false, error: snapErr.message });
     appendTelemetry(root, "gate_finished", { ok: false, code: snapErr.code || 1, error: snapErr.message });
-    return { ok: false, code: snapErr.code || 1, phases, error: snapErr.message, base, baseSha, headSha };
+    return { ok: false, code: snapErr.code || 1, phases, ...attestations, error: snapErr.message, base, baseSha, headSha };
   }
 
   let testResult = { ok: true, status: 0 };
@@ -524,7 +564,7 @@ export async function gate(opts = {}) {
             });
             appendTelemetry(root, "gate_phase", { phase: "verify", ok: false, quarantined: true });
             appendTelemetry(root, "gate_finished", { ok: false, code: 8 });
-            return { ok: false, code: 8, phases, flakyVerdict: flakyVerdictResult, base, baseSha, headSha };
+            return { ok: false, code: 8, phases, ...attestations, flakyVerdict: flakyVerdictResult, base, baseSha, headSha };
           }
         }
       } else if (stage.kind === "build") {
@@ -733,6 +773,8 @@ export async function gate(opts = {}) {
     diffKb: Math.round(bytes / 1024),
     maxDiffKb: trustedDiffKb,
     protectedScopeOk: scopeResult.ok,
+    taskScope,
+    commitProvenance: provenanceForManifest(commitProvenance),
     repository: policy.provider || config?.provider || "jules",
     failedStage: failingCmd?.stageId || failingCmd?.phase || verifyFailure?.stageId || null,
     diagnostics: failingCmd?.diagnostics?.length
@@ -808,21 +850,21 @@ export async function gate(opts = {}) {
   if (!verifyOk && opts.fix && failingCmd) {
     if (isNetViolation) {
       appendTelemetry(root, "gate_finished", { ok: false, code: 188, networkViolation: true });
-      return { ok: false, code: 188, phases, evidence: evidenceManifest, base, baseSha, headSha };
+      return { ok: false, code: 188, phases, ...attestations, evidence: evidenceManifest, base, baseSha, headSha };
     }
     const repairs = await repair(failingCmd, { config, root, signal: opts.signal, progressBus, progressToken });
     const finalOk = repairs.ok;
     const finalCode = repairs.ok ? 0 : 4;
     appendTelemetry(root, "gate_finished", { ok: finalOk, code: finalCode, repaired: true });
     if (repairs.ok) {
-      return { ok: true, code: 0, phases, repairs, evidence: evidenceManifest, base, baseSha, headSha };
+      return { ok: true, code: 0, phases, ...attestations, repairs, evidence: evidenceManifest, base, baseSha, headSha };
     }
-    return { ok: false, code: 4, phases, repairs, evidence: evidenceManifest, base, baseSha, headSha };
+    return { ok: false, code: 4, phases, ...attestations, repairs, evidence: evidenceManifest, base, baseSha, headSha };
   }
 
   const code = verifyOk ? 0 : isNetViolation ? 188 : testTampered ? 3 : 4;
   appendTelemetry(root, "gate_finished", { ok: verifyOk, code });
-  return { ok: verifyOk, code, phases, evidence: evidenceManifest, base, baseSha, headSha };
+  return { ok: verifyOk, code, phases, ...attestations, evidence: evidenceManifest, base, baseSha, headSha };
 }
 
 /**
