@@ -28,6 +28,8 @@ Dispatch and verification are separate; merge decisions remain with you or CI.
   signing and review requirements.
 - [Contributors](../CONTRIBUTORS.md) — human and agent attribution.
 - [Releasing](releasing.md) — maintainer release procedure.
+- [Repository protection](repository-protection.md) — recommended GitHub rulesets,
+  required checks, waivers and the release under them.
 
 Earlier [onboarding trials](cold-start-trial.md), [package audits](package-payload.md),
 [repository audits](audits/repository-professionalism-audit.md) and

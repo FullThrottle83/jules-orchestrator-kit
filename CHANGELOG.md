@@ -8,7 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `gate`, `check` and `audit` accept `--task <envelope>` (SDK: `gate({ task })`) to also apply the task's own `scope.allow` / `scope.deny` to the candidate; a violation exits `3`. Reports and evidence now state `taskScope` (`checked: false` when no envelope was supplied) and record `commitProvenance` (author, committer, signature status) as observation only. A scope that is present but malformed, an envelope the candidate changes, and an untracked in-repo envelope under a `working-tree`/`staged` review all fail closed at exit `3`. Existing exit codes and phases are unchanged; manifests written before these fields keep their hash.
+- `gate`, `check` and `audit` accept `--task <envelope>` (SDK: `gate({ task })`) to also apply the task's own `scope.allow` / `scope.deny` to the candidate; a violation exits `3`. Reports and evidence now state `taskScope` (`checked: false` when no envelope was supplied) and record `commitProvenance` (author, committer, signature status) as observation only. A scope that is present but malformed, an envelope the candidate changes, and an untracked in-repo envelope under a `working-tree`/`staged` review all fail closed at exit `3`. Existing exit codes and phases are unchanged; manifests written before these fields keep their hash (#147).
+
+### Changed
+- `agentctl queue --dag --serialize merged` now checks a pull request's state every 15 seconds by default instead of every second. An explicit `pollIntervalMs` / `prPollIntervalMs` and the serialize timeout are unchanged (#145).
+
+### Fixed
+- Preserved complete piped JSON from `queue list --json` and `session list --json` (#146), and from `queue --json` and `swarm --json`, which cut the report at the 64 KiB pipe buffer when the reader was slower than the writer. Output and exit codes are unchanged (#149).
+
+### Security
+- The CI protected-path manifest now covers the modules that decide gate, scope, secret, evidence and release outcomes (`src/engine.mjs`, `security`, `scope-guard`, `task-scope`, `envelope`, `evidence`, `config`, `git`, `self-audit` and others), both release scripts, `eslint.config.mjs` and `.agent/config.yml`. Before this, a pull request could change them and still pass Agent Scope Guard. Changing them now needs a human-applied, SHA-bound `allow-p:<head SHA>` waiver (#148).
+
+### Upgrade notes
+- **Version number.** This release is numbered 0.80.0. Versions 0.77 to 0.79 were not published; upgrade directly from 0.76.x.
+- **Evidence manifests are not backward-readable.** Every manifest written by this version carries `taskScope` and `commitProvenance`, which are part of its `evidenceHash`. `evidence verify` in 0.76.x and earlier cannot recompute that hash and reports "Tampered evidence manifest hash mismatch" for an untouched file. Verify new manifests with this version or later. Manifests written by earlier versions still verify.
+- **Task envelopes inside the repository.** With `--task`, an envelope that is untracked or ignored (for example the default `.agent/jules-queue/TASK-*.md`) is accepted only with `--committed --base-sha <sha>`; under the default working-tree mode it exits `3` (`TASK_ENVELOPE_UNTRUSTED_SOURCE`). Keep the envelope outside the repository, or commit it to the base.
+- **Untracked files that appear during verification.** The gate exits `4` (`VERIFICATION_MUTATED_CANDIDATE`) when untracked, non-ignored files change while verification runs. Two common causes are `.agent/state/` telemetry in a repository without the runtime block `agentctl init` adds to `.gitignore`, and Python `__pycache__/` without an ignore rule. See [Limitations](README.md#limitations-and-attribution).
 
 ## [0.76.3] - 2026-10-25
 

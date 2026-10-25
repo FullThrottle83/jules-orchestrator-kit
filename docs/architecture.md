@@ -261,6 +261,16 @@ list and revision as phase 1, so a candidate must satisfy both. A violation is a
   the exit code; whether an unsigned commit is acceptable is the reviewer's call.
   Signature status depends on the local `gpg.ssh.allowedSignersFile` or keyring.
 
+- Evidence compatibility. `taskScope` and `commitProvenance` are part of the
+  manifest's `evidenceHash` whenever they are present, and every manifest written
+  by this version has both. A manifest sealed before they existed carries neither
+  and still verifies, so existing evidence stays valid. The reverse is not true:
+  `evidence verify` in 0.76.x and earlier recomputes the hash without these
+  fields and reports "Tampered evidence manifest hash mismatch" for an untouched
+  file. The message is misleading rather than a sign of tampering; verify manifests
+  with the version that wrote them or a later one. The manifest has no schema
+  version field, so mixed-version CI should pin one CLI version.
+
 For a provider candidate, the gate reports these separately from the provider's
 own status: the session being `COMPLETED` (see `session get`), the repository
 gate result, `taskScope`, and `commitProvenance`. None of them is an approval;
@@ -311,6 +321,18 @@ Entropy is a heuristic used in the diff scanner and prompt checks, with separate
 | `6` | Phase 3 finding — secret, edge-runtime import, or cross-package boundary violation. |
 | `7` | Daily task quota (`limits.dailyTasks`) exhausted. |
 | `8` | Flaky test quarantined (Wilson-score oscillation >= 0.40); bounded repair suppressed deliberately. |
+
+Exit `4` also covers `VERIFICATION_MUTATED_CANDIDATE`: the candidate's tracked or
+untracked, non-ignored files hashed differently after verification than before.
+This is deliberately strict, and it is also reported when the cause is benign
+output written into the working tree. Two known cases are `.agent/state/` telemetry
+in a repository without the kit's `.gitignore` runtime block (the first gate passes
+and every later one fails) and an un-ignored Python `__pycache__/` (the first gate
+after a source edit fails, the next passes). `agentctl init` writes the ignore block;
+otherwise add `.agent/state/` and `__pycache__/` to `.gitignore`. Ignoring only
+`.agent/evidence/` is not enough. `agentctl doctor` does not currently warn about
+the missing rule. Committing telemetry does not weaken the gate, but it is noise
+in review.
 
 ---
 
