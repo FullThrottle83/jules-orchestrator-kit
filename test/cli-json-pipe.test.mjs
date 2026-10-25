@@ -8,8 +8,11 @@ import { execFileSync, spawn } from "node:child_process";
 
 const CLI = fileURLToPath(new URL("../bin/agentctl.mjs", import.meta.url));
 const ITEMS = 1500;
+// A dry run builds a full result per task, which is far slower than listing one.
+// This many tasks already produce ~4x the 64 KiB pipe buffer.
+const RUN_ITEMS = 250;
 
-function createFixture() {
+function createFixture(items = ITEMS) {
   const root = mkdtempSync(join(tmpdir(), "jules-json-pipe-"));
   const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
   git("init", "-q", "-b", "main");
@@ -19,7 +22,7 @@ function createFixture() {
   mkdirSync(join(root, ".agent", "state"), { recursive: true });
   writeFileSync(join(root, ".agent", "config.yml"), "version: 1\nbase_branch: main\nverify:\n  test: node --test\n");
   const ledger = [];
-  for (let i = 0; i < ITEMS; i++) {
+  for (let i = 0; i < items; i++) {
     writeFileSync(
       join(root, ".agent", "jules-queue", `TASK-${i}.md`),
       `# ${"t".repeat(80)}${i}\n\n[TASK INSTRUCTIONS]\n${"x".repeat(80)}\n`
@@ -88,4 +91,28 @@ describe("list-style JSON output survives a pipe with backpressure", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  // `queue` and `swarm` print their run report and then call process.exit(). A
+  // pipe that is not draining yet still holds most of a large report in
+  // userland when the process exits, so the consumer received a prefix of the
+  // JSON with exit code 0.
+  for (const command of ["queue", "swarm"]) {
+    it(`${command} --dry-run --json emits every task result`, async () => {
+      const root = createFixture(RUN_ITEMS);
+      try {
+        const result = await captureThroughSlowPipe(root, [command, "--dry-run", "--json"]);
+        assert.equal(result.exitCode, 0, result.stderr);
+        let report;
+        try {
+          report = JSON.parse(result.stdout);
+        } catch (err) {
+          assert.fail(`stdout is not complete JSON (${result.stdout.length} bytes received): ${err.message}`);
+        }
+        assert.ok(result.stdout.length > 128 * 1024, "fixture must exceed the pipe buffer");
+        assert.equal(report.results.length, RUN_ITEMS);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
 });

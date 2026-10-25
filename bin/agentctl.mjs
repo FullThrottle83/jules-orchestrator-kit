@@ -1502,7 +1502,7 @@ async function main() {
         dryRun: values["dry-run"],
       });
       if (values.json) {
-        console.log(JSON.stringify(results, null, 2));
+        await writeJson(results);
         const anyFailed = (results.results || []).some((r) => r && r.ok === false);
         process.exit(anyFailed ? 1 : 0);
       }
@@ -1549,7 +1549,7 @@ async function main() {
         dryRun: values["dry-run"],
       });
       if (values.json) {
-        console.log(JSON.stringify({ ok: true, dryRun: Boolean(values["dry-run"]), ...results }, null, 2));
+        await writeJson({ ok: true, dryRun: Boolean(values["dry-run"]), ...results });
         process.exit((results.results || []).some((r) => r && r.ok === false) ? 1 : 0);
       }
       process.exit(reportRunOutcome(results));
