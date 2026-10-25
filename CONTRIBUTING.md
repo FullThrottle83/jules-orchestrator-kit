@@ -16,14 +16,19 @@ review and attribution.
 
 ## 🌿 Branch & Pull Request Flow
 
-`main` is the protected trunk. Development is **PR-based**:
+`main` is the trunk and development is **PR-based**. Whether GitHub enforces that
+(rulesets, required checks) is a repository setting, not a file in this repository;
+[docs/repository-protection.md](docs/repository-protection.md) records the intended
+configuration and what to compare it against.
+
+The steps:
 
 1. **Branch** from the latest `origin/main` with a type/area prefix, e.g. `docs/P13-provenance-governance`, `fix/engine-…`, `feat/roles-…`.
 2. **Commit** on your branch following the commit conventions and signing rules below.
 3. **Rebase before PR**: `git fetch origin && git rebase origin/main`, then re-run the verification suite. If the rebase leaves an empty diff, the work already landed — do NOT open the PR.
 4. **Open the PR** with a Conventional Commit title, attach full terminal output of `npm test` and `npm run lint`, and reference any related issues.
-5. **CI gates** run on every PR: unit suite, ESLint, doc-sync, agent scope guard, stale-base gate (> 25 commits behind `origin/main` is rejected), and asset integrity. Once green, the PR is merged per the risk-tier review requirements below (maintainer review for `R1`–`R3`, auto-merge eligible for `R0`).
-6. **Do not push to `main`.** Direct `main` pushes are reserved for maintainers executing the release protocol in `docs/releasing.md` (release commits are pushed to `main` first so CI verifies the exact commit that will be tagged; the pipeline refuses to release a commit CI has not verified).
+5. **CI gates** run on every PR: the unit suite on Linux, macOS and Windows with Node 22 and 24 (which includes ESLint and the self-audit), doc-sync, a GitHub Actions security audit (zizmor) and the agent scope guard. A change to a path listed in `.agent/protected-paths.json` fails the scope guard and the self-audit until a maintainer applies a head-SHA-bound `allow-p:<sha>` waiver label after reading that exact diff (see [docs/repository-protection.md](docs/repository-protection.md#waivers)). The stale-base check (`npm run jules:check-stale-base`, more than 25 commits behind `origin/main`) and the asset-integrity check (`npm run jules:check-asset-integrity`) are scripts to run before opening a PR; CI does not run them. Review is by the maintainer; the tiers below are expectations, not settings GitHub enforces, and auto-merge is not enabled.
+6. **Do not push to `main`.** A release commit (version, changelog, documentation) reaches `main` through a pull request like any other change. `npm run release` from a clean, already-merged `main` then verifies that exact commit, tags it and pushes the tag; its push of the verified SHA to `main` changes nothing when `main` already contains it. See `docs/releasing.md`.
 7. **Keep the diff small**: stay under the 75 KB diff payload budget (`git diff | wc -c`).
 
 ---
@@ -133,12 +138,12 @@ JULES_TIER=pro npm test
 
 Every Pull Request is categorized into a **Risk Tier**:
 
-| Tier | Category | Description | Review Requirements |
+| Tier | Category | Description | Review expectation |
 | :--- | :--- | :--- | :--- |
-| **`R0`** | **Cosmetic** | Documentation, markdown formatting, SVG assets. | Auto-merge eligible |
+| **`R0`** | **Cosmetic** | Documentation, markdown formatting, SVG assets. | Maintainer merges after CI |
 | **`R1`** | **Routine** | Isolated package logic with unit tests. | 1 Standard Review |
 | **`R2`** | **Consequential** | Core engine updates (`src/engine.mjs`), CLI changes. | 1 Maintainer Review |
-| **`R3`** | **Restricted** | Security modules (`src/security.mjs`, `src/execution-envelope.mjs`), CI workflows. | Security Review Required |
+| **`R3`** | **Restricted** | The gate, scope, evidence and release modules and scripts listed in `.agent/protected-paths.json`, `src/execution-envelope.mjs`, CI workflows. | Security review; protected paths also need the waiver above |
 
 ### Pull Request Checklist
 - [ ] Branch pushed from latest `origin/main`; never committed directly to `main`.

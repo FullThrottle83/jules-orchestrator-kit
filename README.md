@@ -227,6 +227,24 @@ evaluating untrusted changes. See the
 for the boundary and detection limits. Prompt substitutions can change meaning;
 put exact operational commands in code spans or fenced blocks and review them.
 
+Known limits of the preview, each described in the
+[architecture notes](docs/architecture.md):
+
+- **Untracked files that change during verification.** If untracked, non-ignored
+  files are written while verification runs, the gate exits `4`
+  (`VERIFICATION_MUTATED_CANDIDATE`) although nothing is wrong with the change.
+  The kit's own `.agent/state/` telemetry does this in a repository that lacks the
+  runtime block `agentctl init` adds to `.gitignore`; Python's `__pycache__/` does
+  it when it is not ignored. Run `init` (or add the ignore rules) and the next run
+  passes. `.pytest_cache/` ignores itself and is not affected.
+- **Task envelopes inside the repository.** `gate --task` accepts an untracked or
+  ignored envelope (such as `.agent/jules-queue/TASK-*.md`) only for a committed
+  candidate: `gate --committed --base-sha <sha> --task <file>`. Otherwise keep the
+  envelope outside the repository or commit it to the base.
+- **Evidence manifests are forward-only.** A manifest written by this version
+  cannot be verified by an older CLI, which reports a hash mismatch for an
+  untouched file. Older manifests verify here.
+
 For preview feedback, report package, Node, OS and provider CLI versions, the
 command, expected result and a minimal reproduction in a
 [GitHub issue](https://github.com/FullThrottle83/jules-orchestrator-kit/issues).
