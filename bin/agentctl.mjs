@@ -38,6 +38,15 @@ const command = requestedCommand;
 
 export const VERSION = KIT_VERSION;
 
+// process.exit() discards stdout still queued on a backpressured pipe, so a
+// report that can outgrow the pipe buffer is written here and awaited before
+// the command exits. Same guarantee as the gate/check/audit/repair writers.
+function writeJson(value) {
+  return new Promise((resolve) => {
+    process.stdout.write(JSON.stringify(value, null, 2) + "\n", () => resolve());
+  });
+}
+
 /**
  * Render the budget line so the number is never mistaken for the vendor's own
  * counter. The ledger counts what *this checkout* dispatched; sessions started
@@ -1441,7 +1450,7 @@ async function main() {
         });
 
         if (values.json) {
-          console.log(JSON.stringify({ ok: true, count: tasks.length, tasks }, null, 2));
+          await writeJson({ ok: true, count: tasks.length, tasks });
           process.exit(0);
         }
 
@@ -3035,7 +3044,7 @@ async function main() {
           const combined = Array.from(sessionMap.values()).slice(0, limit);
 
           if (values.json) {
-            console.log(JSON.stringify({ ok: true, sessions: combined, count: combined.length, nextPageToken: res?.nextPageToken }, null, 2));
+            await writeJson({ ok: true, sessions: combined, count: combined.length, nextPageToken: res?.nextPageToken });
           } else {
             console.log(`\n📋 Jules Sessions List (${combined.length} found):`);
             console.log("--------------------------------------------------");
