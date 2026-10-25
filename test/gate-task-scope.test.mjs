@@ -49,6 +49,8 @@ function createFixture() {
   write("README.md", "# Fixture\n");
   write("docs/providers/jules.md", "# Jules\n");
   write("tasks/TASK-SCOPE.md", ENVELOPE(["src/feature.mjs"]));
+  // As in a repository set up by `init`: queue envelopes exist on disk only.
+  write(".gitignore", ".agent/jules-queue/*.md\n.agent/state/\n.agent/evidence/\n");
   git("add", ".");
   git("commit", "-qm", "test: establish trusted base");
   git("update-ref", "refs/remotes/origin/main", "HEAD");
@@ -72,8 +74,8 @@ function createFixture() {
 }
 
 // Committed mode only trusts an explicit base SHA, so every run pins it.
-function runGate(fx, args) {
-  const res = spawnSync(process.execPath, [CLI, "gate", "--json", "--committed", "--base-sha", fx.baseSha, ...args], { cwd: fx.root, encoding: "utf-8" });
+function runGate(fx, args, { mode = "--committed" } = {}) {
+  const res = spawnSync(process.execPath, [CLI, "gate", "--json", mode, "--base-sha", fx.baseSha, ...args], { cwd: fx.root, encoding: "utf-8" });
   let report = null;
   try {
     report = JSON.parse(res.stdout);
@@ -259,6 +261,116 @@ describe("gate --task: the candidate cannot supply the contract", () => {
   });
 });
 
+describe("gate --task: an envelope the working tree can rewrite is not a trusted contract", () => {
+  const QUEUE = ".agent/jules-queue/TASK-QUEUE.md";
+
+  // A local coding agent works in the same checkout as the operator's ignored
+  // queue file. Editing that file leaves no trace in the candidate diff.
+  it("working-tree mode: an ignored in-repo envelope the agent widened is refused, not trusted", () => {
+    const fx = createFixture();
+    try {
+      fx.write(QUEUE, ENVELOPE(["src/feature.mjs"]));
+      fx.write("src/feature.mjs", "// candidate\nexport const add = (a, b) => a + b;\n");
+      fx.write("README.md", "# Fixture\n\nUnrelated edit.\n");
+      fx.write(QUEUE, ENVELOPE(["src/feature.mjs", "README.md"]));
+
+      const res = runGate(fx, ["--task", QUEUE], { mode: "--working-tree" });
+      assert.equal(res.exitCode, 3, res.stderr || res.stdout);
+      assert.equal(res.report.taskScope.code, "TASK_ENVELOPE_UNTRUSTED_SOURCE");
+      assert.equal(phase(res.report, "task_scope").ok, false);
+    } finally {
+      rmSync(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  it("staged mode refuses the same envelope", () => {
+    const fx = createFixture();
+    try {
+      fx.write(QUEUE, ENVELOPE(["src/feature.mjs"]));
+      fx.write("src/feature.mjs", "// candidate\nexport const add = (a, b) => a + b;\n");
+      execFileSync("git", ["add", "src/feature.mjs"], { cwd: fx.root });
+      const res = runGate(fx, ["--task", QUEUE], { mode: "--staged" });
+      assert.equal(res.exitCode, 3, res.stderr || res.stdout);
+      assert.equal(res.report.taskScope.code, "TASK_ENVELOPE_UNTRUSTED_SOURCE");
+    } finally {
+      rmSync(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  // The usual flow: the candidate is a commit (a fetched Jules branch) and the
+  // operator's queue envelope sits untouched next to it.
+  it("committed mode still accepts the operator's queue envelope and reports where it came from", () => {
+    const fx = createFixture();
+    try {
+      fx.write(QUEUE, ENVELOPE(["src/feature.mjs"]));
+      fx.write("src/feature.mjs", "// candidate\nexport const add = (a, b) => a + b;\n");
+      fx.write("README.md", "# Fixture\n\nUnrelated edit.\n");
+      fx.commit();
+      const res = runGate(fx, ["--task", QUEUE]);
+      assert.equal(res.report.taskScope.envelope.source, "worktree");
+      assert.equal(res.exitCode, 3, res.stderr || res.stdout);
+      assert.deepEqual(phase(res.report, "task_scope").violations.map((v) => v.file), ["README.md"]);
+    } finally {
+      rmSync(fx.root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("gate --task: a scope that is specified but malformed never becomes unconstrained", () => {
+  const frontmatter = (scopeLines) => ["---", "version: agentctl.task/v1", "kind: Task", "id: TASK-BAD", ...scopeLines, "---", "", "# Task", ""].join("\n");
+  const MALFORMED = {
+    "allow is a string": [frontmatter(["scope:", "  allow: src/feature.mjs"]), "scope.allow"],
+    "deny is a string": [frontmatter(["scope:", "  allow:", "    - src/feature.mjs", "  deny: .github/**"]), "scope.deny"],
+    "allow holds a number": [frontmatter(["scope:", "  allow:", "    - src/feature.mjs", "    - 7"]), "scope.allow"],
+    "allow holds a blank entry": [frontmatter(["scope:", "  allow:", '    - ""']), "scope.allow"],
+    "scope is a string": [frontmatter(["scope: src/**"]), "scope"],
+    "targetFiles is a string": [frontmatter(["targetFiles: src/feature.mjs"]), "targetFiles"],
+    "legacy header with a string allow": ['<!-- JULES_TASK_ENVELOPE: {"id":"TASK-BAD","scope":{"allow":"src/**"}} -->\n', "scope.allow"],
+  };
+
+  for (const [name, [content, key]] of Object.entries(MALFORMED)) {
+    it(`rejects an envelope where ${name}`, () => {
+      const fx = createFixture();
+      const dir = mkdtempSync(join(tmpdir(), "jules-task-envelope-"));
+      const path = join(dir, "TASK-BAD.md");
+      writeFileSync(path, content);
+      try {
+        fx.write("README.md", "# Fixture\n\nUnrelated edit.\n");
+        fx.commit();
+        const res = runGate(fx, ["--task", path]);
+        assert.equal(res.exitCode, 3, res.stderr || res.stdout);
+        assert.equal(res.report.taskScope.code, "TASK_ENVELOPE_INVALID");
+        assert.ok(res.report.taskScope.error.includes(key), res.report.taskScope.error);
+      } finally {
+        rmSync(fx.root, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("still accepts what `task create` writes: empty lists and inline lists", () => {
+    const fx = createFixture();
+    const dir = mkdtempSync(join(tmpdir(), "jules-task-envelope-"));
+    const empty = join(dir, "TASK-EMPTY.md");
+    const inline = join(dir, "TASK-INLINE.md");
+    writeFileSync(empty, frontmatter(["scope:", "  allow:", "  deny:"]));
+    writeFileSync(inline, frontmatter(["scope:", "  allow: [src/feature.mjs, README.md]"]));
+    try {
+      fx.write("README.md", "# Fixture\n\nUnrelated edit.\n");
+      fx.commit();
+      const open = runGate(fx, ["--task", empty]);
+      assert.equal(open.exitCode, 0, open.stderr || open.stdout);
+      assert.equal(open.report.taskScope.unconstrained, true);
+      const narrowed = runGate(fx, ["--task", inline]);
+      assert.equal(narrowed.exitCode, 0, narrowed.stderr || narrowed.stdout);
+      assert.deepEqual(narrowed.report.taskScope.allow, ["src/feature.mjs", "README.md"]);
+    } finally {
+      rmSync(fx.root, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("gate: commit provenance is observed, not enforced", () => {
   it("reports author, committer and signature status, and an unsigned commit does not change the exit code", () => {
     const fx = createFixture();
@@ -274,7 +386,15 @@ describe("gate: commit provenance is observed, not enforced", () => {
       assert.equal(commit.author.name, "Base Author");
       assert.equal(commit.committer.name, "Human Committer");
       assert.deepEqual([commit.signature.code, commit.signature.status], ["N", "unsigned"]);
-      assert.deepEqual(res.report.evidence.commitProvenance, prov);
+      assert.equal(commit.author.email, "base@example.com", "the live report keeps the address for the reviewer");
+      // The persisted manifest is shared more widely than a terminal; it keeps
+      // names and signature facts but not e-mail addresses.
+      const persisted = res.report.evidence.commitProvenance.commits[0];
+      assert.deepEqual(persisted.author, { name: "Base Author" });
+      assert.deepEqual(persisted.committer, { name: "Human Committer" });
+      assert.equal(persisted.sha, commit.sha);
+      assert.deepEqual(persisted.signature, commit.signature);
+      assert.ok(!JSON.stringify(res.report.evidence).includes("example.com"));
     } finally {
       rmSync(fx.root, { recursive: true, force: true });
     }

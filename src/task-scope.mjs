@@ -13,10 +13,10 @@
  */
 
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { canonicalizePath } from "./config.mjs";
-import { parseEnvelopeHeader } from "./envelope.mjs";
+import { parseEnvelopeHeader, parseTaskFrontmatter } from "./envelope.mjs";
 import { checkScope } from "./scope-guard.mjs";
 import { git, showFromOrigin } from "./git.mjs";
 
@@ -42,7 +42,15 @@ function failure(code, error, extra = {}) {
  *
  * @param {string} root
  * @param {string} taskPath - operator-supplied path to a task envelope
- * @param {{ base?: string, candidateFiles?: string[] }} ctx
+ * Where the bytes come from decides how far they can be trusted:
+ *  - `base`: tracked on the trusted base and read from that commit.
+ *  - `file`: outside the repository; the operator's own file.
+ *  - `worktree`: inside the repository but not on the base (an ignored queue
+ *    file). Only accepted when the candidate is a commit (`committed` mode). In
+ *    `working-tree` and `staged` mode the candidate *is* the working tree, so an
+ *    agent that edited the file leaves nothing in the diff to notice.
+ *
+ * @param {{ base?: string, candidateFiles?: string[], mode?: string }} ctx
  * @returns {{ ok: true, contract: object } | { ok: false, code: string, error: string }}
  */
 export function loadTaskContract(root, taskPath, ctx = {}) {
@@ -67,7 +75,13 @@ export function loadTaskContract(root, taskPath, ctx = {}) {
 
   // A path may be spelled through a link, so both the spelling the operator gave
   // and the file it resolves to are checked against the candidate.
-  const insideRepo = [abs, real]
+  // `abs` with its directories resolved but its last component left alone, so a
+  // final-component link stays distinguishable from the file it points at.
+  let lexical = abs;
+  try {
+    lexical = join(realpathSync(dirname(abs)), basename(abs));
+  } catch (_) {}
+  const insideRepo = [lexical, real]
     .map((p) => relative(repoRoot, p))
     .map((rel) => (rel === "" || rel.startsWith("..") || isAbsolute(rel) ? null : rel.split(sep).join("/")));
   for (const rel of insideRepo) {
@@ -82,12 +96,24 @@ export function loadTaskContract(root, taskPath, ctx = {}) {
   let bytes;
   let source = "file";
   const trackedRel = insideRepo[1];
-  if (trackedRel && ctx.base) {
+  // Reading the blob is only the same file when the operator's spelling is not a
+  // link that someone could re-point.
+  if (trackedRel && ctx.base && insideRepo[0] === trackedRel) {
     const trusted = showFromOrigin(root, ctx.base, trackedRel);
     if (trusted !== null) {
       bytes = Buffer.from(trusted, "utf-8");
       source = "base";
     }
+  }
+  if (!bytes && insideRepo.some(Boolean)) {
+    if (ctx.mode !== "committed") {
+      return failure(
+        "TASK_ENVELOPE_UNTRUSTED_SOURCE",
+        `Task envelope "${taskPath}" is an untracked file inside the working tree under review, so whoever produced the candidate could also have rewritten it. ` +
+          "Keep the envelope outside the repository, commit it to the trusted base, or review a committed candidate (--committed)."
+      );
+    }
+    source = "worktree";
   }
   if (!bytes) {
     try {
@@ -104,9 +130,16 @@ export function loadTaskContract(root, taskPath, ctx = {}) {
   if (!header) {
     return failure("TASK_ENVELOPE_INVALID", `Task envelope "${taskPath}" has no parseable frontmatter or JULES_TASK_ENVELOPE header.`);
   }
-  const strings = (list) => (Array.isArray(list) ? list.filter((v) => typeof v === "string" && v.trim() !== "") : []);
-  const allow = strings(header.scope?.allow);
-  const deny = strings(header.scope?.deny);
+  // The raw front matter, not the normalised header: the header turns a value of
+  // the wrong type into an empty list, and an empty list means "no restriction".
+  const raw = parseTaskFrontmatter(bytes.toString("utf-8"))?.metadata ?? header;
+  const shapeError = scopeShapeError(raw);
+  if (shapeError) {
+    return failure("TASK_ENVELOPE_INVALID", `Task envelope "${taskPath}" declares a scope that cannot be applied: ${shapeError}`);
+  }
+  const firstList = (...lists) => lists.find((l) => Array.isArray(l)) || [];
+  const allow = firstList(header.scope?.allow, header.allowed_paths, header.targetFiles);
+  const deny = firstList(header.scope?.deny, header.forbiddenPaths, header.denyPaths);
 
   return {
     ok: true,
@@ -119,6 +152,39 @@ export function loadTaskContract(root, taskPath, ctx = {}) {
       deny,
     },
   };
+}
+
+const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * A scope key that is present must be a list of non-blank strings. A string, a
+ * number or a mixed list is a scope the operator wrote and the gate cannot read,
+ * and reading it as "no restriction" would turn a typo into full permission.
+ *
+ * An empty block (`allow:` with nothing under it) is what `task create` writes
+ * for a task with no paths and parses as an empty object, so it is an empty list.
+ *
+ * @returns {string | null} what is wrong, or null
+ */
+export function scopeShapeError(raw) {
+  const check = (key, value) => {
+    if (value === undefined) return null;
+    if (Array.isArray(value)) {
+      const bad = value.findIndex((v) => typeof v !== "string" || v.trim() === "" || v.includes("\0"));
+      return bad === -1 ? null : `${key}[${bad}] must be a non-empty string.`;
+    }
+    if (isPlainObject(value) && Object.keys(value).length === 0) return null;
+    return `${key} must be a list of path patterns.`;
+  };
+  if (raw.scope !== undefined && !isPlainObject(raw.scope)) return "scope must be a mapping with allow/deny lists.";
+  return (
+    check("scope.allow", raw.scope?.allow) ||
+    check("scope.deny", raw.scope?.deny) ||
+    check("allowed_paths", raw.allowed_paths) ||
+    check("targetFiles", raw.targetFiles) ||
+    check("forbiddenPaths", raw.forbiddenPaths) ||
+    check("denyPaths", raw.denyPaths)
+  );
 }
 
 /**
@@ -190,4 +256,25 @@ export function observeCommitProvenance(root, base, head) {
   } catch (err) {
     return { observed: false, error: err.message };
   }
+}
+
+/**
+ * The form of the provenance that is persisted in the evidence manifest.
+ *
+ * Evidence is written to disk and attached to reviews, so it keeps what a
+ * reviewer needs (who, by name, and the signature facts) and leaves out e-mail
+ * addresses, which identify a person beyond the attribution the log already
+ * carries. The live gate report keeps them.
+ */
+export function provenanceForManifest(provenance) {
+  if (!provenance || !Array.isArray(provenance.commits)) return provenance;
+  return {
+    ...provenance,
+    commits: provenance.commits.map((c) => ({
+      sha: c.sha,
+      author: { name: c.author.name },
+      committer: { name: c.committer.name },
+      signature: c.signature,
+    })),
+  };
 }

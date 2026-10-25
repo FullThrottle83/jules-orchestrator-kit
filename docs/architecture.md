@@ -237,15 +237,27 @@ applies the narrower scope only when you pass it: `agentctl gate --task <envelop
 list and revision as phase 1, so a candidate must satisfy both. A violation is a
 `task_scope` phase failure with exit `3`; no exit code was added.
 
-- The envelope is operator input. A path the candidate changes is refused
-  (`TASK_ENVELOPE_IN_CANDIDATE`), a path tracked on the trusted base is read from
-  the base commit, and a missing or unparseable envelope fails closed.
+- The envelope is operator input, and its `envelope.source` says how far it can
+  be trusted. A path the candidate changes is refused
+  (`TASK_ENVELOPE_IN_CANDIDATE`). `base`: tracked on the trusted base and read
+  from that commit. `file`: outside the repository. `worktree`: an untracked
+  file inside it, such as an ignored queue envelope. That last kind is accepted
+  only for a committed candidate (`--committed`); in `working-tree` and `staged`
+  mode the working tree is the candidate, so such a file is refused
+  (`TASK_ENVELOPE_UNTRUSTED_SOURCE`). Limit: a `worktree` envelope is the file
+  on disk, and a local agent that edited it before you reviewed a commit leaves
+  nothing in the diff. Compare `envelope.sha256` with your own copy, or keep the
+  envelope outside the repository.
+- A scope that is present but not a list of non-blank strings (a string, a
+  number, a mixed list) fails closed (`TASK_ENVELOPE_INVALID`) instead of reading
+  as no restriction. A missing or unparseable envelope fails closed as well.
 - Every report carries `taskScope`. Without `--task` it is
   `{ "checked": false, "reason": "NO_TASK_ENVELOPE" }`, also recorded in the
   evidence manifest, so a passing gate cannot be mistaken for a task-level pass.
   An envelope that names no paths reports `unconstrained: true`.
 - Every report carries `commitProvenance`: author, committer and signature status
-  (`%G?`) of each commit in `base..head`. It is observation only. It never changes
+  (`%G?`) of each commit in `base..head`. The evidence manifest keeps names but
+  not e-mail addresses; the live report keeps both. It is observation only. It never changes
   the exit code; whether an unsigned commit is acceptable is the reviewer's call.
   Signature status depends on the local `gpg.ssh.allowedSignersFile` or keyring.
 

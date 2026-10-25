@@ -4,7 +4,7 @@ import { isPlaceholderTestScript, isSrcLayout } from "./stack-detector.mjs";
 import { checkCollectionFloor } from "./ops/test-collection.mjs";
 import { checkScope, scanDiff, scanBinaryPayloads, redactSecrets, hasHighConfidenceSecret } from "./security.mjs";
 import { matchesGlob } from "./scope-guard.mjs";
-import { loadTaskContract, checkTaskScope, observeCommitProvenance, TASK_SCOPE_NOT_CHECKED } from "./task-scope.mjs";
+import { loadTaskContract, checkTaskScope, observeCommitProvenance, provenanceForManifest, TASK_SCOPE_NOT_CHECKED } from "./task-scope.mjs";
 import { changedFiles, diffBytes, diffText, binaryDiffEntries, symlinkChanges, gitlinkChanges, showFromOrigin, runCmd, materializeSnapshot, getCommitSha, resolveBase, buildVerificationEnv, git } from "./git.mjs";
 import { createProvider, ProviderRateLimitError, ProviderUnavailableError } from "./provider.mjs";
 import { resolveRoutedProvider } from "./router.mjs";
@@ -300,7 +300,7 @@ export async function gate(opts = {}) {
   // a clean repository gate cannot be read as a task-level approval.
   let taskScope = TASK_SCOPE_NOT_CHECKED;
   if (opts.task !== undefined && opts.task !== null) {
-    const loaded = loadTaskContract(root, opts.task, { base: diffBase, candidateFiles: files });
+    const loaded = loadTaskContract(root, opts.task, { base: diffBase, candidateFiles: files, mode });
     if (!loaded.ok) {
       taskScope = { checked: true, ok: false, code: loaded.code, error: loaded.error };
       phases.push({ phase: "task_scope", ok: false, errorCode: loaded.code, error: loaded.error });
@@ -774,7 +774,7 @@ export async function gate(opts = {}) {
     maxDiffKb: trustedDiffKb,
     protectedScopeOk: scopeResult.ok,
     taskScope,
-    commitProvenance,
+    commitProvenance: provenanceForManifest(commitProvenance),
     repository: policy.provider || config?.provider || "jules",
     failedStage: failingCmd?.stageId || failingCmd?.phase || verifyFailure?.stageId || null,
     diagnostics: failingCmd?.diagnostics?.length
